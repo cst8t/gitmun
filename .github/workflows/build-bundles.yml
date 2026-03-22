@@ -139,20 +139,8 @@ jobs:
             src-tauri/target/release/bundle/flatpak/gitmun.flatpak \
             com.cst8t.gitmun
 
-      - name: Upload Linux artifacts (GitHub)
-        if: ${{ github.server_url == 'https://github.com' }}
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
-        with:
-          name: linux-bundles
-          path: |
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/flatpak/*.flatpak
-            src-tauri/target/release/bundle/aur/*.zip
-
-      - name: Upload Linux artifacts (GHES/Forgejo)
-        if: ${{ github.server_url != 'https://github.com' }}
-        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: linux-bundles
           path: |
@@ -169,25 +157,16 @@ jobs:
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           REF_NAME: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
-          SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
 
           TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
           if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
-            if [ "$SERVER_URL" = "https://github.com" ]; then
-              RELEASE_ID="$(curl -fsS \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-                | jq -r '.id // empty')"
-            else
-              RELEASE_ID="$(curl -fsS \
-                -H "Authorization: token ${TOKEN}" \
-                -H "Accept: application/json" \
-                "${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-                | jq -r '.id // empty')"
-            fi
+            RELEASE_ID="$(curl -fsS \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+              | jq -r '.id // empty')"
           fi
 
           if [ -z "${RELEASE_ID:-}" ]; then
@@ -202,22 +181,12 @@ jobs:
             local encoded
             encoded="$(python -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")"
 
-            local upload_url
-            if [ "$SERVER_URL" = "https://github.com" ]; then
-              upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
-              curl -fsS -X POST \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@${file}" \
-                "$upload_url"
-            else
-              upload_url="${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
-              curl -fsS -X POST \
-                -H "Authorization: token ${TOKEN}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@${file}" \
-                "$upload_url"
-            fi
+            local upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${file}" \
+              "$upload_url"
           }
 
           shopt -s nullglob
@@ -295,17 +264,8 @@ jobs:
           --target x86_64-pc-windows-msvc
           --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
 
-      - name: Upload Windows artifacts (GitHub)
-        if: ${{ github.server_url == 'https://github.com' }}
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
-        with:
-          name: windows-nsis
-          path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-
-      - name: Upload Windows artifacts (GHES/Forgejo)
-        if: ${{ github.server_url != 'https://github.com' }}
-        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
         with:
           name: windows-nsis
           path: |
@@ -319,25 +279,16 @@ jobs:
           RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
           REF_NAME: ${{ github.ref_name }}
           REPOSITORY: ${{ github.repository }}
-          SERVER_URL: ${{ github.server_url }}
         run: |
           set -euo pipefail
 
           TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
           if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
-            if [ "$SERVER_URL" = "https://github.com" ]; then
-              RELEASE_ID="$(curl -fsS \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-                | jq -r '.id // empty')"
-            else
-              RELEASE_ID="$(curl -fsS \
-                -H "Authorization: token ${TOKEN}" \
-                -H "Accept: application/json" \
-                "${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-                | jq -r '.id // empty')"
-            fi
+            RELEASE_ID="$(curl -fsS \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+              | jq -r '.id // empty')"
           fi
 
           if [ -z "${RELEASE_ID:-}" ]; then
@@ -352,22 +303,12 @@ jobs:
             local encoded
             encoded="$(python -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")"
 
-            local upload_url
-            if [ "$SERVER_URL" = "https://github.com" ]; then
-              upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
-              curl -fsS -X POST \
-                -H "Authorization: Bearer ${TOKEN}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@${file}" \
-                "$upload_url"
-            else
-              upload_url="${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
-              curl -fsS -X POST \
-                -H "Authorization: token ${TOKEN}" \
-                -H "Content-Type: application/octet-stream" \
-                --data-binary "@${file}" \
-                "$upload_url"
-            fi
+            local upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${file}" \
+              "$upload_url"
           }
 
           shopt -s nullglob
