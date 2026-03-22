@@ -1,0 +1,35 @@
+{
+  "name": "gitmun",
+  "version": "0.1.0",
+  "private": true,
+  "license": "GPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 1420 --strictPort",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "linux:setup": "bash ./scripts/setup-linux.sh",
+    "tauri:build": "tauri build",
+    "tauri:build:linux": "tauri build --bundles deb,appimage",
+    "generate:attributions": "bash ./scripts/generate-attributions.sh"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-os": "^2.3.2",
+    "react": "^19.2.4",
+    "react-diff-view": "^3.3.2",
+    "react-dom": "^19.2.4",
+    "react-virtuoso": "^4.18.3"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "typescript": "^5.6.2",
+    "vite": "^5.4.0"
+  }
+}

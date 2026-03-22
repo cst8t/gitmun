@@ -1,0 +1,77 @@
+.stash-push-dialog {
+  width: 480px;
+}
+
+.dialog__label-hint {
+  font-weight: 400;
+  font-style: italic;
+}
+
+.stash-push-dialog__checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.stash-push-dialog__files {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+}
+
+.stash-push-dialog__group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stash-push-dialog__group-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 2px;
+}
+
+.stash-push-dialog__file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  user-select: none;
+}
+
+.stash-push-dialog__file-row:hover {
+  background: var(--bg-hover);
+}
+
+.stash-push-dialog__file-path {
+  flex: 1;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stash-push-dialog__file-badge {
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}

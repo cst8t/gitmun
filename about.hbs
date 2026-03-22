@@ -1,0 +1,18 @@
+{{#each licenses}}
+<div class="dep">
+  <div class="dep-header">
+    {{#each used_by}}
+    <div class="dep-crate">
+      <span class="dep-name">{{this.crate.name}} v{{this.crate.version}}</span>
+      <span class="dep-spdx">{{this.crate.license}}</span>
+    </div>
+    {{/each}}
+  </div>
+  {{#if text}}
+  <details>
+    <summary>View {{name}} ({{id}}) license text</summary>
+    <pre>{{text}}</pre>
+  </details>
+  {{/if}}
+</div>
+{{/each}}

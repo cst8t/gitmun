@@ -1,0 +1,163 @@
+.app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.app__frame {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.app__body {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.app__pane {
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+}
+
+.app__pane--left,
+.app__pane--right {
+  flex: 0 0 auto;
+  display: flex;
+  min-height: 0;
+}
+
+.app__pane--center {
+  flex: 1;
+  display: flex;
+}
+
+.app__splitter {
+  width: 6px;
+  flex-shrink: 0;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+}
+
+.app__splitter::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--border-subtle);
+  opacity: 0.6;
+}
+
+.app__splitter:hover::after,
+.app__splitter--active::after {
+  background: var(--accent);
+  opacity: 0.9;
+}
+
+.app__empty-state {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    radial-gradient(1200px 500px at 50% -15%, rgba(108, 156, 252, 0.08), transparent 65%),
+    linear-gradient(180deg, rgba(22, 25, 33, 0.7), rgba(15, 17, 23, 0.9));
+}
+
+.app__empty-card {
+  width: min(520px, calc(100% - 48px));
+  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(28, 31, 43, 0.9), rgba(22, 25, 33, 0.94));
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  padding: 28px;
+  text-align: center;
+}
+
+.app__empty-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(108, 156, 252, 0.35);
+  background: rgba(108, 156, 252, 0.12);
+  color: var(--accent);
+  display: grid;
+  place-items: center;
+}
+
+.app__empty-title {
+  margin: 0;
+  font-size: 20px;
+  line-height: 1.2;
+}
+
+.app__empty-subtitle {
+  margin: 8px auto 0;
+  color: var(--text-secondary);
+  max-width: 420px;
+}
+
+.app__empty-actions {
+  margin-top: 22px;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.app__empty-btn {
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  padding: 9px 14px;
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.app__empty-btn--primary {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+.app__empty-btn--primary:hover {
+  filter: brightness(1.07);
+}
+
+.app__empty-btn--secondary {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-primary);
+}
+
+.app__empty-btn--secondary:hover {
+  background: var(--bg-hover);
+}
+
+:root[data-theme="light"] .app__empty-state {
+  background:
+    radial-gradient(1200px 500px at 50% -15%, rgba(47, 109, 246, 0.11), transparent 65%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 246, 251, 0.98));
+}
+
+:root[data-theme="light"] .app__empty-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
+  box-shadow: 0 18px 36px rgba(26, 46, 88, 0.12);
+}
+
+:root[data-theme="light"] .app__empty-icon {
+  border-color: rgba(47, 109, 246, 0.28);
+  background: rgba(47, 109, 246, 0.1);
+}

@@ -1,0 +1,126 @@
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  animation: fadeIn 0.1s ease;
+}
+
+.dialog {
+  position: fixed;
+  inset: 0;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  height: fit-content;
+  margin: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  z-index: 201;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: dialogIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.dialog form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.dialog__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dialog__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.dialog__input,
+.dialog__textarea {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  padding: 8px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.dialog__input:focus,
+.dialog__textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.dialog__input::placeholder,
+.dialog__textarea::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.dialog__textarea {
+  resize: vertical;
+}
+
+.dialog__error {
+  font-size: var(--font-size-xs);
+  color: var(--red);
+}
+
+.dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dialog__btn {
+  padding: 6px 16px;
+  border-radius: var(--radius-lg);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.dialog__btn--cancel {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.dialog__btn--cancel:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.dialog__btn--confirm {
+  background: var(--accent);
+  color: #fff;
+}
+
+.dialog__btn--confirm:hover:not(.dialog__btn--disabled) {
+  opacity: 0.85;
+}
+
+.dialog__btn--disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
