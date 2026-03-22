@@ -52,3 +52,4 @@ npm run linux:setup
 
 - gitmun uses your system Git authentication setup (SSH agent, credential helpers, HTTPS tokens).
 - Settings are stored in a JSON config file; the path is shown in the Settings window.
+- macOS bundles are built in CI but are currently untested because I do not have access to macOS hardware. Any help testing macOS releases is greatly appreciated.
