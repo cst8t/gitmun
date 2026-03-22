@@ -11,7 +11,7 @@ on:
 
 jobs:
   linux-bundles:
-    name: Linux (deb, rpm, flatpak, aur)
+    name: Linux (deb, rpm, appimage, aur)
     runs-on: ubuntu-22.04
 
     steps:
@@ -37,23 +37,13 @@ jobs:
             librsvg2-dev \
             patchelf \
             rpm \
-            jq \
-            zip \
-            flatpak \
-            flatpak-builder
+            zip
 
       - name: Install frontend dependencies
         run: npm ci
 
       - name: Resolve build version
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "APP_VERSION=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
-          elif [[ "${GITHUB_REF_NAME}" == v* ]]; then
-            echo "APP_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
-          else
-            echo "APP_VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          fi
           RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
           if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
             RAW_VERSION="${GITHUB_REF_NAME}"
@@ -64,13 +54,24 @@ jobs:
             BUNDLE_VERSION="0.1.0"
           fi
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
-          echo "Using APP_VERSION=${APP_VERSION:-unset}, BUNDLE_VERSION=${BUNDLE_VERSION}"
+          echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
-      - name: Build Tauri Linux bundles
-        run: >-
-          npm run tauri build --
-          --bundles deb,rpm
-          --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
+      - name: Build Tauri Linux bundles and updater metadata
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          projectPath: ./
+          tauriScript: npm run tauri
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          args: >-
+            --bundles deb,rpm,appimage
+            --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
 
       - name: Prepare AUR files
         env:
@@ -108,34 +109,6 @@ jobs:
               *.install
           )
 
-      - name: Build Flatpak bundle from generated .deb
-        run: |
-          if ! unshare -Ur true >/dev/null 2>&1; then
-            echo "Skipping Flatpak build: user namespaces are not available on this runner."
-            exit 0
-          fi
-
-          DEB_FILE=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n 1)
-          rm -rf packaging/flatpak/rootfs
-          mkdir -p packaging/flatpak/rootfs
-          dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
-
-          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
-          flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-
-          flatpak-builder \
-            --disable-rofiles-fuse \
-            --force-clean \
-            --repo=flatpak-repo \
-            flatpak-build \
-            packaging/flatpak/com.cst8t.gitmun.yml
-
-          mkdir -p src-tauri/target/release/bundle/flatpak
-          flatpak build-bundle \
-            flatpak-repo \
-            src-tauri/target/release/bundle/flatpak/gitmun.flatpak \
-            com.cst8t.gitmun
-
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -143,10 +116,11 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/flatpak/*.flatpak
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/aur/*.zip
 
-      - name: Attach Linux bundles to release
+      - name: Attach AUR bundle to release
         if: ${{ github.event_name == 'release' }}
         env:
           TOKEN: ${{ github.token }}
@@ -158,14 +132,6 @@ jobs:
           set -euo pipefail
 
           TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
-          if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
-            RELEASE_ID="$(curl -fsS \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-              | jq -r '.id // empty')"
-          fi
-
           if [ -z "${RELEASE_ID:-}" ]; then
             echo "No release found for tag '${TAG_NAME}'. Skipping asset attachment."
             exit 0
@@ -188,9 +154,6 @@ jobs:
 
           shopt -s nullglob
           FILES=(
-            src-tauri/target/release/bundle/deb/*.deb
-            src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/flatpak/*.flatpak
             src-tauri/target/release/bundle/aur/*.zip
           )
 
@@ -199,8 +162,80 @@ jobs:
             upload_asset "$file"
           done
 
+  flatpak-bundle:
+    name: Linux Flatpak bundle
+    needs: linux-bundles
+    runs-on: ubuntu-22.04
+    container:
+      image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
+      options: --privileged
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: linux-bundles
+          path: ./linux-bundles
+
+      - name: Prepare Flatpak rootfs from .deb
+        run: |
+          set -euo pipefail
+
+          DEB_FILE="$(ls linux-bundles/*.deb | head -n 1)"
+          rm -rf packaging/flatpak/rootfs
+          mkdir -p packaging/flatpak/rootfs
+          dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
+
+      - name: Build Flatpak bundle
+        uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        with:
+          manifest-path: packaging/flatpak/com.cst8t.gitmun.yml
+          bundle: src-tauri/target/release/bundle/flatpak/gitmun.flatpak
+          cache-key: flatpak-builder-${{ github.sha }}
+          upload-artifact: false
+
+      - name: Upload Flatpak artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak
+          path: src-tauri/target/release/bundle/flatpak/*.flatpak
+
+      - name: Attach Flatpak bundle to release
+        if: ${{ github.event_name == 'release' }}
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
+          if [ -z "${RELEASE_ID:-}" ]; then
+            echo "No release found for tag '${TAG_NAME}'. Skipping asset attachment."
+            exit 0
+          fi
+
+          shopt -s nullglob
+          FILES=(src-tauri/target/release/bundle/flatpak/*.flatpak)
+          for file in "${FILES[@]}"; do
+            name="$(basename "$file")"
+            upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${name}"
+            echo "Uploading ${file}"
+            curl -fsS -X POST \
+              -H "Authorization: Bearer ${TOKEN}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary "@${file}" \
+              "$upload_url"
+          done
+
   windows-nsis-cross:
     name: Windows NSIS (cross-compiled on Linux)
+    needs: linux-bundles
     runs-on: ubuntu-22.04
 
     steps:
@@ -235,13 +270,6 @@ jobs:
 
       - name: Resolve build version
         run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            echo "APP_VERSION=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
-          elif [[ "${GITHUB_REF_NAME}" == v* ]]; then
-            echo "APP_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
-          else
-            echo "APP_VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-          fi
           RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
           if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
             RAW_VERSION="${GITHUB_REF_NAME}"
@@ -252,14 +280,26 @@ jobs:
             BUNDLE_VERSION="0.1.0"
           fi
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
-          echo "Using APP_VERSION=${APP_VERSION:-unset}, BUNDLE_VERSION=${BUNDLE_VERSION}"
+          echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
-      - name: Build Windows NSIS installer (MSVC target via cargo-xwin)
-        run: >-
-          npm run tauri build --
-          --runner cargo-xwin
-          --target x86_64-pc-windows-msvc
-          --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
+      - name: Build Windows NSIS installer and updater metadata
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          projectPath: ./
+          tauriScript: npm run tauri
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          updaterJsonPreferNsis: true
+          args: >-
+            --runner cargo-xwin
+            --target x86_64-pc-windows-msvc
+            --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
 
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v4
@@ -267,50 +307,65 @@ jobs:
           name: windows-nsis
           path: |
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
 
-      - name: Attach Windows bundles to release
-        if: ${{ github.event_name == 'release' }}
-        env:
-          TOKEN: ${{ github.token }}
-          RELEASE_ID: ${{ github.event.release.id }}
-          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
-          REF_NAME: ${{ github.ref_name }}
-          REPOSITORY: ${{ github.repository }}
+  macos-bundles:
+    name: macOS (dmg, app updater)
+    needs: windows-nsis-cross
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Resolve build version
         run: |
-          set -euo pipefail
-
-          TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
-          if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
-            RELEASE_ID="$(curl -fsS \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
-              | jq -r '.id // empty')"
+          RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
+          if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
+            RAW_VERSION="${GITHUB_REF_NAME}"
           fi
-
-          if [ -z "${RELEASE_ID:-}" ]; then
-            echo "No release found for tag '${TAG_NAME}'. Skipping asset attachment."
-            exit 0
+          if [[ "$RAW_VERSION" =~ ^v[0-9] ]]; then
+            BUNDLE_VERSION="${RAW_VERSION#v}"
+          else
+            BUNDLE_VERSION="0.1.0"
           fi
+          echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
+          echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
-          upload_asset() {
-            local file="$1"
-            local name
-            name="$(basename "$file")"
-            local encoded
-            encoded="$(python -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")"
+      - name: Build macOS bundles and updater metadata
+        uses: tauri-apps/tauri-action@v1
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
+          tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
+          projectPath: ./
+          tauriScript: npm run tauri
+          uploadUpdaterJson: true
+          uploadUpdaterSignatures: true
+          args: >-
+            --bundles app,dmg
+            --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
 
-            local upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
-            curl -fsS -X POST \
-              -H "Authorization: Bearer ${TOKEN}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary "@${file}" \
-              "$upload_url"
-          }
-
-          shopt -s nullglob
-          FILES=(src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe)
-          for file in "${FILES[@]}"; do
-            echo "Uploading ${file}"
-            upload_asset "$file"
-          done
+      - name: Upload macOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-bundles
+          path: |
+            src-tauri/target/release/bundle/dmg/*.dmg
+            src-tauri/target/release/bundle/macos/*.app.tar.gz
+            src-tauri/target/release/bundle/macos/*.sig
