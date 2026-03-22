@@ -1,0 +1,134 @@
+/* Gitmun Design Tokens */
+:root {
+  /* Background */
+  --bg: #0f1117;
+  --bg-surface: #161921;
+  --bg-elevated: #1c1f2b;
+  --bg-hover: #222638;
+  --bg-subtle: #1c1f2b;
+  --hover: var(--bg-hover);
+
+  /* Borders */
+  --border: #2a2e3e;
+  --border-subtle: #1e2233;
+
+  /* Text */
+  --text-primary: #e2e4eb;
+  --text-secondary: #8b8fa3;
+  --text-muted: #555972;
+  --text: var(--text-primary);
+
+  /* Accent */
+  --accent: #6c9cfc;
+  --accent-dim: rgba(108, 156, 252, 0.12);
+
+  /* Semantic */
+  --green: #34d399;
+  --green-dim: rgba(52, 211, 153, 0.08);
+  --red: #f87171;
+  --red-dim: rgba(248, 113, 113, 0.06);
+  --yellow: #fbbf24;
+
+  /* Toast */
+  --toast-success-bg: #065f46;
+  --toast-success-border: #059669;
+  --toast-success-text: #6ee7b7;
+  --toast-error-bg: #7f1d1d;
+  --toast-error-border: #991b1b;
+  --toast-error-text: #fca5a5;
+  --toast-info-bg: #1e293b;
+  --toast-info-border: #334155;
+  --toast-info-text: #e2e4eb;
+
+  /* Layout */
+  --titlebar-height: 46px;
+  --titlebar-height-gnome: 42px;
+  --panel-header-height: 40px;
+  --sidebar-width: 260px;
+  --diff-panel-width: 480px;
+  --status-bar-height: 28px;
+
+  /* Typography */
+  --font-ui: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-size-base: 13px;
+  --font-size-sm: 12px;
+  --font-size-xs: 11px;
+  --font-size-xxs: 10px;
+
+  /* Radius */
+  --radius-sm: 3px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --radius-xl: 8px;
+  --radius-2xl: 10px;
+  --radius-3xl: 12px;
+}
+
+:root[data-theme="light"] {
+  --bg: #f4f6fb;
+  --bg-surface: #ffffff;
+  --bg-elevated: #eef2f8;
+  --bg-hover: #e7edf7;
+  --bg-subtle: #eef2f8;
+
+  --border: #d8deeb;
+  --border-subtle: #e4e9f2;
+
+  --text-primary: #1f2430;
+  --text-secondary: #4b5567;
+  --text-muted: #7b8699;
+
+  --accent: #2f6df6;
+  --accent-dim: rgba(47, 109, 246, 0.13);
+
+  --green: #1f9d66;
+  --green-dim: rgba(31, 157, 102, 0.1);
+  --red: #d64545;
+  --red-dim: rgba(214, 69, 69, 0.08);
+  --yellow: #b7791f;
+
+  --toast-success-bg: #dcfce7;
+  --toast-success-border: #86efac;
+  --toast-success-text: #166534;
+  --toast-error-bg: #fee2e2;
+  --toast-error-border: #fecaca;
+  --toast-error-text: #991b1b;
+  --toast-info-bg: #e2e8f0;
+  --toast-info-border: #cbd5e1;
+  --toast-info-text: #1e293b;
+}
+
+:root[data-theme="dark"] {
+  --bg: #0f1117;
+  --bg-surface: #161921;
+  --bg-elevated: #1c1f2b;
+  --bg-hover: #222638;
+  --bg-subtle: #1c1f2b;
+
+  --border: #2a2e3e;
+  --border-subtle: #1e2233;
+
+  --text-primary: #e2e4eb;
+  --text-secondary: #8b8fa3;
+  --text-muted: #555972;
+
+  --accent: #6c9cfc;
+  --accent-dim: rgba(108, 156, 252, 0.12);
+
+  --green: #34d399;
+  --green-dim: rgba(52, 211, 153, 0.08);
+  --red: #f87171;
+  --red-dim: rgba(248, 113, 113, 0.06);
+  --yellow: #fbbf24;
+
+  --toast-success-bg: #065f46;
+  --toast-success-border: #059669;
+  --toast-success-text: #6ee7b7;
+  --toast-error-bg: #7f1d1d;
+  --toast-error-border: #991b1b;
+  --toast-error-text: #fca5a5;
+  --toast-info-bg: #1e293b;
+  --toast-info-border: #334155;
+  --toast-info-text: #e2e4eb;
+}

@@ -1,0 +1,14 @@
+.create-tag-dialog__label-hint {
+  font-weight: 400;
+  font-style: italic;
+}
+
+.create-tag-dialog__target {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.create-tag-dialog__target-hash {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+}

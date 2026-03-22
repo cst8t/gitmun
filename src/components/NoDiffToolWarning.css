@@ -1,0 +1,90 @@
+.no-diff-tool-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
+  animation: fadeIn 0.1s ease;
+}
+
+.no-diff-tool-dialog {
+  position: fixed;
+  inset: 0;
+  width: 380px;
+  height: fit-content;
+  margin: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  z-index: 201;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: dialogIn 0.15s ease;
+}
+
+.no-diff-tool-dialog__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.no-diff-tool-dialog__body {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+
+.no-diff-tool-dialog__body strong {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.no-diff-tool-dialog__suppress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.no-diff-tool-dialog__suppress input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.no-diff-tool-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.no-diff-tool-dialog__btn {
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font-ui);
+  padding: 6px 14px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.no-diff-tool-dialog__btn:hover {
+  opacity: 0.85;
+}
+
+.no-diff-tool-dialog__btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.no-diff-tool-dialog__btn--secondary {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}

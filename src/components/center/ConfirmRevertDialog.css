@@ -1,0 +1,49 @@
+.confirm-revert-dialog {
+  width: 340px;
+  gap: 12px;
+}
+
+.confirm-revert-dialog__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.confirm-revert-dialog__body {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.confirm-revert-dialog__filename {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+}
+
+.confirm-revert-dialog__suppress {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.confirm-revert-dialog__suppress input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.confirm-revert-dialog .dialog__btn--cancel {
+  color: var(--text-secondary);
+}
+
+.confirm-revert-dialog .dialog__btn--confirm {
+  background: var(--red);
+}
+
+.confirm-revert-dialog .dialog__btn--confirm:hover {
+  opacity: 0.85;
+}

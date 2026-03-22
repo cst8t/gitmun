@@ -1,0 +1,219 @@
+.diff-panel {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  flex-shrink: 0;
+}
+
+.diff-panel__header {
+  height: var(--panel-header-height);
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.diff-panel__filename {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+}
+
+.diff-panel__stats {
+  margin-left: auto;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+}
+
+.diff-panel__stat-add { color: var(--green); }
+.diff-panel__stat-sep { color: var(--text-muted); margin: 0 4px; }
+.diff-panel__stat-del { color: var(--red); }
+
+.diff-panel__view-toggle {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.diff-panel__view-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  padding: 3px 8px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-family: var(--font-ui);
+}
+
+.diff-panel__view-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.diff-panel__view-btn--active {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.diff-panel__body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 22px;
+}
+
+.diff-panel__placeholder {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  font-family: var(--font-ui);
+}
+
+.diff-panel__commit-files {
+  padding: 8px 0;
+}
+
+.diff-panel__commit-file-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 6px 14px;
+  border-left: 2px solid transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.diff-panel__commit-file-row:hover {
+  background: var(--bg-elevated);
+}
+
+.diff-panel__commit-file-row--selected {
+  background: var(--bg-elevated);
+  border-left-color: var(--accent);
+}
+
+.diff-panel__commit-file-status {
+  width: 18px;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.diff-panel__commit-file-status--added { color: var(--green); }
+.diff-panel__commit-file-status--deleted { color: var(--red); }
+.diff-panel__commit-file-status--modified { color: var(--yellow); }
+.diff-panel__commit-file-status--renamed { color: var(--accent); }
+.diff-panel__commit-file-status--copied { color: var(--accent); }
+
+.diff-panel__commit-file-path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-panel__statusbar {
+  padding: 6px 16px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.diff-panel__meta {
+  margin-left: auto;
+}
+
+.diff-panel__hunk-header {
+  padding: 6px 16px;
+  background: var(--accent-dim);
+  font-size: var(--font-size-xs);
+  color: var(--accent);
+  opacity: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: -webkit-sticky;
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border);
+}
+
+.diff-hunk__stage-btn {
+  background: rgba(108, 156, 252, 0.15);
+  border: none;
+  color: var(--accent);
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-ui);
+}
+
+.diff-hunk__stage-btn--staged {
+  background: rgba(52, 211, 153, 0.15);
+  color: var(--green);
+}
+
+.diff-panel__react-diff {
+  --diff-background-color: transparent;
+  --diff-text-color: var(--text-secondary);
+  --diff-font-family: var(--font-mono);
+  --diff-selection-background-color: rgba(108, 156, 252, 0.25);
+  --diff-selection-text-color: var(--text-primary);
+  --diff-gutter-insert-background-color: rgba(52, 211, 153, 0.1);
+  --diff-gutter-insert-text-color: var(--green);
+  --diff-gutter-delete-background-color: rgba(248, 113, 113, 0.1);
+  --diff-gutter-delete-text-color: var(--red);
+  --diff-gutter-selected-background-color: rgba(108, 156, 252, 0.12);
+  --diff-gutter-selected-text-color: var(--text-primary);
+  --diff-code-insert-background-color: rgba(52, 211, 153, 0.08);
+  --diff-code-insert-text-color: var(--green);
+  --diff-code-delete-background-color: rgba(248, 113, 113, 0.08);
+  --diff-code-delete-text-color: var(--red);
+  --diff-code-insert-edit-background-color: rgba(52, 211, 153, 0.2);
+  --diff-code-delete-edit-background-color: rgba(248, 113, 113, 0.2);
+  --diff-code-selected-background-color: rgba(108, 156, 252, 0.12);
+  --diff-code-selected-text-color: var(--text-primary);
+}
+
+.diff-panel__react-diff .diff {
+  table-layout: auto;
+}
+
+.diff-panel__react-diff .diff-code {
+  white-space: pre;
+  word-break: normal;
+  padding-right: 16px;
+}
+
+.diff-panel__react-diff .diff-gutter {
+  color: var(--text-muted);
+}

@@ -1,0 +1,291 @@
+.create-branch-dialog {
+  position: fixed;
+  inset: 0;
+  width: 520px;
+  max-width: calc(100vw - 24px);
+  height: 620px;
+  max-height: 90vh;
+  overflow-y: auto;
+  margin: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  z-index: 201;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: dialogIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.create-branch-dialog form {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.create-branch-dialog__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 4px;
+}
+
+.create-branch-dialog__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.create-branch-dialog__label {
+  font-size: var(--font-size-xs);
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.create-branch-dialog__name-input {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  padding: 11px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.create-branch-dialog__name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+
+.create-branch-dialog__name-input::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.create-branch-dialog__name-input--readonly {
+  opacity: 0.6;
+  cursor: default;
+  color: var(--text-secondary);
+}
+
+.create-branch-dialog__checkbox--disabled {
+  opacity: 0.4;
+  cursor: default;
+  pointer-events: none;
+}
+
+.create-branch-dialog__error {
+  font-size: var(--font-size-xs);
+  color: var(--red);
+  margin-top: -2px;
+}
+
+.create-branch-dialog__revision-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  margin-top: 16px;
+}
+
+.create-branch-dialog__revision-types {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.create-branch-dialog__revision-type {
+  padding: 6px 8px;
+  font-size: var(--font-size-xxs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+  font-family: var(--font-ui);
+  white-space: nowrap;
+  flex: 1;
+}
+
+.create-branch-dialog__revision-type--active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.create-branch-dialog__revision-type:hover {
+  color: var(--text-secondary);
+}
+
+.create-branch-dialog__filter-container {
+  position: relative;
+}
+
+.create-branch-dialog__filter {
+  width: 100%;
+  font-size: var(--font-size-xs);
+  font-family: var(--font-mono);
+  padding: 6px 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+
+.create-branch-dialog__filter:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.create-branch-dialog__filter::placeholder {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.create-branch-dialog__revision-list {
+  height: 200px;
+  overflow-y: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+}
+
+.create-branch-dialog__revision-item {
+  padding: 6px 8px;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: background-color 0.1s;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.create-branch-dialog__revision-item:last-child {
+  border-bottom: none;
+}
+
+.create-branch-dialog__revision-item:hover {
+  background: var(--bg-hover);
+}
+
+.create-branch-dialog__revision-item--selected {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+.create-branch-dialog__revision-item--current {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.create-branch-dialog__revision-item--current::after {
+  content: ' (current)';
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.create-branch-dialog__revision-item--empty {
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.create-branch-dialog__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 20px 0 8px 0;
+  margin-top: 16px;
+  border-top: 1px solid var(--border);
+  min-height: 100px;
+}
+
+.create-branch-dialog__checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+  padding: 2px 0;
+}
+
+.create-branch-dialog__checkbox input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+  width: 14px;
+  height: 14px;
+}
+
+.create-branch-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: auto;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+
+.create-branch-dialog__btn {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  font-family: var(--font-ui);
+  padding: 8px 16px;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: opacity 0.15s, background-color 0.15s;
+}
+
+.create-branch-dialog__btn:hover:not(.create-branch-dialog__btn--disabled) {
+  opacity: 0.9;
+}
+
+.create-branch-dialog__btn--cancel {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+.create-branch-dialog__btn--cancel:hover {
+  background: var(--bg-hover);
+}
+
+.create-branch-dialog__btn--create {
+  background: var(--accent);
+  color: #fff;
+}
+
+.create-branch-dialog__btn--disabled {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.create-branch-dialog__revision-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.create-branch-dialog__revision-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.create-branch-dialog__revision-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+
+.create-branch-dialog__revision-list::-webkit-scrollbar-thumb:hover {
+  background: var(--text-muted);
+}

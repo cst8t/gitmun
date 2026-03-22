@@ -1,0 +1,214 @@
+.clone-window {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: 13px;
+}
+
+.clone-window__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.clone-window__title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.clone-window__close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+}
+
+.clone-window__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.clone-window__body {
+  flex: 1;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+}
+
+.clone-window__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clone-window__label {
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.clone-window__error {
+  font-size: 11px;
+  color: var(--red, #e05c5c);
+}
+
+.clone-window__input {
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  padding: 6px 8px;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  outline: none;
+}
+
+.clone-window__input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.15);
+}
+
+.clone-window__inline-field {
+  display: flex;
+  gap: 6px;
+}
+
+.clone-window__inline-field .clone-window__input {
+  flex: 1;
+}
+
+.clone-window__browse-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  transition: background 0.12s;
+}
+
+.clone-window__browse-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.clone-window__footer {
+  padding: 10px 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.clone-window__actions {
+  display: flex;
+  gap: 6px;
+}
+
+.clone-window__btn {
+  border: none;
+  border-radius: 6px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.clone-window__btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.clone-window__btn--primary:hover {
+  background: #5a8ae8;
+}
+
+.clone-window__btn--primary:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.clone-window__btn--secondary {
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+}
+
+.clone-window__btn--secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.clone-window__btn--danger {
+  background: var(--red, #e05c5c);
+  color: #fff;
+}
+
+.clone-window__btn--danger:hover {
+  opacity: 0.88;
+}
+
+.clone-window__status {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* ── Progress log ───────────────────────────────────────────────────────── */
+
+.clone-window__progress {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 8px 10px;
+  height: 90%;
+  overflow-y: auto;
+  color: var(--text-secondary);
+}
+
+.clone-window__progress-idle {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-style: italic;
+}
+
+.clone-window__progress-waiting {
+  color: var(--text-muted);
+}
+
+.clone-window__progress-line {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+/* ── Spinner ────────────────────────────────────────────────────────────── */
+
+.clone-window__spinner {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  margin-right: 6px;
+  vertical-align: middle;
+}

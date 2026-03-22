@@ -1,0 +1,78 @@
+.merge-dialog {
+  width: 400px;
+}
+
+.merge-dialog__subtitle {
+  font-size: var(--font-size-sm);
+  color: var(--text-muted);
+  margin-top: -8px;
+}
+
+.merge-dialog__branch {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-primary);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 5px;
+}
+
+.merge-dialog__section-label {
+  font-size: var(--font-size-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: -8px;
+}
+
+.merge-dialog__strategies {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.merge-dialog__strategy {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: var(--radius-lg);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: border-color 0.1s, background 0.1s;
+}
+
+.merge-dialog__strategy:hover {
+  background: var(--bg-hover);
+}
+
+.merge-dialog__strategy--selected {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.merge-dialog__strategy input[type="radio"] {
+  margin-top: 2px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+
+.merge-dialog__strategy-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.merge-dialog__strategy-label {
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.merge-dialog__strategy-desc {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.4;
+}

@@ -1,0 +1,378 @@
+name: Build Bundles
+
+permissions:
+  contents: write
+
+on:
+  workflow_dispatch:
+  release:
+    types:
+      - created
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  linux-bundles:
+    name: Linux (deb, rpm, flatpak, aur)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            rpm \
+            jq \
+            zip \
+            flatpak \
+            flatpak-builder
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Resolve build version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "APP_VERSION=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          elif [[ "${GITHUB_REF_NAME}" == v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+          RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
+          if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
+            RAW_VERSION="${GITHUB_REF_NAME}"
+          fi
+          if [[ "$RAW_VERSION" =~ ^v[0-9] ]]; then
+            BUNDLE_VERSION="${RAW_VERSION#v}"
+          else
+            BUNDLE_VERSION="0.1.0"
+          fi
+          echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
+          echo "Using APP_VERSION=${APP_VERSION:-unset}, BUNDLE_VERSION=${BUNDLE_VERSION}"
+
+      - name: Build Tauri Linux bundles
+        run: >-
+          npm run tauri build --
+          --bundles deb,rpm
+          --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
+
+      - name: Prepare AUR files
+        env:
+          REPO_SLUG: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: bash ./scripts/generate-aur-package.sh
+
+      - name: Validate generated AUR metadata
+        run: |
+          if grep -q "owner/repo" packaging/aur/PKGBUILD packaging/aur/.SRCINFO; then
+            echo "AUR metadata still contains owner/repo placeholder." >&2
+            exit 1
+          fi
+
+          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/v"
+          if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
+            echo "PKGBUILD source URL does not match expected repository release path." >&2
+            exit 1
+          fi
+
+          if ! grep -q "$expected_prefix" packaging/aur/.SRCINFO; then
+            echo ".SRCINFO source URL does not match expected repository release path." >&2
+            exit 1
+          fi
+
+      - name: Package AUR files
+        run: |
+          mkdir -p src-tauri/target/release/bundle/aur
+          ZIP_NAME="gitmun-aur-${BUNDLE_VERSION}.zip"
+          (
+            cd packaging/aur
+            zip -9 -j "../../src-tauri/target/release/bundle/aur/${ZIP_NAME}" \
+              PKGBUILD \
+              .SRCINFO \
+              *.install
+          )
+
+      - name: Build Flatpak bundle from generated .deb
+        run: |
+          if ! unshare -Ur true >/dev/null 2>&1; then
+            echo "Skipping Flatpak build: user namespaces are not available on this runner."
+            exit 0
+          fi
+
+          DEB_FILE=$(ls src-tauri/target/release/bundle/deb/*.deb | head -n 1)
+          rm -rf packaging/flatpak/rootfs
+          mkdir -p packaging/flatpak/rootfs
+          dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
+
+          flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+
+          flatpak-builder \
+            --disable-rofiles-fuse \
+            --force-clean \
+            --repo=flatpak-repo \
+            flatpak-build \
+            packaging/flatpak/com.cst8t.gitmun.yml
+
+          mkdir -p src-tauri/target/release/bundle/flatpak
+          flatpak build-bundle \
+            flatpak-repo \
+            src-tauri/target/release/bundle/flatpak/gitmun.flatpak \
+            com.cst8t.gitmun
+
+      - name: Upload Linux artifacts (GitHub)
+        if: ${{ github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-bundles
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/flatpak/*.flatpak
+            src-tauri/target/release/bundle/aur/*.zip
+
+      - name: Upload Linux artifacts (GHES/Forgejo)
+        if: ${{ github.server_url != 'https://github.com' }}
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: linux-bundles
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/flatpak/*.flatpak
+            src-tauri/target/release/bundle/aur/*.zip
+
+      - name: Attach Linux bundles to release
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
+          if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
+            if [ "$SERVER_URL" = "https://github.com" ]; then
+              RELEASE_ID="$(curl -fsS \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+                | jq -r '.id // empty')"
+            else
+              RELEASE_ID="$(curl -fsS \
+                -H "Authorization: token ${TOKEN}" \
+                -H "Accept: application/json" \
+                "${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+                | jq -r '.id // empty')"
+            fi
+          fi
+
+          if [ -z "${RELEASE_ID:-}" ]; then
+            echo "No release found for tag '${TAG_NAME}'. Skipping asset attachment."
+            exit 0
+          fi
+
+          upload_asset() {
+            local file="$1"
+            local name
+            name="$(basename "$file")"
+            local encoded
+            encoded="$(python -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")"
+
+            local upload_url
+            if [ "$SERVER_URL" = "https://github.com" ]; then
+              upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+              curl -fsS -X POST \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@${file}" \
+                "$upload_url"
+            else
+              upload_url="${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+              curl -fsS -X POST \
+                -H "Authorization: token ${TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@${file}" \
+                "$upload_url"
+            fi
+          }
+
+          shopt -s nullglob
+          FILES=(
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/rpm/*.rpm
+            src-tauri/target/release/bundle/flatpak/*.flatpak
+            src-tauri/target/release/bundle/aur/*.zip
+          )
+
+          for file in "${FILES[@]}"; do
+            echo "Uploading ${file}"
+            upload_asset "$file"
+          done
+
+  windows-nsis-cross:
+    name: Windows NSIS (cross-compiled on Linux)
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Install cross-build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            nsis \
+            llvm \
+            lld \
+            clang
+
+      - name: Install cargo-xwin
+        run: cargo install --locked cargo-xwin
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Resolve build version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "APP_VERSION=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          elif [[ "${GITHUB_REF_NAME}" == v* ]]; then
+            echo "APP_VERSION=${GITHUB_REF_NAME}" >> "$GITHUB_ENV"
+          else
+            echo "APP_VERSION=dev-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+          fi
+          RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
+          if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
+            RAW_VERSION="${GITHUB_REF_NAME}"
+          fi
+          if [[ "$RAW_VERSION" =~ ^v[0-9] ]]; then
+            BUNDLE_VERSION="${RAW_VERSION#v}"
+          else
+            BUNDLE_VERSION="0.1.0"
+          fi
+          echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
+          echo "Using APP_VERSION=${APP_VERSION:-unset}, BUNDLE_VERSION=${BUNDLE_VERSION}"
+
+      - name: Build Windows NSIS installer (MSVC target via cargo-xwin)
+        run: >-
+          npm run tauri build --
+          --runner cargo-xwin
+          --target x86_64-pc-windows-msvc
+          --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
+
+      - name: Upload Windows artifacts (GitHub)
+        if: ${{ github.server_url == 'https://github.com' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+      - name: Upload Windows artifacts (GHES/Forgejo)
+        if: ${{ github.server_url != 'https://github.com' }}
+        uses: https://code.forgejo.org/forgejo/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: |
+            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
+
+      - name: Attach Windows bundles to release
+        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          REF_NAME: ${{ github.ref_name }}
+          REPOSITORY: ${{ github.repository }}
+          SERVER_URL: ${{ github.server_url }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${RELEASE_TAG_NAME:-${REF_NAME:-}}"
+          if [ -z "${RELEASE_ID:-}" ] && [ -n "$TAG_NAME" ]; then
+            if [ "$SERVER_URL" = "https://github.com" ]; then
+              RELEASE_ID="$(curl -fsS \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Accept: application/vnd.github+json" \
+                "https://api.github.com/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+                | jq -r '.id // empty')"
+            else
+              RELEASE_ID="$(curl -fsS \
+                -H "Authorization: token ${TOKEN}" \
+                -H "Accept: application/json" \
+                "${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/tags/${TAG_NAME}" \
+                | jq -r '.id // empty')"
+            fi
+          fi
+
+          if [ -z "${RELEASE_ID:-}" ]; then
+            echo "No release found for tag '${TAG_NAME}'. Skipping asset attachment."
+            exit 0
+          fi
+
+          upload_asset() {
+            local file="$1"
+            local name
+            name="$(basename "$file")"
+            local encoded
+            encoded="$(python -c 'import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))' "$name")"
+
+            local upload_url
+            if [ "$SERVER_URL" = "https://github.com" ]; then
+              upload_url="https://uploads.github.com/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+              curl -fsS -X POST \
+                -H "Authorization: Bearer ${TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@${file}" \
+                "$upload_url"
+            else
+              upload_url="${SERVER_URL}/api/v1/repos/${REPOSITORY}/releases/${RELEASE_ID}/assets?name=${encoded}"
+              curl -fsS -X POST \
+                -H "Authorization: token ${TOKEN}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary "@${file}" \
+                "$upload_url"
+            fi
+          }
+
+          shopt -s nullglob
+          FILES=(src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe)
+          for file in "${FILES[@]}"; do
+            echo "Uploading ${file}"
+            upload_asset "$file"
+          done

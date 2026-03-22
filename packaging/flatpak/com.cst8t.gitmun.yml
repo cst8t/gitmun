@@ -1,0 +1,28 @@
+app-id: com.cst8t.gitmun
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+command: gitmun
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --filesystem=home
+
+modules:
+  - name: gitmun-files
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 rootfs/usr/bin/gitmun /app/bin/gitmun
+      - install -Dm644 rootfs/usr/share/applications/gitmun.desktop /app/share/applications/com.cst8t.gitmun.desktop
+      - |
+        if [ -f rootfs/usr/share/icons/hicolor/128x128/apps/gitmun.png ]; then
+          install -Dm644 rootfs/usr/share/icons/hicolor/128x128/apps/gitmun.png /app/share/icons/hicolor/128x128/apps/com.cst8t.gitmun.png
+        fi
+      - sed -i 's/^Exec=.*/Exec=gitmun/' /app/share/applications/com.cst8t.gitmun.desktop
+      - sed -i 's/^Icon=.*/Icon=com.cst8t.gitmun/' /app/share/applications/com.cst8t.gitmun.desktop
+    sources:
+      - type: dir
+        path: rootfs

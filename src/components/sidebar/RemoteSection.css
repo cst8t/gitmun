@@ -1,0 +1,106 @@
+.remote-section {
+  display: flex;
+  flex-direction: column;
+}
+
+.remote-section__header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px 6px 8px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  width: 100%;
+  text-align: left;
+  color: var(--text);
+  transition: background 0.1s;
+  min-width: 0;
+}
+
+.remote-section__header:hover {
+  background: var(--hover);
+}
+
+.remote-section__chevron {
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: transform 0.15s;
+  display: inline-block;
+  line-height: 1;
+}
+
+.remote-section__chevron--collapsed {
+  transform: rotate(-90deg);
+}
+
+.remote-section__name {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.remote-section__url {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.remote-section__branches {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 4px;
+}
+
+.remote-section__empty {
+  padding: 4px 14px 4px 28px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.remote-section__branch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px 5px 28px;
+  cursor: default;
+  transition: background 0.1s;
+  min-width: 0;
+}
+
+.remote-section__branch:hover {
+  background: var(--hover);
+}
+
+.remote-section__branch--upstream {
+  color: var(--accent);
+}
+
+.remote-section__branch-name {
+  font-size: var(--font-size-sm);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.remote-section__upstream-badge {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--accent);
+  background: rgba(108, 156, 252, 0.14);
+  border: 1px solid rgba(108, 156, 252, 0.3);
+  border-radius: 3px;
+  padding: 0 4px;
+  flex-shrink: 0;
+  line-height: 1.6;
+}
