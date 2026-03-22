@@ -8,9 +8,6 @@ on:
   release:
     types:
       - created
-  push:
-    tags:
-      - "v*"
 
 jobs:
   linux-bundles:
@@ -150,7 +147,7 @@ jobs:
             src-tauri/target/release/bundle/aur/*.zip
 
       - name: Attach Linux bundles to release
-        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ github.event_name == 'release' }}
         env:
           TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ github.event.release.id }}
@@ -272,7 +269,7 @@ jobs:
             src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
 
       - name: Attach Windows bundles to release
-        if: ${{ github.event_name == 'release' || startsWith(github.ref, 'refs/tags/v') }}
+        if: ${{ github.event_name == 'release' }}
         env:
           TOKEN: ${{ github.token }}
           RELEASE_ID: ${{ github.event.release.id }}
