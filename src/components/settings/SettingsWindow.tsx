@@ -2,8 +2,9 @@ import React, { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { emit } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
+import { check } from "@tauri-apps/plugin-updater";
 import type { AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, Settings, ThemeMode } from "../../types";
 import { openResultLogWindow } from "../../api/commands";
 import { CloseIcon, FolderIcon } from "../icons";
@@ -62,6 +63,7 @@ export function SettingsWindow() {
   const [buildVersion, setBuildVersion] = useState<string>("");
   const [status, setStatus] = useState("Ready.");
   const [saving, setSaving] = useState(false);
+  const [checkingForUpdates, setCheckingForUpdates] = useState(false);
   const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
 
   useEffect(() => {
@@ -198,6 +200,36 @@ export function SettingsWindow() {
     }
   }, [defaultCloneDir]);
 
+  const handleCheckForUpdates = useCallback(async () => {
+    setCheckingForUpdates(true);
+    try {
+      setStatus("Checking for updates...");
+      const update = await check();
+      if (!update) {
+        setStatus("You're already running the latest version.");
+        return;
+      }
+
+      const installNow = await ask(`Version ${update.version} is available. Download and install it now?`, {
+        title: "Update available",
+        kind: "info",
+      });
+
+      if (!installNow) {
+        setStatus(`Update ${update.version} is available.`);
+        return;
+      }
+
+      setStatus(`Downloading update ${update.version}...`);
+      await update.downloadAndInstall();
+      setStatus("Update installed. Restart Gitmun to finish applying it.");
+    } catch (e) {
+      setStatus(`Update check failed: ${e}`);
+    } finally {
+      setCheckingForUpdates(false);
+    }
+  }, []);
+
   const handleClose = useCallback(() => {
     getCurrentWindow().close();
   }, []);
@@ -228,6 +260,19 @@ export function SettingsWindow() {
               Build version: <code>{buildVersion}</code>
             </div>
           )}
+
+          <div className="settings-window__row">
+            <label className="settings-window__label">Updates</label>
+            <div className="settings-window__inline-controls">
+              <button
+                className="settings-window__btn settings-window__btn--secondary"
+                onClick={handleCheckForUpdates}
+                disabled={checkingForUpdates}
+              >
+                {checkingForUpdates ? "Checking..." : "Check for updates"}
+              </button>
+            </div>
+          </div>
 
           <div className="settings-window__row">
             <label className="settings-window__label">Git backend mode</label>

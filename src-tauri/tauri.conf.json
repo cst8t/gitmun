@@ -27,10 +27,19 @@
   },
   "bundle": {
     "active": false,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "icon": [
       "icons/icon.ico",
       "icons/icon.png"
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "untrusted comment: minisign public key: 9412D7FB0B0ADF09\nRWQJ3woL+9cSlIx9wcac+fBmeQP1XHhSTuZYxrQZdnNXvuPUOHT4Salc",
+      "endpoints": [
+        "https://github.com/cst8t/gitmun/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

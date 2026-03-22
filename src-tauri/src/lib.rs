@@ -1348,6 +1348,10 @@ pub fn run() {
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
         .setup(|app| {
+            #[cfg(desktop)]
+            app.handle()
+                .plugin(tauri_plugin_updater::Builder::new().build())?;
+
             if let Ok(config_dir) = app.path().app_config_dir() {
                 let state = app.state::<AppState>();
                 state

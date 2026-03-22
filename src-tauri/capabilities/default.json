@@ -19,6 +19,7 @@
     "core:menu:allow-append",
     "core:menu:allow-remove",
     "core:window:allow-cursor-position",
-    "core:window:allow-outer-position"
+    "core:window:allow-outer-position",
+    "updater:default"
   ]
 }
