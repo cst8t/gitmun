@@ -57,7 +57,7 @@ jobs:
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Build Tauri Linux bundles and updater metadata
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -67,8 +67,7 @@ jobs:
           tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           projectPath: ./
           tauriScript: npm run tauri
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           args: >-
             --bundles deb,rpm,appimage
             --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
@@ -283,7 +282,7 @@ jobs:
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Build Windows NSIS installer and updater metadata
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -293,8 +292,7 @@ jobs:
           tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           projectPath: ./
           tauriScript: npm run tauri
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           updaterJsonPreferNsis: true
           args: >-
             --runner cargo-xwin
@@ -345,7 +343,7 @@ jobs:
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Build macOS bundles and updater metadata
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
@@ -355,8 +353,7 @@ jobs:
           tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
           projectPath: ./
           tauriScript: npm run tauri
-          uploadUpdaterJson: true
-          uploadUpdaterSignatures: true
+          includeUpdaterJson: true
           args: >-
             --bundles app,dmg
             --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
