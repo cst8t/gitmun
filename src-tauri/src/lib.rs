@@ -123,11 +123,6 @@ fn sanitize_linux_xdg_env() {
     }
 }
 
-const BUILD_VERSION: &str = match option_env!("GITMUN_BUILD_VERSION") {
-    Some(value) => value,
-    None => env!("CARGO_PKG_VERSION"),
-};
-
 #[tauri::command]
 fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
     state.git_service.get_settings()
@@ -170,8 +165,8 @@ fn get_config_file_path(state: tauri::State<'_, AppState>) -> Option<String> {
 }
 
 #[tauri::command]
-fn get_build_version() -> String {
-    BUILD_VERSION.to_string()
+fn get_build_version(app: tauri::AppHandle) -> String {
+    app.package_info().version.to_string()
 }
 
 #[tauri::command]
