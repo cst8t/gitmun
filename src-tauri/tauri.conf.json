@@ -36,7 +36,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "untrusted comment: minisign public key: C64772C70A246001\nRWQBYCQKx3JHxm0/ClosFhNPl1mY4flQHAgB5Dq9zMwNdAlBIbhFYQe+",
+      "pubkey": "RWQBYCQKx3JHxm0/ClosFhNPl1mY4flQHAgB5Dq9zMwNdAlBIbhFYQe+",
       "endpoints": [
         "https://github.com/cst8t/gitmun/releases/latest/download/latest.json"
       ]
