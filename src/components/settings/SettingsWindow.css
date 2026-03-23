@@ -290,6 +290,10 @@
   color: var(--text-primary);
 }
 
+.settings-window__btn--full-width {
+  width: 100%;
+}
+
 .settings-window__status {
   font-size: 11px;
   color: var(--text-muted);

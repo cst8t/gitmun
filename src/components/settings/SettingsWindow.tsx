@@ -288,7 +288,7 @@ export function SettingsWindow() {
               <div className="settings-window__sub-section">
                 <div className="settings-window__inline-controls">
                   <button
-                    className="settings-window__btn settings-window__btn--secondary"
+                    className="settings-window__btn settings-window__btn--secondary settings-window__btn--full-width"
                     onClick={handleCheckForUpdates}
                     disabled={checkingForUpdates}
                   >
