@@ -16,6 +16,8 @@ export type Settings = {
   defaultCloneDir: string;
   commitDateMode: CommitDateMode;
   pushFollowTags: boolean;
+  autoCheckForUpdatesOnLaunch: boolean;
+  autoInstallUpdates: boolean;
 };
 
 export type OperationResult = {

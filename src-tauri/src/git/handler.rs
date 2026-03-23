@@ -247,6 +247,33 @@ impl GitService {
         Settings::default()
     }
 
+    pub fn set_auto_check_for_updates_on_launch(
+        &self,
+        auto_check_for_updates_on_launch: bool,
+    ) -> Settings {
+        if let Ok(mut settings) = self.settings.write() {
+            settings.auto_check_for_updates_on_launch = auto_check_for_updates_on_launch;
+            let next = settings.clone();
+            drop(settings);
+            let _ = self.persist_settings();
+            return next;
+        }
+
+        Settings::default()
+    }
+
+    pub fn set_auto_install_updates(&self, auto_install_updates: bool) -> Settings {
+        if let Ok(mut settings) = self.settings.write() {
+            settings.auto_install_updates = auto_install_updates;
+            let next = settings.clone();
+            drop(settings);
+            let _ = self.persist_settings();
+            return next;
+        }
+
+        Settings::default()
+    }
+
     pub fn set_panel_layout(&self, left_pane_width: u32, right_pane_width: u32) -> Settings {
         if let Ok(mut settings) = self.settings.write() {
             settings.left_pane_width = left_pane_width;

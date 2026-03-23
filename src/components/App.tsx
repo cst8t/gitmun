@@ -1,6 +1,8 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
+import { platform as osPlatform } from "@tauri-apps/plugin-os";
+import { check } from "@tauri-apps/plugin-updater";
 import { Toast } from "./Toast";
 import { ProjectView } from "./ProjectView";
 import { useToast } from "../hooks/useToast";
@@ -29,6 +31,15 @@ function resolveTheme(mode: ThemeMode): "light" | "dark" {
   if (mode === "Light") return "light";
   if (mode === "Dark") return "dark";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function supportsUpdater(): boolean {
+  try {
+    const os = osPlatform();
+    return os === "linux" || os === "windows" || os === "macos";
+  } catch {
+    return false;
+  }
 }
 
 function isValidPaneWidth(value: number): boolean {
@@ -141,6 +152,27 @@ export function App() {
     });
   }, []);
 
+  const checkForUpdatesOnLaunch = useCallback(async (autoInstallUpdates: boolean) => {
+    try {
+      const update = await check();
+      if (!update) {
+        return;
+      }
+
+      showToast(`Update ${update.version} is available.`, "info");
+
+      if (!autoInstallUpdates) {
+        return;
+      }
+
+      showToast(`Downloading update ${update.version}...`, "info");
+      await update.downloadAndInstall();
+      showToast("Update installed. Restart Gitmun to finish applying it.", "success");
+    } catch {
+      return;
+    }
+  }, [showToast]);
+
   useEffect(() => {
     paneLayoutRef.current = { left: leftPaneWidth, right: rightPaneWidth };
   }, [leftPaneWidth, rightPaneWidth]);
@@ -207,12 +239,16 @@ export function App() {
             appendResultLog("error", `Result log window failed to open: ${String(e)}`, "unknown");
           });
         }
+
+        if (settings.autoCheckForUpdatesOnLaunch && supportsUpdater()) {
+          void checkForUpdatesOnLaunch(settings.autoInstallUpdates ?? false);
+        }
       } catch {
         document.documentElement.dataset.theme = "dark";
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [checkForUpdatesOnLaunch]);
 
   useEffect(() => {
     let cancelled = false;
