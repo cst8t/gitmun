@@ -183,7 +183,17 @@ jobs:
         run: |
           set -euo pipefail
 
-          DEB_FILE="$(ls linux-bundles/*.deb | head -n 1)"
+          shopt -s globstar nullglob
+          DEB_FILES=(linux-bundles/**/*.deb)
+          if [ ${#DEB_FILES[@]} -eq 0 ]; then
+            echo "No .deb files found in downloaded linux-bundles artifact."
+            echo "Downloaded artifact contents:"
+            ls -R linux-bundles
+            exit 1
+          fi
+
+          DEB_FILE="${DEB_FILES[0]}"
+          echo "Using .deb artifact: ${DEB_FILE}"
           rm -rf packaging/flatpak/rootfs
           mkdir -p packaging/flatpak/rootfs
           dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
