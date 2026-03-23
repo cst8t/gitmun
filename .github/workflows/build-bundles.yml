@@ -197,7 +197,17 @@ jobs:
           echo "Using .deb artifact: ${DEB_FILE}"
           rm -rf packaging/flatpak/rootfs
           mkdir -p packaging/flatpak/rootfs
-          dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
+          if command -v dpkg-deb >/dev/null 2>&1; then
+            dpkg-deb -x "$DEB_FILE" packaging/flatpak/rootfs
+          else
+            echo "dpkg-deb not found; extracting .deb payload with ar/tar fallback."
+            DATA_MEMBER="$(ar t "$DEB_FILE" | grep '^data.tar' | head -n1 || true)"
+            if [ -z "$DATA_MEMBER" ]; then
+              echo "Unable to locate data.tar* payload in ${DEB_FILE}" >&2
+              exit 1
+            fi
+            ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -f - -C packaging/flatpak/rootfs
+          fi
 
       - name: Build Flatpak bundle
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
@@ -354,6 +364,31 @@ jobs:
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
+      - name: Generate macOS .icns icon
+        run: |
+          set -euo pipefail
+
+          SOURCE_ICON="src-tauri/icons/icon.png"
+          ICONSET_DIR="src-tauri/icons/icon.iconset"
+          OUTPUT_ICNS="src-tauri/icons/icon.icns"
+
+          if [ ! -f "$SOURCE_ICON" ]; then
+            echo "Missing source icon: $SOURCE_ICON" >&2
+            exit 1
+          fi
+
+          rm -rf "$ICONSET_DIR"
+          mkdir -p "$ICONSET_DIR"
+
+          for size in 16 32 128 256 512; do
+            sips -z "$size" "$size" "$SOURCE_ICON" --out "$ICONSET_DIR/icon_${size}x${size}.png" >/dev/null
+            retina_size=$((size * 2))
+            sips -z "$retina_size" "$retina_size" "$SOURCE_ICON" --out "$ICONSET_DIR/icon_${size}x${size}@2x.png" >/dev/null
+          done
+
+          iconutil -c icns "$ICONSET_DIR" -o "$OUTPUT_ICNS"
+          rm -rf "$ICONSET_DIR"
+
       - name: Build macOS bundles and updater metadata
         uses: tauri-apps/tauri-action@v0.6.2
         env:
@@ -369,7 +404,7 @@ jobs:
           includeUpdaterJson: true
           args: >-
             --bundles app,dmg
-            --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
+            --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"icon":["icons/icon.icns","icons/icon.png","icons/icon.ico"]}}'
 
       - name: Upload macOS artifacts
         uses: actions/upload-artifact@v4
