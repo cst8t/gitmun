@@ -325,6 +325,14 @@ export function setPushFollowTags(pushFollowTags: boolean): Promise<Settings> {
   return invoke<Settings>("set_push_follow_tags", { pushFollowTags });
 }
 
+export function setAutoCheckForUpdatesOnLaunch(autoCheckForUpdatesOnLaunch: boolean): Promise<Settings> {
+  return invoke<Settings>("set_auto_check_for_updates_on_launch", { autoCheckForUpdatesOnLaunch });
+}
+
+export function setAutoInstallUpdates(autoInstallUpdates: boolean): Promise<Settings> {
+  return invoke<Settings>("set_auto_install_updates", { autoInstallUpdates });
+}
+
 export function getConfigFilePath(): Promise<string | null> {
   return invoke<string | null>("get_config_file_path");
 }

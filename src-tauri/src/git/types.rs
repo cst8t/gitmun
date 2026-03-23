@@ -89,6 +89,10 @@ pub struct Settings {
     pub commit_date_mode: CommitDateMode,
     #[serde(default)]
     pub push_follow_tags: bool,
+    #[serde(default = "Settings::default_auto_check_for_updates_on_launch")]
+    pub auto_check_for_updates_on_launch: bool,
+    #[serde(default)]
+    pub auto_install_updates: bool,
 }
 
 impl Default for Settings {
@@ -105,6 +109,8 @@ impl Default for Settings {
             default_clone_dir: String::new(),
             commit_date_mode: CommitDateMode::AuthorDate,
             push_follow_tags: false,
+            auto_check_for_updates_on_launch: true,
+            auto_install_updates: false,
         }
     }
 }
@@ -115,6 +121,10 @@ impl Settings {
     }
 
     fn default_try_platform_first() -> bool {
+        true
+    }
+
+    fn default_auto_check_for_updates_on_launch() -> bool {
         true
     }
 }

@@ -46,6 +46,10 @@ function safePlatform(): string {
   }
 }
 
+function supportsUpdater(os: string): boolean {
+  return os === "linux" || os === "windows" || os === "macos";
+}
+
 export function SettingsWindow() {
   const useNativeWindowBar = true;
   const [backendMode, setBackendMode] = useState<BackendMode>("Default");
@@ -59,6 +63,9 @@ export function SettingsWindow() {
   const [defaultCloneDir, setDefaultCloneDir] = useState<string>("");
   const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
   const [pushFollowTags, setPushFollowTags] = useState(false);
+  const [autoCheckForUpdatesOnLaunch, setAutoCheckForUpdatesOnLaunch] = useState(true);
+  const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
+  const [updaterSupported, setUpdaterSupported] = useState(() => supportsUpdater(safePlatform()));
   const [configFilePath, setConfigFilePath] = useState<string>("");
   const [buildVersion, setBuildVersion] = useState<string>("");
   const [status, setStatus] = useState("Ready.");
@@ -87,6 +94,7 @@ export function SettingsWindow() {
         const os = safePlatform();
         const supported = supportedDiffTools(os);
         setAllowedDiffTools(supported);
+        setUpdaterSupported(supportsUpdater(os));
 
         const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
         setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
@@ -102,6 +110,8 @@ export function SettingsWindow() {
         setDefaultCloneDir(settings.defaultCloneDir);
         setCommitDateMode(settings.commitDateMode ?? "AuthorDate");
         setPushFollowTags(settings.pushFollowTags ?? false);
+        setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
+        setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
         document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
 
         const cfgPath = await invoke<string | null>("get_config_file_path");
@@ -137,6 +147,8 @@ export function SettingsWindow() {
       await invoke("set_global_default_branch", { defaultBranch: globalDefaultBranch });
       await invoke("set_commit_date_mode", { commitDateMode });
       await invoke("set_push_follow_tags", { pushFollowTags });
+      await invoke("set_auto_check_for_updates_on_launch", { autoCheckForUpdatesOnLaunch });
+      await invoke("set_auto_install_updates", { autoInstallUpdates });
       const settings = await invoke<Settings>("get_settings");
 
       localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
@@ -162,6 +174,8 @@ export function SettingsWindow() {
     globalDefaultBranch,
     commitDateMode,
     pushFollowTags,
+    autoCheckForUpdatesOnLaunch,
+    autoInstallUpdates,
   ]);
 
   const handleOpenResultLog = useCallback(async () => {
@@ -201,6 +215,11 @@ export function SettingsWindow() {
   }, [defaultCloneDir]);
 
   const handleCheckForUpdates = useCallback(async () => {
+    if (!updaterSupported) {
+      setStatus("Updates are unavailable on this platform build.");
+      return;
+    }
+
     setCheckingForUpdates(true);
     try {
       setStatus("Checking for updates...");
@@ -210,14 +229,16 @@ export function SettingsWindow() {
         return;
       }
 
-      const installNow = await ask(`Version ${update.version} is available. Download and install it now?`, {
-        title: "Update available",
-        kind: "info",
-      });
+      if (!autoInstallUpdates) {
+        const installNow = await ask(`Version ${update.version} is available. Download and install it now?`, {
+          title: "Update available",
+          kind: "info",
+        });
 
-      if (!installNow) {
-        setStatus(`Update ${update.version} is available.`);
-        return;
+        if (!installNow) {
+          setStatus(`Update ${update.version} is available.`);
+          return;
+        }
       }
 
       setStatus(`Downloading update ${update.version}...`);
@@ -228,7 +249,7 @@ export function SettingsWindow() {
     } finally {
       setCheckingForUpdates(false);
     }
-  }, []);
+  }, [autoInstallUpdates, updaterSupported]);
 
   const handleClose = useCallback(() => {
     getCurrentWindow().close();
@@ -261,18 +282,64 @@ export function SettingsWindow() {
             </div>
           )}
 
-          <div className="settings-window__row">
-            <label className="settings-window__label">Updates</label>
-            <div className="settings-window__inline-controls">
-              <button
-                className="settings-window__btn settings-window__btn--secondary"
-                onClick={handleCheckForUpdates}
-                disabled={checkingForUpdates}
-              >
-                {checkingForUpdates ? "Checking..." : "Check for updates"}
-              </button>
+          {updaterSupported ? (
+            <div className="settings-window__row">
+              <label className="settings-window__label">Updates</label>
+              <div className="settings-window__sub-section">
+                <div className="settings-window__inline-controls">
+                  <button
+                    className="settings-window__btn settings-window__btn--secondary"
+                    onClick={handleCheckForUpdates}
+                    disabled={checkingForUpdates}
+                  >
+                    {checkingForUpdates ? "Checking..." : "Check for updates"}
+                  </button>
+                </div>
+
+                <label className="settings-window__switch-row">
+                  <span className="settings-window__switch">
+                    <input
+                      type="checkbox"
+                      checked={autoCheckForUpdatesOnLaunch}
+                      onChange={e => setAutoCheckForUpdatesOnLaunch(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track" />
+                  </span>
+                  <span className="settings-window__switch-label">Automatically check for updates on launch</span>
+                </label>
+
+                <label
+                  className="settings-window__switch-row"
+                  style={{
+                    opacity: autoCheckForUpdatesOnLaunch ? 1 : 0.4,
+                    cursor: autoCheckForUpdatesOnLaunch ? "pointer" : "default",
+                  }}
+                >
+                  <span className="settings-window__switch">
+                    <input
+                      type="checkbox"
+                      checked={autoInstallUpdates}
+                      disabled={!autoCheckForUpdatesOnLaunch}
+                      onChange={e => setAutoInstallUpdates(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track" />
+                  </span>
+                  <span className="settings-window__switch-label">Automatically download and install updates</span>
+                </label>
+
+                <div className="settings-window__section-note">
+                  Automatic install applies when an update is found during an automatic launch check.
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="settings-window__row">
+              <label className="settings-window__label">Updates</label>
+              <div className="settings-window__section-note">
+                Updates are managed by this platform package channel.
+              </div>
+            </div>
+          )}
 
           <div className="settings-window__row">
             <label className="settings-window__label">Git backend mode</label>

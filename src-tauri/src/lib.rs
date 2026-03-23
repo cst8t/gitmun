@@ -1052,6 +1052,24 @@ fn set_push_follow_tags(push_follow_tags: bool, state: tauri::State<'_, AppState
 }
 
 #[tauri::command]
+fn set_auto_check_for_updates_on_launch(
+    auto_check_for_updates_on_launch: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_auto_check_for_updates_on_launch(auto_check_for_updates_on_launch)
+}
+
+#[tauri::command]
+fn set_auto_install_updates(
+    auto_install_updates: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state.git_service.set_auto_install_updates(auto_install_updates)
+}
+
+#[tauri::command]
 async fn merge_branch(
     request: MergeRequest,
     app: tauri::AppHandle,
@@ -1433,6 +1451,8 @@ pub fn run() {
             set_default_clone_dir,
             set_commit_date_mode,
             set_push_follow_tags,
+            set_auto_check_for_updates_on_launch,
+            set_auto_install_updates,
             merge_branch,
             merge_abort,
             rebase_start,
