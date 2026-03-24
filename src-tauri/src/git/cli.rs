@@ -29,6 +29,42 @@ pub struct CliGitHandler;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 impl CliGitHandler {
+    fn preferred_mime_from_path(file_path: &str) -> Option<String> {
+        let mut first: Option<String> = None;
+        for mime in mime_guess::from_path(file_path) {
+            let essence = mime.essence_str().to_ascii_lowercase();
+            if first.is_none() {
+                first = Some(essence.clone());
+            }
+            if essence.starts_with("text/") {
+                return Some(essence);
+            }
+        }
+
+        first
+    }
+
+    fn generic_label_from_path_extension(file_path: &str) -> Option<String> {
+        let ext = Path::new(file_path).extension()?.to_str()?.trim();
+        if ext.is_empty() {
+            return None;
+        }
+
+        let normalized: String = ext
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '_' | '.'))
+            .collect();
+        if normalized.is_empty() {
+            return None;
+        }
+
+        if normalized.len() <= 4 && normalized.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+            return Some(normalized.to_ascii_uppercase());
+        }
+
+        Self::mime_token_to_label(&normalized)
+    }
+
     pub fn new() -> Self {
         Self
     }
@@ -61,6 +97,29 @@ impl CliGitHandler {
 
     fn run_git(args: &[&str], current_dir: Option<&Path>) -> GitResult<String> {
         Self::run_git_allow_exit_codes(args, current_dir, &[])
+    }
+
+    fn run_git_bytes(args: &[&str], current_dir: Option<&Path>) -> GitResult<Vec<u8>> {
+        let mut command = Command::new("git");
+        Self::configure_command(&mut command);
+        command.args(args);
+
+        if let Some(path) = current_dir {
+            command.current_dir(path);
+        }
+
+        let output = command.output()?;
+        if !output.status.success() {
+            let stderr =
+                Self::append_auth_help(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            let joined = format!("git {}", args.join(" "));
+            return Err(GitError::CommandFailed {
+                command: joined,
+                stderr,
+            });
+        }
+
+        Ok(output.stdout)
     }
 
     /// Returns `-c key=value` override args for tools that git doesn't know
@@ -1141,6 +1200,7 @@ impl GitOperationHandler for CliGitHandler {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         let line_ending = Self::detect_line_ending(&repo_path, file_path, request.staged);
+        let detected_file_type = Self::detect_file_type_label(&repo_path, file_path, request.staged);
 
         let mut args = vec!["diff"];
         if request.staged {
@@ -1172,6 +1232,7 @@ impl GitOperationHandler for CliGitHandler {
                                 file_path,
                                 &content,
                                 line_ending,
+                                detected_file_type.clone(),
                             ));
                         }
                         Err(_) => String::new(),
@@ -1208,6 +1269,7 @@ impl GitOperationHandler for CliGitHandler {
                 hunks: Vec::new(),
                 is_binary: false,
                 line_ending,
+                detected_file_type,
             });
         }
 
@@ -1217,6 +1279,7 @@ impl GitOperationHandler for CliGitHandler {
                 hunks: Vec::new(),
                 is_binary: true,
                 line_ending,
+                detected_file_type,
             });
         }
 
@@ -1227,6 +1290,7 @@ impl GitOperationHandler for CliGitHandler {
             hunks,
             is_binary: false,
             line_ending,
+            detected_file_type,
         })
     }
 
@@ -2636,6 +2700,133 @@ impl GitOperationHandler for CliGitHandler {
 }
 
 impl CliGitHandler {
+    fn mime_token_to_label(token: &str) -> Option<String> {
+        let mut cleaned = token.trim().to_ascii_lowercase();
+        if cleaned.is_empty() {
+            return None;
+        }
+
+        while let Some(rest) = cleaned
+            .strip_prefix("x-")
+            .or_else(|| cleaned.strip_prefix("vnd."))
+        {
+            cleaned = rest.to_string();
+        }
+
+        let words: Vec<String> = cleaned
+            .split(['-', '_', '.', '+'])
+            .filter(|part| !part.is_empty())
+            .map(|part| {
+                let mut chars = part.chars();
+                match chars.next() {
+                    Some(first) => {
+                        let mut word = String::new();
+                        word.extend(first.to_uppercase());
+                        word.push_str(chars.as_str());
+                        word
+                    }
+                    None => String::new(),
+                }
+            })
+            .filter(|part| !part.is_empty())
+            .collect();
+
+        if words.is_empty() {
+            None
+        } else {
+            Some(words.join(" "))
+        }
+    }
+
+    fn file_type_label_from_mime(mime: &str) -> Option<String> {
+        let essence = mime.split(';').next()?.trim().to_ascii_lowercase();
+        let (top_level, subtype) = essence.split_once('/')?;
+
+        if top_level == "text" {
+            if subtype == "plain" {
+                return Some("Text".to_string());
+            }
+
+            let preferred = subtype
+                .rsplit_once('+')
+                .map(|(_, suffix)| suffix)
+                .unwrap_or(subtype);
+
+            return Self::mime_token_to_label(preferred)
+                .or_else(|| Self::mime_token_to_label(subtype))
+                .or_else(|| Some("Text".to_string()));
+        }
+
+        let preferred = subtype
+            .rsplit_once('+')
+            .map(|(_, suffix)| suffix)
+            .unwrap_or(subtype);
+
+        Self::mime_token_to_label(preferred)
+            .or_else(|| Self::mime_token_to_label(subtype))
+            .or_else(|| Self::mime_token_to_label(top_level))
+    }
+
+    fn read_file_bytes_for_detection(
+        repo_path: &Path,
+        file_path: &str,
+        staged: bool,
+    ) -> Option<Vec<u8>> {
+        if !staged {
+            let full_path = repo_path.join(file_path);
+            if let Ok(bytes) = fs::read(full_path) {
+                return Some(bytes);
+            }
+        }
+
+        let index_ref = format!(":{file_path}");
+        Self::run_git_bytes(&["show", &index_ref], Some(repo_path)).ok()
+    }
+
+    fn detect_file_type_label(repo_path: &Path, file_path: &str, staged: bool) -> Option<String> {
+        if let Some(bytes) = Self::read_file_bytes_for_detection(repo_path, file_path, staged) {
+            let is_utf8_text = std::str::from_utf8(&bytes).is_ok();
+
+            if is_utf8_text {
+                if let Some(mime) = Self::preferred_mime_from_path(file_path) {
+                    if mime.starts_with("text/") {
+                        if let Some(label) = Self::file_type_label_from_mime(&mime) {
+                            return Some(label);
+                        }
+                    }
+                }
+
+                if let Some(label) = Self::generic_label_from_path_extension(file_path) {
+                    return Some(label);
+                }
+
+                return Some("Text".to_string());
+            }
+
+            if let Some(kind) = infer::get(&bytes) {
+                if let Some(label) = Self::file_type_label_from_mime(kind.mime_type()) {
+                    return Some(label);
+                }
+            }
+
+            if let Some(mime) = Self::preferred_mime_from_path(file_path) {
+                if let Some(label) = Self::file_type_label_from_mime(&mime) {
+                    return Some(label);
+                }
+            }
+        }
+
+        if let Some(mime) = Self::preferred_mime_from_path(file_path) {
+            return Self::file_type_label_from_mime(&mime);
+        }
+
+        if let Some(label) = Self::generic_label_from_path_extension(file_path) {
+            return Some(label);
+        }
+
+        Some("Text".to_string())
+    }
+
     fn parse_line_ending_token(token: &str) -> Option<LineEndingStyle> {
         match token {
             "lf" => Some(LineEndingStyle::Lf),
@@ -2764,6 +2955,7 @@ impl CliGitHandler {
         file_path: &str,
         content: &str,
         line_ending: LineEndingStyle,
+        detected_file_type: Option<String>,
     ) -> FileDiff {
         let lines = Self::split_content_lines_for_display(content, line_ending);
         let line_count = lines.len();
@@ -2790,6 +2982,7 @@ impl CliGitHandler {
             hunks: vec![hunk],
             is_binary: false,
             line_ending,
+            detected_file_type,
         }
     }
 

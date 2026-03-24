@@ -212,6 +212,7 @@ export type FileDiff = {
   hunks: DiffHunk[];
   isBinary: boolean;
   lineEnding: LineEndingStyle;
+  detectedFileType?: string | null;
 };
 
 export type BranchInfo = {

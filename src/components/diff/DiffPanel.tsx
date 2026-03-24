@@ -83,36 +83,27 @@ export function DiffPanel({
   }, [selectedCommitHash]);
 
   const hasSelectedFile = mode === "changes" && !!selectedFile;
-  const totalAdds = diff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "add").length, 0) ?? 0;
-  const totalDels = diff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "remove").length, 0) ?? 0;
+  const currentDiff =
+    mode === "changes" && selectedFile && diff?.filePath === selectedFile
+      ? diff
+      : null;
+  const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "add").length, 0) ?? 0;
+  const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "remove").length, 0) ?? 0;
   const fileName = selectedFile ? selectedFile.split("/").pop() ?? selectedFile : null;
-  const ext = fileName?.includes(".") ? fileName.split(".").pop()?.toLowerCase() : "";
-  const language = (() => {
-    switch (ext) {
-      case "rs": return "Rust";
-      case "ts": return "TypeScript";
-      case "tsx": return "TSX";
-      case "js": return "JavaScript";
-      case "jsx": return "JSX";
-      case "json": return "JSON";
-      case "css": return "CSS";
-      case "html": return "HTML";
-      case "md": return "Markdown";
-      case "toml": return "TOML";
-      case "yml":
-      case "yaml": return "YAML";
-      case "sh": return "Shell";
-      default: return "Text";
-    }
-  })();
-  const lineEndingLabel = (() => {
-    switch (diff?.lineEnding) {
+  const language = currentDiff?.detectedFileType ?? "Text";
+  const lineEndingLabel = currentDiff ? (() => {
+    switch (currentDiff.lineEnding) {
       case "lf": return "LF";
       case "crlf": return "CRLF";
       case "mixed": return "Mixed EOL";
       default: return "Unknown EOL";
     }
-  })();
+  })() : null;
+  const statusFileName = fileName ?? selectedFile ?? "File";
+  const showLoadedMetadata = !loading && !!currentDiff;
+  const statusBarMeta = showLoadedMetadata
+    ? `${language} · ${statusFileName} · ${lineEndingLabel}`
+    : statusFileName;
   const statusLetter = (status: string) => {
     const s = status.toLowerCase();
     if (s.startsWith("add")) return "A";
@@ -123,9 +114,9 @@ export function DiffPanel({
   };
 
   const renderedHunks = React.useMemo<HunkData[]>(() => {
-    if (mode !== "changes" || !diff || diff.isBinary) return [];
+    if (mode !== "changes" || !currentDiff || currentDiff.isBinary) return [];
 
-    return diff.hunks.map((hunk): HunkData => {
+    return currentDiff.hunks.map((hunk): HunkData => {
       const parsedHeader = parseHunkHeader(hunk.header);
       let oldCursor = parsedHeader?.oldStart ?? (hunk.lines.find(line => line.oldLineNo != null)?.oldLineNo ?? 1);
       let newCursor = parsedHeader?.newStart ?? (hunk.lines.find(line => line.newLineNo != null)?.newLineNo ?? 1);
@@ -166,13 +157,13 @@ export function DiffPanel({
         changes,
       };
     });
-  }, [mode, diff]);
+  }, [mode, currentDiff]);
 
   const diffType = React.useMemo<DiffType>(() => {
-    if (!diff) return "modify";
+    if (!currentDiff) return "modify";
     let hasAdds = false;
     let hasRemoves = false;
-    for (const hunk of diff.hunks) {
+    for (const hunk of currentDiff.hunks) {
       for (const line of hunk.lines) {
         const kind = normalizedKind(line.kind);
         if (kind === "add") hasAdds = true;
@@ -182,7 +173,7 @@ export function DiffPanel({
     if (hasAdds && !hasRemoves) return "add";
     if (!hasAdds && hasRemoves) return "delete";
     return "modify";
-  }, [diff]);
+  }, [currentDiff]);
 
   return (
     <div className="diff-panel">
@@ -194,7 +185,7 @@ export function DiffPanel({
             ? (selectedCommitHash ? `Commit ${selectedCommitHash.slice(0, 8)}` : "Commit files")
             : (selectedFile ?? "Click a file to show changes")}
         </span>
-        {mode === "changes" && hasSelectedFile && diff && (
+        {mode === "changes" && hasSelectedFile && currentDiff && (
           <span className="diff-panel__stats">
             <span className="diff-panel__stat-add">+{totalAdds}</span>
             <span className="diff-panel__stat-sep">/</span>
@@ -255,8 +246,8 @@ export function DiffPanel({
         ) : (
           loading ? (
             <div className="diff-panel__placeholder">Loading diff...</div>
-          ) : diff ? (
-            diff.isBinary ? (
+          ) : currentDiff ? (
+            currentDiff.isBinary ? (
               <div className="diff-panel__placeholder">Binary file changed</div>
             ) : renderedHunks.length > 0 ? (
               <div className="diff-panel__react-diff">
@@ -296,7 +287,7 @@ export function DiffPanel({
       {/* Status bar (only when an actual file is selected in Changes view) */}
       {mode === "changes" && selectedFile && (
         <div className="diff-panel__statusbar">
-          <span className="diff-panel__meta">{language} {"\u00B7"} {fileName} {"\u00B7"} {lineEndingLabel}</span>
+          <span className="diff-panel__meta">{statusBarMeta}</span>
         </div>
       )}
     </div>
