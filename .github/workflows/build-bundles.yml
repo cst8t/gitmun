@@ -238,9 +238,15 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.cst8t.gitmun.yml
-          bundle: src-tauri/target/release/bundle/flatpak/gitmun.flatpak
+          bundle: gitmun.flatpak
           cache-key: flatpak-builder-${{ github.sha }}
-          upload-artifact: false
+          upload-artifact: true
+
+      - name: Stage Flatpak bundle for release upload
+        run: |
+          set -euo pipefail
+          mkdir -p src-tauri/target/release/bundle/flatpak
+          mv -f gitmun.flatpak src-tauri/target/release/bundle/flatpak/gitmun.flatpak
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v4
