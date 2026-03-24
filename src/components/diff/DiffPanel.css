@@ -17,18 +17,26 @@
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .diff-panel__filename {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   font-weight: 500;
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .diff-panel__stats {
-  margin-left: auto;
+  margin-left: 8px;
   font-size: var(--font-size-xs);
   font-family: var(--font-mono);
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .diff-panel__stat-add { color: var(--green); }
@@ -38,7 +46,9 @@
 .diff-panel__view-toggle {
   display: flex;
   gap: 2px;
-  margin-left: 8px;
+  margin-left: auto;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .diff-panel__view-btn {
@@ -46,10 +56,17 @@
   border: none;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  padding: 3px 8px;
+  padding: 3px 6px;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-family: var(--font-ui);
+  white-space: nowrap;
+}
+
+.diff-panel__view-btn:first-child {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .diff-panel__view-btn:disabled {
@@ -216,4 +233,15 @@
 
 .diff-panel__react-diff .diff-gutter {
   color: var(--text-muted);
+}
+
+@media (max-width: 1400px) {
+  .diff-panel__view-btn {
+    font-size: 11px;
+    padding: 2px 5px;
+  }
+
+  .diff-panel__view-btn:first-child {
+    max-width: 104px;
+  }
 }

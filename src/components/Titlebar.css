@@ -74,6 +74,7 @@
 .titlebar__actions {
   display: flex;
   gap: 2px;
+  min-width: 0;
 }
 
 .titlebar__action-btn {
@@ -87,6 +88,8 @@
   font-size: 12px;
   font-weight: 500;
   transition: all 0.15s;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .titlebar__action-btn:hover {
@@ -123,6 +126,11 @@
   padding: 0 5px;
   border-radius: 10px;
   line-height: 16px;
+}
+
+.titlebar__btn-label {
+  min-width: 0;
+  white-space: nowrap;
 }
 
 .titlebar__search {
@@ -202,12 +210,14 @@
 .titlebar__open-menu {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
+  right: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 4px;
   min-width: 180px;
+  max-width: min(420px, calc(100vw - 16px));
+  box-sizing: border-box;
   z-index: 100;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
 }
@@ -231,6 +241,9 @@
 
 .titlebar__open-menu-item--recent {
   font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .titlebar__open-menu-sep {
@@ -277,3 +290,56 @@
   border: none;
 }
 
+@media (max-width: 1620px) {
+  .titlebar {
+    gap: 8px;
+  }
+
+  .titlebar__action-btn,
+  .titlebar__icon-btn--labeled {
+    padding: 4px 8px;
+    gap: 4px;
+  }
+
+  .titlebar__search {
+    width: 164px;
+  }
+
+  .titlebar__search--active {
+    width: 196px;
+  }
+}
+
+@media (max-width: 1480px) {
+  .titlebar__repo-dir {
+    display: none;
+  }
+
+  .titlebar__repo {
+    max-width: 250px;
+    min-width: 0;
+  }
+
+  .titlebar__repo-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+@media (max-width: 1360px) {
+  .titlebar__action-btn,
+  .titlebar__icon-btn--labeled {
+    padding: 4px 6px;
+    gap: 3px;
+    font-size: 11px;
+  }
+
+  .titlebar__search {
+    width: 142px;
+  }
+
+  .titlebar__search--active {
+    width: 170px;
+  }
+}
