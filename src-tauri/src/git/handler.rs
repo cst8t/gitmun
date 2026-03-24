@@ -351,11 +351,11 @@ impl GitService {
     }
 
     pub fn get_repo_status(&self, request: RepoRequest) -> GitResult<RepoStatus> {
-        self.cli_handler.get_repo_status(&request)
+        self.active_read_handler().get_repo_status(&request)
     }
 
     pub fn get_commit_markers(&self, request: RepoRequest) -> GitResult<CommitMarkers> {
-        self.cli_handler.get_commit_markers(&request)
+        self.active_read_handler().get_commit_markers(&request)
     }
 
     pub fn get_commit_files(&self, request: CommitFilesRequest) -> GitResult<Vec<CommitFileItem>> {
@@ -367,7 +367,7 @@ impl GitService {
     }
 
     pub fn get_branches(&self, request: RepoRequest) -> GitResult<Vec<BranchInfo>> {
-        self.cli_handler.get_branches(&request)
+        self.active_read_handler().get_branches(&request)
     }
 
     pub fn create_branch(&self, request: CreateBranchRequest) -> GitResult<OperationResult> {
