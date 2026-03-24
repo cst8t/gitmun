@@ -539,6 +539,38 @@ impl GixGitHandler {
         conflicts
     }
 
+    fn parse_numstat(output: &str) -> HashMap<String, (u32, u32)> {
+        let mut stats = HashMap::new();
+        for line in output.lines().filter(|line| !line.trim().is_empty()) {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let additions = parts[0].parse::<u32>().unwrap_or(0);
+            let deletions = parts[1].parse::<u32>().unwrap_or(0);
+            let path = parts[2].trim();
+            stats.insert(path.to_string(), (additions, deletions));
+        }
+        stats
+    }
+
+    fn collect_numstat(repo_path: &Path, staged: bool) -> HashMap<String, (u32, u32)> {
+        let mut command = std::process::Command::new("git");
+        command.arg("-c").arg("core.quotepath=false").arg("diff");
+        if staged {
+            command.arg("--cached");
+        }
+        command.arg("--numstat").current_dir(repo_path);
+
+        let output = match command.output() {
+            Ok(output) if output.status.success() => output,
+            _ => return HashMap::new(),
+        };
+
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Self::parse_numstat(&stdout)
+    }
+
     fn detect_rebase_onto(git_dir: &Path) -> Option<String> {
         for dir_name in ["rebase-merge", "rebase-apply"] {
             let onto_path = git_dir.join(dir_name).join("onto");
@@ -622,6 +654,24 @@ impl GixGitHandler {
             })
             .collect();
         staged_files.sort_by(|left, right| left.path.cmp(&right.path));
+
+        let repo_path = repo.workdir().unwrap_or(repo.path());
+        let unstaged_stats = Self::collect_numstat(repo_path, false);
+        let staged_stats = Self::collect_numstat(repo_path, true);
+
+        for file in &mut changed_files {
+            if let Some((additions, deletions)) = unstaged_stats.get(&file.path) {
+                file.additions = Some(*additions);
+                file.deletions = Some(*deletions);
+            }
+        }
+
+        for file in &mut staged_files {
+            if let Some((additions, deletions)) = staged_stats.get(&file.path) {
+                file.additions = Some(*additions);
+                file.deletions = Some(*deletions);
+            }
+        }
 
         let mut unversioned_files: Vec<String> = unversioned_paths.into_iter().collect();
         unversioned_files.sort();

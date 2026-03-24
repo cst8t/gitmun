@@ -1273,7 +1273,12 @@ impl GitOperationHandler for CliGitHandler {
             });
         }
 
-        if output.contains("Binary files") {
+        let is_binary_diff = output
+            .lines()
+            .any(|line| line.starts_with("Binary files ") && line.ends_with(" differ"))
+            || output.lines().any(|line| line.trim() == "GIT binary patch");
+
+        if is_binary_diff {
             return Ok(FileDiff {
                 file_path: file_path.to_string(),
                 hunks: Vec::new(),
