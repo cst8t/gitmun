@@ -96,18 +96,6 @@ impl CliGitHandler {
         }
     }
 
-    /// Like `run_git` but prepends owned override strings (e.g. `-c key=val`).
-    fn run_git_with_overrides(
-        overrides: &[String],
-        args: &[&str],
-        current_dir: Option<&Path>,
-    ) -> GitResult<String> {
-        let prefix: Vec<&str> = overrides.iter().map(String::as_str).collect();
-        let mut all: Vec<&str> = prefix;
-        all.extend_from_slice(args);
-        Self::run_git(&all, current_dir)
-    }
-
     /// Spawns a command asynchronously and waits for completion on a background thread.
     /// This prevents long-running GUI tools from blocking the Tauri command handler.
     fn spawn_command_and_reap(mut command: Command, command_label: String) -> GitResult<()> {
@@ -650,7 +638,7 @@ impl CliGitHandler {
     ) -> GitResult<()> {
         let lower = tool_name.to_lowercase();
 
-        let mut command = match lower.as_str() {
+        let command = match lower.as_str() {
             "meld" => {
                 let mut cmd = Command::new("meld");
                 Self::configure_command(&mut cmd);
