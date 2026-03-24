@@ -16,10 +16,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -116,7 +116,7 @@ jobs:
           )
 
       - name: Upload Linux artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-bundles
           path: |
@@ -178,10 +178,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Download Linux artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: linux-bundles
           path: ./linux-bundles
@@ -255,7 +255,7 @@ jobs:
           mv -f gitmun.flatpak src-tauri/target/release/bundle/flatpak/gitmun.flatpak
 
       - name: Upload Flatpak artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: linux-flatpak
           path: src-tauri/target/release/bundle/flatpak/*.flatpak
@@ -292,15 +292,14 @@ jobs:
 
   windows-nsis-cross:
     name: Windows NSIS (cross-compiled on Linux)
-    needs: linux-bundles
     runs-on: ubuntu-22.04
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -367,7 +366,7 @@ jobs:
             --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
 
       - name: Upload Windows artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: windows-nsis
           path: |
@@ -376,15 +375,14 @@ jobs:
 
   macos-bundles:
     name: macOS (dmg, app updater)
-    needs: windows-nsis-cross
     runs-on: macos-latest
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 20
           cache: npm
@@ -458,7 +456,7 @@ jobs:
             --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"icon":["icons/icon.icns","icons/icon.png","icons/icon.ico"]}}'
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: macos-bundles
           path: |
