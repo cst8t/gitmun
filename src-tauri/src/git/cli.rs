@@ -108,6 +108,38 @@ impl CliGitHandler {
         Self::run_git(&all, current_dir)
     }
 
+    /// Spawns a command asynchronously and waits for completion on a background thread.
+    /// This prevents long-running GUI tools from blocking the Tauri command handler.
+    fn spawn_command_and_reap(mut command: Command, command_label: String) -> GitResult<()> {
+        command
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        let mut child = command.spawn()?;
+        std::thread::spawn(move || {
+            if let Err(error) = child.wait() {
+                eprintln!("Failed waiting for spawned command `{command_label}`: {error}");
+            }
+        });
+        Ok(())
+    }
+
+    /// Like `run_git_with_overrides` but launches git asynchronously.
+    fn spawn_git_with_overrides(
+        overrides: &[String],
+        args: &[&str],
+        current_dir: Option<&Path>,
+    ) -> GitResult<()> {
+        let mut command = Command::new("git");
+        Self::configure_command(&mut command);
+        command.args(overrides.iter().map(String::as_str)).args(args);
+        if let Some(path) = current_dir {
+            command.current_dir(path);
+        }
+        let joined_args = args.join(" ");
+        Self::spawn_command_and_reap(command, format!("git {joined_args}"))
+    }
+
     /// Like `run_git_allow_exit_codes` but prepends owned override strings.
     fn run_git_with_overrides_allow_exit_codes(
         overrides: &[String],
@@ -649,16 +681,7 @@ impl CliGitHandler {
             }
         };
 
-        let output = command.output()?;
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
-            return Err(GitError::CommandFailed {
-                command: "external diff tool".to_string(),
-                stderr,
-            });
-        }
-
-        Ok(())
+        Self::spawn_command_and_reap(command, "external diff tool".to_string())
     }
 
     /// Returns an error if the repository's HEAD ref is broken (e.g. from an
@@ -852,11 +875,11 @@ impl GitOperationHandler for CliGitHandler {
             "--",
             file_path,
         ];
-        let output = Self::run_git_with_overrides(&overrides, &args, Some(&repo_path))?;
+        Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path))?;
 
         Ok(OperationResult {
             message: format!("Opened external diff for {file_path}"),
-            output: (!output.is_empty()).then_some(output),
+            output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
         })
@@ -870,7 +893,6 @@ impl GitOperationHandler for CliGitHandler {
             return Err(GitError::InvalidInput("File path is required".to_string()));
         }
 
-        let mut output: Option<String> = None;
         if request.staged {
             let tool_name = Self::require_configured_diff_tool(&repo_path)?;
             let overrides = Self::difftool_cmd_overrides(&tool_name);
@@ -883,8 +905,7 @@ impl GitOperationHandler for CliGitHandler {
                 "--",
                 file_path,
             ];
-            let command_output = Self::run_git_with_overrides(&overrides, &args, Some(&repo_path))?;
-            output = (!command_output.is_empty()).then_some(command_output);
+            Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path))?;
         } else {
             let working_tree_path = repo_path.join(file_path);
             if !working_tree_path.exists() {
@@ -913,7 +934,7 @@ impl GitOperationHandler for CliGitHandler {
 
         Ok(OperationResult {
             message: format!("Opened diff for {file_path}"),
-            output,
+            output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
         })
