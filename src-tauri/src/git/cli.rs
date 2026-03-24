@@ -16,11 +16,11 @@ use super::types::{
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff,
     FileRequest, FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope,
-    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
-    PushRequest, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
-    RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, TagInfo,
+    LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
+    PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo,
+    RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus,
+    ResetMode, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo,
 };
 
 pub struct CliGitHandler;
@@ -1140,6 +1140,7 @@ impl GitOperationHandler for CliGitHandler {
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff> {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
+        let line_ending = Self::detect_line_ending(&repo_path, file_path, request.staged);
 
         let mut args = vec!["diff"];
         if request.staged {
@@ -1158,33 +1159,43 @@ impl GitOperationHandler for CliGitHandler {
             Err(error) => return Err(error),
         };
 
-        // If we got no diff output, the file may be untracked (unstaged new file) or a newly
-        // staged file that has no prior version. Try git diff --no-index /dev/null <file> to
-        // render all lines as additions.
+        // If we got no diff output, only synthesize an all-added diff for files that are truly
+        // new (untracked in working tree, or added in index). Otherwise leave it empty.
         let output = if output.is_empty() {
-            let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
-            let full_path = repo_path.join(file_path);
-            let full_path_str = full_path.to_string_lossy().into_owned();
-
-            // For staged new files use git show :file to read the index version
             if request.staged {
-                let index_ref = format!(":{}", file_path);
-                match Self::run_git(&["show", &index_ref], Some(&repo_path)) {
-                    Ok(content) => {
-                        // Build a synthetic diff from the index content
-                        return Ok(Self::synthetic_new_file_diff(file_path, &content));
+                if Self::is_added_in_index(&repo_path, file_path) {
+                    let index_ref = format!(":{}", file_path);
+                    match Self::run_git(&["show", &index_ref], Some(&repo_path)) {
+                        Ok(content) => {
+                            // Build a synthetic diff from the index content for newly added files.
+                            return Ok(Self::synthetic_new_file_diff(
+                                file_path,
+                                &content,
+                                line_ending,
+                            ));
+                        }
+                        Err(_) => String::new(),
                     }
-                    Err(_) => String::new(),
+                } else {
+                    String::new()
                 }
             } else {
-                // Untracked file: diff against /dev/null (exits 1 when differences found)
-                match Self::run_git_allow_exit_codes(
-                    &["diff", "--no-index", "--", null_device, &full_path_str],
-                    Some(&repo_path),
-                    &[1],
-                ) {
-                    Ok(diff_output) if !diff_output.is_empty() => diff_output,
-                    _ => String::new(),
+                if Self::is_untracked_file(&repo_path, file_path) {
+                    let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
+                    let full_path = repo_path.join(file_path);
+                    let full_path_str = full_path.to_string_lossy().into_owned();
+
+                    // Untracked file: diff against /dev/null (exits 1 when differences found)
+                    match Self::run_git_allow_exit_codes(
+                        &["diff", "--no-index", "--", null_device, &full_path_str],
+                        Some(&repo_path),
+                        &[1],
+                    ) {
+                        Ok(diff_output) if !diff_output.is_empty() => diff_output,
+                        _ => String::new(),
+                    }
+                } else {
+                    String::new()
                 }
             }
         } else {
@@ -1196,6 +1207,7 @@ impl GitOperationHandler for CliGitHandler {
                 file_path: file_path.to_string(),
                 hunks: Vec::new(),
                 is_binary: false,
+                line_ending,
             });
         }
 
@@ -1204,6 +1216,7 @@ impl GitOperationHandler for CliGitHandler {
                 file_path: file_path.to_string(),
                 hunks: Vec::new(),
                 is_binary: true,
+                line_ending,
             });
         }
 
@@ -1213,6 +1226,7 @@ impl GitOperationHandler for CliGitHandler {
             file_path: file_path.to_string(),
             hunks,
             is_binary: false,
+            line_ending,
         })
     }
 
@@ -2622,10 +2636,136 @@ impl GitOperationHandler for CliGitHandler {
 }
 
 impl CliGitHandler {
+    fn parse_line_ending_token(token: &str) -> Option<LineEndingStyle> {
+        match token {
+            "lf" => Some(LineEndingStyle::Lf),
+            "crlf" => Some(LineEndingStyle::Crlf),
+            "mixed" => Some(LineEndingStyle::Mixed),
+            _ => None,
+        }
+    }
+
+    fn detect_line_ending_from_ls_files(
+        repo_path: &Path,
+        file_path: &str,
+        staged: bool,
+    ) -> Option<LineEndingStyle> {
+        let output = Self::run_git(&["ls-files", "--eol", "--", file_path], Some(repo_path)).ok()?;
+        let first_line = output.lines().find(|line| !line.trim().is_empty())?;
+
+        let prefix = if staged { "i/" } else { "w/" };
+        let token = first_line
+            .split_whitespace()
+            .find_map(|part| part.strip_prefix(prefix))?;
+
+        Self::parse_line_ending_token(token)
+    }
+
+    fn detect_line_ending_from_bytes(bytes: &[u8]) -> Option<LineEndingStyle> {
+        if bytes.is_empty() || bytes.contains(&0) {
+            return None;
+        }
+
+        let mut lf_count = 0usize;
+        let mut crlf_count = 0usize;
+
+        let mut idx = 0usize;
+        while idx < bytes.len() {
+            if bytes[idx] == b'\n' {
+                if idx > 0 && bytes[idx - 1] == b'\r' {
+                    crlf_count += 1;
+                } else {
+                    lf_count += 1;
+                }
+            }
+            idx += 1;
+        }
+
+        match (crlf_count > 0, lf_count > 0) {
+            (true, false) => Some(LineEndingStyle::Crlf),
+            (false, true) => Some(LineEndingStyle::Lf),
+            (true, true) => Some(LineEndingStyle::Mixed),
+            (false, false) => None,
+        }
+    }
+
+    fn detect_line_ending_from_file(repo_path: &Path, file_path: &str) -> Option<LineEndingStyle> {
+        let full_path = repo_path.join(file_path);
+        let bytes = fs::read(full_path).ok()?;
+        Self::detect_line_ending_from_bytes(&bytes)
+    }
+
+    fn detect_line_ending(repo_path: &Path, file_path: &str, staged: bool) -> LineEndingStyle {
+        Self::detect_line_ending_from_ls_files(repo_path, file_path, staged)
+            .or_else(|| {
+                if staged {
+                    None
+                } else {
+                    Self::detect_line_ending_from_file(repo_path, file_path)
+                }
+            })
+            .unwrap_or(LineEndingStyle::Unknown)
+    }
+
+    fn is_untracked_file(repo_path: &Path, file_path: &str) -> bool {
+        let output = match Self::run_git(
+            &["-c", "core.quotepath=false", "status", "--porcelain=v1", "--", file_path],
+            Some(repo_path),
+        ) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+
+        output
+            .lines()
+            .any(|line| line.strip_prefix("?? ").map(|path| path.trim() == file_path).unwrap_or(false))
+    }
+
+    fn is_added_in_index(repo_path: &Path, file_path: &str) -> bool {
+        let output = match Self::run_git(
+            &[
+                "-c",
+                "core.quotepath=false",
+                "diff",
+                "--cached",
+                "--name-status",
+                "--no-renames",
+                "--",
+                file_path,
+            ],
+            Some(repo_path),
+        ) {
+            Ok(value) => value,
+            Err(_) => return false,
+        };
+
+        output.lines().any(|line| {
+            let mut parts = line.splitn(2, '\t');
+            let status = parts.next().unwrap_or_default().trim();
+            let path = parts.next().unwrap_or_default().trim();
+            status.starts_with('A') && path == file_path
+        })
+    }
+
+    fn split_content_lines_for_display<'a>(
+        content: &'a str,
+        line_ending: LineEndingStyle,
+    ) -> Vec<&'a str> {
+        if matches!(line_ending, LineEndingStyle::Crlf) && content.contains("\r\n") {
+            content.split_terminator("\r\n").collect()
+        } else {
+            content.lines().collect()
+        }
+    }
+
     /// Build a FileDiff from raw file content where every line is an addition.
     /// Used for newly staged files (no prior version in the index or working tree).
-    fn synthetic_new_file_diff(file_path: &str, content: &str) -> FileDiff {
-        let lines: Vec<&str> = content.lines().collect();
+    fn synthetic_new_file_diff(
+        file_path: &str,
+        content: &str,
+        line_ending: LineEndingStyle,
+    ) -> FileDiff {
+        let lines = Self::split_content_lines_for_display(content, line_ending);
         let line_count = lines.len();
 
         let diff_lines: Vec<DiffLine> = lines
@@ -2649,6 +2789,7 @@ impl CliGitHandler {
             file_path: file_path.to_string(),
             hunks: vec![hunk],
             is_binary: false,
+            line_ending,
         }
     }
 

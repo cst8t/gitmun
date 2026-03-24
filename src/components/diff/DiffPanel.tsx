@@ -105,6 +105,14 @@ export function DiffPanel({
       default: return "Text";
     }
   })();
+  const lineEndingLabel = (() => {
+    switch (diff?.lineEnding) {
+      case "lf": return "LF";
+      case "crlf": return "CRLF";
+      case "mixed": return "Mixed EOL";
+      default: return "Unknown EOL";
+    }
+  })();
   const statusLetter = (status: string) => {
     const s = status.toLowerCase();
     if (s.startsWith("add")) return "A";
@@ -288,7 +296,7 @@ export function DiffPanel({
       {/* Status bar (only when an actual file is selected in Changes view) */}
       {mode === "changes" && selectedFile && (
         <div className="diff-panel__statusbar">
-          <span className="diff-panel__meta">{language} {"\u00B7"} {fileName}</span>
+          <span className="diff-panel__meta">{language} {"\u00B7"} {fileName} {"\u00B7"} {lineEndingLabel}</span>
         </div>
       )}
     </div>
