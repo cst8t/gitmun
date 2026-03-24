@@ -14,6 +14,7 @@ export function useGitDiff(repoPath: string | null, filePath: string | null, sta
     }
 
     let cancelled = false;
+    setDiff(null);
     setLoading(true);
     setError(null);
 

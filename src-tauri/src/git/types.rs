@@ -359,6 +359,7 @@ pub struct FileDiff {
     pub hunks: Vec<DiffHunk>,
     pub is_binary: bool,
     pub line_ending: LineEndingStyle,
+    pub detected_file_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
