@@ -6,8 +6,7 @@ gitmun is a desktop Git client built with Tauri (Rust + React/TypeScript).
 
 ## Get gitmun
 
-- Download info: https://gitmun.org
-- Flatpak: https://gitmun.org
+- Releases: https://github.com/cst8t/gitmun/releases
 
 ## What it does
 
