@@ -206,7 +206,32 @@ jobs:
               echo "Unable to locate data.tar* payload in ${DEB_FILE}" >&2
               exit 1
             fi
-            ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -f - -C packaging/flatpak/rootfs
+            case "$DATA_MEMBER" in
+              *.tar)
+                ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -f - -C packaging/flatpak/rootfs
+                ;;
+              *.tar.gz|*.tgz)
+                ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -z -f - -C packaging/flatpak/rootfs
+                ;;
+              *.tar.xz)
+                ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -J -f - -C packaging/flatpak/rootfs
+                ;;
+              *.tar.bz2)
+                ar p "$DEB_FILE" "$DATA_MEMBER" | tar -x -j -f - -C packaging/flatpak/rootfs
+                ;;
+              *.tar.zst)
+                if command -v zstd >/dev/null 2>&1; then
+                  ar p "$DEB_FILE" "$DATA_MEMBER" | zstd -d -c | tar -x -f - -C packaging/flatpak/rootfs
+                else
+                  echo "data.tar.zst found, but zstd is unavailable in Flatpak container." >&2
+                  exit 1
+                fi
+                ;;
+              *)
+                echo "Unsupported .deb payload member: ${DATA_MEMBER}" >&2
+                exit 1
+                ;;
+            esac
           fi
 
       - name: Build Flatpak bundle
