@@ -108,10 +108,10 @@ export function Titlebar({
 
       {/* New / clone / open repo */}
       <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title="Initialize a repository">
-        <GitIcon /><span>New</span>
+        <GitIcon /><span className="titlebar__btn-label">New</span>
       </div>
       <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onCloneClick} title="Clone a repository">
-        <CopyIcon /><span>Clone</span>
+        <CopyIcon /><span className="titlebar__btn-label">Clone</span>
       </div>
       <OpenDropdown
         repoPath={repoPath}
@@ -195,7 +195,7 @@ function OpenDropdown({ repoPath, recentRepos, onOpenExistingClick, onRepoSelect
         title="Open a repository"
       >
         <FolderIcon />
-        <span>Open</span>
+        <span className="titlebar__btn-label">Open</span>
         <ChevDownIcon />
       </div>
       {open && (
@@ -239,7 +239,7 @@ function ActionBtn({ icon, label, badge, onClick, disabled, loading, title }: {
       title={title}
     >
       {loading ? <span className="titlebar__btn-spinner" /> : icon}
-      <span>{label}</span>
+      <span className="titlebar__btn-label">{label}</span>
       {!loading && badge && <span className="titlebar__badge">{badge}</span>}
     </div>
   );

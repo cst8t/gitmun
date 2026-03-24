@@ -12,6 +12,8 @@
   align-items: stretch;
   height: var(--panel-header-height);
   border-bottom: 1px solid var(--border);
+  gap: 2px;
+  padding: 0 4px;
 }
 
 .sidebar__tab {
@@ -26,11 +28,15 @@
   font-size: var(--font-size-xs);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
-  padding: 0;
+  letter-spacing: 0.04em;
+  padding: 0 4px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   font-family: var(--font-ui);
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .sidebar__tab--active {
@@ -290,3 +296,10 @@
   color: #fff;
 }
 
+@media (max-width: 1400px) {
+  .sidebar__tab {
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    padding: 0 2px;
+  }
+}
