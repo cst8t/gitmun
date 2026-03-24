@@ -205,10 +205,13 @@ export type DiffHunk = {
   lines: DiffLine[];
 };
 
+export type LineEndingStyle = "lf" | "crlf" | "mixed" | "unknown";
+
 export type FileDiff = {
   filePath: string;
   hunks: DiffHunk[];
   isBinary: boolean;
+  lineEnding: LineEndingStyle;
 };
 
 export type BranchInfo = {

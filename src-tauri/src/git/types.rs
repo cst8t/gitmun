@@ -358,6 +358,16 @@ pub struct FileDiff {
     pub file_path: String,
     pub hunks: Vec<DiffHunk>,
     pub is_binary: bool,
+    pub line_ending: LineEndingStyle,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LineEndingStyle {
+    Lf,
+    Crlf,
+    Mixed,
+    Unknown,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
