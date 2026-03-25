@@ -835,6 +835,25 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         let mut args = vec!["commit", "-m", message];
+        let commit_gpgsign = Self::run_git_allow_exit_codes(
+            &["config", "--get", "commit.gpgsign"],
+            Some(&repo_path),
+            &[1],
+        )
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase());
+        let has_signing_key = Self::run_git(&["config", "--get", "user.signingkey"], Some(&repo_path))
+            .map(|value| !value.trim().is_empty())
+            .unwrap_or(false);
+        let should_sign = match commit_gpgsign.as_deref() {
+            Some("false") | Some("0") | Some("no") | Some("off") => false,
+            Some("true") | Some("1") | Some("yes") | Some("on") => true,
+            Some(_) => true,
+            None => has_signing_key,
+        };
+        if should_sign {
+            args.push("-S");
+        }
         if request.amend == Some(true) {
             args.push("--amend");
         }
@@ -1655,6 +1674,17 @@ impl GitOperationHandler for CliGitHandler {
         set_or_unset("user.signingkey", &request.signing_key)?;
         set_or_unset("gpg.format", &request.signing_format)?;
         set_or_unset("gpg.ssh.allowedSignersFile", &request.ssh_key_path)?;
+        if let Some(signing_key) = request.signing_key.as_ref() {
+            let commit_gpgsign = if signing_key.trim().is_empty() {
+                "false"
+            } else {
+                "true"
+            };
+            Self::run_git(
+                &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
+                Some(&repo_path),
+            )?;
+        }
 
         Ok(OperationResult {
             message: "Git identity updated".to_string(),
