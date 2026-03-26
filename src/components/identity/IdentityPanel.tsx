@@ -47,6 +47,7 @@ export function IdentityPanel({
     signingKey: null,
     signingFormat: null,
     sshKeyPath: null,
+    commitSigningEnabled: false,
   };
 
   React.useEffect(() => {
@@ -58,14 +59,16 @@ export function IdentityPanel({
       localIdentity?.email ||
       localIdentity?.signingKey ||
       localIdentity?.signingFormat ||
-      localIdentity?.sshKeyPath
+      localIdentity?.sshKeyPath ||
+      localIdentity?.commitSigningEnabled
     );
     const globalHasAny = !!(
       globalIdentity?.name ||
       globalIdentity?.email ||
       globalIdentity?.signingKey ||
       globalIdentity?.signingFormat ||
-      globalIdentity?.sshKeyPath
+      globalIdentity?.sshKeyPath ||
+      globalIdentity?.commitSigningEnabled
     );
 
     // Prefer repo-local when it's configured; otherwise default to global.
@@ -98,9 +101,10 @@ export function IdentityPanel({
         signingKey: displayIdentity.signingKey ?? "",
         signingFormat: displayIdentity.signingFormat ?? "",
         sshKeyPath: displayIdentity.sshKeyPath ?? "",
+        commitSigningEnabled: displayIdentity.commitSigningEnabled ?? false,
       });
     }
-  }, [open, editMode, displayIdentity.name, displayIdentity.email, displayIdentity.signingKey, displayIdentity.signingFormat, displayIdentity.sshKeyPath]);
+  }, [open, editMode, displayIdentity.name, displayIdentity.email, displayIdentity.signingKey, displayIdentity.signingFormat, displayIdentity.sshKeyPath, displayIdentity.commitSigningEnabled]);
 
   if (!open) return null;
 
@@ -186,8 +190,8 @@ export function IdentityPanel({
                     <div className="identity-detail__signing-header">
                       <ShieldIcon />
                       <span className="identity-detail__signing-label">Commit Signing</span>
-                      <span className={`identity-detail__signing-badge ${displayIdentity.signingKey ? "identity-detail__signing-badge--enabled" : ""}`}>
-                        {displayIdentity.signingKey ? "enabled" : "disabled"}
+                      <span className={`identity-detail__signing-badge ${displayIdentity.commitSigningEnabled ? "identity-detail__signing-badge--enabled" : ""}`}>
+                        {displayIdentity.commitSigningEnabled ? "enabled" : "disabled"}
                       </span>
                     </div>
                     {displayIdentity.signingKey && (
@@ -246,6 +250,19 @@ export function IdentityPanel({
                   <div className="identity-detail__field">
                     <label className="identity-detail__label">Signing Configuration</label>
                     <div className="identity-detail__signing-form">
+                      <label className="identity-detail__toggle-row">
+                        <span className="identity-detail__form-label">commit.gpgsign</span>
+                        <input
+                          type="checkbox"
+                          className="identity-detail__toggle-input"
+                          checked={!!editFormData.commitSigningEnabled}
+                          onChange={(e) =>
+                            setEditFormData({ ...editFormData, commitSigningEnabled: e.target.checked })
+                          }
+                          disabled={isSaving}
+                        />
+                      </label>
+
                       <div className="identity-detail__form-group">
                         <label className="identity-detail__form-label">user.signingkey</label>
                         <input
@@ -253,7 +270,13 @@ export function IdentityPanel({
                           className="identity-detail__input"
                           value={editFormData.signingKey ?? ""}
                           onChange={(e) =>
-                            setEditFormData({ ...editFormData, signingKey: e.target.value })
+                            setEditFormData({
+                              ...editFormData,
+                              signingKey: e.target.value,
+                              commitSigningEnabled: e.target.value.trim()
+                                ? true
+                                : editFormData.commitSigningEnabled,
+                            })
                           }
                           disabled={isSaving}
                           placeholder="GPG key ID or SSH key"
@@ -270,6 +293,9 @@ export function IdentityPanel({
                             setEditFormData({
                               ...editFormData,
                               signingFormat: e.target.value,
+                              commitSigningEnabled: e.target.value.trim()
+                                ? true
+                                : editFormData.commitSigningEnabled,
                             })
                           }
                           disabled={isSaving}
@@ -284,7 +310,13 @@ export function IdentityPanel({
                           className="identity-detail__input"
                           value={editFormData.sshKeyPath ?? ""}
                           onChange={(e) =>
-                            setEditFormData({ ...editFormData, sshKeyPath: e.target.value })
+                            setEditFormData({
+                              ...editFormData,
+                              sshKeyPath: e.target.value,
+                              commitSigningEnabled: e.target.value.trim()
+                                ? true
+                                : editFormData.commitSigningEnabled,
+                            })
                           }
                           disabled={isSaving}
                           placeholder="Path to allowed signers file"

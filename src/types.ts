@@ -299,6 +299,7 @@ export type GitIdentity = {
   signingKey: string | null;
   signingFormat: string | null;
   sshKeyPath: string | null;
+  commitSigningEnabled: boolean;
 };
 
 export type SetIdentityRequest = {
@@ -309,6 +310,7 @@ export type SetIdentityRequest = {
   signingKey?: string | null;
   signingFormat?: string | null;
   sshKeyPath?: string | null;
+  commitSigningEnabled?: boolean;
 };
 
 export type TagInfo = {
