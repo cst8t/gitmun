@@ -54,6 +54,7 @@ export function SettingsWindow() {
   const useNativeWindowBar = true;
   const [backendMode, setBackendMode] = useState<BackendMode>("Default");
   const [themeMode, setThemeMode] = useState<ThemeMode>("System");
+  const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
   const [avatarProvider, setAvatarProvider] = useState<AvatarProviderMode>("Libravatar");
   const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
@@ -104,6 +105,7 @@ export function SettingsWindow() {
         const settings = await invoke<Settings>("get_settings");
         setBackendMode(settings.backendMode);
         setThemeMode(settings.themeMode);
+        setWrapDiffLines(settings.wrapDiffLines ?? false);
         setOpenResultLogOnLaunch(settings.showResultLog);
         setAvatarProvider(settings.avatarProvider);
         setTryPlatformFirst(settings.tryPlatformFirst);
@@ -140,6 +142,7 @@ export function SettingsWindow() {
       await invoke("set_backend_mode", { mode: backendMode });
       await invoke("set_show_result_log", { showResultLog: openResultLogOnLaunch });
       await invoke<Settings>("set_theme_mode", { themeMode });
+      await invoke<Settings>("set_wrap_diff_lines", { wrapDiffLines });
       await invoke("set_avatar_provider", { avatarProvider });
       await invoke("set_try_platform_first", { tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst });
       await invoke("set_default_clone_dir", { defaultCloneDir });
@@ -167,6 +170,7 @@ export function SettingsWindow() {
     backendMode,
     themeMode,
     openResultLogOnLaunch,
+    wrapDiffLines,
     avatarProvider,
     tryPlatformFirst,
     defaultCloneDir,
@@ -364,6 +368,21 @@ export function SettingsWindow() {
               <option value="Light">Light</option>
               <option value="Dark">Dark</option>
             </select>
+          </div>
+
+          <div className="settings-window__row">
+            <label className="settings-window__label">Diff panel</label>
+            <label className="settings-window__switch-row">
+              <span className="settings-window__switch">
+                <input
+                  type="checkbox"
+                  checked={wrapDiffLines}
+                  onChange={e => setWrapDiffLines(e.target.checked)}
+                />
+                <span className="settings-window__switch-track" />
+              </span>
+              <span className="settings-window__switch-label">Wrap long lines in diff view</span>
+            </label>
           </div>
 
           <div className="settings-window__row">

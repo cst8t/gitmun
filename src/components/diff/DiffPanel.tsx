@@ -53,6 +53,7 @@ type DiffPanelProps = {
   onOpenCommitFileDiff: (filePath: string) => void;
   hunkAction: "stage" | "unstage" | null;
   hunkActionBusy: boolean;
+  wrapLines: boolean;
   onHunkAction: (hunkIndex: number) => void;
 };
 
@@ -69,6 +70,7 @@ export function DiffPanel({
   onOpenCommitFileDiff,
   hunkAction,
   hunkActionBusy,
+  wrapLines,
   onHunkAction,
 }: DiffPanelProps) {
   const [viewType, setViewType] = React.useState<ViewType>("unified");
@@ -250,7 +252,7 @@ export function DiffPanel({
             currentDiff.isBinary ? (
               <div className="diff-panel__placeholder">Binary file changed</div>
             ) : renderedHunks.length > 0 ? (
-              <div className="diff-panel__react-diff">
+              <div className={`diff-panel__react-diff ${wrapLines ? "diff-panel__react-diff--wrap" : ""}`}>
                 <Diff
                   viewType={viewType}
                   diffType={diffType}

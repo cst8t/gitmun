@@ -8,6 +8,7 @@ export type Settings = {
   backendMode: BackendMode;
   showResultLog: boolean;
   themeMode: ThemeMode;
+  wrapDiffLines: boolean;
   leftPaneWidth: number;
   rightPaneWidth: number;
   confirmRevert: boolean;

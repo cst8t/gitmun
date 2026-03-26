@@ -72,6 +72,8 @@ pub struct Settings {
     pub backend_mode: BackendMode,
     pub show_result_log: bool,
     pub theme_mode: ThemeMode,
+    #[serde(default)]
+    pub wrap_diff_lines: bool,
     pub left_pane_width: u32,
     pub right_pane_width: u32,
     #[serde(default = "Settings::default_confirm_revert")]
@@ -101,6 +103,7 @@ impl Default for Settings {
             backend_mode: BackendMode::Default,
             show_result_log: false,
             theme_mode: ThemeMode::System,
+            wrap_diff_lines: false,
             left_pane_width: 300,
             right_pane_width: 420,
             confirm_revert: true,
