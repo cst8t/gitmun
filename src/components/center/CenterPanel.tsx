@@ -45,6 +45,8 @@ type CenterPanelProps = {
   onUnstageFile: (path: string) => void;
   onUnstageFiles: (paths: string[]) => void;
   onDiscardFile: (path: string) => void;
+  onDiscardFiles: (paths: string[]) => void;
+  onDiscardAll: (paths: string[]) => void;
   onExternalDiff: (path: string, staged: boolean) => void;
   onStageAll: () => void;
   onUnstageAll: () => void;
@@ -157,6 +159,8 @@ export function CenterPanel(props: CenterPanelProps) {
           onUnstageFile={props.onUnstageFile}
           onUnstageFiles={props.onUnstageFiles}
           onDiscardFile={props.onDiscardFile}
+          onDiscardFiles={props.onDiscardFiles}
+          onDiscardAll={props.onDiscardAll}
           onExternalDiff={props.onExternalDiff}
           onStageAll={props.onStageAll}
           onUnstageAll={props.onUnstageAll}

@@ -158,7 +158,7 @@ export function ProjectView({
     centerTab === "log" ? selectedCommitHash : null,
   );
 
-  const [revertPendingFile, setRevertPendingFile] = useState<string | null>(null);
+  const [revertPendingPaths, setRevertPendingPaths] = useState<string[] | null>(null);
   const [mergePendingBranch, setMergePendingBranch] = useState<string | null>(null);
   const [renamePendingBranch, setRenamePendingBranch] = useState<string | null>(null);
   const [showAddRemoteDialog, setShowAddRemoteDialog] = useState(false);
@@ -397,19 +397,38 @@ export function ProjectView({
     } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Unstage failed: ${String(e)}`, "unknown"); }
   }, [repoPath, refreshStatus, showToast]);
 
-  const doRevertFile = useCallback(async (path: string) => {
+  const doRevertFiles = useCallback(async (paths: string[]) => {
     if (!repoPath) return;
     try {
-      const result = await api.discardFile(repoPath, path);
-      showToast(`Reverted ${path.split("/").pop()}`, "error");
-      appendResultLog("info", `Reverted changes in ${path}`, result.backendUsed);
+      let backendUsed = "unknown";
+      for (const path of paths) {
+        const result = await api.discardFile(repoPath, path);
+        backendUsed = result.backendUsed;
+      }
+      if (paths.length === 1) {
+        showToast(`Reverted ${paths[0].split("/").pop()}`, "error");
+        appendResultLog("info", `Reverted changes in ${paths[0]}`, backendUsed);
+      } else {
+        showToast(`Reverted ${paths.length} files`, "error");
+        appendResultLog("info", `Reverted changes in ${paths.length} files`, backendUsed);
+      }
       await refreshStatus();
     } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Revert failed: ${String(e)}`, "unknown"); }
   }, [repoPath, refreshStatus, showToast]);
 
   const handleDiscardFile = useCallback((path: string) => {
-    if (confirmRevert) { setRevertPendingFile(path); } else { doRevertFile(path); }
-  }, [confirmRevert, doRevertFile]);
+    if (confirmRevert) { setRevertPendingPaths([path]); } else { void doRevertFiles([path]); }
+  }, [confirmRevert, doRevertFiles]);
+
+  const handleDiscardFiles = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    if (confirmRevert || paths.length > 1) { setRevertPendingPaths(paths); } else { void doRevertFiles(paths); }
+  }, [confirmRevert, doRevertFiles]);
+
+  const handleDiscardAll = useCallback((paths: string[]) => {
+    if (paths.length === 0) return;
+    setRevertPendingPaths(paths);
+  }, []);
 
   const handleDismissNoDiffToolWarning = useCallback((dontShowAgain: boolean) => {
     setShowNoDiffToolWarning(false);
@@ -417,15 +436,15 @@ export function ProjectView({
   }, []);
 
   const handleRevertConfirm = useCallback(async (dontShowAgain: boolean) => {
-    const path = revertPendingFile;
-    setRevertPendingFile(null);
-    if (!path) return;
+    const paths = revertPendingPaths;
+    setRevertPendingPaths(null);
+    if (!paths) return;
     if (dontShowAgain) {
       onSetConfirmRevert(false);
       await api.setConfirmRevert(false).catch(() => {});
     }
-    await doRevertFile(path);
-  }, [revertPendingFile, doRevertFile, onSetConfirmRevert]);
+    await doRevertFiles(paths);
+  }, [revertPendingPaths, doRevertFiles, onSetConfirmRevert]);
 
   const handleStageAll = useCallback(async () => {
     if (!repoPath) return;
@@ -1462,11 +1481,11 @@ export function ProjectView({
         />
       )}
 
-      {revertPendingFile && (
+      {revertPendingPaths && (
         <ConfirmRevertDialog
-          filePath={revertPendingFile}
+          filePaths={revertPendingPaths}
           onConfirm={handleRevertConfirm}
-          onCancel={() => setRevertPendingFile(null)}
+          onCancel={() => setRevertPendingPaths(null)}
         />
       )}
 
@@ -1691,6 +1710,8 @@ export function ProjectView({
                   onUnstageFile={handleUnstageFile}
                   onUnstageFiles={handleUnstageFiles}
                   onDiscardFile={handleDiscardFile}
+                  onDiscardFiles={handleDiscardFiles}
+                  onDiscardAll={handleDiscardAll}
                   onExternalDiff={handleExternalDiff}
                   onStageAll={handleStageAll}
                   onUnstageAll={handleUnstageAll}

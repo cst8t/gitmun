@@ -99,6 +99,7 @@
 
 .staging__section-action--muted { color: var(--text-muted); }
 .staging__section-action--accent { color: var(--accent); }
+.staging__section-action--danger { color: var(--red); }
 
 .staging__empty {
   padding: 12px 8px;
