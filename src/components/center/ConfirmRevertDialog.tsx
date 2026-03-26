@@ -2,14 +2,15 @@ import React from "react";
 import "./ConfirmRevertDialog.css";
 
 type ConfirmRevertDialogProps = {
-  filePath: string;
+  filePaths: string[];
   onConfirm: (dontShowAgain: boolean) => void;
   onCancel: () => void;
 };
 
-export function ConfirmRevertDialog({ filePath, onConfirm, onCancel }: ConfirmRevertDialogProps) {
+export function ConfirmRevertDialog({ filePaths, onConfirm, onCancel }: ConfirmRevertDialogProps) {
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
-  const fileName = filePath.split("/").pop() ?? filePath;
+  const single = filePaths.length === 1;
+  const fileName = single ? (filePaths[0].split("/").pop() ?? filePaths[0]) : null;
 
   React.useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -25,16 +26,21 @@ export function ConfirmRevertDialog({ filePath, onConfirm, onCancel }: ConfirmRe
       <div className="dialog confirm-revert-dialog" role="dialog" aria-modal="true">
         <div className="confirm-revert-dialog__title">Revert changes?</div>
         <div className="confirm-revert-dialog__body">
-          All uncommitted changes to <span className="confirm-revert-dialog__filename">{fileName}</span> will be permanently lost.
+          {single
+            ? <>All uncommitted changes to <span className="confirm-revert-dialog__filename">{fileName}</span> will be permanently lost.</>
+            : <>All uncommitted changes to these <span className="confirm-revert-dialog__filename">{filePaths.length} files</span> will be permanently lost.</>
+          }
         </div>
-        <label className="confirm-revert-dialog__suppress">
-          <input
-            type="checkbox"
-            checked={dontShowAgain}
-            onChange={e => setDontShowAgain(e.target.checked)}
-          />
-          Don't show this again
-        </label>
+        {single && (
+          <label className="confirm-revert-dialog__suppress">
+            <input
+              type="checkbox"
+              checked={dontShowAgain}
+              onChange={e => setDontShowAgain(e.target.checked)}
+            />
+            Don't show this again
+          </label>
+        )}
         <div className="dialog__actions">
           <button className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
             Cancel

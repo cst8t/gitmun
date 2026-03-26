@@ -21,6 +21,8 @@ type StagingViewProps = {
   onUnstageFile: (path: string) => void;
   onUnstageFiles: (paths: string[]) => void;
   onDiscardFile: (path: string) => void;
+  onDiscardFiles: (paths: string[]) => void;
+  onDiscardAll: (paths: string[]) => void;
   onExternalDiff: (path: string, staged: boolean) => void;
   onStageAll: () => void;
   onUnstageAll: () => void;
@@ -49,7 +51,7 @@ export function StagingView({
   repoPath,
   stagedFiles, unstagedFiles, unversionedFiles, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
   selectedFile, onFileSelect, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
-  onDiscardFile, onExternalDiff, onStageAll, onUnstageAll, onCommit,
+  onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
   isCommitting, lastCommitMessage,
 }: StagingViewProps) {
@@ -302,6 +304,19 @@ export function StagingView({
             </span>
             {allUnstaged.length > 0 && (
               <div className="staging__section-actions">
+                <button
+                  className="staging__section-action staging__section-action--danger"
+                  onClick={() => onDiscardFiles(selectedUnstagedPaths)}
+                  disabled={selectedUnstagedPaths.length === 0}
+                >
+                  Revert Selected
+                </button>
+                <button
+                  className="staging__section-action staging__section-action--danger"
+                  onClick={() => onDiscardAll(allUnstaged.map(f => f.path))}
+                >
+                  Revert All
+                </button>
                 <button
                   className="staging__section-action staging__section-action--accent"
                   onClick={handleStageSelected}
