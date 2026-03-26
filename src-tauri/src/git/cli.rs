@@ -1448,6 +1448,42 @@ impl GitOperationHandler for CliGitHandler {
         })
     }
 
+    fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
+        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let file_path = request.file_path.trim();
+
+        // Get the staged diff for the file.
+        let diff_output = Self::run_git(&["diff", "--cached", "--", file_path], Some(&repo_path))?;
+
+        if diff_output.is_empty() {
+            return Err(GitError::InvalidInput(
+                "No staged changes for this file".to_string(),
+            ));
+        }
+
+        let header = Self::extract_diff_header(&diff_output);
+        let raw_hunks = Self::extract_raw_hunks(&diff_output);
+
+        if request.hunk_index >= raw_hunks.len() {
+            return Err(GitError::InvalidInput(format!(
+                "Hunk index {} out of range (file has {} hunks)",
+                request.hunk_index,
+                raw_hunks.len()
+            )));
+        }
+
+        // Reverse-apply the staged hunk to the index to unstage it.
+        let patch = format!("{}\n{}\n", header, raw_hunks[request.hunk_index]);
+        Self::run_git_with_stdin(&["apply", "-R", "--cached"], &repo_path, patch.as_bytes())?;
+
+        Ok(OperationResult {
+            message: format!("Unstaged hunk {} of {file_path}", request.hunk_index),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+        })
+    }
+
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();

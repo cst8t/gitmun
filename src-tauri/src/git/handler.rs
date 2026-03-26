@@ -44,6 +44,7 @@ pub trait GitOperationHandler: Send + Sync {
     fn unstage_all(&self, request: &RepoRequest) -> GitResult<OperationResult>;
     fn stage_all(&self, request: &RepoRequest) -> GitResult<OperationResult>;
     fn stage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult>;
+    fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult>;
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult>;
     fn fetch_remote(&self, request: &FetchRequest) -> GitResult<OperationResult>;
     fn stash(&self, request: &StashPushRequest) -> GitResult<OperationResult>;
@@ -291,6 +292,7 @@ impl GitService {
         fn unstage_all(request: RepoRequest) -> GitResult<OperationResult>;
         fn stage_all(request: RepoRequest) -> GitResult<OperationResult>;
         fn stage_hunk(request: HunkStageRequest) -> GitResult<OperationResult>;
+        fn unstage_hunk(request: HunkStageRequest) -> GitResult<OperationResult>;
         fn discard_file(request: FileRequest) -> GitResult<OperationResult>;
         fn fetch_remote(request: FetchRequest) -> GitResult<OperationResult>;
         fn stash(request: StashPushRequest) -> GitResult<OperationResult>;

@@ -38,6 +38,34 @@
   display: flex;
 }
 
+.app__pane--left-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+}
+
+.app__left-pane-toggle {
+  flex: 0 0 22px;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.15s, color 0.15s;
+}
+
+.app__left-pane-toggle:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.app__left-pane-toggle--hide {
+  border-right: none;
+  border-left: 1px solid var(--border);
+}
+
 .app__splitter {
   width: 6px;
   flex-shrink: 0;

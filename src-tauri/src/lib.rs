@@ -862,6 +862,17 @@ fn stage_hunk(
 }
 
 #[tauri::command]
+fn unstage_hunk(
+    request: HunkStageRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .unstage_hunk(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 fn discard_file(
     request: FileRequest,
     state: tauri::State<'_, AppState>,
@@ -1432,6 +1443,7 @@ pub fn run() {
             unstage_all,
             stage_all,
             stage_hunk,
+            unstage_hunk,
             discard_file,
             fetch_remote,
             stash,

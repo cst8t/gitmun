@@ -18,6 +18,7 @@ const SHOW_RESULT_LOG_KEY = "gitmun.showResultLog";
 const THEME_MODE_KEY = "gitmun.themeMode";
 const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
 const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
+const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
 const DEFAULT_LEFT_PANE_WIDTH = 300;
 const DEFAULT_RIGHT_PANE_WIDTH = 480;
 const DEFAULT_LEFT_PANE_RATIO = 0.22;
@@ -25,6 +26,8 @@ const DEFAULT_RIGHT_PANE_RATIO = 0.34;
 const MIN_LEFT_PANE_WIDTH = 220;
 const MIN_RIGHT_PANE_WIDTH = 360;
 const MIN_CENTER_PANE_WIDTH = 420;
+const SPLITTER_WIDTH = 6;
+const LEFT_PANE_TOGGLE_WIDTH = 22;
 const SPLITTER_SPACE = 12;
 
 function resolveTheme(mode: ThemeMode): "light" | "dark" {
@@ -137,6 +140,9 @@ export function App() {
 
   const [leftPaneWidth, setLeftPaneWidth] = useState<number>(DEFAULT_LEFT_PANE_WIDTH);
   const [rightPaneWidth, setRightPaneWidth] = useState<number>(DEFAULT_RIGHT_PANE_WIDTH);
+  const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(() => {
+    return localStorage.getItem(LEFT_PANE_COLLAPSED_KEY) === "true";
+  });
   const [draggingPane, setDraggingPane] = useState<"left" | "right" | null>(null);
   const appBodyRef = useRef<HTMLDivElement | null>(null);
   const paneLayoutRef = useRef<{ left: number; right: number }>({
@@ -176,6 +182,10 @@ export function App() {
   useEffect(() => {
     paneLayoutRef.current = { left: leftPaneWidth, right: rightPaneWidth };
   }, [leftPaneWidth, rightPaneWidth]);
+
+  useEffect(() => {
+    localStorage.setItem(LEFT_PANE_COLLAPSED_KEY, String(leftPaneCollapsed));
+  }, [leftPaneCollapsed]);
 
   useEffect(() => {
     const root = appBodyRef.current;
@@ -308,8 +318,13 @@ export function App() {
       if (!root) return;
       const rect = root.getBoundingClientRect();
       const totalWidth = rect.width;
+      const collapseBonus = leftPaneCollapsed
+        ? Math.max(0, paneLayoutRef.current.left + SPLITTER_WIDTH - LEFT_PANE_TOGGLE_WIDTH)
+        : 0;
       const desiredLeft  = draggingPane === "left"  ? event.clientX - rect.left  : paneLayoutRef.current.left;
-      const desiredRight = draggingPane === "right" ? rect.right - event.clientX : paneLayoutRef.current.right;
+      const desiredRight = draggingPane === "right"
+        ? Math.max(0, (rect.right - event.clientX) - collapseBonus)
+        : paneLayoutRef.current.right;
       const next = clampPaneLayout(totalWidth, desiredLeft, desiredRight);
       paneLayoutRef.current = next;
       setLeftPaneWidth(next.left);
@@ -334,7 +349,7 @@ export function App() {
       window.removeEventListener("mousemove", onMouseMove);
       window.removeEventListener("mouseup", onMouseUp);
     };
-  }, [draggingPane]);
+  }, [draggingPane, leftPaneCollapsed]);
 
   useEffect(() => {
     const stored = localStorage.getItem(REPO_STORAGE_KEY);
@@ -462,6 +477,8 @@ export function App() {
         onSettingsClick={handleSettingsClick}
         leftPaneWidth={leftPaneWidth}
         rightPaneWidth={rightPaneWidth}
+        leftPaneCollapsed={leftPaneCollapsed}
+        onSetLeftPaneCollapsed={setLeftPaneCollapsed}
         draggingPane={draggingPane}
         onSetDraggingPane={setDraggingPane}
         appBodyRef={appBodyRef}

@@ -2,7 +2,12 @@ import { useState, useEffect } from "react";
 import { getDiff } from "../api/commands";
 import type { FileDiff } from "../types";
 
-export function useGitDiff(repoPath: string | null, filePath: string | null, staged: boolean) {
+export function useGitDiff(
+  repoPath: string | null,
+  filePath: string | null,
+  staged: boolean,
+  refreshKey: number = 0,
+) {
   const [diff, setDiff] = useState<FileDiff | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -24,7 +29,7 @@ export function useGitDiff(repoPath: string | null, filePath: string | null, sta
       .finally(() => { if (!cancelled) setLoading(false); });
 
     return () => { cancelled = true; };
-  }, [repoPath, filePath, staged]);
+  }, [repoPath, filePath, staged, refreshKey]);
 
   return { diff, loading, error };
 }
