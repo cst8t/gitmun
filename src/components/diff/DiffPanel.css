@@ -261,6 +261,12 @@
   padding-right: 16px;
 }
 
+.diff-panel__react-diff--wrap .diff-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+}
+
 .diff-panel__react-diff .diff-gutter {
   color: var(--text-muted);
 }

@@ -187,6 +187,12 @@ impl GitService {
         })
     }
 
+    pub fn set_wrap_diff_lines(&self, wrap_diff_lines: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.wrap_diff_lines = wrap_diff_lines;
+        })
+    }
+
     pub fn set_confirm_revert(&self, confirm_revert: bool) -> Settings {
         self.update_settings(|settings| {
             settings.confirm_revert = confirm_revert;

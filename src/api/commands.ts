@@ -313,6 +313,10 @@ export function setThemeMode(themeMode: ThemeMode): Promise<Settings> {
   return invoke<Settings>("set_theme_mode", { themeMode });
 }
 
+export function setWrapDiffLines(wrapDiffLines: boolean): Promise<Settings> {
+  return invoke<Settings>("set_wrap_diff_lines", { wrapDiffLines });
+}
+
 export function setPanelLayout(leftPaneWidth: number, rightPaneWidth: number): Promise<Settings> {
   return invoke<Settings>("set_panel_layout", { leftPaneWidth, rightPaneWidth });
 }

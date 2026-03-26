@@ -175,6 +175,7 @@ export function ProjectView({
   const [hunkActionBusy, setHunkActionBusy] = useState(false);
   const [remoteOp, setRemoteOp] = useState<"fetch" | "pull" | "push" | null>(null);
   const [pushFollowTags, setPushFollowTags] = useState(false);
+  const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -286,11 +287,13 @@ export function ProjectView({
       .then((settings) => {
         if (!cancelled) {
           setPushFollowTags(settings.pushFollowTags ?? false);
+          setWrapDiffLines(settings.wrapDiffLines ?? false);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setPushFollowTags(false);
+          setWrapDiffLines(false);
         }
       });
 
@@ -1731,6 +1734,7 @@ export function ProjectView({
                   onOpenCommitFileDiff={handleOpenCommitFileDiff}
                   hunkAction={selectedFile ? (selectedFileStaged ? "unstage" : "stage") : null}
                   hunkActionBusy={hunkActionBusy}
+                  wrapLines={wrapDiffLines}
                   onHunkAction={handleHunkAction}
                 />
               </div>

@@ -144,6 +144,11 @@ fn set_theme_mode(theme_mode: ThemeMode, state: tauri::State<'_, AppState>) -> S
 }
 
 #[tauri::command]
+fn set_wrap_diff_lines(wrap_diff_lines: bool, state: tauri::State<'_, AppState>) -> Settings {
+    state.git_service.set_wrap_diff_lines(wrap_diff_lines)
+}
+
+#[tauri::command]
 fn set_panel_layout(
     left_pane_width: u32,
     right_pane_width: u32,
@@ -1399,6 +1404,7 @@ pub fn run() {
             set_backend_mode,
             set_show_result_log,
             set_theme_mode,
+            set_wrap_diff_lines,
             set_panel_layout,
             set_confirm_revert,
             get_config_file_path,
