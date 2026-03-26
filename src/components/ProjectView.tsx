@@ -90,6 +90,8 @@ export type ProjectViewProps = {
   onSettingsClick: () => void;
   leftPaneWidth: number;
   rightPaneWidth: number;
+  leftPaneCollapsed: boolean;
+  onSetLeftPaneCollapsed: (collapsed: boolean) => void;
   draggingPane: "left" | "right" | null;
   onSetDraggingPane: (pane: "left" | "right" | null) => void;
   /** Ref pointing to div.app__body — owned by App for the resize observer. */
@@ -115,6 +117,8 @@ export function ProjectView({
   onSettingsClick,
   leftPaneWidth,
   rightPaneWidth,
+  leftPaneCollapsed,
+  onSetLeftPaneCollapsed,
   draggingPane,
   onSetDraggingPane,
   appBodyRef,
@@ -123,6 +127,11 @@ export function ProjectView({
   isNative,
   winRadius,
 }: ProjectViewProps) {
+  const collapsedRightPaneBonus = leftPaneCollapsed
+    ? Math.max(0, leftPaneWidth + 6 - 22)
+    : 0;
+  const effectiveRightPaneWidth = rightPaneWidth + collapsedRightPaneBonus;
+
   const { status, refresh: refreshStatus } = useGitStatus(repoPath);
   const { branches, refresh: refreshBranches } = useGitBranches(repoPath);
   const { tags, refresh: refreshTags } = useGitTags(repoPath);
@@ -132,12 +141,18 @@ export function ProjectView({
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
+  const [diffRefreshKey, setDiffRefreshKey] = useState(0);
   const [centerTab, setCenterTab] = useState<CenterTab>("changes");
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [commitMarkers, setCommitMarkers] = useState<CommitMarkers>(EMPTY_COMMIT_MARKERS);
   const [repoDiffToolName, setRepoDiffToolName] = useState<string | null>(null);
   const [showNoDiffToolWarning, setShowNoDiffToolWarning] = useState(false);
-  const { diff, loading: diffLoading } = useGitDiff(repoPath, selectedFile, selectedFileStaged);
+  const { diff, loading: diffLoading } = useGitDiff(
+    repoPath,
+    selectedFile,
+    selectedFileStaged,
+    diffRefreshKey,
+  );
   const { files: commitFiles, loading: commitFilesLoading } = useCommitFiles(
     repoPath,
     centerTab === "log" ? selectedCommitHash : null,
@@ -157,9 +172,9 @@ export function ProjectView({
   const [isRevertActionRunning, setIsRevertActionRunning] = useState(false);
   const [showStashDialog, setShowStashDialog] = useState(false);
   const [stashBusy, setStashBusy] = useState(false);
+  const [hunkActionBusy, setHunkActionBusy] = useState(false);
   const [remoteOp, setRemoteOp] = useState<"fetch" | "pull" | "push" | null>(null);
   const [pushFollowTags, setPushFollowTags] = useState(false);
-  const [stagedHunks, setStagedHunks] = useState<Record<string, boolean>>({});
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -227,12 +242,8 @@ export function ProjectView({
     const inUnstaged = status.changedFiles.some(f => f.path === selectedFile);
     const inUnversioned = status.unversionedFiles.includes(selectedFile);
     if (!inStaged && !inUnstaged && !inUnversioned) {
-      const selectedPrefix = `${selectedFile}:`;
       setSelectedFile(null);
       setSelectedFileStaged(false);
-      setStagedHunks(prev =>
-        Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith(selectedPrefix))),
-      );
       return;
     }
     if (selectedFileStaged && !inStaged && (inUnstaged || inUnversioned)) {
@@ -564,15 +575,22 @@ export function ProjectView({
     finally { setStashBusy(false); }
   }, [repoPath, stashBusy, refreshStashes, showToast]);
 
-  const handleStageHunk = useCallback(async (hunkIndex: number) => {
-    if (!repoPath || !selectedFile) return;
+  const handleHunkAction = useCallback(async (hunkIndex: number) => {
+    if (!repoPath || !selectedFile || hunkActionBusy) return;
+    setHunkActionBusy(true);
     try {
-      await api.stageHunk(repoPath, selectedFile, hunkIndex);
-      setStagedHunks(prev => ({ ...prev, [`${selectedFile}:${hunkIndex}`]: true }));
-      showToast("Staged hunk");
+      if (selectedFileStaged) {
+        await api.unstageHunk(repoPath, selectedFile, hunkIndex);
+        showToast("Unstaged hunk");
+      } else {
+        await api.stageHunk(repoPath, selectedFile, hunkIndex);
+        showToast("Staged hunk");
+      }
       await refreshStatus();
+      setDiffRefreshKey(prev => prev + 1);
     } catch (e) { showToast(String(e), "error"); }
-  }, [repoPath, selectedFile, refreshStatus, showToast]);
+    finally { setHunkActionBusy(false); }
+  }, [repoPath, selectedFile, selectedFileStaged, hunkActionBusy, refreshStatus, showToast]);
 
   const handleOpenCommitFileDiff = useCallback(async (filePath: string) => {
     if (!repoPath || !selectedCommitHash) return;
@@ -1557,45 +1575,75 @@ export function ProjectView({
         <div className="app__body" ref={appBodyRef}>
           {repoPath ? (
             <>
-              <div className="app__pane app__pane--left" style={{ width: leftPaneWidth }}>
-                <Sidebar
-                  branches={branches}
-                  tags={tags}
-                  remotes={remotes}
-                  stashes={stashes}
-                  repoPath={repoPath}
-                  onSwitchBranch={handleSwitchBranch}
-                  onCreateBranch={handleCreateBranch}
-                  onRenameBranch={handleBeginRenameBranch}
-                  onDeleteBranch={handleDeleteBranch}
-                  onForceDeleteBranch={handleForceDeleteBranch}
-                  onDeleteTag={handleDeleteTag}
-                  onCreateTag={() => { setCreateTagTarget(null); setShowCreateTagDialog(true); }}
-                  onPushTag={handlePushTag}
-                  onDeleteRemoteTag={handleDeleteRemoteTag}
-                  onCreateBranchFromTag={handleCreateBranchFromTag}
-                  onMergeBranch={handleMergeBranch}
-                  onRebaseBranch={handleRebaseBranch}
-                  onCheckoutRemoteBranch={handleCheckoutRemoteBranch}
-                  onDeleteRemoteBranch={handleDeleteRemoteBranch}
-                  onAddRemote={() => setShowAddRemoteDialog(true)}
-                  onFetchRemote={handleFetchSingleRemote}
-                  onPruneRemote={handlePruneRemote}
-                  onEditRemote={remote => setEditingRemote(remote)}
-                  onRemoveRemote={handleRemoveRemote}
-                  onStashApply={handleStashApply}
-                  onStashPop={handleStashPop}
-                  onStashDrop={handleStashDrop}
-                  stashBusy={stashBusy}
-                />
-              </div>
+              {!leftPaneCollapsed && (
+                <>
+                  <div className="app__pane app__pane--left" style={{ width: leftPaneWidth }}>
+                    <div className="app__pane app__pane--left-content">
+                      <Sidebar
+                        branches={branches}
+                        tags={tags}
+                        remotes={remotes}
+                        stashes={stashes}
+                        repoPath={repoPath}
+                        onSwitchBranch={handleSwitchBranch}
+                        onCreateBranch={handleCreateBranch}
+                        onRenameBranch={handleBeginRenameBranch}
+                        onDeleteBranch={handleDeleteBranch}
+                        onForceDeleteBranch={handleForceDeleteBranch}
+                        onDeleteTag={handleDeleteTag}
+                        onCreateTag={() => { setCreateTagTarget(null); setShowCreateTagDialog(true); }}
+                        onPushTag={handlePushTag}
+                        onDeleteRemoteTag={handleDeleteRemoteTag}
+                        onCreateBranchFromTag={handleCreateBranchFromTag}
+                        onMergeBranch={handleMergeBranch}
+                        onRebaseBranch={handleRebaseBranch}
+                        onCheckoutRemoteBranch={handleCheckoutRemoteBranch}
+                        onDeleteRemoteBranch={handleDeleteRemoteBranch}
+                        onAddRemote={() => setShowAddRemoteDialog(true)}
+                        onFetchRemote={handleFetchSingleRemote}
+                        onPruneRemote={handlePruneRemote}
+                        onEditRemote={remote => setEditingRemote(remote)}
+                        onRemoveRemote={handleRemoveRemote}
+                        onStashApply={handleStashApply}
+                        onStashPop={handleStashPop}
+                        onStashDrop={handleStashDrop}
+                        stashBusy={stashBusy}
+                      />
+                    </div>
+                    <button
+                      className="app__left-pane-toggle app__left-pane-toggle--hide"
+                      type="button"
+                      onClick={() => {
+                        onSetDraggingPane(null);
+                        onSetLeftPaneCollapsed(true);
+                      }}
+                      title="Hide sidebar"
+                      aria-label="Hide sidebar"
+                    >
+                      &lt;
+                    </button>
+                  </div>
 
-              <div
-                className={`app__splitter ${draggingPane === "left" ? "app__splitter--active" : ""}`}
-                onMouseDown={() => onSetDraggingPane("left")}
-                role="separator"
-                aria-label="Resize left panel"
-              />
+                  <div
+                    className={`app__splitter ${draggingPane === "left" ? "app__splitter--active" : ""}`}
+                    onMouseDown={() => onSetDraggingPane("left")}
+                    role="separator"
+                    aria-label="Resize left panel"
+                  />
+                </>
+              )}
+
+              {leftPaneCollapsed && (
+                <button
+                  className="app__left-pane-toggle"
+                  type="button"
+                  onClick={() => onSetLeftPaneCollapsed(false)}
+                  title="Show sidebar"
+                  aria-label="Show sidebar"
+                >
+                  &gt;
+                </button>
+              )}
 
               <div className="app__pane app__pane--center">
                 <CenterPanel
@@ -1669,7 +1717,7 @@ export function ProjectView({
                 aria-label="Resize right panel"
               />
 
-              <div className="app__pane app__pane--right" style={{ width: rightPaneWidth }}>
+              <div className="app__pane app__pane--right" style={{ width: effectiveRightPaneWidth }}>
                 <DiffPanel
                   mode={centerTab}
                   diff={diff}
@@ -1681,9 +1729,9 @@ export function ProjectView({
                   compareCurrentFileLabel={compareCurrentFileLabel}
                   onCompareCurrentFile={handleCompareCurrentFile}
                   onOpenCommitFileDiff={handleOpenCommitFileDiff}
-                  isUnstaged={isUnstaged}
-                  stagedHunks={stagedHunks}
-                  onStageHunk={handleStageHunk}
+                  hunkAction={selectedFile ? (selectedFileStaged ? "unstage" : "stage") : null}
+                  hunkActionBusy={hunkActionBusy}
+                  onHunkAction={handleHunkAction}
                 />
               </div>
             </>

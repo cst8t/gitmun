@@ -914,6 +914,13 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
+    fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .unstage_hunk(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback

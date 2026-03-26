@@ -51,9 +51,9 @@ type DiffPanelProps = {
   compareCurrentFileLabel: string;
   onCompareCurrentFile: () => void;
   onOpenCommitFileDiff: (filePath: string) => void;
-  isUnstaged: boolean;
-  stagedHunks: Record<string, boolean>;
-  onStageHunk: (hunkIndex: number) => void;
+  hunkAction: "stage" | "unstage" | null;
+  hunkActionBusy: boolean;
+  onHunkAction: (hunkIndex: number) => void;
 };
 
 export function DiffPanel({
@@ -67,9 +67,9 @@ export function DiffPanel({
   compareCurrentFileLabel,
   onCompareCurrentFile,
   onOpenCommitFileDiff,
-  isUnstaged,
-  stagedHunks,
-  onStageHunk,
+  hunkAction,
+  hunkActionBusy,
+  onHunkAction,
 }: DiffPanelProps) {
   const [viewType, setViewType] = React.useState<ViewType>("unified");
   const [selectedCommitFile, setSelectedCommitFile] = React.useState<string | null>(null);
@@ -259,15 +259,18 @@ export function DiffPanel({
                   {(hunks) => hunks.flatMap((hunk, hi) => [
                     <Decoration key={`hunk-header-${hi}`}>
                       <div className="diff-panel__hunk-header">
-                        <span>{hunk.content}</span>
-                        {isUnstaged && (
-                          <button
-                            className={`diff-hunk__stage-btn ${stagedHunks[`${selectedFile}:${hi}`] ? "diff-hunk__stage-btn--staged" : ""}`}
-                            onClick={() => onStageHunk(hi)}
-                          >
-                            <StageHunkIcon />
-                            {stagedHunks[`${selectedFile}:${hi}`] ? "Staged" : "Stage hunk"}
-                          </button>
+                        <span className="diff-panel__hunk-title">{hunk.content}</span>
+                        {hunkAction && (
+                          <span className="diff-panel__hunk-action">
+                            <button
+                              className={`diff-hunk__stage-btn ${hunkAction === "unstage" ? "diff-hunk__stage-btn--unstage" : ""}`}
+                              onClick={() => onHunkAction(hi)}
+                              disabled={hunkActionBusy}
+                            >
+                              <StageHunkIcon />
+                              {hunkAction === "unstage" ? "Unstage hunk" : "Stage hunk"}
+                            </button>
+                          </span>
                         )}
                       </div>
                     </Decoration>,

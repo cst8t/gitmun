@@ -142,6 +142,10 @@ export function stageHunk(repoPath: string, filePath: string, hunkIndex: number)
   return invoke<OperationResult>("stage_hunk", { request: { repoPath, filePath, hunkIndex } });
 }
 
+export function unstageHunk(repoPath: string, filePath: string, hunkIndex: number): Promise<OperationResult> {
+  return invoke<OperationResult>("unstage_hunk", { request: { repoPath, filePath, hunkIndex } });
+}
+
 export function discardFile(repoPath: string, filePath: string): Promise<OperationResult> {
   return invoke<OperationResult>("discard_file", { request: { repoPath, filePath } });
 }
