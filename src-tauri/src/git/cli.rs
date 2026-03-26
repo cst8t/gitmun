@@ -1669,6 +1669,16 @@ impl GitOperationHandler for CliGitHandler {
             Some(&repo_path),
         )
         .ok();
+        let commit_signing_enabled = Self::run_git(
+            &["config", scope_flag, "commit.gpgsign"],
+            Some(&repo_path),
+        )
+        .ok()
+        .map(|value| {
+            let normalized = value.trim().to_ascii_lowercase();
+            matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
+        })
+        .unwrap_or(false);
 
         Ok(GitIdentity {
             name,
@@ -1676,6 +1686,7 @@ impl GitOperationHandler for CliGitHandler {
             signing_key,
             signing_format,
             ssh_key_path,
+            commit_signing_enabled,
         })
     }
 
@@ -1710,7 +1721,17 @@ impl GitOperationHandler for CliGitHandler {
         set_or_unset("user.signingkey", &request.signing_key)?;
         set_or_unset("gpg.format", &request.signing_format)?;
         set_or_unset("gpg.ssh.allowedSignersFile", &request.ssh_key_path)?;
-        if let Some(signing_key) = request.signing_key.as_ref() {
+        if let Some(commit_signing_enabled) = request.commit_signing_enabled {
+            let commit_gpgsign = if commit_signing_enabled {
+                "true"
+            } else {
+                "false"
+            };
+            Self::run_git(
+                &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
+                Some(&repo_path),
+            )?;
+        } else if let Some(signing_key) = request.signing_key.as_ref() {
             let commit_gpgsign = if signing_key.trim().is_empty() {
                 "false"
             } else {

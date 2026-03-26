@@ -419,6 +419,7 @@ pub struct GitIdentity {
     pub signing_key: Option<String>,
     pub signing_format: Option<String>,
     pub ssh_key_path: Option<String>,
+    pub commit_signing_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -439,6 +440,7 @@ pub struct SetIdentityRequest {
     pub signing_key: Option<String>,
     pub signing_format: Option<String>,
     pub ssh_key_path: Option<String>,
+    pub commit_signing_enabled: Option<bool>,
 }
 
 // Tags

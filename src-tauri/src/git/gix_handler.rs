@@ -387,6 +387,12 @@ impl GixGitHandler {
             signing_key: get("user.signingkey"),
             signing_format: get("gpg.format"),
             ssh_key_path: get("gpg.ssh.allowedSignersFile"),
+            commit_signing_enabled: get("commit.gpgsign")
+                .map(|value| {
+                    let normalized = value.trim().to_ascii_lowercase();
+                    matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
+                })
+                .unwrap_or(false),
         })
     }
 
