@@ -108,7 +108,7 @@ export function Sidebar({
                   <div
                     key={t.name}
                     className="sidebar__item"
-                    onContextMenu={(e) => { e.preventDefault(); setTagMenu({ x: e.screenX, y: e.screenY, name: t.name }); }}
+                    onContextMenu={(e) => { e.preventDefault(); setTagMenu({ x: e.clientX, y: e.clientY, name: t.name }); }}
                   >
                     <span className="sidebar__item-name">{t.name}</span>
                     <span className="sidebar__item-hash">{t.hash}</span>

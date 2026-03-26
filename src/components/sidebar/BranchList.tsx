@@ -42,7 +42,7 @@ export function BranchList({
 
   const handleContextMenu = (e: React.MouseEvent, branchName: string) => {
     e.preventDefault();
-    setContextMenu({ x: e.screenX, y: e.screenY, branch: branchName });
+    setContextMenu({ x: e.clientX, y: e.clientY, branch: branchName });
   };
 
   return (

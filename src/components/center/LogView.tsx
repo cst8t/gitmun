@@ -57,7 +57,7 @@ const CommitRow = React.memo(function CommitRow({
   const handleClick = useCallback(() => onSelectCommit(c.hash), [onSelectCommit, c.hash]);
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    onContextMenu(c.hash, e.screenX, e.screenY);
+    onContextMenu(c.hash, e.clientX, e.clientY);
   }, [onContextMenu, c.hash]);
 
   return (

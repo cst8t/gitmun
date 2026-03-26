@@ -16,7 +16,7 @@ type ContextMenuProps = {
 };
 
 // Fires native popup on mount at the given position, calls onClose when dismissed.
-// x/y should be e.screenX / e.screenY from the triggering mouse event.
+// x/y should be e.clientX / e.clientY from the triggering mouse event.
 export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   React.useEffect(() => {
     async function show() {
