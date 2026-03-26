@@ -42,13 +42,13 @@ export function RemoteSection({
 
   const handleBranchContextMenu = (e: React.MouseEvent, branchName: string) => {
     e.preventDefault();
-    setBranchMenu({ x: e.screenX, y: e.screenY, branch: branchName });
+    setBranchMenu({ x: e.clientX, y: e.clientY, branch: branchName });
   };
 
   const handleRemoteContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setRemoteMenu({ x: e.screenX, y: e.screenY });
+    setRemoteMenu({ x: e.clientX, y: e.clientY });
   };
 
   return (
