@@ -1,15 +1,67 @@
-use tauri::Manager;
+use crate::git::types::ThemeMode;
+use tauri::{Manager, Theme, window::Color};
 
-/// Opens a secondary window (settings / clone / result-log).
-///
-/// The window is created hidden so the webview can load and React can render
-/// before anything is shown to the user. The frontend calls `show_window`
-/// once it is ready. If the window already exists it is simply brought to the
-/// front.
-///
-/// Must be `async` — on Windows, `WebviewWindowBuilder::build()` deadlocks
-/// when called from a synchronous command handler because the IPC handler
-/// occupies the main event-loop thread that WebView2 also needs.
+const LIGHT_WINDOW_BACKGROUND_COLOUR: Color = Color(244, 246, 251, 255);
+const DARK_WINDOW_BACKGROUND_COLOUR: Color = Color(15, 17, 23, 255);
+const LIGHT_WINDOW_BACKGROUND_HEX: &str = "#f4f6fb";
+const DARK_WINDOW_BACKGROUND_HEX: &str = "#0f1117";
+
+fn resolve_system_theme(app: &tauri::AppHandle) -> Theme {
+    if let Some(window) = app.get_webview_window("main") {
+        if let Ok(theme) = window.theme() {
+            return theme;
+        }
+    }
+    Theme::Dark
+}
+
+pub(crate) fn background_colour_for_theme_mode(
+    app: &tauri::AppHandle,
+    theme_mode: &ThemeMode,
+) -> Color {
+    match theme_mode {
+        ThemeMode::Light => LIGHT_WINDOW_BACKGROUND_COLOUR,
+        ThemeMode::Dark => DARK_WINDOW_BACKGROUND_COLOUR,
+        ThemeMode::System => match resolve_system_theme(app) {
+            Theme::Light => LIGHT_WINDOW_BACKGROUND_COLOUR,
+            Theme::Dark => DARK_WINDOW_BACKGROUND_COLOUR,
+            _ => DARK_WINDOW_BACKGROUND_COLOUR,
+        },
+    }
+}
+
+fn initial_theme_injection_script() -> String {
+    r#"
+      (() => {
+        try {
+          const storedMode = localStorage.getItem("gitmun.themeMode");
+          const theme = storedMode === "Light"
+            ? "light"
+            : storedMode === "Dark"
+              ? "dark"
+              : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+          const background = theme === "dark" ? "__GITMUN_DARK_BACKGROUND__" : "__GITMUN_LIGHT_BACKGROUND__";
+          const html = document.documentElement;
+          html.dataset.theme = theme;
+          html.style.background = background;
+          if (document.body) {
+            document.body.style.background = background;
+          } else {
+            document.addEventListener(
+              "DOMContentLoaded",
+              () => {
+                if (document.body) document.body.style.background = background;
+              },
+              { once: true }
+            );
+          }
+        } catch (_) {}
+      })();
+    "#
+    .replace("__GITMUN_DARK_BACKGROUND__", DARK_WINDOW_BACKGROUND_HEX)
+    .replace("__GITMUN_LIGHT_BACKGROUND__", LIGHT_WINDOW_BACKGROUND_HEX)
+}
+
 #[tauri::command]
 pub async fn open_sub_window(
     app: tauri::AppHandle,
@@ -19,8 +71,13 @@ pub async fn open_sub_window(
     width: f64,
     height: f64,
     resizable: bool,
+    state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
+    let settings = state.git_service.get_settings();
+    let background_colour = background_colour_for_theme_mode(&app, &settings.theme_mode);
+
     if let Some(existing) = app.get_webview_window(&label) {
+        let _ = existing.set_background_color(Some(background_colour));
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
@@ -39,7 +96,9 @@ pub async fn open_sub_window(
     .minimizable(true)
     .maximizable(false)
     .focused(false)
-    .visible(cfg!(target_os = "windows"))
+    .visible(false)
+    .background_color(background_colour)
+    .initialization_script(initial_theme_injection_script())
     .build()
     .map_err(|e| e.to_string())?;
 
@@ -66,8 +125,41 @@ pub async fn open_sub_window(
 ///
 /// Works for both secondary windows and the main window.
 #[tauri::command]
-pub fn show_window(app: tauri::AppHandle, label: String) -> Result<(), String> {
+pub fn show_window(
+    app: tauri::AppHandle,
+    label: String,
+    state: tauri::State<'_, crate::AppState>,
+) -> Result<(), String> {
+    let settings = state.git_service.get_settings();
+    let background_colour = background_colour_for_theme_mode(&app, &settings.theme_mode);
+
     if let Some(window) = app.get_webview_window(&label) {
+        let _ = window.set_background_color(Some(background_colour));
+
+        let disable_native_context_menu_js = r#"
+            (() => {
+              const sentinel = "__gitmunNativeContextMenuDisabled";
+              if (window[sentinel]) return;
+
+              const handler = (event) => {
+                const target = event.target;
+                if (
+                  target &&
+                  typeof target.closest === "function" &&
+                  target.closest("[data-allow-native-context-menu='true']")
+                ) {
+                  return;
+                }
+                event.preventDefault();
+              };
+
+              window.addEventListener("contextmenu", handler, true);
+              document.addEventListener("contextmenu", handler, true);
+              window[sentinel] = true;
+            })();
+        "#;
+        let _ = window.eval(disable_native_context_menu_js);
+
         window.show().map_err(|e| e.to_string())?;
 
         #[cfg(target_os = "linux")]

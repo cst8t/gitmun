@@ -139,8 +139,18 @@ fn set_show_result_log(show_result_log: bool, state: tauri::State<'_, AppState>)
 }
 
 #[tauri::command]
-fn set_theme_mode(theme_mode: ThemeMode, state: tauri::State<'_, AppState>) -> Settings {
-    state.git_service.set_theme_mode(theme_mode)
+fn set_theme_mode(
+    theme_mode: ThemeMode,
+    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> Settings {
+    let settings = state.git_service.set_theme_mode(theme_mode);
+    let background_colour =
+        window_manager::background_colour_for_theme_mode(&app, &settings.theme_mode);
+    for (_, window) in app.webview_windows() {
+        let _ = window.set_background_color(Some(background_colour));
+    }
+    settings
 }
 
 #[tauri::command]
@@ -1389,6 +1399,13 @@ pub fn run() {
 
                 // Sync avatar service with the loaded settings
                 let settings = state.git_service.get_settings();
+                if let Some(main_window) = app.get_webview_window("main") {
+                    let background_colour = window_manager::background_colour_for_theme_mode(
+                        &app.handle(),
+                        &settings.theme_mode,
+                    );
+                    let _ = main_window.set_background_color(Some(background_colour));
+                }
                 state.avatar_service.set_mode(settings.avatar_provider);
                 state
                     .avatar_service
