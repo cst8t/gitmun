@@ -32,6 +32,10 @@ function relativeTime(dateStr: string): string {
   }
 }
 
+function formatFingerprint(fingerprint: string): string {
+  return fingerprint.replace(/^[^:]+:/, "");
+}
+
 type SigPopoverData = {
   rect: DOMRect;
   status: SignatureStatus;
@@ -116,7 +120,7 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
       {fingerprint && (
         <div className="sig-popover__row">
           <span className="sig-popover__label">Fingerprint</span>
-          <span className="sig-popover__value sig-popover__value--mono">{fingerprint}</span>
+          <span className="sig-popover__value sig-popover__value--mono">{formatFingerprint(fingerprint)}</span>
         </div>
       )}
       <div className="sig-popover__row">
