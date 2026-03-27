@@ -77,7 +77,8 @@ export function Sidebar({
         {(["branches", "tags", "remotes", "stashes"] as const).map(t => (
           <button key={t}
             className={`sidebar__tab ${tab === t ? "sidebar__tab--active" : ""}`}
-            onClick={() => setTab(t)}>
+            onClick={() => setTab(t)}
+            title={t.charAt(0).toUpperCase() + t.slice(1)}>
             {t}
           </button>
         ))}
