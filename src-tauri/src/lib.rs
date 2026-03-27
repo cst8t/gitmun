@@ -14,8 +14,8 @@ use git::types::{
     OperationResult, PruneRemoteRequest, PushTagRequest, PushRequest, RebaseRequest,
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
     RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    TagInfo, ThemeMode,
+    SetRemoteUrlRequest, Settings, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, TagInfo, ThemeMode, CommitVerification,
 };
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
@@ -376,6 +376,66 @@ async fn get_commit_history(
     let handler = state.git_service.read_handler();
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CommitHistoryItem>, String> {
         handler.get_commit_history(&req).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Batch-verify the signatures of the given commits using `git log --no-walk`.
+/// Only hashes that were flagged as `Signed` by the fast gix detection path are
+/// passed in; the command calls GPG/SSH once per signed commit (via git's %G?
+/// format specifier) and returns the authoritative verification status for each.
+#[tauri::command]
+async fn verify_commits(
+    repo_path: String,
+    hashes: Vec<String>,
+) -> Result<Vec<CommitVerification>, String> {
+    if hashes.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CommitVerification>, String> {
+        #[cfg(windows)]
+        const GIT: &str = "git.exe";
+        #[cfg(not(windows))]
+        const GIT: &str = "git";
+
+        let mut cmd = Command::new(GIT);
+        cmd.current_dir(&repo_path)
+            .arg("log")
+            .arg("--no-walk=unsorted")
+            .arg("--format=%H\x1f%G?\x1f%GS\x1f%GF");
+        for hash in &hashes {
+            cmd.arg(hash);
+        }
+
+        let output = cmd.output().map_err(|e| e.to_string())?;
+        let stdout = String::from_utf8_lossy(&output.stdout);
+
+        let mut results = Vec::new();
+        for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
+            let mut parts = line.splitn(4, '\x1f');
+            let hash = parts.next().unwrap_or_default().trim().to_string();
+            let sig_char = parts.next().unwrap_or_default().trim();
+            let signer_raw = parts.next().unwrap_or_default().trim();
+            let fingerprint_raw = parts.next().unwrap_or_default().trim();
+
+            if hash.is_empty() {
+                continue;
+            }
+
+            let status = match sig_char {
+                "G" | "U" | "X" | "Y" | "R" => SignatureStatus::Verified,
+                "B" => SignatureStatus::Bad,
+                "E" => SignatureStatus::UnknownKey,
+                _ => SignatureStatus::None,
+            };
+            let signer = if signer_raw.is_empty() { None } else { Some(signer_raw.to_string()) };
+            let fingerprint = if fingerprint_raw.is_empty() { None } else { Some(fingerprint_raw.to_string()) };
+
+            results.push(CommitVerification { hash, status, signer, fingerprint });
+        }
+        Ok(results)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -1431,6 +1491,7 @@ pub fn run() {
             set_global_diff_tool,
             set_global_default_branch,
             get_commit_history,
+            verify_commits,
             get_commit_markers,
             get_commit_files,
             open_external_diff,

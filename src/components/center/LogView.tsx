@@ -2,7 +2,8 @@ import React, { startTransition, useCallback, useEffect, useRef, useState } from
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Virtuoso } from "react-virtuoso";
-import type { CommitHistoryItem, CommitMarkers } from "../../types";
+import type { CommitHistoryItem, CommitMarkers, SignatureStatus } from "../../types";
+import { verifyCommits } from "../../api/commands";
 import { ContextMenu } from "../shared/ContextMenu";
 
 function getInitials(name: string): string {
@@ -31,8 +32,121 @@ function relativeTime(dateStr: string): string {
   }
 }
 
+type SigPopoverData = {
+  rect: DOMRect;
+  status: SignatureStatus;
+  signer: string | null;
+  fingerprint: string | null;
+  keyType: string | null;
+  date: string;
+};
+
+function ShieldIcon({ status }: { status: SignatureStatus }) {
+  return (
+    <svg className="log-view__sig-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 1L2 3.5v4C2 11 4.5 14 8 15c3.5-1 6-4 6-7.5v-4L8 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
+      {status === "verified" && <path d="M5.5 8l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
+      {status === "bad" && <path d="M6 6l4 4M10 6l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />}
+    </svg>
+  );
+}
+
+function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: () => void }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { rect, status, signer, fingerprint, keyType, date } = data;
+
+  // Position the popover above the badge, clamped to viewport
+  const popoverWidth = 280;
+  const gap = 6;
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { innerWidth, innerHeight } = window;
+    const elH = el.offsetHeight;
+    let top = rect.top - elH - gap;
+    if (top < 8) top = rect.bottom + gap;
+    if (top + elH > innerHeight - 8) top = innerHeight - elH - 8;
+    let left = rect.left + rect.width / 2 - popoverWidth / 2;
+    if (left < 8) left = 8;
+    if (left + popoverWidth > innerWidth - 8) left = innerWidth - popoverWidth - 8;
+    el.style.top = `${top}px`;
+    el.style.left = `${left}px`;
+  });
+
+  useEffect(() => {
+    const handler = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) { if (e.key === "Escape") onClose(); return; }
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", handler);
+    };
+  }, [onClose]);
+
+  const heading =
+    status === "verified" ? "This commit was signed with a verified signature." :
+    status === "bad"      ? "This commit has a bad signature." :
+    status === "unknownKey" ? "This commit is signed, but the key is not in your keyring." :
+                            "This commit is signed but could not be verified locally.";
+
+  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
+
+  return (
+    <div ref={ref} className={`sig-popover sig-popover--${mod}`} role="dialog" aria-modal="false">
+      <button className="sig-popover__close" onClick={onClose} aria-label="Close">✕</button>
+      <div className="sig-popover__header">
+        <ShieldIcon status={status} />
+        <span>{heading}</span>
+      </div>
+      {signer && (
+        <div className="sig-popover__row">
+          <span className="sig-popover__label">Signer</span>
+          <span className="sig-popover__value">{signer}</span>
+        </div>
+      )}
+      {keyType && (
+        <div className="sig-popover__row">
+          <span className="sig-popover__label">Key type</span>
+          <span className="sig-popover__value">{keyType.toUpperCase()}</span>
+        </div>
+      )}
+      {fingerprint && (
+        <div className="sig-popover__row">
+          <span className="sig-popover__label">Fingerprint</span>
+          <span className="sig-popover__value sig-popover__value--mono">{fingerprint}</span>
+        </div>
+      )}
+      <div className="sig-popover__row">
+        <span className="sig-popover__label">Date</span>
+        <span className="sig-popover__value">{new Date(date).toLocaleString()}</span>
+      </div>
+    </div>
+  );
+}
+
+function SignatureBadge({ status, signer, onOpen }: { status: SignatureStatus; signer?: string | null; onOpen: (rect: DOMRect) => void }) {
+  if (status === "none") return null;
+  const label = status === "verified" ? "Verified" : status === "bad" ? "Bad signature" : "Signed";
+  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
+  return (
+    <button
+      className={`log-view__sig-badge log-view__sig-badge--${mod}`}
+      onClick={e => { e.stopPropagation(); onOpen((e.currentTarget as HTMLElement).getBoundingClientRect()); }}
+    >
+      <ShieldIcon status={status} />
+      {label}
+    </button>
+  );
+}
+
 type CommitRowProps = {
   commit: CommitHistoryItem;
+  effectiveSigStatus: SignatureStatus;
+  signer: string | null | undefined;
+  fingerprint: string | null | undefined;
   isSelected: boolean;
   isHead: boolean;
   isUpstream: boolean;
@@ -40,10 +154,14 @@ type CommitRowProps = {
   avatarUrl: string | null | undefined;
   onSelectCommit: (hash: string) => void;
   onContextMenu: (hash: string, x: number, y: number) => void;
+  onBadgeClick: (rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
 };
 
 const CommitRow = React.memo(function CommitRow({
   commit: c,
+  effectiveSigStatus,
+  signer,
+  fingerprint,
   isSelected,
   isHead,
   isUpstream,
@@ -51,6 +169,7 @@ const CommitRow = React.memo(function CommitRow({
   avatarUrl,
   onSelectCommit,
   onContextMenu,
+  onBadgeClick,
 }: CommitRowProps) {
   const color = hashColor(c.author);
   const initials = getInitials(c.author);
@@ -88,6 +207,11 @@ const CommitRow = React.memo(function CommitRow({
               {upstreamRef ?? "UPSTREAM"}
             </span>
           )}
+          <SignatureBadge
+            status={effectiveSigStatus}
+            signer={signer}
+            onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
+          />
           <span className="log-view__author">{c.author}</span>
           <span className="log-view__time">{relativeTime(c.date)}</span>
         </div>
@@ -128,6 +252,11 @@ export function LogView({
 }: LogViewProps) {
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const [commitMenu, setCommitMenu] = useState<{ x: number; y: number; hash: string } | null>(null);
+  // Resolved verification results for commits that came in as "signed" (gix fast path).
+  // Maps hash → { status, signer, fingerprint }.
+  const [verified, setVerified] = useState<Record<string, { status: SignatureStatus; signer: string | null; fingerprint: string | null }>>({});
+  const verifyingRef = useRef<Set<string>>(new Set());
+  const [sigPopover, setSigPopover] = useState<SigPopoverData | null>(null);
 
   const prevRepoRef = useRef<string | null>(null);
   const currentRepoRef = useRef(repoPath);
@@ -201,6 +330,8 @@ export function LogView({
       fetchingRef.current.clear();
       fetchedRef.current.clear();
       setAvatars({});
+      setVerified({});
+      verifyingRef.current.clear();
     }
   }, [repoPath]);
 
@@ -214,6 +345,35 @@ export function LogView({
       if (email) scheduleRef.current(email);
     }
   }, [commits]);
+
+  // For commits flagged as "signed" by the fast gix detection path, fire a
+  // batch verify call so we can upgrade the badge to Verified / Bad / UnknownKey.
+  // CLI-path commits already have a final status and are skipped.
+  useEffect(() => {
+    if (!repoPath) return;
+    const pending = commits
+      .filter(c => c.signatureStatus === "signed" && !verifyingRef.current.has(c.hash))
+      .map(c => c.hash);
+    if (pending.length === 0) return;
+    for (const h of pending) verifyingRef.current.add(h);
+    let cancelled = false;
+    verifyCommits(repoPath, pending).then(results => {
+      if (cancelled) return;
+      startTransition(() => {
+        setVerified(prev => {
+          const next = { ...prev };
+          for (const r of results) {
+            // Don't downgrade: if git can't verify (returns "none") but gix
+            // detected a signature header, keep the "signed" status.
+            if (r.status === "none") continue;
+            next[r.hash] = { status: r.status, signer: r.signer, fingerprint: r.fingerprint };
+          }
+          return next;
+        });
+      });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [repoPath, commits]);
 
   useEffect(() => {
     let cancelled = false;
@@ -244,6 +404,8 @@ export function LogView({
     commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
   );
 
+  const handleCloseSigPopover = useCallback(() => setSigPopover(null), []);
+
   return (
     <div className="log-view">
       {showUpstreamNotice && (
@@ -254,18 +416,28 @@ export function LogView({
       <Virtuoso
         style={{ flex: 1 }}
         data={commits}
-        itemContent={(index, c) => (
-          <CommitRow
-            commit={c}
-            isSelected={selectedCommitHash ? selectedCommitHash === c.hash : index === 0}
-            isHead={commitMarkers.localHead === c.hash}
-            isUpstream={commitMarkers.upstreamHead === c.hash}
-            upstreamRef={commitMarkers.upstreamRef}
-            avatarUrl={c.authorEmail ? avatars[c.authorEmail] : undefined}
-            onSelectCommit={onSelectCommit}
-            onContextMenu={handleCommitContextMenu}
-          />
-        )}
+        itemContent={(index, c) => {
+          const resolved = verified[c.hash];
+          const effectiveSigStatus = resolved?.status ?? c.signatureStatus;
+          return (
+            <CommitRow
+              commit={c}
+              effectiveSigStatus={effectiveSigStatus}
+              signer={resolved?.signer}
+              fingerprint={resolved?.fingerprint}
+              isSelected={selectedCommitHash ? selectedCommitHash === c.hash : index === 0}
+              isHead={commitMarkers.localHead === c.hash}
+              isUpstream={commitMarkers.upstreamHead === c.hash}
+              upstreamRef={commitMarkers.upstreamRef}
+              avatarUrl={c.authorEmail ? avatars[c.authorEmail] : undefined}
+              onSelectCommit={onSelectCommit}
+              onContextMenu={handleCommitContextMenu}
+              onBadgeClick={(rect, status, signer, fp, keyType, date) =>
+                setSigPopover({ rect, status, signer, fingerprint: fp, keyType, date })
+              }
+            />
+          );
+        }}
         rangeChanged={({ startIndex, endIndex }) => {
           for (let i = startIndex; i <= Math.min(endIndex + 5, commits.length - 1); i++) {
             const email = commits[i]?.authorEmail;
@@ -277,6 +449,7 @@ export function LogView({
           EmptyPlaceholder: () => <div className="log-view__empty">No commits yet</div>,
         }}
       />
+      {sigPopover && <SignaturePopover data={sigPopover} onClose={handleCloseSigPopover} />}
       {commitMenu && (onCreateTagAtCommit || onCherryPickAtCommit || onRevertAtCommit || onResetToCommit) && (
         <ContextMenu
           x={commitMenu.x}

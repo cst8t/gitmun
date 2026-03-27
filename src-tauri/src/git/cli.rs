@@ -20,7 +20,7 @@ use super::types::{
     PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo,
     RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus,
     ResetMode, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo,
+    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo,
 };
 
 pub struct CliGitHandler;
@@ -1086,7 +1086,7 @@ impl GitOperationHandler for CliGitHandler {
             CommitDateMode::AuthorDate => "%ad",
             CommitDateMode::CommitterDate => "%cd",
         };
-        let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s");
+        let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s%x1f%G?");
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let limit = request.limit.unwrap_or(100).clamp(1, 5000).to_string();
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
@@ -1116,17 +1116,28 @@ impl GitOperationHandler for CliGitHandler {
         let mut commits = Vec::new();
 
         for line in output.lines().filter(|line| !line.trim().is_empty()) {
-            let mut parts = line.splitn(6, '\u{1f}');
+            let mut parts = line.splitn(7, '\u{1f}');
             let hash = parts.next().unwrap_or_default().trim().to_string();
             let short_hash = parts.next().unwrap_or_default().trim().to_string();
             let author = parts.next().unwrap_or_default().trim().to_string();
             let author_email = parts.next().unwrap_or_default().trim().to_string();
             let date = parts.next().unwrap_or_default().trim().to_string();
             let message = parts.next().unwrap_or_default().trim().to_string();
+            let sig_char = parts.next().unwrap_or_default().trim();
 
             if hash.is_empty() || short_hash.is_empty() {
                 continue;
             }
+
+            // %G? values: G=good, B=bad, U=good/unknown-validity, X=good/expired,
+            // Y=good/expired-key, R=good/revoked-key, E=missing key, N=none.
+            // For unsigned commits git returns N immediately without invoking GPG.
+            let signature_status = match sig_char {
+                "G" | "U" | "X" | "Y" | "R" => SignatureStatus::Verified,
+                "B" => SignatureStatus::Bad,
+                "E" => SignatureStatus::UnknownKey,
+                _ => SignatureStatus::None,
+            };
 
             commits.push(CommitHistoryItem {
                 hash,
@@ -1135,6 +1146,8 @@ impl GitOperationHandler for CliGitHandler {
                 author_email,
                 date,
                 message,
+                signature_status,
+                key_type: None,
             });
         }
 

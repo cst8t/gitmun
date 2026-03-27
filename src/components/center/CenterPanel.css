@@ -419,6 +419,45 @@
   border-color: rgba(108, 156, 252, 0.3);
 }
 
+.log-view__sig-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px 1px 4px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  background: none;
+  font-family: var(--font-ui);
+}
+
+.log-view__sig-badge--verified {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.12);
+  border-color: rgba(52, 211, 153, 0.3);
+}
+
+.log-view__sig-badge--unknown {
+  color: var(--text-muted);
+  background: var(--surface-2, rgba(128, 128, 128, 0.1));
+  border-color: rgba(128, 128, 128, 0.25);
+}
+
+.log-view__sig-badge--bad {
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.12);
+  border-color: rgba(248, 113, 113, 0.3);
+}
+
+.log-view__sig-icon {
+  width: 11px;
+  height: 11px;
+  flex-shrink: 0;
+}
+
 .log-view__author {
   font-size: var(--font-size-xs);
   color: var(--text-muted);
@@ -435,6 +474,89 @@
   text-align: center;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
+}
+
+/* ── Signature popover ────────────────────────────────────── */
+
+.sig-popover {
+  position: fixed;
+  z-index: 300;
+  width: 280px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  animation: fadeIn 0.1s ease;
+}
+
+.sig-popover--verified { border-top: 2px solid var(--green); }
+.sig-popover--bad { border-top: 2px solid var(--red); }
+.sig-popover--unknown { border-top: 2px solid var(--border); }
+
+.sig-popover__close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.sig-popover__close:hover { color: var(--text-primary); }
+
+.sig-popover__header {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  color: var(--text-primary);
+  padding-right: 18px;
+  line-height: 1.4;
+}
+
+.sig-popover--verified .sig-popover__header { color: var(--green); }
+.sig-popover--bad .sig-popover__header { color: var(--red); }
+
+.sig-popover__header .log-view__sig-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.sig-popover__row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sig-popover__label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.sig-popover__value {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.sig-popover__value--mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 /* ── Merge banner ─────────────────────────────────────────── */
