@@ -15,7 +15,8 @@ use super::types::{
     NumstatResult, OperationResult, PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest,
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
     RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo,
+    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, TagInfo,
 };
 
 pub struct GixGitHandler {
@@ -475,6 +476,27 @@ impl GixGitHandler {
                 .map(|m| Self::bstr_to_string(m.title).trim().to_string())
                 .unwrap_or_default();
 
+            // Detect signature presence cheaply — no subprocess, no crypto.
+            // Verification happens lazily via verify_commits.
+            let decoded = commit
+                .decode()
+                .map_err(|e| GitError::GixError(e.to_string()))?;
+            let sig_value = decoded
+                .extra_headers
+                .iter()
+                .find(|(k, _)| &**k == b"gpgsig")
+                .map(|(_, v)| v.as_ref());
+            let (signature_status, key_type) = if let Some(sig) = sig_value {
+                let kt = if sig.starts_with(b"-----BEGIN SSH SIGNATURE-----") {
+                    "ssh"
+                } else {
+                    "gpg"
+                };
+                (SignatureStatus::Signed, Some(kt.to_string()))
+            } else {
+                (SignatureStatus::None, None)
+            };
+
             commits.push(CommitHistoryItem {
                 hash,
                 short_hash,
@@ -482,6 +504,8 @@ impl GixGitHandler {
                 author_email,
                 date,
                 message,
+                signature_status,
+                key_type,
             });
         }
 

@@ -328,6 +328,24 @@ pub struct CherryPickResult {
     pub conflicted_files: Vec<String>,
 }
 
+/// Whether the commit carries a cryptographic signature and, if so, whether
+/// we were able to verify it against the local keyring / allowedSignersFile.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SignatureStatus {
+    /// No gpgsig header present.
+    None,
+    /// gpgsig header present but we have not attempted verification yet
+    /// (fast path from gix — no subprocess cost).
+    Signed,
+    /// Signature cryptographically valid (G / U / X / Y / R from git %G?).
+    Verified,
+    /// Signature present but key is not in the local keyring (E).
+    UnknownKey,
+    /// Signature is cryptographically bad (B).
+    Bad,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitHistoryItem {
@@ -337,6 +355,19 @@ pub struct CommitHistoryItem {
     pub author_email: String,
     pub date: String,
     pub message: String,
+    pub signature_status: SignatureStatus,
+    /// "ssh" or "gpg", detected from the raw signature header.
+    pub key_type: Option<String>,
+}
+
+/// Result of verifying a single commit's signature.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitVerification {
+    pub hash: String,
+    pub status: SignatureStatus,
+    pub signer: Option<String>,
+    pub fingerprint: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]

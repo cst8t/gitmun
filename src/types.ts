@@ -172,6 +172,8 @@ export type NumstatResult = {
   deletions: number;
 };
 
+export type SignatureStatus = "none" | "signed" | "verified" | "unknownKey" | "bad";
+
 export type CommitHistoryItem = {
   hash: string;
   shortHash: string;
@@ -179,6 +181,15 @@ export type CommitHistoryItem = {
   authorEmail: string;
   date: string;
   message: string;
+  signatureStatus: SignatureStatus;
+  keyType: string | null;
+};
+
+export type CommitVerification = {
+  hash: string;
+  status: SignatureStatus;
+  signer: string | null;
+  fingerprint: string | null;
 };
 
 export type CommitMarkers = {

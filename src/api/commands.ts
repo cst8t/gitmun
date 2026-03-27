@@ -4,6 +4,7 @@ import type {
   CommitFileItem,
   CommitHistoryItem,
   CommitMarkers,
+  CommitVerification,
   CommitRequest,
   CreateBranchRequest,
   CherryPickRequest,
@@ -100,6 +101,10 @@ export function deleteRemoteBranch(request: DeleteRemoteBranchRequest): Promise<
 
 export function getCommitHistory(repoPath: string, limit?: number, afterHash?: string, offset?: number): Promise<CommitHistoryItem[]> {
   return invoke<CommitHistoryItem[]>("get_commit_history", { request: { repoPath, limit, afterHash, offset } });
+}
+
+export function verifyCommits(repoPath: string, hashes: string[]): Promise<CommitVerification[]> {
+  return invoke<CommitVerification[]>("verify_commits", { repoPath, hashes });
 }
 
 export function getCommitMarkers(repoPath: string): Promise<CommitMarkers> {
