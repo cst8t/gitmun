@@ -131,7 +131,7 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
   );
 }
 
-function SignatureBadge({ status, signer, onOpen }: { status: SignatureStatus; signer?: string | null; onOpen: (rect: DOMRect) => void }) {
+function SignatureBadge({ status, onOpen }: { status: SignatureStatus; onOpen: (rect: DOMRect) => void }) {
   if (status === "none") return null;
   const label = status === "verified" ? "Verified" : status === "bad" ? "Bad signature" : "Signed";
   const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
@@ -213,7 +213,6 @@ const CommitRow = React.memo(function CommitRow({
           )}
           <SignatureBadge
             status={effectiveSigStatus}
-            signer={signer}
             onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
           />
           <span className="log-view__author">{c.author}</span>
