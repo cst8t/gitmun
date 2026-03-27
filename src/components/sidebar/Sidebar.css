@@ -14,6 +14,7 @@
   border-bottom: 1px solid var(--border);
   gap: 2px;
   padding: 0 4px;
+  container-type: inline-size;
 }
 
 .sidebar__tab {
@@ -296,10 +297,18 @@
   color: #fff;
 }
 
-@media (max-width: 1400px) {
+@container (max-width: 280px) {
   .sidebar__tab {
     font-size: 10px;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.02em;
     padding: 0 2px;
+  }
+}
+
+@container (max-width: 220px) {
+  .sidebar__tab {
+    font-size: 9px;
+    letter-spacing: 0;
+    padding: 0 1px;
   }
 }
