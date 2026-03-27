@@ -35,7 +35,8 @@ import { useGitTags } from "../hooks/useGitTags";
 import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
-import type { CommitMarkers, CreateBranchRequest, RemoteInfo } from "../types";
+import type { CommitMarkers, CreateBranchRequest, GitIdentity, RemoteInfo } from "../types";
+import type { ResultLogEntry } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
@@ -320,6 +321,16 @@ export function ProjectView({
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
   }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
 
+  const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
+    await saveLocalIdentity(payload);
+    await refreshAll();
+  }, [saveLocalIdentity, refreshAll]);
+
+  const handleSaveGlobalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
+    await saveGlobalIdentity(payload);
+    await refreshAll();
+  }, [saveGlobalIdentity, refreshAll]);
+
   // Refresh all data when settings change (e.g. avatar provider toggle).
   const isFirstSettingsRevision = useRef(true);
   useEffect(() => {
@@ -400,7 +411,7 @@ export function ProjectView({
   const doRevertFiles = useCallback(async (paths: string[]) => {
     if (!repoPath) return;
     try {
-      let backendUsed = "unknown";
+      let backendUsed: ResultLogEntry["backend"] = "unknown";
       for (const path of paths) {
         const result = await api.discardFile(repoPath, path);
         backendUsed = result.backendUsed;
@@ -1468,8 +1479,8 @@ export function ProjectView({
         globalIdentity={globalIdentity}
         localIdentitySaving={localIdentitySaving}
         globalIdentitySaving={globalIdentitySaving}
-        onSaveLocalIdentity={saveLocalIdentity}
-        onSaveGlobalIdentity={saveGlobalIdentity}
+        onSaveLocalIdentity={handleSaveLocalIdentity}
+        onSaveGlobalIdentity={handleSaveGlobalIdentity}
         onScopeChange={setIdentityScope}
       />
 
