@@ -42,43 +42,72 @@ pub async fn verify_commits(
         #[cfg(not(windows))]
         const GIT: &str = "git";
 
-        let run_verification = |allowed_signers_path: Option<&std::path::Path>| -> Result<std::process::Output, String> {
-            let mut cmd = Command::new(GIT);
-            cmd.current_dir(&repo_path);
+        // Read the allowedSignersFile path directly from git config. This is
+        // more reliable than detecting from stderr, since error message wording
+        // can change across git versions.
+        let configured_signers = Command::new(GIT)
+            .current_dir(&repo_path)
+            .args(["config", "--get", "gpg.ssh.allowedSignersFile"])
+            .output()
+            .ok()
+            .filter(|o| o.status.success())
+            .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+            .filter(|s| !s.is_empty());
 
-            if let Some(path) = allowed_signers_path {
-                cmd.arg("-c")
-                    .arg(format!("gpg.ssh.allowedSignersFile={}", path.display()));
+        // Expand a leading ~ to the home directory (git config stores the raw value).
+        let configured_signers = configured_signers.map(|p| {
+            if p.starts_with("~/") || p == "~" {
+                if let Some(home) = std::env::var_os("HOME") {
+                    return format!("{}{}", home.to_string_lossy(), &p[1..]);
+                }
             }
+            p
+        });
 
-            cmd.arg("log")
-                .arg("--no-walk=unsorted")
-                .arg("--format=%H%x1f%G?%x1f%GS%x1f%GF%x1f%GK");
-            for hash in &hashes {
-                cmd.arg(hash);
+        // Determine the effective signers file: use the configured path if it
+        // exists, otherwise create a temporary empty file so git doesn't error
+        // out entirely when SSH signatures are present.
+        let temp_signers;
+        let signers_override: Option<std::path::PathBuf> = if let Some(ref path) = configured_signers {
+            let pb = std::path::PathBuf::from(path);
+            if pb.exists() {
+                Some(pb)
+            } else {
+                // Configured but missing - fall back to empty to get status chars.
+                let tmp = std::env::temp_dir().join(format!(
+                    "gitmun-empty-signers-{}-{}",
+                    std::process::id(),
+                    SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .map_err(|e| e.to_string())?
+                        .as_nanos()
+                ));
+                std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+                temp_signers = Some(tmp.clone());
+                Some(tmp)
             }
-
-            cmd.output().map_err(|e| e.to_string())
-        };
-
-        let output = run_verification(None)?;
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        let output = if stderr.contains("gpg.ssh.allowedSignersFile needs to be configured and exist for ssh signature verification") {
-            let allowed_signers_path = std::env::temp_dir().join(format!(
-                "gitmun-empty-allowed-signers-{}-{}",
-                std::process::id(),
-                SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map_err(|e| e.to_string())?
-                    .as_nanos()
-            ));
-            std::fs::File::create(&allowed_signers_path).map_err(|e| e.to_string())?;
-            let fallback_output = run_verification(Some(&allowed_signers_path))?;
-            let _ = std::fs::remove_file(&allowed_signers_path);
-            fallback_output
         } else {
-            output
+            temp_signers = None;
+            None
         };
+
+        let mut cmd = Command::new(GIT);
+        cmd.current_dir(&repo_path);
+        if let Some(ref path) = signers_override {
+            cmd.arg("-c")
+                .arg(format!("gpg.ssh.allowedSignersFile={}", path.display()));
+        }
+        cmd.arg("log")
+            .arg("--no-walk=unsorted")
+            .arg("--format=%H%x1f%G?%x1f%GS%x1f%GF%x1f%GK");
+        for hash in &hashes {
+            cmd.arg(hash);
+        }
+        let output = cmd.output().map_err(|e| e.to_string())?;
+
+        if let Some(tmp) = temp_signers {
+            let _ = std::fs::remove_file(tmp);
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
 
