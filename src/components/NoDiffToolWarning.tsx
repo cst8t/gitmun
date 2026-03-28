@@ -42,8 +42,8 @@ export function NoDiffToolWarning({ platform, onDismiss, onOpenSettings }: Props
       <div className="no-diff-tool-dialog" role="dialog" aria-modal="true">
         <div className="no-diff-tool-dialog__title">No diff tool configured</div>
         <div className="no-diff-tool-dialog__body">
-          Gitmun doesn't yet include a built-in merge editor. For the best experience —
-          particularly when resolving merge conflicts — we recommend configuring an external
+          Gitmun doesn't yet include a built-in merge editor. For the best experience -
+          particularly when resolving merge conflicts - we recommend configuring an external
           diff tool such as {toolList}. Without one, conflicted files will need to be edited manually.
         </div>
         <label className="no-diff-tool-dialog__suppress">

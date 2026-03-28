@@ -9,7 +9,7 @@ import "./Titlebar.css";
 
 type TitlebarProps = {
   platform: PlatformType;
-  /** True when the OS provides native window decorations — hides drag region and window controls */
+  /** True when the OS provides native window decorations - hides drag region and window controls */
   native: boolean;
   repoPath: string | null;
   currentBranch: string | null;
@@ -67,7 +67,7 @@ export function Titlebar({
 
   return (
     <div className={`titlebar titlebar--${platform}${native ? " titlebar--native" : ""}`}>
-      {/* App branding — skip on Linux since the OS title bar already shows the app name */}
+      {/* App branding - skip on Linux since the OS title bar already shows the app name */}
       {!native && (
         <>
           <div className="titlebar__brand" {...dragRegionProps}>

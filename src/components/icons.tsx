@@ -54,7 +54,7 @@ export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={siz
 export const CloseIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const SwapIcon = ({ size = 16, className }: IconProps) => <ArrowsLeftRight size={size} className={className} />;
 
-// Window control icons — bespoke pixel-precise controls, do not replace
+// Window control icons - bespoke pixel-precise controls, do not replace
 export const WinMinIcon = () => (
   <svg width="10" height="1" viewBox="0 0 10 1"><rect width="10" height="1" fill="currentColor"/></svg>
 );

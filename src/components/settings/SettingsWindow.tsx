@@ -272,7 +272,7 @@ export function SettingsWindow() {
 
       <div className="settings-window__body">
 
-        {/* ── Left column: Application ── */}
+        {/* Left column: Application */}
         <div className="settings-window__column">
           <div className="settings-window__section-title">Application</div>
           {configFilePath && (
@@ -478,7 +478,7 @@ export function SettingsWindow() {
           </div>
         </div>
 
-        {/* ── Right column: Git ── */}
+        {/* Right column: Git */}
         <div className="settings-window__column">
           <div className="settings-window__section-title">Git</div>
           <div className="settings-window__section-note">

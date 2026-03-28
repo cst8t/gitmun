@@ -370,7 +370,7 @@ export function App() {
   useEffect(() => {
     if (repoPath) {
       localStorage.setItem(REPO_STORAGE_KEY, repoPath);
-      api.setMainWindowTitle(`gitmun — ${repoPath.split("/").pop()}`).catch(() => {});
+      api.setMainWindowTitle(`gitmun - ${repoPath.split("/").pop()}`).catch(() => {});
     }
   }, [repoPath]);
 

@@ -7,7 +7,7 @@ export function useGitTags(repoPath: string | null) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Updated synchronously in the render body — always reflects the current
+  // Updated synchronously in the render body - always reflects the current
   // project even in the gap between a render and its effects.
   const currentRepoRef = useRef(repoPath);
   currentRepoRef.current = repoPath;
