@@ -3,6 +3,7 @@ export type ThemeMode = "System" | "Light" | "Dark";
 export type ExternalDiffTool = "Other" | "Meld" | "Kompare" | "WinMerge" | "VsCode" | "VsCodium";
 export type AvatarProviderMode = "Off" | "Libravatar";
 export type CommitDateMode = "AuthorDate" | "CommitterDate";
+export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 
 export type Settings = {
   backendMode: BackendMode;
@@ -19,6 +20,7 @@ export type Settings = {
   pushFollowTags: boolean;
   autoCheckForUpdatesOnLaunch: boolean;
   autoInstallUpdates: boolean;
+  linuxGraphicsMode: LinuxGraphicsMode;
 };
 
 export type OperationResult = {
