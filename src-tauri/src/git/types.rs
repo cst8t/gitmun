@@ -66,6 +66,7 @@ impl Default for AvatarProviderMode {
     }
 }
 
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -336,7 +337,7 @@ pub enum SignatureStatus {
     /// No gpgsig header present.
     None,
     /// gpgsig header present but we have not attempted verification yet
-    /// (fast path from gix — no subprocess cost).
+    /// (fast path from gix - no subprocess cost).
     Signed,
     /// Signature cryptographically valid (G / U / X / Y / R from git %G?).
     Verified,

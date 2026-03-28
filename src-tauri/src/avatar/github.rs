@@ -142,12 +142,12 @@ impl ConditionalProvider for GitHubProvider {
     }
 
     fn fetch(&self, email: &str, repo_path: &str) -> Option<String> {
-        // Fast path: GitHub noreply address — username is encoded in the email.
+        // Fast path: GitHub noreply address - username is encoded in the email.
         if let Some(username) = Self::parse_noreply_username(email) {
             return self.fetch_png_avatar(&username);
         }
 
-        // Slow path: real email — use the commits API to find the GitHub login.
+        // Slow path: real email - use the commits API to find the GitHub login.
         let (owner, repo) = Self::parse_owner_repo(repo_path)?;
         self.fetch_by_commits_api(email, &owner, &repo)
     }
