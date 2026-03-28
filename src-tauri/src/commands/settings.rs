@@ -68,6 +68,11 @@ pub fn get_build_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
+pub fn get_commit_hash() -> &'static str {
+    env!("GITMUN_COMMIT_HASH")
+}
+
+#[tauri::command]
 pub fn get_global_diff_tool() -> Result<ExternalDiffTool, String> {
     let Some(value) = git_config_global_get("diff.tool")? else {
         return Ok(ExternalDiffTool::Other);

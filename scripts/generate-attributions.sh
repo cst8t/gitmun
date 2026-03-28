@@ -21,26 +21,53 @@ cat > public/ATTRIBUTIONS.html << 'EOF'
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Third-Party Attributions</title>
   <style>
+    :root {
+      --bg: #ffffff;
+      --bg-card: #f8f8f8;
+      --bg-card-alt: #fafafa;
+      --bg-pre: #fdfdfd;
+      --text: #222222;
+      --text-sub: #444444;
+      --text-muted: #666666;
+      --border: #e0e0e0;
+      --border-inner: #e8e8e8;
+      --link: #0969da;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0f1117;
+        --bg-card: #1a1d24;
+        --bg-card-alt: #1e2229;
+        --bg-pre: #161920;
+        --text: #e2e4e8;
+        --text-sub: #a0a4ae;
+        --text-muted: #7a7e8a;
+        --border: #2d3039;
+        --border-inner: #252830;
+        --link: #58a6ff;
+      }
+    }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
       max-width: 860px;
       margin: 0 auto;
       padding: 2rem;
-      color: #222;
+      color: var(--text);
+      background: var(--bg);
       line-height: 1.6;
     }
-    h1 { border-bottom: 2px solid #e0e0e0; padding-bottom: 0.5rem; }
-    h2 { margin-top: 2.5rem; color: #444; font-size: 1.2rem; text-transform: uppercase;
+    h1 { border-bottom: 2px solid var(--border); padding-bottom: 0.5rem; }
+    h2 { margin-top: 2.5rem; color: var(--text-sub); font-size: 1.2rem; text-transform: uppercase;
          letter-spacing: 0.05em; }
     .dep {
-      border: 1px solid #e0e0e0;
+      border: 1px solid var(--border);
       border-radius: 6px;
       margin: 0.75rem 0;
       overflow: hidden;
     }
     .dep-header {
       padding: 0.4rem 1rem;
-      background: #f8f8f8;
+      background: var(--bg-card);
     }
     .dep-crate {
       display: flex;
@@ -49,21 +76,21 @@ cat > public/ATTRIBUTIONS.html << 'EOF'
       padding: 0.2rem 0;
     }
     .dep-name { font-weight: 600; }
-    .dep-spdx { color: #666; font-size: 0.82rem; font-family: monospace; }
-    .dep-license { color: #666; font-size: 0.82rem; font-family: monospace; }
+    .dep-spdx { color: var(--text-muted); font-size: 0.82rem; font-family: monospace; }
+    .dep-license { color: var(--text-muted); font-size: 0.82rem; font-family: monospace; }
     details > summary {
       cursor: pointer;
       padding: 0.4rem 1rem;
       font-size: 0.8rem;
-      color: #555;
-      background: #fafafa;
-      border-top: 1px solid #e8e8e8;
+      color: var(--text-muted);
+      background: var(--bg-card-alt);
+      border-top: 1px solid var(--border-inner);
       list-style: none;
     }
     details > summary::-webkit-details-marker { display: none; }
     details > summary::before { content: '▶ '; font-size: 0.65rem; }
     details[open] > summary::before { content: '▼ '; }
-    details > summary:hover { background: #f0f0f0; }
+    details > summary:hover { color: var(--text); }
     pre {
       margin: 0;
       padding: 1rem;
@@ -72,11 +99,12 @@ cat > public/ATTRIBUTIONS.html << 'EOF'
       overflow-x: auto;
       white-space: pre-wrap;
       word-break: break-word;
-      background: #fdfdfd;
-      border-top: 1px solid #e8e8e8;
+      background: var(--bg-pre);
+      border-top: 1px solid var(--border-inner);
+      color: var(--text);
     }
-    hr { border: none; border-top: 2px solid #e0e0e0; margin: 2.5rem 0; }
-    a { color: #0969da; }
+    hr { border: none; border-top: 2px solid var(--border); margin: 2.5rem 0; }
+    a { color: var(--link); }
   </style>
 </head>
 <body>
@@ -95,7 +123,7 @@ if ! command -v cargo-about &> /dev/null; then
     exit 1
 fi
 
-cargo about generate ../about.hbs >> ../public/ATTRIBUTIONS.html
+cargo about generate --config ../about.toml ../about.hbs >> ../public/ATTRIBUTIONS.html
 cd ..
 
 # Add JS section header

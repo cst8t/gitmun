@@ -374,6 +374,12 @@ export function App() {
     }
   }, [repoPath]);
 
+  const handleAboutClick = useCallback(() => {
+    api.openAboutWindow().catch(e => {
+      showToast(String(e), "error");
+    });
+  }, [showToast]);
+
   const handleSettingsClick = useCallback(() => {
     api.openSettingsWindow().catch(e => {
       showToast(String(e), "error");
@@ -474,6 +480,7 @@ export function App() {
         onOpenExistingClick={handleOpenExistingClick}
         onCloneClick={handleCloneClick}
         onInitRepoClick={handleInitRepoClick}
+        onAboutClick={handleAboutClick}
         onSettingsClick={handleSettingsClick}
         leftPaneWidth={leftPaneWidth}
         rightPaneWidth={rightPaneWidth}

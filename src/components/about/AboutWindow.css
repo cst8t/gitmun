@@ -1,0 +1,84 @@
+.about {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 32px 24px;
+  height: 100%;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-base);
+  box-sizing: border-box;
+  user-select: none;
+}
+
+.about__icon {
+  border-radius: var(--radius-xl);
+  margin-bottom: 4px;
+}
+
+.about__name {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.about__version {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.about__hash {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.about__attributions-btn {
+  margin-top: 8px;
+  padding: 6px 16px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.about__attributions-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.about__links {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.about__link-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.about__link-btn:hover {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.about__link-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

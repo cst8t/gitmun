@@ -56,6 +56,20 @@ fn initial_theme_injection_script() -> String {
             );
           }
         } catch (_) {}
+
+        try {
+          const handler = (event) => {
+            if (
+              event.target &&
+              typeof event.target.closest === "function" &&
+              event.target.closest("[data-allow-native-context-menu='true']")
+            ) {
+              return;
+            }
+            event.preventDefault();
+          };
+          window.addEventListener("contextmenu", handler, true);
+        } catch (_) {}
       })();
     "#
     .replace("__GITMUN_DARK_BACKGROUND__", DARK_WINDOW_BACKGROUND_HEX)
@@ -71,6 +85,7 @@ pub async fn open_sub_window(
     width: f64,
     height: f64,
     resizable: bool,
+    show_immediately: bool,
     state: tauri::State<'_, crate::AppState>,
 ) -> Result<(), String> {
     let settings = state.git_service.get_settings();
@@ -95,8 +110,8 @@ pub async fn open_sub_window(
     .closable(true)
     .minimizable(true)
     .maximizable(false)
-    .focused(false)
-    .visible(false)
+    .focused(show_immediately)
+    .visible(show_immediately)
     .background_color(background_colour)
     .initialization_script(initial_theme_injection_script())
     .build()
@@ -135,30 +150,6 @@ pub fn show_window(
 
     if let Some(window) = app.get_webview_window(&label) {
         let _ = window.set_background_color(Some(background_colour));
-
-        let disable_native_context_menu_js = r#"
-            (() => {
-              const sentinel = "__gitmunNativeContextMenuDisabled";
-              if (window[sentinel]) return;
-
-              const handler = (event) => {
-                const target = event.target;
-                if (
-                  target &&
-                  typeof target.closest === "function" &&
-                  target.closest("[data-allow-native-context-menu='true']")
-                ) {
-                  return;
-                }
-                event.preventDefault();
-              };
-
-              window.addEventListener("contextmenu", handler, true);
-              document.addEventListener("contextmenu", handler, true);
-              window[sentinel] = true;
-            })();
-        "#;
-        let _ = window.eval(disable_native_context_menu_js);
 
         window.show().map_err(|e| e.to_string())?;
 

@@ -219,6 +219,7 @@ pub fn run() {
     apply_linux_appimage_webkit_workarounds();
 
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
         .manage(AppState {
@@ -267,6 +268,7 @@ pub fn run() {
             commands::settings::set_confirm_revert,
             commands::settings::get_config_file_path,
             commands::settings::get_build_version,
+            commands::settings::get_commit_hash,
             commands::settings::get_global_diff_tool,
             commands::settings::get_global_default_branch,
             commands::settings::set_global_diff_tool,

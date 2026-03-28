@@ -88,6 +88,7 @@ export type ProjectViewProps = {
   onOpenExistingClick: () => void;
   onCloneClick: () => void;
   onInitRepoClick: () => void;
+  onAboutClick: () => void;
   onSettingsClick: () => void;
   leftPaneWidth: number;
   rightPaneWidth: number;
@@ -115,6 +116,7 @@ export function ProjectView({
   onOpenExistingClick,
   onCloneClick,
   onInitRepoClick,
+  onAboutClick,
   onSettingsClick,
   leftPaneWidth,
   rightPaneWidth,
@@ -1584,6 +1586,7 @@ export function ProjectView({
           branches={branches}
           identityInitials={initials}
           identityAvatarUrl={identityAvatar}
+          onAboutClick={onAboutClick}
           onSettingsClick={onSettingsClick}
           onIdentityClick={onIdentityToggle}
           recentRepos={recentRepos}

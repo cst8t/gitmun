@@ -24,6 +24,8 @@ import {
   FolderOpen,
   Copy,
   ArrowsLeftRight,
+  Info,
+  GithubLogo,
 } from "@phosphor-icons/react";
 
 type IconProps = { size?: number; className?: string };
@@ -49,6 +51,8 @@ export const ShieldIcon = ({ size = 16, className }: IconProps) => <ShieldCheck 
 export const TerminalIcon = ({ size = 16, className }: IconProps) => <Terminal size={size} className={className} />;
 export const EditIcon = ({ size = 16, className }: IconProps) => <PencilSimple size={size} className={className} />;
 export const GlobeIcon = ({ size = 16, className }: IconProps) => <Globe size={size} className={className} />;
+export const InfoIcon = ({ size = 16, className }: IconProps) => <Info size={size} className={className} />;
+export const GithubLogoIcon = ({ size = 16, className }: IconProps) => <GithubLogo size={size} className={className} />;
 export const FolderIcon = ({ size = 16, className }: IconProps) => <FolderOpen size={size} className={className} />;
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
 export const CloseIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;

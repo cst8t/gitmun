@@ -354,6 +354,10 @@ export function getBuildVersion(): Promise<string> {
   return invoke<string>("get_build_version");
 }
 
+export function getCommitHash(): Promise<string> {
+  return invoke<string>("get_commit_hash");
+}
+
 export function getGlobalDiffTool(): Promise<ExternalDiffTool> {
   return invoke<ExternalDiffTool>("get_global_diff_tool");
 }
@@ -399,6 +403,7 @@ export function openSettingsWindow(): Promise<void> {
     width: 650,
     height: 640,
     resizable: false,
+    showImmediately: false,
   });
 }
 
@@ -410,6 +415,31 @@ export function openCloneWindow(): Promise<void> {
     width: 520,
     height: 460,
     resizable: false,
+    showImmediately: false,
+  });
+}
+
+export function openAboutWindow(): Promise<void> {
+  return invoke("open_sub_window", {
+    label: "about",
+    path: "about.html",
+    title: "About Gitmun",
+    width: 380,
+    height: 420,
+    resizable: false,
+    showImmediately: false,
+  });
+}
+
+export function openAttributionsWindow(): Promise<void> {
+  return invoke("open_sub_window", {
+    label: "attributions",
+    path: "ATTRIBUTIONS.html",
+    title: "Third-Party Attributions",
+    width: 900,
+    height: 700,
+    resizable: true,
+    showImmediately: true,
   });
 }
 
@@ -421,5 +451,6 @@ export function openResultLogWindow(): Promise<void> {
     width: 760,
     height: 460,
     resizable: true,
+    showImmediately: false,
   });
 }

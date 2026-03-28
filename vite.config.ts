@@ -18,6 +18,7 @@ export default defineConfig(() => ({
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
+        about: resolve(__dirname, "about.html"),
         settings: resolve(__dirname, "settings.html"),
         clone: resolve(__dirname, "clone.html"),
         resultLog: resolve(__dirname, "result-log.html")
