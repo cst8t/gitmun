@@ -53,7 +53,7 @@ pub async fn verify_commits(
 
             cmd.arg("log")
                 .arg("--no-walk=unsorted")
-                .arg("--format=%H\x1f%G?\x1f%GS\x1f%GF\x1f%GK");
+                .arg("--format=%H%x1f%G?%x1f%GS%x1f%GF%x1f%GK");
             for hash in &hashes {
                 cmd.arg(hash);
             }
@@ -102,15 +102,10 @@ pub async fn verify_commits(
             };
 
             let status = match sig_char {
-                "G" | "U" | "X" | "Y" | "R" => SignatureStatus::Verified,
+                "G" | "X" | "Y" | "R" => SignatureStatus::Verified,
                 "B" => SignatureStatus::Bad,
-                "E" => SignatureStatus::UnknownKey,
+                "U" | "E" => SignatureStatus::UnknownKey,
                 _ => SignatureStatus::None,
-            };
-            let status = if sig_char == "U" && signer_raw.is_empty() && fingerprint.is_some() {
-                SignatureStatus::UnknownKey
-            } else {
-                status
             };
             let signer = if signer_raw.is_empty() { None } else { Some(signer_raw.to_string()) };
 
