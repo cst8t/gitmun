@@ -108,7 +108,6 @@ impl GixGitHandler {
 
         let mut branches = Vec::new();
 
-        // ── Local branches (refs/heads/) ─────────────────────────────────────
         let local_iter = refs
             .local_branches()
             .map_err(|e| GitError::GixError(e.to_string()))?;
@@ -126,7 +125,7 @@ impl GixGitHandler {
                 let merge = config.string(merge_key.as_str()).map(|v| v.to_string());
                 match (remote, merge) {
                     (Some(remote), Some(merge)) => {
-                        // merge is like "refs/heads/main" — strip prefix
+                        // merge is like "refs/heads/main" - strip prefix
                         let branch_part = merge
                             .strip_prefix("refs/heads/")
                             .unwrap_or(merge.as_str())
@@ -180,7 +179,6 @@ impl GixGitHandler {
             });
         }
 
-        // ── Remote branches (refs/remotes/) ──────────────────────────────────
         let remote_iter = refs
             .remote_branches()
             .map_err(|e| GitError::GixError(e.to_string()))?;
@@ -262,7 +260,7 @@ impl GixGitHandler {
             let mut reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
 
-            // The tag object OID (before peeling) — format as hex then truncate to 7 chars
+            // The tag object OID (before peeling) - format as hex then truncate to 7 chars
             let tag_oid = reference.id().detach();
             let short_hash: String = format!("{:.7}", tag_oid);
 
@@ -423,7 +421,7 @@ impl GixGitHandler {
         };
 
         if start_ids.is_empty() {
-            // after_hash was the root commit (no parents) — nothing more to load
+            // after_hash was the root commit (no parents) - nothing more to load
             return Ok(Vec::new());
         }
 
@@ -476,7 +474,7 @@ impl GixGitHandler {
                 .map(|m| Self::bstr_to_string(m.title).trim().to_string())
                 .unwrap_or_default();
 
-            // Detect signature presence cheaply — no subprocess, no crypto.
+            // Detect signature presence cheaply - no subprocess, no crypto.
             // Verification happens lazily via verify_commits.
             let decoded = commit
                 .decode()

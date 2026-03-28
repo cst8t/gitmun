@@ -739,7 +739,7 @@ impl CliGitHandler {
                 if stderr.contains("appears to be broken") =>
             {
                 Some(GitError::InvalidInput(
-                    "This repository has a broken HEAD ref — the clone was likely interrupted. \
+                    "This repository has a broken HEAD ref - the clone was likely interrupted. \
                      Delete the directory and re-clone."
                         .to_string(),
                 ))
@@ -2343,7 +2343,7 @@ impl GitOperationHandler for CliGitHandler {
 
         args.push(&request.branch_name);
 
-        // Allow exit code 1 — git merge exits 1 on conflicts
+        // Allow exit code 1 - git merge exits 1 on conflicts
         let result = Self::run_git_allow_exit_codes(&args, Some(&repo_path), &[1]);
 
         match result {
@@ -2360,7 +2360,7 @@ impl GitOperationHandler for CliGitHandler {
                 Ok(MergeResult {
                     message: if has_conflicts {
                         format!(
-                            "Merge conflicts in {} file(s) — resolve and commit",
+                            "Merge conflicts in {} file(s) - resolve and commit",
                             conflicted_files.len()
                         )
                     } else {
@@ -2426,7 +2426,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(RebaseResult {
             message: if has_conflicts {
                 format!(
-                    "Rebase conflicts in {} file(s) — resolve and continue",
+                    "Rebase conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else {
@@ -2466,7 +2466,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(RebaseResult {
             message: if has_conflicts {
                 format!(
-                    "Rebase conflicts in {} file(s) — resolve and continue",
+                    "Rebase conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else if rebase_in_progress {
@@ -2525,7 +2525,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(CherryPickResult {
             message: if has_conflicts {
                 format!(
-                    "Cherry-pick conflicts in {} file(s) — resolve and continue",
+                    "Cherry-pick conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else {
@@ -2565,7 +2565,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(CherryPickResult {
             message: if has_conflicts {
                 format!(
-                    "Cherry-pick conflicts in {} file(s) — resolve and continue",
+                    "Cherry-pick conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else if cherry_pick_in_progress {
@@ -2626,7 +2626,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(CherryPickResult {
             message: if has_conflicts {
                 format!(
-                    "Revert conflicts in {} file(s) — resolve and continue",
+                    "Revert conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else {
@@ -2666,7 +2666,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(CherryPickResult {
             message: if has_conflicts {
                 format!(
-                    "Revert conflicts in {} file(s) — resolve and continue",
+                    "Revert conflicts in {} file(s) - resolve and continue",
                     conflicted_files.len()
                 )
             } else if revert_in_progress {
@@ -3558,5 +3558,257 @@ impl CliGitHandler {
         }
 
         hunks
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hunk_header_standard() {
+        assert_eq!(CliGitHandler::parse_hunk_header("@@ -10,6 +10,7 @@"), (10, 10));
+    }
+
+    #[test]
+    fn hunk_header_different_lines() {
+        assert_eq!(CliGitHandler::parse_hunk_header("@@ -1,3 +5,4 @@"), (1, 5));
+    }
+
+    #[test]
+    fn hunk_header_single_line_no_count() {
+        // @@ -5 +5 @@ (no comma)
+        assert_eq!(CliGitHandler::parse_hunk_header("@@ -5 +7 @@"), (5, 7));
+    }
+
+    #[test]
+    fn hunk_header_with_function_name() {
+        assert_eq!(
+            CliGitHandler::parse_hunk_header("@@ -20,4 +20,5 @@ fn my_func() {"),
+            (20, 20)
+        );
+    }
+
+    #[test]
+    fn status_line_modified_unstaged() {
+        let result = CliGitHandler::parse_status_line(" M src/main.rs");
+        assert_eq!(result, Some((' ', 'M', "src/main.rs".to_string())));
+    }
+
+    #[test]
+    fn status_line_staged_modified() {
+        let result = CliGitHandler::parse_status_line("M  src/lib.rs");
+        assert_eq!(result, Some(('M', ' ', "src/lib.rs".to_string())));
+    }
+
+    #[test]
+    fn status_line_untracked() {
+        let result = CliGitHandler::parse_status_line("?? new_file.txt");
+        assert_eq!(result, Some(('?', '?', "new_file.txt".to_string())));
+    }
+
+    #[test]
+    fn status_line_rename() {
+        let result = CliGitHandler::parse_status_line("R  old.rs -> new.rs");
+        assert_eq!(result, Some(('R', ' ', "new.rs".to_string())));
+    }
+
+    #[test]
+    fn status_line_too_short_returns_none() {
+        assert_eq!(CliGitHandler::parse_status_line("M "), None);
+        assert_eq!(CliGitHandler::parse_status_line(""), None);
+    }
+
+    #[test]
+    fn status_line_empty_path_returns_none() {
+        assert_eq!(CliGitHandler::parse_status_line("M    "), None);
+    }
+
+    #[test]
+    fn conflict_both_modified() {
+        let output = "UU src/conflict.rs\n";
+        let result = CliGitHandler::parse_conflicted_files(output);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].conflict_type, "both_modified");
+        assert_eq!(result[0].path, "src/conflict.rs");
+    }
+
+    #[test]
+    fn conflict_all_types() {
+        let output = "\
+UU both_mod.rs
+AA both_add.rs
+DD both_del.rs
+AU added_by_us.rs
+UA added_by_them.rs
+DU deleted_by_us.rs
+UD deleted_by_them.rs
+";
+        let result = CliGitHandler::parse_conflicted_files(output);
+        assert_eq!(result.len(), 7);
+        let types: Vec<&str> = result.iter().map(|c| c.conflict_type.as_str()).collect();
+        assert!(types.contains(&"both_modified"));
+        assert!(types.contains(&"both_added"));
+        assert!(types.contains(&"both_deleted"));
+        assert!(types.contains(&"added_by_us"));
+        assert!(types.contains(&"added_by_them"));
+        assert!(types.contains(&"deleted_by_us"));
+        assert!(types.contains(&"deleted_by_them"));
+    }
+
+    #[test]
+    fn conflict_non_conflict_lines_ignored() {
+        let output = " M regular.rs\n?? untracked.rs\n";
+        let result = CliGitHandler::parse_conflicted_files(output);
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn repo_status_untracked_file() {
+        let output = "?? new_file.txt\n";
+        let status = CliGitHandler::parse_repo_status(output);
+        assert_eq!(status.unversioned_files, vec!["new_file.txt"]);
+        assert!(status.staged_files.is_empty());
+        assert!(status.changed_files.is_empty());
+    }
+
+    #[test]
+    fn repo_status_staged_new_file() {
+        let output = "A  new_staged.rs\n";
+        let status = CliGitHandler::parse_repo_status(output);
+        assert_eq!(status.staged_files.len(), 1);
+        assert_eq!(status.staged_files[0].path, "new_staged.rs");
+        assert!(status.changed_files.is_empty());
+    }
+
+    #[test]
+    fn repo_status_modified_unstaged() {
+        let output = " M changed.rs\n";
+        let status = CliGitHandler::parse_repo_status(output);
+        assert_eq!(status.changed_files.len(), 1);
+        assert_eq!(status.changed_files[0].path, "changed.rs");
+        assert!(status.staged_files.is_empty());
+    }
+
+    #[test]
+    fn repo_status_staged_and_unstaged() {
+        let output = "MM both.rs\n";
+        let status = CliGitHandler::parse_repo_status(output);
+        assert_eq!(status.staged_files.len(), 1);
+        assert_eq!(status.changed_files.len(), 1);
+    }
+
+    #[test]
+    fn repo_status_conflict_lines_excluded_from_staged_changed() {
+        let output = "UU conflict.rs\nAA also_conflict.rs\n";
+        let status = CliGitHandler::parse_repo_status(output);
+        assert!(status.staged_files.is_empty());
+        assert!(status.changed_files.is_empty());
+    }
+
+    #[test]
+    fn repo_status_empty_output() {
+        let status = CliGitHandler::parse_repo_status("");
+        assert!(status.staged_files.is_empty());
+        assert!(status.changed_files.is_empty());
+        assert!(status.unversioned_files.is_empty());
+    }
+
+    #[test]
+    fn diff_hunks_empty_input() {
+        assert!(CliGitHandler::parse_diff_hunks("").is_empty());
+    }
+
+    #[test]
+    fn diff_hunks_single_hunk() {
+        let diff = "@@ -1,3 +1,4 @@\n context\n+added\n-removed\n context2\n";
+        let hunks = CliGitHandler::parse_diff_hunks(diff);
+        assert_eq!(hunks.len(), 1);
+        assert_eq!(hunks[0].lines.len(), 4);
+        assert!(matches!(hunks[0].lines[0].kind, DiffLineKind::Context));
+        assert!(matches!(hunks[0].lines[1].kind, DiffLineKind::Add));
+        assert!(matches!(hunks[0].lines[2].kind, DiffLineKind::Remove));
+        assert!(matches!(hunks[0].lines[3].kind, DiffLineKind::Context));
+    }
+
+    #[test]
+    fn diff_hunks_line_numbers() {
+        let diff = "@@ -5,2 +10,2 @@\n context\n+added\n";
+        let hunks = CliGitHandler::parse_diff_hunks(diff);
+        let lines = &hunks[0].lines;
+        // Context line at old=5, new=10
+        assert_eq!(lines[0].old_line_no, Some(5));
+        assert_eq!(lines[0].new_line_no, Some(10));
+        // Add line increments new_line only
+        assert_eq!(lines[1].old_line_no, None);
+        assert_eq!(lines[1].new_line_no, Some(11));
+    }
+
+    #[test]
+    fn diff_hunks_no_newline_marker_skipped() {
+        let diff = "@@ -1,1 +1,1 @@\n context\n\\ No newline at end of file\n";
+        let hunks = CliGitHandler::parse_diff_hunks(diff);
+        // The "\ No newline" line should not appear as a hunk line
+        assert_eq!(hunks[0].lines.len(), 1);
+    }
+
+    #[test]
+    fn diff_hunks_multiple_hunks() {
+        let diff = "@@ -1,1 +1,1 @@\n ctx1\n@@ -10,1 +10,1 @@\n ctx2\n";
+        let hunks = CliGitHandler::parse_diff_hunks(diff);
+        assert_eq!(hunks.len(), 2);
+    }
+
+    #[test]
+    fn numstat_basic() {
+        let output = "5\t3\tsrc/main.rs\n10\t0\tsrc/lib.rs\n";
+        let stats = CliGitHandler::parse_numstat(output);
+        assert_eq!(stats.get("src/main.rs"), Some(&(5, 3)));
+        assert_eq!(stats.get("src/lib.rs"), Some(&(10, 0)));
+    }
+
+    #[test]
+    fn numstat_binary_file() {
+        // Binary files show "-" which parses as 0
+        let output = "-\t-\timage.png\n";
+        let stats = CliGitHandler::parse_numstat(output);
+        assert_eq!(stats.get("image.png"), Some(&(0, 0)));
+    }
+
+    #[test]
+    fn numstat_empty_input() {
+        assert!(CliGitHandler::parse_numstat("").is_empty());
+    }
+
+    #[test]
+    fn repo_name_https_with_git_suffix() {
+        assert_eq!(
+            CliGitHandler::repo_name_from_url("https://example.com/user/myrepo.git"),
+            Some("myrepo".to_string())
+        );
+    }
+
+    #[test]
+    fn repo_name_https_without_git_suffix() {
+        assert_eq!(
+            CliGitHandler::repo_name_from_url("https://example.com/user/myrepo"),
+            Some("myrepo".to_string())
+        );
+    }
+
+    #[test]
+    fn repo_name_ssh_url() {
+        assert_eq!(
+            CliGitHandler::repo_name_from_url("git@example.com:user/repo.git"),
+            Some("repo".to_string())
+        );
+    }
+
+    #[test]
+    fn repo_name_trailing_slash() {
+        assert_eq!(
+            CliGitHandler::repo_name_from_url("https://example.com/user/repo/"),
+            Some("repo".to_string())
+        );
     }
 }
