@@ -1,5 +1,5 @@
 use crate::git::types::{
-    AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool,
+    AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode,
     OperationResult, Settings, ThemeMode,
 };
 use crate::{configure_command, AppState};
@@ -307,4 +307,12 @@ pub fn set_auto_install_updates(
     state: tauri::State<'_, AppState>,
 ) -> Settings {
     state.git_service.set_auto_install_updates(auto_install_updates)
+}
+
+#[tauri::command]
+pub fn set_linux_graphics_mode(
+    mode: LinuxGraphicsMode,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state.git_service.set_linux_graphics_mode(mode)
 }

@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { ask, open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { check } from "@tauri-apps/plugin-updater";
-import type { AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, Settings, ThemeMode } from "../../types";
+import type { AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode, Settings, ThemeMode } from "../../types";
 import { openResultLogWindow } from "../../api/commands";
 import { CloseIcon, FolderIcon } from "../icons";
 import "./SettingsWindow.css";
@@ -66,6 +66,8 @@ export function SettingsWindow() {
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [autoCheckForUpdatesOnLaunch, setAutoCheckForUpdatesOnLaunch] = useState(true);
   const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
+  const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
+  const [isLinux, setIsLinux] = useState(false);
   const [updaterSupported, setUpdaterSupported] = useState(() => supportsUpdater(safePlatform()));
   const [configFilePath, setConfigFilePath] = useState<string>("");
   const [buildVersion, setBuildVersion] = useState<string>("");
@@ -96,6 +98,7 @@ export function SettingsWindow() {
         const supported = supportedDiffTools(os);
         setAllowedDiffTools(supported);
         setUpdaterSupported(supportsUpdater(os));
+        setIsLinux(os === "linux");
 
         const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
         setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
@@ -114,6 +117,7 @@ export function SettingsWindow() {
         setPushFollowTags(settings.pushFollowTags ?? false);
         setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
         setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
+        setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
         document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
 
         const cfgPath = await invoke<string | null>("get_config_file_path");
@@ -152,6 +156,7 @@ export function SettingsWindow() {
       await invoke("set_push_follow_tags", { pushFollowTags });
       await invoke("set_auto_check_for_updates_on_launch", { autoCheckForUpdatesOnLaunch });
       await invoke("set_auto_install_updates", { autoInstallUpdates });
+      if (isLinux) await invoke("set_linux_graphics_mode", { mode: linuxGraphicsMode });
       const settings = await invoke<Settings>("get_settings");
 
       localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
@@ -180,6 +185,8 @@ export function SettingsWindow() {
     pushFollowTags,
     autoCheckForUpdatesOnLaunch,
     autoInstallUpdates,
+    isLinux,
+    linuxGraphicsMode,
   ]);
 
   const handleOpenResultLog = useCallback(async () => {
@@ -369,6 +376,24 @@ export function SettingsWindow() {
               <option value="Dark">Dark</option>
             </select>
           </div>
+
+          {isLinux && (
+            <div className="settings-window__row">
+              <label className="settings-window__label">Graphics mode</label>
+              <select
+                className="settings-window__select"
+                value={linuxGraphicsMode}
+                onChange={e => setLinuxGraphicsMode(e.target.value as LinuxGraphicsMode)}
+              >
+                <option value="Auto">Compatibility (default)</option>
+                <option value="Safe">Maximum compatibility</option>
+                <option value="Native">Native (hardware acceleration)</option>
+              </select>
+              <div className="settings-window__section-note">
+                Takes effect on next launch. Use "Maximum compatibility" if you see rendering crashes or a blank window.
+              </div>
+            </div>
+          )}
 
           <div className="settings-window__row">
             <label className="settings-window__label">Diff panel</label>

@@ -247,6 +247,15 @@ impl GitService {
         })
     }
 
+    pub fn set_linux_graphics_mode(
+        &self,
+        mode: super::types::LinuxGraphicsMode,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            settings.linux_graphics_mode = mode;
+        })
+    }
+
     pub fn set_panel_layout(&self, left_pane_width: u32, right_pane_width: u32) -> Settings {
         self.update_settings(|settings| {
             settings.left_pane_width = left_pane_width;

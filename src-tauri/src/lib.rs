@@ -31,26 +31,39 @@ pub(crate) fn configure_command(_command: &mut std::process::Command) {
     }
 }
 
+/// Read linuxGraphicsMode from the saved config file without starting Tauri.
+/// Used to apply WebKit env vars before the WebView is initialised.
+#[cfg(target_os = "linux")]
+fn read_saved_linux_graphics_mode() -> Option<String> {
+    let config_dir = std::env::var_os("XDG_CONFIG_HOME")
+        .map(std::path::PathBuf::from)
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
+        })?;
+    let config_file = config_dir.join("com.cst8t.gitmun").join("config.json");
+    let text = std::fs::read_to_string(config_file).ok()?;
+    let json: serde_json::Value = serde_json::from_str(&text).ok()?;
+    json.get("linuxGraphicsMode")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_ascii_lowercase())
+}
+
 #[cfg(target_os = "linux")]
 fn apply_linux_appimage_webkit_workarounds() {
+    // Env var takes precedence; otherwise use the saved setting; default to "auto".
     let graphics_mode = std::env::var("GITMUN_GRAPHICS_MODE")
-        .unwrap_or_else(|_| "auto".to_string())
-        .to_lowercase();
+        .map(|v| v.to_lowercase())
+        .or_else(|_| read_saved_linux_graphics_mode().ok_or(()))
+        .unwrap_or_else(|_| "auto".to_string());
 
-    let running_in_appimage = std::env::var_os("APPIMAGE").is_some();
-
-    // Auto mode only applies for AppImage runtime, but explicit modes should work everywhere.
-    if graphics_mode == "auto" && !running_in_appimage {
-        return;
-    }
-
+    // "native" opts out entirely; every other mode (including the default "auto")
+    // applies the dmabuf workaround because some EGL/Mesa stacks corrupt the heap
+    // without it, regardless of whether we are running from an AppImage.
     if graphics_mode == "native" {
         return;
     }
 
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
-        // AppImage + some EGL stacks can fail to initialize a default display.
-        // Disable dmabuf renderer for better compatibility unless user already chose.
         unsafe {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
@@ -265,6 +278,7 @@ pub fn run() {
             commands::settings::set_push_follow_tags,
             commands::settings::set_auto_check_for_updates_on_launch,
             commands::settings::set_auto_install_updates,
+            commands::settings::set_linux_graphics_mode,
             commands::history::get_commit_history,
             commands::history::verify_commits,
             commands::history::merge_branch,

@@ -66,6 +66,23 @@ impl Default for AvatarProviderMode {
     }
 }
 
+/// Controls WebKit graphics workarounds on Linux. Takes effect on next launch.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LinuxGraphicsMode {
+    /// Disable DMA-BUF renderer and compositing (recommended for most systems).
+    Auto,
+    /// Also force X11 backend and software rendering - for systems where `Auto`
+    /// still causes issues (e.g. Wayland without XWayland).
+    Safe,
+    /// No overrides - full hardware acceleration.
+    Native,
+}
+
+impl Default for LinuxGraphicsMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -96,6 +113,8 @@ pub struct Settings {
     pub auto_check_for_updates_on_launch: bool,
     #[serde(default)]
     pub auto_install_updates: bool,
+    #[serde(default)]
+    pub linux_graphics_mode: LinuxGraphicsMode,
 }
 
 impl Default for Settings {
@@ -115,6 +134,7 @@ impl Default for Settings {
             push_follow_tags: false,
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
+            linux_graphics_mode: LinuxGraphicsMode::Auto,
         }
     }
 }
