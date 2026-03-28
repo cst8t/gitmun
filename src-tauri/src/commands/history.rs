@@ -67,7 +67,7 @@ pub async fn verify_commits(
         // Determine the effective signers file: use the configured path if it
         // exists, otherwise create a temporary empty file so git doesn't error
         // out entirely when SSH signatures are present.
-        let temp_signers;
+        let mut temp_signers: Option<std::path::PathBuf> = None;
         let signers_override: Option<std::path::PathBuf> = if let Some(ref path) = configured_signers {
             let pb = std::path::PathBuf::from(path);
             if pb.exists() {
@@ -87,7 +87,6 @@ pub async fn verify_commits(
                 Some(tmp)
             }
         } else {
-            temp_signers = None;
             None
         };
 
