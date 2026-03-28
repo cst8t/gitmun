@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, RefObject } from "react";
 import {
   GitIcon, BranchIcon, FetchIcon, PullIcon, PushIcon,
-  StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon,
+  StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon, InfoIcon,
 } from "./icons";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { BranchInfo } from "../types";
@@ -20,6 +20,7 @@ type TitlebarProps = {
   searchQuery: string;
   searchInputRef: RefObject<HTMLInputElement | null>;
   onSearchChange: (query: string) => void;
+  onAboutClick: () => void;
   onSettingsClick: () => void;
   onIdentityClick: () => void;
   onCloneClick: () => void;
@@ -50,7 +51,7 @@ function splitRepoPath(repoPath: string): { repoDir: string; repoName: string } 
 export function Titlebar({
   platform, native, repoPath, currentBranch, branches,
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
-  onSearchChange, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
+  onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onFetch, onPull, onPush, onStash,
   identityOpen, remoteOp,
 }: TitlebarProps) {
@@ -146,7 +147,9 @@ export function Titlebar({
         )}
       </div>
 
-      {/* Settings */}
+      <div className="titlebar__icon-btn" onClick={onAboutClick} title="About Gitmun">
+        <InfoIcon />
+      </div>
       <div className="titlebar__icon-btn" onClick={onSettingsClick}>
         <SettingsIcon />
       </div>

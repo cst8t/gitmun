@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-capability.json",
   "identifier": "default",
   "description": "Default capability for invoking app commands",
-  "windows": ["main", "settings", "clone-repository", "result-log"],
+  "windows": ["main", "settings", "clone-repository", "result-log", "about", "attributions"],
   "permissions": [
     "core:default",
     "core:webview:allow-create-webview-window",
@@ -20,6 +20,7 @@
     "core:menu:allow-remove",
     "core:window:allow-cursor-position",
     "core:window:allow-outer-position",
-    "updater:default"
+    "updater:default",
+    "shell:allow-open"
   ]
 }
