@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Script to generate combined attribution file for Rust and JavaScript dependencies
-# Lists direct dependencies only — each library is responsible for attributing its own deps.
+# Lists direct dependencies only - each library is responsible for attributing its own deps.
 # Usage: npm run generate:attributions
 
 set -e
@@ -13,7 +13,7 @@ echo "Generating attribution file..."
 echo ""
 
 # Write HTML header
-cat > ATTRIBUTIONS.html << 'EOF'
+cat > public/ATTRIBUTIONS.html << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -95,11 +95,11 @@ if ! command -v cargo-about &> /dev/null; then
     exit 1
 fi
 
-cargo about generate ../about.hbs >> ../ATTRIBUTIONS.html
+cargo about generate ../about.hbs >> ../public/ATTRIBUTIONS.html
 cd ..
 
 # Add JS section header
-cat >> ATTRIBUTIONS.html << 'EOF'
+cat >> public/ATTRIBUTIONS.html << 'EOF'
 
   <hr>
   <h2>JavaScript / TypeScript Dependencies</h2>
@@ -108,7 +108,7 @@ EOF
 # Generate JavaScript dependencies attribution (direct deps only, read from node_modules)
 echo "Collecting JavaScript dependencies..."
 
-python3 << 'PYEOF' >> ATTRIBUTIONS.html
+python3 << 'PYEOF' >> public/ATTRIBUTIONS.html
 import json, os, glob, html
 
 with open('package.json') as f:
@@ -170,11 +170,11 @@ for dep in deps:
 PYEOF
 
 # Close HTML
-cat >> ATTRIBUTIONS.html << 'EOF'
+cat >> public/ATTRIBUTIONS.html << 'EOF'
 
 </body>
 </html>
 EOF
 
 echo ""
-echo "✓ Attribution file generated: ATTRIBUTIONS.html"
+echo "✓ Attribution file generated: public/ATTRIBUTIONS.html"
