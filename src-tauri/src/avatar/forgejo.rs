@@ -5,7 +5,7 @@ use std::path::Path;
 use std::process::Command;
 
 // Forgejo/Gitea hash avatars using HMAC-SHA1 with an instance-secret, so
-// /avatars/{hash} can't be probed from an email alone — hence the API steps.
+// /avatars/{hash} can't be probed from an email alone - hence the API steps.
 pub struct ForgejoProvider {
     client: reqwest::blocking::Client,
 }

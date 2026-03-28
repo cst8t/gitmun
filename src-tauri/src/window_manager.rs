@@ -103,7 +103,7 @@ pub async fn open_sub_window(
     .map_err(|e| e.to_string())?;
 
     // WebView2 on Windows can fail to navigate when the window is created
-    // from the backend — the WebView2 controller initialises asynchronously
+    // from the backend - the WebView2 controller initialises asynchronously
     // and the initial URL set via WebviewUrl::App may be lost. Eval calls
     // are queued internally until the controller is ready, so this reliably
     // kicks off navigation once WebView2 is initialised.
@@ -120,7 +120,7 @@ pub async fn open_sub_window(
 }
 
 /// Called by the frontend once React has rendered. Shows and focuses the
-/// window — Rust shows the window directly, avoiding the IPC-latency issues
+/// window - Rust shows the window directly, avoiding the IPC-latency issues
 /// that plagued the JS `getCurrentWindow().show()` approach.
 ///
 /// Works for both secondary windows and the main window.
