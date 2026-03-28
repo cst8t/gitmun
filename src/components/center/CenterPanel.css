@@ -476,8 +476,6 @@
   font-size: var(--font-size-sm);
 }
 
-/* ── Signature popover ────────────────────────────────────── */
-
 .sig-popover {
   position: fixed;
   z-index: 300;
@@ -559,8 +557,6 @@
   font-size: 10px;
 }
 
-/* ── Merge banner ─────────────────────────────────────────── */
-
 .merge-banner {
   display: flex;
   align-items: center;
@@ -629,7 +625,6 @@
   opacity: 0.85;
 }
 
-/* ── Conflict file rows ───────────────────────────────────── */
 
 .staging__section-label--conflict {
   color: #f59e0b;

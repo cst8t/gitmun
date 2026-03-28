@@ -48,7 +48,7 @@ export function useGitStatus(repoPath: string | null) {
 
   // Initial fetch. On focus, do one silent refresh to pick up external edits
   // made while the window was away. The .git FS watcher (in ProjectView) handles
-  // instant updates for all in-app git operations — no timer needed.
+  // instant updates for all in-app git operations - no timer needed.
   useEffect(() => {
     refresh();
     const handleFocus = () => refresh({ silent: true });

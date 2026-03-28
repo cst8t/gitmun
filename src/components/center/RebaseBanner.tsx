@@ -33,7 +33,7 @@ export function RebaseBanner({
             </span>
           </>
         ) : (
-          <span>Rebase in progress onto {targetLabel} — continue when ready</span>
+          <span>Rebase in progress onto {targetLabel} - continue when ready</span>
         )}
       </div>
       <div className="merge-banner__actions">

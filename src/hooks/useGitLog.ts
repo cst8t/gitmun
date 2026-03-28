@@ -16,7 +16,7 @@ export function useGitLog(repoPath: string | null) {
 
   const fetchId = useRef(0);
   // Cursor: hash of the last commit in the current list. The Rust side starts
-  // the next walk from that commit's parents — O(PAGE_SIZE) per page.
+  // the next walk from that commit's parents - O(PAGE_SIZE) per page.
   const cursorRef = useRef<string | undefined>(undefined);
   // Count of displayed commits, kept in a ref so loadMore doesn't go stale.
   const commitCountRef = useRef(0);
@@ -80,7 +80,7 @@ export function useGitLog(repoPath: string | null) {
         }
       }
     } catch {
-      // silently ignore — user can scroll up and back to retry
+      // silently ignore - user can scroll up and back to retry
     } finally {
       if (currentRepoRef.current === repoPath && fetchId.current === myId) {
         setLoadingMore(false);

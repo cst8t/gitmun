@@ -169,8 +169,6 @@
   color: var(--text-muted);
 }
 
-/* ── Progress log ───────────────────────────────────────────────────────── */
-
 .clone-window__progress {
   font-family: var(--font-mono);
   font-size: 11px;
@@ -199,7 +197,6 @@
   word-break: break-all;
 }
 
-/* ── Spinner ────────────────────────────────────────────────────────────── */
 
 .clone-window__spinner {
   display: inline-block;

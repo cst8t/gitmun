@@ -1,5 +1,5 @@
 /**
- * ProjectView — all per-project state and logic.
+ * ProjectView - all per-project state and logic.
  *
  * This component is keyed by repoPath in App.tsx. Whenever the active
  * repository changes, React completely unmounts the old instance and mounts a
@@ -77,7 +77,7 @@ function extractStashRef(output: string | null | undefined): string | null {
 export type ProjectViewProps = {
   /** The active repository path. Changing this key causes a full remount. */
   repoPath: string | null;
-  /** Increments each time settings are saved — triggers a full data refresh. */
+  /** Increments each time settings are saved - triggers a full data refresh. */
   settingsRevision: number;
   platform: PlatformType;
   showToast: (message: string, type?: ToastType) => void;
@@ -95,7 +95,7 @@ export type ProjectViewProps = {
   onSetLeftPaneCollapsed: (collapsed: boolean) => void;
   draggingPane: "left" | "right" | null;
   onSetDraggingPane: (pane: "left" | "right" | null) => void;
-  /** Ref pointing to div.app__body — owned by App for the resize observer. */
+  /** Ref pointing to div.app__body - owned by App for the resize observer. */
   appBodyRef: React.RefObject<HTMLDivElement | null>;
   confirmRevert: boolean;
   onSetConfirmRevert: (v: boolean) => void;
@@ -349,7 +349,7 @@ export function ProjectView({
     let cancelled = false;
     let unlisten: (() => void) | null = null;
 
-    api.watchRepo(repoPath).catch(() => {/* ignore — watcher is best-effort */});
+    api.watchRepo(repoPath).catch(() => {/* ignore - watcher is best-effort */});
 
     listen("git-fs-changed", () => {
       refreshAllRef.current();
@@ -901,7 +901,7 @@ export function ProjectView({
     try {
       const result = await api.cherryPickStart({ repoPath, commitHash });
       if (result.hasConflicts) {
-        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1142,7 +1142,7 @@ export function ProjectView({
     try {
       const result = await api.rebaseStart({ repoPath, onto: ontoBranch });
       if (result.hasConflicts) {
-        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1164,7 +1164,7 @@ export function ProjectView({
     try {
       const result = await api.rebaseContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1208,7 +1208,7 @@ export function ProjectView({
     try {
       const result = await api.cherryPickContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1279,7 +1279,7 @@ export function ProjectView({
     try {
       const result = await api.revertCommitStart(repoPath, commitHash);
       if (result.hasConflicts) {
-        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1301,7 +1301,7 @@ export function ProjectView({
     try {
       const result = await api.revertContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCenterTab("changes");
       } else {
@@ -1371,7 +1371,7 @@ export function ProjectView({
       };
       const result = await api.mergeBranch(repoPath, mergePendingBranch, options);
       if (result.hasConflicts) {
-        showToast(`Merge conflicts in ${result.conflictedFiles.length} file(s) — resolve in the Changes tab`, "error");
+        showToast(`Merge conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
       } else {
         showToast(result.message, "success");

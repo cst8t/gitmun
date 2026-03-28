@@ -31,7 +31,7 @@ export function MergeBanner({
     <div className={`merge-banner${resolved ? " merge-banner--resolved" : ""}`}>
       <div className="merge-banner__text">
         {resolved ? (
-          <span>All conflicts resolved — ready to commit merge</span>
+          <span>All conflicts resolved - ready to commit merge</span>
         ) : (
           <>
             <span>Merging {branchLabel}{targetLabel}</span>

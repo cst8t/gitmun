@@ -16,7 +16,7 @@ export function usePlatform(): PlatformType {
         } else if (os === "windows") {
           setPlat("windows");
         } else {
-          // Linux — detect DE
+          // Linux - detect DE
           const de = await detectDesktopEnvironment();
           if (de.includes("kde") || de.includes("plasma")) {
             setPlat("kde");

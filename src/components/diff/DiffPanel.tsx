@@ -281,7 +281,7 @@ export function DiffPanel({
                 </Diff>
               </div>
             ) : (
-              <div className="diff-panel__placeholder">Empty file — no changes to display</div>
+              <div className="diff-panel__placeholder">Empty file - no changes to display</div>
             )
           ) : (
             <div className="diff-panel__placeholder">Click a file to show changes</div>

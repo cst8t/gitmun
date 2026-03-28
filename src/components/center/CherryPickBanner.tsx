@@ -33,7 +33,7 @@ export function CherryPickBanner({
             </span>
           </>
         ) : (
-          <span>Cherry-pick in progress for {commitLabel} — continue when ready</span>
+          <span>Cherry-pick in progress for {commitLabel} - continue when ready</span>
         )}
       </div>
       <div className="merge-banner__actions">

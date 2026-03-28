@@ -189,7 +189,7 @@ const CommitRow = React.memo(function CommitRow({
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
-      {/* Initials are the base layer; the image fades in on top — no layout shift. */}
+      {/* Initials are the base layer; the image fades in on top - no layout shift. */}
       <div className="log-view__avatar" style={{ background: `${color}18`, color }}>
         {initials}
         {avatarUrl && (

@@ -75,7 +75,7 @@ export function CreateTagDialog({ existingTagNames, targetCommit, onConfirm, onC
           </div>
           <div className="dialog__field">
             <label className="dialog__label">
-              Message <span className="dialog__label-hint">(optional — leave blank for lightweight tag)</span>
+              Message <span className="dialog__label-hint">(optional - leave blank for lightweight tag)</span>
             </label>
             <textarea
               className="dialog__textarea"

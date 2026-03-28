@@ -201,7 +201,7 @@ export function StagingView({
   return (
     <div className="staging">
       <div className="staging__files">
-        {/* Conflicts section — shown during merge/rebase */}
+        {/* Conflicts section - shown during merge/rebase */}
         {(mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0 && (
           <div className="staging__section">
             <div className="staging__section-header">

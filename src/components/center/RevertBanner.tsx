@@ -30,7 +30,7 @@ export function RevertBanner({
             </span>
           </>
         ) : (
-          <span>Revert in progress for {commitLabel} — continue when ready</span>
+          <span>Revert in progress for {commitLabel} - continue when ready</span>
         )}
       </div>
       <div className="merge-banner__actions">
