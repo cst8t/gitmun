@@ -75,6 +75,12 @@ pub fn is_updater_enabled() -> bool {
     if std::env::var_os("FLATPAK_ID").is_some() {
         return false;
     }
+    // Distro package maintainers (e.g. Debian) install this file to signal
+    // that the system package manager owns updates, not the in-app updater.
+    #[cfg(target_os = "linux")]
+    if std::path::Path::new("/usr/share/gitmun/system-managed").exists() {
+        return false;
+    }
     true
 }
 
