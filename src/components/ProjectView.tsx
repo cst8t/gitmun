@@ -1762,11 +1762,13 @@ export function ProjectView({
                   loading={diffLoading}
                   selectedFile={selectedFile}
                   selectedCommitHash={selectedCommitHash}
+                  repoPath={repoPath}
                   commitFiles={commitFiles}
                   commitFilesLoading={commitFilesLoading}
                   compareCurrentFileLabel={compareCurrentFileLabel}
                   onCompareCurrentFile={handleCompareCurrentFile}
                   onOpenCommitFileDiff={handleOpenCommitFileDiff}
+                  onSelectCommit={setSelectedCommitHash}
                   hunkAction={selectedFile ? (selectedFileStaged ? "unstage" : "stage") : null}
                   hunkActionBusy={hunkActionBusy}
                   wrapLines={wrapDiffLines}
