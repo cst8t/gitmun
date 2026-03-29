@@ -39,11 +39,13 @@
       "icons/icon.ico",
       "icons/icon.png"
     ],
-    "deb": {
-      "depends": ["git"]
-    },
-    "rpm": {
-      "depends": ["git"]
+    "linux": {
+      "deb": {
+        "depends": ["git"]
+      },
+      "rpm": {
+        "depends": ["git"]
+      }
     },
     "windows": {
       "nsis": {
