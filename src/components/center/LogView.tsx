@@ -375,7 +375,10 @@ export function LogView({
         });
       });
     }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+      for (const h of pending) verifyingRef.current.delete(h);
+    };
   }, [repoPath, commits]);
 
   useEffect(() => {
