@@ -1,7 +1,6 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { ask, open } from "@tauri-apps/plugin-dialog";
-import { platform as osPlatform } from "@tauri-apps/plugin-os";
 import { check } from "@tauri-apps/plugin-updater";
 import { Toast } from "./Toast";
 import { ProjectView } from "./ProjectView";
@@ -39,15 +38,6 @@ async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
     return hint === "dark" ? "dark" : "light";
   } catch {
     return "dark";
-  }
-}
-
-function supportsUpdater(): boolean {
-  try {
-    const os = osPlatform();
-    return os === "linux" || os === "windows" || os === "macos";
-  } catch {
-    return false;
   }
 }
 
@@ -256,7 +246,7 @@ export function App() {
           });
         }
 
-        if (settings.autoCheckForUpdatesOnLaunch && supportsUpdater()) {
+        if (settings.autoCheckForUpdatesOnLaunch && await api.isUpdaterEnabled()) {
           void checkForUpdatesOnLaunch(settings.autoInstallUpdates ?? false);
         }
       } catch {

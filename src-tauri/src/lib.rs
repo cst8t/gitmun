@@ -285,6 +285,7 @@ pub fn run() {
             commands::settings::get_config_file_path,
             commands::settings::get_build_version,
             commands::settings::get_commit_hash,
+            commands::settings::is_updater_enabled,
             commands::settings::get_global_diff_tool,
             commands::settings::get_global_default_branch,
             commands::settings::set_global_diff_tool,

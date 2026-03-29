@@ -359,6 +359,10 @@ export function getBuildVersion(): Promise<string> {
   return invoke<string>("get_build_version");
 }
 
+export function isUpdaterEnabled(): Promise<boolean> {
+  return invoke<boolean>("is_updater_enabled");
+}
+
 export function getCommitHash(): Promise<string> {
   return invoke<string>("get_commit_hash");
 }

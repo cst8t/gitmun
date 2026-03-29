@@ -8,12 +8,14 @@
       (() => {
         try {
           const mode = localStorage.getItem("gitmun.themeMode");
-          const theme = mode === "Light"
-            ? "light"
-            : mode === "Dark"
-              ? "dark"
-              : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
-          document.documentElement.dataset.theme = theme;
+          if (mode === "Light") {
+            document.documentElement.dataset.theme = "light";
+          } else if (mode === "Dark") {
+            document.documentElement.dataset.theme = "dark";
+          } else if (!document.documentElement.dataset.theme) {
+            document.documentElement.dataset.theme =
+              window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
         } catch {}
       })();
     </script>

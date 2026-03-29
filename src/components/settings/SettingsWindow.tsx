@@ -6,7 +6,7 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { check } from "@tauri-apps/plugin-updater";
 import type { AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode, Settings, ThemeMode } from "../../types";
-import { openResultLogWindow, getSystemThemeHint } from "../../api/commands";
+import { openResultLogWindow, getSystemThemeHint, isUpdaterEnabled } from "../../api/commands";
 import { CloseIcon, FolderIcon } from "../icons";
 import "./SettingsWindow.css";
 
@@ -52,10 +52,6 @@ function safePlatform(): string {
   }
 }
 
-function supportsUpdater(os: string): boolean {
-  return os === "linux" || os === "windows" || os === "macos";
-}
-
 export function SettingsWindow() {
   const useNativeWindowBar = true;
   const [backendMode, setBackendMode] = useState<BackendMode>("Default");
@@ -74,7 +70,7 @@ export function SettingsWindow() {
   const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
   const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
   const [isLinux, setIsLinux] = useState(false);
-  const [updaterSupported, setUpdaterSupported] = useState(() => supportsUpdater(safePlatform()));
+  const [updaterSupported, setUpdaterSupported] = useState(false);
   const [configFilePath, setConfigFilePath] = useState<string>("");
   const [buildVersion, setBuildVersion] = useState<string>("");
   const [status, setStatus] = useState("Ready.");
@@ -103,7 +99,7 @@ export function SettingsWindow() {
         const os = safePlatform();
         const supported = supportedDiffTools(os);
         setAllowedDiffTools(supported);
-        setUpdaterSupported(supportsUpdater(os));
+        setUpdaterSupported(await isUpdaterEnabled());
         setIsLinux(os === "linux");
 
         const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
