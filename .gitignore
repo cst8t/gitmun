@@ -30,3 +30,8 @@ dist
 
 # Generated attribution file
 public/ATTRIBUTIONS.html
+
+# Generated icons (source: src-tauri/icons/icon.svg)
+src-tauri/icons/*.png
+src-tauri/icons/*.ico
+src-tauri/icons/*.icns

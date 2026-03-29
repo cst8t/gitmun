@@ -14,7 +14,8 @@
     "linux:setup": "bash ./scripts/setup-linux.sh",
     "tauri:build": "tauri build",
     "tauri:build:linux": "tauri build --bundles deb,appimage",
-    "generate:attributions": "bash ./scripts/generate-attributions.sh"
+    "generate:attributions": "bash ./scripts/generate-attributions.sh",
+    "generate:icons": "tauri icon src-tauri/icons/icon.svg -o src-tauri/icons"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",
