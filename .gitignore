@@ -35,3 +35,5 @@ public/ATTRIBUTIONS.html
 src-tauri/icons/*.png
 src-tauri/icons/*.ico
 src-tauri/icons/*.icns
+src-tauri/icons/android/
+src-tauri/icons/ios/
