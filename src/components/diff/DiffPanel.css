@@ -281,3 +281,146 @@
     max-width: 104px;
   }
 }
+
+.diff-panel__details-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  line-height: 1;
+  letter-spacing: 2px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.diff-panel__details-btn:hover:not(:disabled) {
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+}
+
+.diff-panel__details-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.commit-details-popover {
+  position: fixed;
+  z-index: 300;
+  width: 360px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fadeIn 0.1s ease;
+}
+
+.commit-details-popover__close {
+  position: absolute;
+  top: 8px;
+  right: 10px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 2px 4px;
+  border-radius: var(--radius-md);
+}
+
+.commit-details-popover__close:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.commit-details-popover__section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.commit-details-popover__label {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.commit-details-popover__value {
+  font-size: var(--font-size-xs);
+  color: var(--text-secondary);
+  word-break: break-all;
+  padding-right: 18px;
+}
+
+.commit-details-popover__value--mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.commit-details-popover__value--muted {
+  color: var(--text-muted);
+}
+
+.commit-details-popover__hash-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 18px;
+}
+
+.commit-details-popover__copy-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 1px 3px;
+  border-radius: var(--radius-md);
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.commit-details-popover__copy-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.commit-details-popover__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.commit-details-popover__chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.commit-details-popover__chip:hover {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.commit-details-popover__chip--tag {
+  color: var(--yellow);
+  cursor: default;
+}
+
+.commit-details-popover__chip--tag:hover {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
