@@ -38,7 +38,31 @@ pub(crate) fn git_command() -> std::process::Command {
         cmd.args(["--host", "git"]);
         return cmd;
     }
-    std::process::Command::new("git")
+    std::process::Command::new(resolve_git_exe())
+}
+
+/// On Windows, the installer may launch Gitmun before the updated PATH (with
+/// Git's bin dir) propagates to child processes. Check known install locations
+/// as a fallback so git.exe is found even in that window.
+fn resolve_git_exe() -> std::ffi::OsString {
+    #[cfg(windows)]
+    {
+        let git_in_path = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).any(|dir| dir.join("git.exe").exists()))
+            .unwrap_or(false);
+        if !git_in_path {
+            for candidate in &[
+                r"C:\Program Files\Git\cmd\git.exe",
+                r"C:\Program Files\Git\bin\git.exe",
+                r"C:\Program Files (x86)\Git\cmd\git.exe",
+            ] {
+                if std::path::Path::new(candidate).exists() {
+                    return (*candidate).into();
+                }
+            }
+        }
+    }
+    "git".into()
 }
 
 /// Read linuxGraphicsMode from the saved config file without starting Tauri.
