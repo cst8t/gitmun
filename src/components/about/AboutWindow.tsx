@@ -16,7 +16,7 @@ export function AboutWindow() {
 
   return (
     <div className="about">
-      <img className="about__icon" src="/icon.png" alt="" width={80} height={80} />
+      <img className="about__icon" src="/icon.svg" alt="" width={80} height={80} />
       <h1 className="about__name">Gitmun</h1>
       {version && <div className="about__version">Version {version}</div>}
       {commitHash && <div className="about__hash">{commitHash}</div>}
