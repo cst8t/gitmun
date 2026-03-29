@@ -11,7 +11,8 @@ use super::error::{GitError, GitResult};
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
-    CommitDateMode, CommitFileItem, CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest,
+    CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitTrailer,
     CommitMarkers, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff,
@@ -1226,6 +1227,63 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         Ok(files)
+    }
+
+    fn get_commit_details(&self, request: &CommitDetailsRequest) -> GitResult<CommitDetails> {
+        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let hash = request.commit_hash.trim();
+
+        if hash.is_empty() {
+            return Err(GitError::InvalidInput("Commit hash is required".to_string()));
+        }
+
+        // Single call: fields separated by \x1f (unit separator), record ends with \x1e
+        let format = "%H\x1f%an\x1f%ae\x1f%aI\x1f%cn\x1f%ce\x1f%cI\x1f%P\x1f%b\x1e";
+        let output = Self::run_git(&["log", "-1", &format!("--format={}", format), hash], Some(&repo_path))?;
+
+        // Split on record separator; take the first record
+        let record = output.split('\x1e').next().unwrap_or_default();
+        let parts: Vec<&str> = record.splitn(9, '\x1f').collect();
+        if parts.len() < 8 {
+            return Err(GitError::InvalidInput(format!("Unexpected git log output for {}", hash)));
+        }
+
+        let full_hash = parts[0].trim().to_string();
+        let author = parts[1].trim().to_string();
+        let author_email = parts[2].trim().to_string();
+        let author_date = parts[3].trim().to_string();
+        let committer = parts[4].trim().to_string();
+        let committer_email = parts[5].trim().to_string();
+        let committer_date = parts[6].trim().to_string();
+        let parent_hashes = parts[7]
+            .split_whitespace()
+            .filter(|s| !s.is_empty())
+            .map(|s| s.to_string())
+            .collect();
+        let body = if parts.len() > 8 { parts[8] } else { "" };
+        let trailers = parse_commit_trailers(body);
+
+        // Tags pointing at this commit (may be empty output)
+        let tags_output = Self::run_git(&["tag", "--points-at", hash], Some(&repo_path))
+            .unwrap_or_default();
+        let tags = tags_output
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect();
+
+        Ok(CommitDetails {
+            hash: full_hash,
+            author,
+            author_email,
+            author_date,
+            committer,
+            committer_email,
+            committer_date,
+            parent_hashes,
+            tags,
+            trailers,
+        })
     }
 
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff> {
@@ -3559,6 +3617,41 @@ impl CliGitHandler {
 
         hunks
     }
+}
+
+/// Parse git-trailer lines from a commit body.
+///
+/// Scans lines from the end of the body, collecting `Key: value` pairs that
+/// match the trailer format. Stops on the first non-empty, non-matching line
+/// (trailers form a contiguous block at the end of the message body).
+pub(super) fn parse_commit_trailers(body: &str) -> Vec<CommitTrailer> {
+    let lines: Vec<&str> = body.lines().collect();
+    let mut trailers = Vec::new();
+
+    for line in lines.iter().rev() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Trailer format: Token: value  (token is word chars + hyphens)
+        if let Some(colon_pos) = trimmed.find(':') {
+            let key = &trimmed[..colon_pos];
+            let value = trimmed[colon_pos + 1..].trim();
+            let key_valid = !key.is_empty()
+                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+            if key_valid && !value.is_empty() {
+                trailers.push(CommitTrailer {
+                    key: key.to_string(),
+                    value: value.to_string(),
+                });
+                continue;
+            }
+        }
+        break;
+    }
+
+    trailers.reverse();
+    trailers
 }
 
 #[cfg(test)]
