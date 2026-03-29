@@ -205,6 +205,35 @@ pub struct CommitFilesRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitDetailsRequest {
+    pub repo_path: String,
+    pub commit_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitTrailer {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitDetails {
+    pub hash: String,
+    pub author: String,
+    pub author_email: String,
+    pub author_date: String,
+    pub committer: String,
+    pub committer_email: String,
+    pub committer_date: String,
+    pub parent_hashes: Vec<String>,
+    pub tags: Vec<String>,
+    pub trailers: Vec<CommitTrailer>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ExternalDiffRequest {
     pub repo_path: String,
     pub commit_hash: String,

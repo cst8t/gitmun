@@ -7,8 +7,9 @@ use super::error::GitResult;
 use super::gix_handler::GixGitHandler;
 use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
-    CloneRequest, CommitDateMode, CommitFileItem, CommitFilesRequest, CommitHistoryItem,
-    CommitHistoryRequest, CommitMarkers, CommitRequest, CreateBranchRequest, CreateTagRequest,
+    CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
+    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest,
+    CreateBranchRequest, CreateTagRequest,
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
     HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
@@ -37,6 +38,7 @@ pub trait GitOperationHandler: Send + Sync {
     ) -> GitResult<Vec<CommitHistoryItem>>;
     fn get_commit_markers(&self, request: &RepoRequest) -> GitResult<CommitMarkers>;
     fn get_commit_files(&self, request: &CommitFilesRequest) -> GitResult<Vec<CommitFileItem>>;
+    fn get_commit_details(&self, request: &CommitDetailsRequest) -> GitResult<CommitDetails>;
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff>;
     fn get_branches(&self, request: &RepoRequest) -> GitResult<Vec<BranchInfo>>;
     fn create_branch(&self, request: &CreateBranchRequest) -> GitResult<OperationResult>;
@@ -352,6 +354,7 @@ impl GitService {
         fn get_repo_status(request: RepoRequest) -> GitResult<RepoStatus>;
         fn get_commit_markers(request: RepoRequest) -> GitResult<CommitMarkers>;
         fn get_commit_files(request: CommitFilesRequest) -> GitResult<Vec<CommitFileItem>>;
+        fn get_commit_details(request: CommitDetailsRequest) -> GitResult<CommitDetails>;
         fn get_diff(request: DiffRequest) -> GitResult<FileDiff>;
         fn get_branches(request: RepoRequest) -> GitResult<Vec<BranchInfo>>;
         fn stash_list(request: RepoRequest) -> GitResult<Vec<StashEntry>>;
