@@ -17,8 +17,8 @@ beforeEach(() => {
 describe("useGitBranches", () => {
   test("fetches branches on mount", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, aheadBehind: null },
-      { name: "dev", isCurrent: false, isRemote: false, upstream: null, aheadBehind: null },
+      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      { name: "dev", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 },
     ]);
     const { result } = renderHook(() => useGitBranches("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -44,7 +44,7 @@ describe("useGitBranches", () => {
 
   test("clears branches immediately when repoPath changes", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, aheadBehind: null },
+      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
     ]);
     const { result, rerender } = renderHook(
       ({ path }) => useGitBranches(path),
@@ -77,7 +77,7 @@ describe("useGitBranches", () => {
 
     // Now resolve the stale /repo-a response
     act(() => {
-      resolveFirst([{ name: "stale", isCurrent: false, isRemote: false, upstream: null, aheadBehind: null }]);
+      resolveFirst([{ name: "stale", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 }]);
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -87,14 +87,14 @@ describe("useGitBranches", () => {
 
   test("refresh re-fetches branches", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, aheadBehind: null },
+      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
     ]);
     const { result } = renderHook(() => useGitBranches("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, aheadBehind: null },
-      { name: "feature", isCurrent: false, isRemote: false, upstream: null, aheadBehind: null },
+      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      { name: "feature", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 },
     ]);
     act(() => { result.current.refresh(); });
     await waitFor(() => expect(result.current.branches).toHaveLength(2));

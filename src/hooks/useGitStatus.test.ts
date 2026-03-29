@@ -12,20 +12,20 @@ const mockGetRepoStatus = vi.mocked(getRepoStatus);
 
 function makeStatus(overrides = {}) {
   return {
-    changed_files: [],
-    staged_files: [],
-    unversioned_files: [],
-    current_branch: "main",
-    merge_in_progress: false,
-    merge_head_branch: null,
-    conflicted_files: [],
-    merge_message: null,
-    rebase_in_progress: false,
-    rebase_onto: null,
-    cherry_pick_in_progress: false,
-    cherry_pick_head: null,
-    revert_in_progress: false,
-    revert_head: null,
+    changedFiles: [],
+    stagedFiles: [],
+    unversionedFiles: [],
+    currentBranch: "main",
+    mergeInProgress: false,
+    mergeHeadBranch: null,
+    conflictedFiles: [],
+    mergeMessage: null,
+    rebaseInProgress: false,
+    rebaseOnto: null,
+    cherryPickInProgress: false,
+    cherryPickHead: null,
+    revertInProgress: false,
+    revertHead: null,
     ...overrides,
   };
 }
@@ -36,10 +36,10 @@ beforeEach(() => {
 
 describe("useGitStatus", () => {
   test("fetches status on mount", async () => {
-    mockGetRepoStatus.mockResolvedValue(makeStatus({ current_branch: "main" }));
+    mockGetRepoStatus.mockResolvedValue(makeStatus({ currentBranch: "main" }));
     const { result } = renderHook(() => useGitStatus("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(result.current.status?.current_branch).toBe("main");
+    expect(result.current.status?.currentBranch).toBe("main");
     expect(result.current.error).toBeNull();
   });
 
@@ -59,13 +59,13 @@ describe("useGitStatus", () => {
   });
 
   test("refresh re-fetches status", async () => {
-    mockGetRepoStatus.mockResolvedValue(makeStatus({ current_branch: "main" }));
+    mockGetRepoStatus.mockResolvedValue(makeStatus({ currentBranch: "main" }));
     const { result } = renderHook(() => useGitStatus("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    mockGetRepoStatus.mockResolvedValue(makeStatus({ current_branch: "feature" }));
+    mockGetRepoStatus.mockResolvedValue(makeStatus({ currentBranch: "feature" }));
     act(() => { result.current.refresh(); });
-    await waitFor(() => expect(result.current.status?.current_branch).toBe("feature"));
+    await waitFor(() => expect(result.current.status?.currentBranch).toBe("feature"));
   });
 
   test("silent refresh skips loading state", async () => {
@@ -73,11 +73,11 @@ describe("useGitStatus", () => {
     const { result } = renderHook(() => useGitStatus("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    mockGetRepoStatus.mockResolvedValue(makeStatus({ current_branch: "dev" }));
+    mockGetRepoStatus.mockResolvedValue(makeStatus({ currentBranch: "dev" }));
     act(() => { result.current.refresh({ silent: true }); });
     // loading must never become true during a silent refresh
     expect(result.current.loading).toBe(false);
-    await waitFor(() => expect(result.current.status?.current_branch).toBe("dev"));
+    await waitFor(() => expect(result.current.status?.currentBranch).toBe("dev"));
     expect(result.current.loading).toBe(false);
   });
 
@@ -108,12 +108,12 @@ describe("useGitStatus", () => {
     const { result } = renderHook(() => useGitStatus("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
-    mockGetRepoStatus.mockResolvedValue(makeStatus({ current_branch: "after-focus" }));
+    mockGetRepoStatus.mockResolvedValue(makeStatus({ currentBranch: "after-focus" }));
     act(() => {
       window.dispatchEvent(new Event("focus"));
     });
     await waitFor(() =>
-      expect(result.current.status?.current_branch).toBe("after-focus"),
+      expect(result.current.status?.currentBranch).toBe("after-focus"),
     );
   });
 });
