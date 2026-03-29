@@ -14,7 +14,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2.0.0", features = [] }
 
 [dependencies]
-gix = { version = "0.80.0", features = ["blocking-http-transport-reqwest-rust-tls"] }
+gix = { version = "0.81.0", features = ["blocking-http-transport-reqwest-rust-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tauri = { version = "2.0.0", features = [] }
@@ -22,12 +22,13 @@ tauri-plugin-dialog = "2.0.0"
 tauri-plugin-os = "2.0.0"
 tauri-plugin-shell = "2"
 tauri-plugin-updater = "2.0.0"
-reqwest = { version = "0.12", features = ["blocking", "rustls-tls"], default-features = false }
-md5 = "0.7"
+reqwest = { version = "0.13", features = ["blocking", "rustls"], default-features = false }
+url = "2"
+md5 = "0.8"
 base64 = "0.22"
-notify = "7"
+notify = "8"
 mime_guess = "2.0"
-infer = "0.16"
+infer = "0.19"
 
 [dev-dependencies]
 tempfile = "3"

@@ -3,6 +3,7 @@ use base64::{engine::general_purpose::STANDARD, Engine};
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use url::Url;
 
 // Forgejo/Gitea hash avatars using HMAC-SHA1 with an instance-secret, so
 // /avatars/{hash} can't be probed from an email alone - hence the API steps.
@@ -108,7 +109,7 @@ impl ForgejoProvider {
     }
 
     fn host_from_base_url(base_url: &str) -> Option<String> {
-        reqwest::Url::parse(base_url)
+        Url::parse(base_url)
             .ok()?
             .host_str()
             .map(|h| h.to_string())
@@ -201,7 +202,7 @@ impl ForgejoProvider {
     }
 
     fn fetch_by_user_search(&self, email: &str, base_url: &str) -> Option<String> {
-        let mut url = reqwest::Url::parse(&format!("{}/api/v1/users/search", base_url)).ok()?;
+        let mut url = Url::parse(&format!("{}/api/v1/users/search", base_url)).ok()?;
         url.query_pairs_mut()
             .append_pair("q", email.trim())
             .append_pair("limit", "2");
