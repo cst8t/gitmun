@@ -33,19 +33,17 @@ cat > public/ATTRIBUTIONS.html << 'EOF'
       --border-inner: #e8e8e8;
       --link: #0969da;
     }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f1117;
-        --bg-card: #1a1d24;
-        --bg-card-alt: #1e2229;
-        --bg-pre: #161920;
-        --text: #e2e4e8;
-        --text-sub: #a0a4ae;
-        --text-muted: #7a7e8a;
-        --border: #2d3039;
-        --border-inner: #252830;
-        --link: #58a6ff;
-      }
+    html[data-theme="dark"] {
+      --bg: #0f1117;
+      --bg-card: #1a1d24;
+      --bg-card-alt: #1e2229;
+      --bg-pre: #161920;
+      --text: #e2e4e8;
+      --text-sub: #a0a4ae;
+      --text-muted: #7a7e8a;
+      --border: #2d3039;
+      --border-inner: #252830;
+      --link: #58a6ff;
     }
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

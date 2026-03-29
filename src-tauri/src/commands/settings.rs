@@ -67,6 +67,18 @@ pub fn get_build_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
+pub fn is_updater_enabled() -> bool {
+    if std::env::var_os("GITMUN_NO_UPDATER").is_some() {
+        return false;
+    }
+    // Flatpak bundles are updated by the Flatpak runtime, not in-app.
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return false;
+    }
+    true
+}
+
+#[tauri::command]
 pub fn get_commit_hash() -> &'static str {
     env!("GITMUN_COMMIT_HASH")
 }

@@ -44,7 +44,7 @@ pkgdesc="A cross-platform Git GUI built with Tauri"
 arch=('x86_64')
 url="${PROJECT_URL}"
 license=('GPL3')
-depends=('cairo' 'desktop-file-utils' 'gdk-pixbuf2' 'glib2' 'gtk3' 'hicolor-icon-theme' 'libsoup' 'pango' 'webkit2gtk-4.1')
+depends=('cairo' 'desktop-file-utils' 'gdk-pixbuf2' 'glib2' 'git' 'gtk3' 'hicolor-icon-theme' 'libsoup' 'pango' 'webkit2gtk-4.1')
 options=('!strip' '!debug' '!emptydirs')
 install=${INSTALL_FILE}
 
@@ -84,6 +84,7 @@ pkgbase = ${PKGNAME}
   depends = desktop-file-utils
   depends = gdk-pixbuf2
   depends = glib2
+  depends = git
   depends = gtk3
   depends = hicolor-icon-theme
   depends = libsoup
