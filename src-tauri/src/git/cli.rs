@@ -101,7 +101,7 @@ impl CliGitHandler {
     }
 
     fn run_git_bytes(args: &[&str], current_dir: Option<&Path>) -> GitResult<Vec<u8>> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command.args(args);
 
@@ -178,7 +178,7 @@ impl CliGitHandler {
         args: &[&str],
         current_dir: Option<&Path>,
     ) -> GitResult<()> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command.args(overrides.iter().map(String::as_str)).args(args);
         if let Some(path) = current_dir {
@@ -208,7 +208,7 @@ impl CliGitHandler {
         current_dir: Option<&Path>,
         extra_ok_codes: &[i32],
     ) -> GitResult<String> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command.args(args);
 
@@ -456,7 +456,7 @@ impl CliGitHandler {
         current_dir: &Path,
         stdin_data: &[u8],
     ) -> GitResult<String> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command
             .args(args)
@@ -607,7 +607,7 @@ impl CliGitHandler {
     }
 
     fn get_diff_tool_name(repo_path: &Path) -> Option<String> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         let output = command
             .args(["config", "--get", "diff.tool"])
@@ -637,7 +637,7 @@ impl CliGitHandler {
     }
 
     fn get_merge_tool_name(repo_path: &Path) -> Option<String> {
-        let mut command = Command::new("git");
+        let mut command = crate::git_command();
         Self::configure_command(&mut command);
         let output = command
             .args(["config", "--get", "merge.tool"])
@@ -718,7 +718,7 @@ impl CliGitHandler {
                 cmd
             }
             _ => {
-                let mut cmd = Command::new("git");
+                let mut cmd = crate::git_command();
                 Self::configure_command(&mut cmd);
                 cmd.args(Self::difftool_cmd_overrides(tool_name))
                     .args(["difftool", "-y", "--tool", tool_name, "--no-index", "--"])

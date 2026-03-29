@@ -2,8 +2,7 @@ use crate::git::types::{
     AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode,
     OperationResult, Settings, ThemeMode,
 };
-use crate::{configure_command, AppState};
-use std::process::Command;
+use crate::{configure_command, git_command, AppState};
 use tauri::Manager;
 
 #[tauri::command]
@@ -97,7 +96,7 @@ pub fn get_global_default_branch() -> Result<Option<String>, String> {
 }
 
 fn git_config_global_set(key: &str, value: &str) -> Result<(), String> {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     configure_command(&mut command);
     let output = command
         .args(["config", "--global", key, value])
@@ -115,7 +114,7 @@ fn git_config_global_set(key: &str, value: &str) -> Result<(), String> {
 }
 
 fn git_config_global_get(key: &str) -> Result<Option<String>, String> {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     configure_command(&mut command);
     let output = command
         .args(["config", "--global", "--get", key])
@@ -143,7 +142,7 @@ fn git_config_global_get(key: &str) -> Result<Option<String>, String> {
 }
 
 fn validate_branch_name(name: &str) -> Result<(), String> {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     configure_command(&mut command);
     let output = command
         .args(["check-ref-format", "--branch", name])
@@ -163,7 +162,7 @@ fn validate_branch_name(name: &str) -> Result<(), String> {
 }
 
 fn git_config_global_unset(key: &str) -> Result<(), String> {
-    let mut command = Command::new("git");
+    let mut command = git_command();
     configure_command(&mut command);
     // --unset exits 5 when the key doesn't exist - treat that as success
     let output = command

@@ -7,7 +7,7 @@ use crate::git::types::{
 };
 use crate::{configure_command, AppState, CloneCancelFlag};
 use std::io::Read;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use tauri::Manager;
 
@@ -79,7 +79,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
         });
     }
 
-    let mut command = Command::new("git");
+    let mut command = crate::git_command();
     configure_command(&mut command);
     command.arg("init").arg("-b").arg("main").current_dir(&path);
     let output = command
@@ -87,7 +87,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
         .map_err(|e| format!("Failed to launch git: {e}"))?;
 
     if !output.status.success() {
-        let mut fallback = Command::new("git");
+        let mut fallback = crate::git_command();
         configure_command(&mut fallback);
         fallback.arg("init").current_dir(&path);
         let fallback_output = fallback
@@ -130,7 +130,7 @@ pub async fn clone_repo(
     let dest_existed = final_dest.exists();
     let cleanup_path = final_dest_str.clone();
 
-    let mut cmd = Command::new("git");
+    let mut cmd = crate::git_command();
     configure_command(&mut cmd);
     cmd.args(["clone", "--progress", &repo_url, &final_dest_str])
         .stderr(Stdio::piped())
