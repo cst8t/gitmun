@@ -328,6 +328,12 @@ jobs:
           workspaces: |
             src-tauri -> src-tauri/target
 
+      - name: Cache xwin (MSVC CRT / Windows SDK)
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/xwin
+          key: xwin-v1
+
       - name: Install cross-build dependencies
         run: |
           sudo apt-get update
