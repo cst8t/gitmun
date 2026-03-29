@@ -3904,4 +3904,48 @@ UD deleted_by_them.rs
             Some("repo".to_string())
         );
     }
+
+    #[test]
+    fn trailers_empty_body() {
+        assert!(parse_commit_trailers("").is_empty());
+    }
+
+    #[test]
+    fn trailers_single() {
+        let result = parse_commit_trailers("Reviewed-by: Alice");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].key, "Reviewed-by");
+        assert_eq!(result[0].value, "Alice");
+    }
+
+    #[test]
+    fn trailers_multiple_in_order() {
+        let body = "Reviewed-by: Alice\nSigned-off-by: Bob";
+        let result = parse_commit_trailers(body);
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].key, "Reviewed-by");
+        assert_eq!(result[1].key, "Signed-off-by");
+    }
+
+    #[test]
+    fn trailers_value_with_colon() {
+        let result = parse_commit_trailers("Co-authored-by: Name <email@example.com>");
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].key, "Co-authored-by");
+        assert_eq!(result[0].value, "Name <email@example.com>");
+    }
+
+    #[test]
+    fn trailers_stops_at_body_paragraph() {
+        let body = "This is the body.\n\nReviewed-by: Alice";
+        let result = parse_commit_trailers(body);
+        assert_eq!(result.len(), 1);
+        assert_eq!(result[0].key, "Reviewed-by");
+    }
+
+    #[test]
+    fn trailers_invalid_key_with_space_not_collected() {
+        let result = parse_commit_trailers("Not A Key: value");
+        assert!(result.is_empty());
+    }
 }

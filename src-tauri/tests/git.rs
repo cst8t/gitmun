@@ -4,9 +4,11 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use gitmun_lib::git::cli::CliGitHandler;
+use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitHistoryRequest, CommitRequest, CreateBranchRequest, RepoRequest, StageFilesRequest,
+    CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, RepoRequest,
+    StageFilesRequest,
 };
 
 fn init_repo() -> TempDir {
@@ -42,6 +44,26 @@ fn repo_request(dir: &TempDir) -> RepoRequest {
 
 fn handler() -> CliGitHandler {
     CliGitHandler
+}
+
+fn gix_handler() -> GixGitHandler {
+    GixGitHandler::new()
+}
+
+fn head_hash(repo: &Path) -> String {
+    let output = Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .current_dir(repo)
+        .output()
+        .expect("rev-parse HEAD");
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+fn details_request(dir: &TempDir, hash: &str) -> CommitDetailsRequest {
+    CommitDetailsRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        commit_hash: hash.to_string(),
+    }
 }
 
 #[test]
@@ -203,4 +225,214 @@ fn commit_history_returns_commits_newest_first() {
         })
         .expect("get_commit_history");
     assert_eq!(commits[0].message, "third");
+}
+
+// commit_details: CLI handler
+
+#[test]
+fn cli_commit_details_basic_fields() {
+    let dir = init_repo();
+    let hash = head_hash(dir.path());
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.hash, hash);
+    assert_eq!(details.author, "Gitmun Test");
+    assert_eq!(details.author_email, "test@gitmun.test");
+    assert!(!details.author_date.is_empty());
+    assert!(details.trailers.is_empty());
+    assert!(details.tags.is_empty());
+}
+
+#[test]
+fn cli_commit_details_parent_hash() {
+    let dir = init_repo();
+    let first_hash = head_hash(dir.path());
+    write_file(dir.path(), "a.txt", "hi");
+    git(dir.path(), &["add", "a.txt"]);
+    git(dir.path(), &["commit", "-m", "second"]);
+    let second_hash = head_hash(dir.path());
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &second_hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.parent_hashes.len(), 1);
+    assert_eq!(details.parent_hashes[0], first_hash);
+}
+
+#[test]
+fn cli_commit_details_trailers_parsed() {
+    let dir = init_repo();
+    git(dir.path(), &["commit", "--allow-empty", "-m", "subject", "-m", "Reviewed-by: Alice <a@b.com>"]);
+    let hash = head_hash(dir.path());
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.trailers.len(), 1);
+    assert_eq!(details.trailers[0].key, "Reviewed-by");
+    assert_eq!(details.trailers[0].value, "Alice <a@b.com>");
+}
+
+#[test]
+fn cli_commit_details_no_trailers() {
+    let dir = init_repo();
+    git(dir.path(), &["commit", "--allow-empty", "-m", "plain message"]);
+    let hash = head_hash(dir.path());
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert!(details.trailers.is_empty());
+}
+
+#[test]
+fn cli_commit_details_tagged_commit() {
+    let dir = init_repo();
+    let hash = head_hash(dir.path());
+    git(dir.path(), &["tag", "v1.0", &hash]);
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert!(details.tags.contains(&"v1.0".to_string()));
+}
+
+#[test]
+fn cli_commit_details_merge_has_two_parents() {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "feature"]);
+    write_file(dir.path(), "feature.txt", "x");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature commit"]);
+    git(dir.path(), &["checkout", "-"]);
+    git(dir.path(), &["merge", "--no-ff", "feature", "-m", "merge feature"]);
+    let merge_hash = head_hash(dir.path());
+
+    let details = handler()
+        .get_commit_details(&details_request(&dir, &merge_hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.parent_hashes.len(), 2);
+}
+
+#[test]
+fn cli_commit_details_empty_hash_returns_error() {
+    let dir = init_repo();
+    let result = handler().get_commit_details(&CommitDetailsRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        commit_hash: "".to_string(),
+    });
+    assert!(result.is_err());
+}
+
+// commit_details: gix handler
+
+#[test]
+fn gix_commit_details_basic_fields() {
+    let dir = init_repo();
+    let hash = head_hash(dir.path());
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.hash, hash);
+    assert_eq!(details.author, "Gitmun Test");
+    assert_eq!(details.author_email, "test@gitmun.test");
+    assert!(!details.author_date.is_empty());
+    assert!(details.trailers.is_empty());
+    assert!(details.tags.is_empty());
+}
+
+#[test]
+fn gix_commit_details_parent_hash() {
+    let dir = init_repo();
+    let first_hash = head_hash(dir.path());
+    write_file(dir.path(), "a.txt", "hi");
+    git(dir.path(), &["add", "a.txt"]);
+    git(dir.path(), &["commit", "-m", "second"]);
+    let second_hash = head_hash(dir.path());
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &second_hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.parent_hashes.len(), 1);
+    assert_eq!(details.parent_hashes[0], first_hash);
+}
+
+#[test]
+fn gix_commit_details_trailers_parsed() {
+    let dir = init_repo();
+    git(dir.path(), &["commit", "--allow-empty", "-m", "subject", "-m", "Reviewed-by: Alice <a@b.com>"]);
+    let hash = head_hash(dir.path());
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.trailers.len(), 1);
+    assert_eq!(details.trailers[0].key, "Reviewed-by");
+    assert_eq!(details.trailers[0].value, "Alice <a@b.com>");
+}
+
+#[test]
+fn gix_commit_details_no_trailers() {
+    let dir = init_repo();
+    git(dir.path(), &["commit", "--allow-empty", "-m", "plain message"]);
+    let hash = head_hash(dir.path());
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert!(details.trailers.is_empty());
+}
+
+#[test]
+fn gix_commit_details_tagged_commit() {
+    let dir = init_repo();
+    let hash = head_hash(dir.path());
+    git(dir.path(), &["tag", "v1.0", &hash]);
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert!(details.tags.contains(&"v1.0".to_string()));
+}
+
+#[test]
+fn gix_commit_details_merge_has_two_parents() {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "feature"]);
+    write_file(dir.path(), "feature.txt", "x");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature commit"]);
+    git(dir.path(), &["checkout", "-"]);
+    git(dir.path(), &["merge", "--no-ff", "feature", "-m", "merge feature"]);
+    let merge_hash = head_hash(dir.path());
+
+    let details = gix_handler()
+        .get_commit_details(&details_request(&dir, &merge_hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.parent_hashes.len(), 2);
+}
+
+#[test]
+fn gix_commit_details_invalid_hash_returns_error() {
+    let dir = init_repo();
+    let result = gix_handler().get_commit_details(&CommitDetailsRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        commit_hash: "notahash".to_string(),
+    });
+    assert!(result.is_err());
 }
