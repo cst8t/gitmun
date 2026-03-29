@@ -144,6 +144,8 @@
   color: var(--text-secondary);
   font-size: 12px;
   width: 190px;
+  /* Wide enough to show "Search commits  Ctrl+F" without clipping */
+  min-width: 180px;
   flex-shrink: 0;
   box-sizing: border-box;
   cursor: text;
@@ -311,19 +313,25 @@
 }
 
 @media (max-width: 1480px) {
-  .titlebar__repo-dir {
-    display: none;
+  .titlebar__repo {
+    max-width: 200px;
+    min-width: 0;
+    overflow: hidden;
   }
 
-  .titlebar__repo {
-    max-width: 250px;
+  .titlebar__repo-dir {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     min-width: 0;
+    flex-shrink: 1;
   }
 
   .titlebar__repo-name {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    flex-shrink: 0;
   }
 }
 
@@ -336,10 +344,10 @@
   }
 
   .titlebar__search {
-    width: 142px;
+    width: 180px;
   }
 
   .titlebar__search--active {
-    width: 170px;
+    width: 200px;
   }
 }
