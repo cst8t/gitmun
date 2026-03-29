@@ -7,7 +7,8 @@ use super::error::{GitError, GitResult};
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
-    CommitDateMode, CommitFileItem, CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest,
+    CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
+    CommitHistoryItem, CommitHistoryRequest,
     CommitMarkers, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
@@ -245,6 +246,31 @@ impl GixGitHandler {
                 }
             }
         }
+    }
+
+    fn collect_commit_tags(repo: &gix::Repository, target: &gix::ObjectId) -> GitResult<Vec<String>> {
+        let refs = repo.references().map_err(|e| GitError::GixError(e.to_string()))?;
+        let tag_iter = refs.tags().map_err(|e| GitError::GixError(e.to_string()))?;
+
+        let mut matching = Vec::new();
+        for reference in tag_iter {
+            let reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
+            let raw_oid = reference.id().detach();
+
+            // Peel through annotated tag objects to reach the commit.
+            let peeled = repo
+                .find_object(raw_oid)
+                .ok()
+                .and_then(|obj| obj.peel_to_kind(gix::object::Kind::Commit).ok())
+                .map(|obj| obj.id);
+
+            if peeled.as_ref() == Some(target) {
+                let short_name = Self::bstr_to_string(reference.name().shorten());
+                matching.push(short_name);
+            }
+        }
+
+        Ok(matching)
     }
 
     fn collect_tags_with_gix(repo: &gix::Repository) -> GitResult<Vec<TagInfo>> {
@@ -898,6 +924,60 @@ impl GitOperationHandler for GixGitHandler {
     fn get_commit_files(&self, request: &CommitFilesRequest) -> GitResult<Vec<CommitFileItem>> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback.get_commit_files(request)
+    }
+
+    fn get_commit_details(&self, request: &CommitDetailsRequest) -> GitResult<CommitDetails> {
+        let repo_path = Path::new(request.repo_path.trim());
+        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()))?;
+
+        let oid = gix::ObjectId::from_hex(request.commit_hash.trim().as_bytes())
+            .map_err(|e| GitError::GixError(e.to_string()))?;
+
+        let commit = repo
+            .find_object(oid)
+            .map_err(|e| GitError::GixError(e.to_string()))?
+            .try_into_commit()
+            .map_err(|e| GitError::GixError(e.to_string()))?;
+
+        let author_sig = commit.author().map_err(|e| GitError::GixError(e.to_string()))?;
+        let author = Self::bstr_to_string(author_sig.name);
+        let author_email = Self::bstr_to_string(author_sig.email);
+        let author_date = gix::date::parse_header(author_sig.time)
+            .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
+            .unwrap_or_else(|| author_sig.time.to_string());
+
+        let committer_sig = commit.committer().map_err(|e| GitError::GixError(e.to_string()))?;
+        let committer = Self::bstr_to_string(committer_sig.name);
+        let committer_email = Self::bstr_to_string(committer_sig.email);
+        let committer_date = gix::date::parse_header(committer_sig.time)
+            .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
+            .unwrap_or_else(|| committer_sig.time.to_string());
+
+        let parent_hashes: Vec<String> = commit
+            .parent_ids()
+            .map(|id| id.detach().to_hex().to_string())
+            .collect();
+
+        let body = commit
+            .message()
+            .map(|m| m.body.map(|b| Self::bstr_to_string(b)).unwrap_or_default())
+            .unwrap_or_default();
+        let trailers = super::cli::parse_commit_trailers(&body);
+
+        let tags = Self::collect_commit_tags(&repo, &oid)?;
+
+        Ok(CommitDetails {
+            hash: oid.to_hex().to_string(),
+            author,
+            author_email,
+            author_date,
+            committer,
+            committer_email,
+            committer_date,
+            parent_hashes,
+            tags,
+            trailers,
+        })
     }
 
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff> {
