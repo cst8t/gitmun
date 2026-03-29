@@ -2,7 +2,8 @@ import React from "react";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
 import { FileIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
-import type { CommitFileItem, FileDiff } from "../../types";
+import type { CommitDetails, CommitFileItem, FileDiff } from "../../types";
+import { getCommitDetails } from "../../api/commands";
 import type { CenterTab } from "../center/CenterPanel";
 import "react-diff-view/style/index.css";
 import "./DiffPanel.css";
@@ -40,17 +41,135 @@ function toNormalChange(content: string, oldLineNumber: number, newLineNumber: n
   return { type: "normal", content, oldLineNumber, newLineNumber, isNormal: true } as ChangeData;
 }
 
+type CommitDetailsPopoverProps = {
+  rect: DOMRect;
+  data: CommitDetails;
+  onClose: () => void;
+  onSelectCommit?: (hash: string) => void;
+};
+
+function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDetailsPopoverProps) {
+  const ref = React.useRef<HTMLDivElement>(null);
+  const popoverWidth = 360;
+  const gap = 6;
+
+  React.useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { innerWidth, innerHeight } = window;
+    const elH = el.offsetHeight;
+    // Drop down from the button, right-aligned to it
+    let top = rect.bottom + gap;
+    if (top + elH > innerHeight - 8) top = rect.top - elH - gap;
+    let left = rect.right - popoverWidth;
+    if (left < 8) left = 8;
+    if (left + popoverWidth > innerWidth - 8) left = innerWidth - popoverWidth - 8;
+    el.style.top = `${top}px`;
+    el.style.left = `${left}px`;
+  });
+
+  React.useEffect(() => {
+    const handler = (e: MouseEvent | KeyboardEvent) => {
+      if (e instanceof KeyboardEvent) { if (e.key === "Escape") onClose(); return; }
+      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+    };
+    document.addEventListener("mousedown", handler);
+    document.addEventListener("keydown", handler);
+    return () => {
+      document.removeEventListener("mousedown", handler);
+      document.removeEventListener("keydown", handler);
+    };
+  }, [onClose]);
+
+  const sameCommitter =
+    data.committer === data.author &&
+    data.committerEmail === data.authorEmail &&
+    data.committerDate === data.authorDate;
+
+  const formatDate = (iso: string) => {
+    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+  };
+
+  const copyHash = () => { navigator.clipboard.writeText(data.hash).catch(() => {}); };
+
+  return (
+    <div ref={ref} className="commit-details-popover" role="dialog" aria-modal="false">
+      <button className="commit-details-popover__close" onClick={onClose} aria-label="Close">✕</button>
+
+      <div className="commit-details-popover__section">
+        <span className="commit-details-popover__label">Hash</span>
+        <div className="commit-details-popover__hash-row">
+          <span className="commit-details-popover__value commit-details-popover__value--mono">{data.hash}</span>
+          <button className="commit-details-popover__copy-btn" onClick={copyHash} title="Copy full hash">⎘</button>
+        </div>
+      </div>
+
+      <div className="commit-details-popover__section">
+        <span className="commit-details-popover__label">Author</span>
+        <span className="commit-details-popover__value">{data.author} &lt;{data.authorEmail}&gt;</span>
+        <span className="commit-details-popover__value commit-details-popover__value--muted">{formatDate(data.authorDate)}</span>
+      </div>
+
+      {!sameCommitter && (
+        <div className="commit-details-popover__section">
+          <span className="commit-details-popover__label">Committer</span>
+          <span className="commit-details-popover__value">{data.committer} &lt;{data.committerEmail}&gt;</span>
+          <span className="commit-details-popover__value commit-details-popover__value--muted">{formatDate(data.committerDate)}</span>
+        </div>
+      )}
+
+      {data.parentHashes.length > 0 && (
+        <div className="commit-details-popover__section">
+          <span className="commit-details-popover__label">Parents</span>
+          <div className="commit-details-popover__chips">
+            {data.parentHashes.map(h => (
+              <button
+                key={h}
+                className="commit-details-popover__chip"
+                onClick={() => { onSelectCommit?.(h); onClose(); }}
+                title={h}
+              >
+                {h.slice(0, 7)}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.tags.length > 0 && (
+        <div className="commit-details-popover__section">
+          <span className="commit-details-popover__label">Tags</span>
+          <div className="commit-details-popover__chips">
+            {data.tags.map(tag => (
+              <span key={tag} className="commit-details-popover__chip commit-details-popover__chip--tag">{tag}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {data.trailers.map(t => (
+        <div key={`${t.key}:${t.value}`} className="commit-details-popover__section">
+          <span className="commit-details-popover__label">{t.key}</span>
+          <span className="commit-details-popover__value">{t.value}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 type DiffPanelProps = {
   mode: CenterTab;
   diff: FileDiff | null;
   loading: boolean;
   selectedFile: string | null;
   selectedCommitHash: string | null;
+  repoPath: string | null;
   commitFiles: CommitFileItem[];
   commitFilesLoading: boolean;
   compareCurrentFileLabel: string;
   onCompareCurrentFile: () => void;
   onOpenCommitFileDiff: (filePath: string) => void;
+  onSelectCommit?: (hash: string) => void;
   hunkAction: "stage" | "unstage" | null;
   hunkActionBusy: boolean;
   wrapLines: boolean;
@@ -63,11 +182,13 @@ export function DiffPanel({
   loading,
   selectedFile,
   selectedCommitHash,
+  repoPath,
   commitFiles,
   commitFilesLoading,
   compareCurrentFileLabel,
   onCompareCurrentFile,
   onOpenCommitFileDiff,
+  onSelectCommit,
   hunkAction,
   hunkActionBusy,
   wrapLines,
@@ -75,6 +196,8 @@ export function DiffPanel({
 }: DiffPanelProps) {
   const [viewType, setViewType] = React.useState<ViewType>("unified");
   const [selectedCommitFile, setSelectedCommitFile] = React.useState<string | null>(null);
+  const [detailsPopover, setDetailsPopover] = React.useState<{ rect: DOMRect; data: CommitDetails } | null>(null);
+  const [detailsLoading, setDetailsLoading] = React.useState(false);
 
   React.useEffect(() => {
     setViewType("unified");
@@ -82,6 +205,7 @@ export function DiffPanel({
 
   React.useEffect(() => {
     setSelectedCommitFile(null);
+    setDetailsPopover(null);
   }, [selectedCommitHash]);
 
   const hasSelectedFile = mode === "changes" && !!selectedFile;
@@ -194,6 +318,27 @@ export function DiffPanel({
             <span className="diff-panel__stat-del">-{totalDels}</span>
           </span>
         )}
+        {mode === "log" && selectedCommitHash && repoPath && (
+          <button
+            className="diff-panel__details-btn"
+            title="Commit details"
+            disabled={detailsLoading}
+            onClick={async (e) => {
+              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+              setDetailsLoading(true);
+              try {
+                const data = await getCommitDetails(repoPath, selectedCommitHash);
+                setDetailsPopover({ rect, data });
+              } catch {
+                // silently ignore - IPC errors surfaced elsewhere
+              } finally {
+                setDetailsLoading(false);
+              }
+            }}
+          >
+            {detailsLoading ? "…" : "···"}
+          </button>
+        )}
         {mode === "changes" && hasSelectedFile && (
           <div className="diff-panel__view-toggle">
             <button
@@ -294,6 +439,15 @@ export function DiffPanel({
         <div className="diff-panel__statusbar">
           <span className="diff-panel__meta">{statusBarMeta}</span>
         </div>
+      )}
+
+      {detailsPopover && (
+        <CommitDetailsPopover
+          rect={detailsPopover.rect}
+          data={detailsPopover.data}
+          onClose={() => setDetailsPopover(null)}
+          onSelectCommit={onSelectCommit}
+        />
       )}
     </div>
   );
