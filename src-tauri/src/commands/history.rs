@@ -4,7 +4,6 @@ use crate::git::types::{
     RebaseResult, RepoRequest, ResetRequest, RevertCommitRequest, SignatureStatus,
 };
 use crate::AppState;
-use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -37,15 +36,10 @@ pub async fn verify_commits(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CommitVerification>, String> {
-        #[cfg(windows)]
-        const GIT: &str = "git.exe";
-        #[cfg(not(windows))]
-        const GIT: &str = "git";
-
         // Read the allowedSignersFile path directly from git config. This is
         // more reliable than detecting from stderr, since error message wording
         // can change across git versions.
-        let configured_signers = Command::new(GIT)
+        let configured_signers = crate::git_command()
             .current_dir(&repo_path)
             .args(["config", "--get", "gpg.ssh.allowedSignersFile"])
             .output()
@@ -90,7 +84,7 @@ pub async fn verify_commits(
             None
         };
 
-        let mut cmd = Command::new(GIT);
+        let mut cmd = crate::git_command();
         cmd.current_dir(&repo_path);
         if let Some(ref path) = signers_override {
             cmd.arg("-c")

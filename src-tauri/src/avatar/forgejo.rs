@@ -2,7 +2,6 @@ use super::conditional::ConditionalProvider;
 use base64::{engine::general_purpose::STANDARD, Engine};
 use std::fs;
 use std::path::Path;
-use std::process::Command;
 use url::Url;
 
 // Forgejo/Gitea hash avatars using HMAC-SHA1 with an instance-secret, so
@@ -228,7 +227,7 @@ impl ForgejoProvider {
     }
 
     fn find_local_commit_sha(email: &str, repo_path: &str) -> Option<String> {
-        let output = Command::new("git")
+        let output = crate::git_command()
             .arg("-C")
             .arg(repo_path)
             .arg("log")

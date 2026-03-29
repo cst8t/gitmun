@@ -31,6 +31,16 @@ pub(crate) fn configure_command(_command: &mut std::process::Command) {
     }
 }
 
+pub(crate) fn git_command() -> std::process::Command {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        let mut cmd = std::process::Command::new("flatpak-spawn");
+        cmd.args(["--host", "git"]);
+        return cmd;
+    }
+    std::process::Command::new("git")
+}
+
 /// Read linuxGraphicsMode from the saved config file without starting Tauri.
 /// Used to apply WebKit env vars before the WebView is initialised.
 #[cfg(target_os = "linux")]
