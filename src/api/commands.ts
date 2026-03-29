@@ -387,6 +387,10 @@ export function detectDesktopEnvironment(): Promise<string> {
   return invoke<string>("detect_desktop_environment");
 }
 
+export function getSystemThemeHint(): Promise<string> {
+  return invoke<string>("get_system_theme_hint");
+}
+
 export function watchRepo(repoPath: string): Promise<void> {
   return invoke<void>("watch_repo", { repoPath });
 }

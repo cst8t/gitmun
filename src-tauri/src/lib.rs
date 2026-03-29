@@ -60,6 +60,12 @@ fn read_saved_linux_graphics_mode() -> Option<String> {
 
 #[cfg(target_os = "linux")]
 fn apply_linux_appimage_webkit_workarounds() {
+    // The GNOME runtime configures WebKit correctly; applying GDK_BACKEND=x11
+    // here would break GTK's portal communication and break prefers-color-scheme.
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        return;
+    }
+
     // Env var takes precedence; otherwise use the saved setting; default to "auto".
     let graphics_mode = std::env::var("GITMUN_GRAPHICS_MODE")
         .map(|v| v.to_lowercase())
@@ -363,6 +369,7 @@ pub fn run() {
             unwatch_repo,
             window_manager::open_sub_window,
             window_manager::show_window,
+            window_manager::get_system_theme_hint,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

@@ -30,16 +30,17 @@ pub(crate) fn background_colour_for_theme_mode(
     }
 }
 
-fn initial_theme_injection_script() -> String {
+fn initial_theme_injection_script(system_theme: &str) -> String {
     r#"
       (() => {
         try {
           const storedMode = localStorage.getItem("gitmun.themeMode");
+          const systemTheme = "__GITMUN_SYSTEM_THEME__";
           const theme = storedMode === "Light"
             ? "light"
             : storedMode === "Dark"
               ? "dark"
-              : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light");
+              : (window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : systemTheme);
           const background = theme === "dark" ? "__GITMUN_DARK_BACKGROUND__" : "__GITMUN_LIGHT_BACKGROUND__";
           const html = document.documentElement;
           html.dataset.theme = theme;
@@ -74,6 +75,7 @@ fn initial_theme_injection_script() -> String {
     "#
     .replace("__GITMUN_DARK_BACKGROUND__", DARK_WINDOW_BACKGROUND_HEX)
     .replace("__GITMUN_LIGHT_BACKGROUND__", LIGHT_WINDOW_BACKGROUND_HEX)
+    .replace("__GITMUN_SYSTEM_THEME__", system_theme)
 }
 
 #[tauri::command]
@@ -90,6 +92,25 @@ pub async fn open_sub_window(
 ) -> Result<(), String> {
     let settings = state.git_service.get_settings();
     let background_colour = background_colour_for_theme_mode(&app, &settings.theme_mode);
+    let system_theme = {
+        #[cfg(target_os = "linux")]
+        if std::env::var_os("FLATPAK_ID").is_some() {
+            query_portal_color_scheme().unwrap_or_else(|| match resolve_system_theme(&app) {
+                Theme::Light => "light",
+                _ => "dark",
+            })
+        } else {
+            match resolve_system_theme(&app) {
+                Theme::Light => "light",
+                _ => "dark",
+            }
+        }
+        #[cfg(not(target_os = "linux"))]
+        match resolve_system_theme(&app) {
+            Theme::Light => "light",
+            _ => "dark",
+        }
+    };
 
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.set_background_color(Some(background_colour));
@@ -113,7 +134,7 @@ pub async fn open_sub_window(
     .focused(show_immediately)
     .visible(show_immediately)
     .background_color(background_colour)
-    .initialization_script(initial_theme_injection_script())
+    .initialization_script(initial_theme_injection_script(system_theme))
     .build()
     .map_err(|e| e.to_string())?;
 
@@ -168,4 +189,42 @@ pub fn show_window(
         window.set_focus().map_err(|e| e.to_string())?;
     }
     Ok(())
+}
+
+#[cfg(target_os = "linux")]
+fn query_portal_color_scheme() -> Option<&'static str> {
+    // xdg-desktop-portal Settings.Read returns (<uint32 N>,)
+    // 0 = no preference, 1 = prefer dark, 2 = prefer light
+    let output = std::process::Command::new("gdbus")
+        .args([
+            "call", "--session",
+            "--dest", "org.freedesktop.portal.Desktop",
+            "--object-path", "/org/freedesktop/portal/desktop",
+            "--method", "org.freedesktop.portal.Settings.Read",
+            "org.freedesktop.appearance", "color-scheme",
+        ])
+        .output()
+        .ok()?;
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.contains("uint32 1") {
+        Some("dark")
+    } else if stdout.contains("uint32 2") {
+        Some("light")
+    } else {
+        None
+    }
+}
+
+#[tauri::command]
+pub fn get_system_theme_hint(app: tauri::AppHandle) -> String {
+    #[cfg(target_os = "linux")]
+    if std::env::var_os("FLATPAK_ID").is_some() {
+        if let Some(theme) = query_portal_color_scheme() {
+            return theme.to_string();
+        }
+    }
+    match resolve_system_theme(&app) {
+        Theme::Light => "light".to_string(),
+        _ => "dark".to_string(),
+    }
 }
