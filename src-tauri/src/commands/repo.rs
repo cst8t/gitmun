@@ -1,5 +1,6 @@
 use crate::git::types::{
-    CloneRequest, CommitFileItem, CommitFilesRequest, CommitMarkers, CommitRequest, DiffRequest,
+    CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
+    CommitMarkers, CommitRequest, DiffRequest,
     ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
     IdentityRequest, NumstatRequest, NumstatResult, OperationResult, PushRequest, RepoRequest,
     RepoStatus, SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
@@ -29,6 +30,17 @@ pub fn get_commit_files(
     state
         .git_service
         .get_commit_files(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_commit_details(
+    request: CommitDetailsRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<CommitDetails, String> {
+    state
+        .git_service
+        .get_commit_details(request)
         .map_err(|error| error.to_string())
 }
 

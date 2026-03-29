@@ -300,6 +300,7 @@ pub fn run() {
             commands::history::open_merge_tool,
             commands::repo::get_commit_markers,
             commands::repo::get_commit_files,
+            commands::repo::get_commit_details,
             commands::repo::validate_repo_path,
             commands::repo::init_repo,
             commands::repo::clone_repo,
