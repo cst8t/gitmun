@@ -187,6 +187,24 @@ export type CommitHistoryItem = {
   keyType: string | null;
 };
 
+export type CommitTrailer = {
+  key: string;
+  value: string;
+};
+
+export type CommitDetails = {
+  hash: string;
+  author: string;
+  authorEmail: string;
+  authorDate: string;
+  committer: string;
+  committerEmail: string;
+  committerDate: string;
+  parentHashes: string[];
+  tags: string[];
+  trailers: CommitTrailer[];
+};
+
 export type CommitVerification = {
   hash: string;
   status: SignatureStatus;
