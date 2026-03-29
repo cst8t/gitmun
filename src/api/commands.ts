@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   BranchInfo,
+  CommitDetails,
   CommitFileItem,
   CommitHistoryItem,
   CommitMarkers,
@@ -113,6 +114,10 @@ export function getCommitMarkers(repoPath: string): Promise<CommitMarkers> {
 
 export function getCommitFiles(repoPath: string, commitHash: string): Promise<CommitFileItem[]> {
   return invoke<CommitFileItem[]>("get_commit_files", { request: { repoPath, commitHash } });
+}
+
+export function getCommitDetails(repoPath: string, commitHash: string): Promise<CommitDetails> {
+  return invoke<CommitDetails>("get_commit_details", { request: { repoPath, commitHash } });
 }
 
 export function openExternalDiff(repoPath: string, commitHash: string, filePath: string): Promise<OperationResult> {
