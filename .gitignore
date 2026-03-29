@@ -37,3 +37,7 @@ src-tauri/icons/*.ico
 src-tauri/icons/*.icns
 src-tauri/icons/android/
 src-tauri/icons/ios/
+
+# Local Flatpak build artifacts
+.flatpak-*/
+packaging/flatpak/rootfs/

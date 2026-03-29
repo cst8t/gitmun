@@ -13,10 +13,16 @@ import "./CloneWindow.css";
 const CLONE_BASE_KEY = "gitmun.cloneBaseDir";
 const THEME_MODE_KEY = "gitmun.themeMode";
 
-function resolveTheme(mode: ThemeMode): "light" | "dark" {
+async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
   if (mode === "Light") return "light";
   if (mode === "Dark") return "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  try {
+    const hint = await invoke<string>("get_system_theme_hint");
+    return hint === "dark" ? "dark" : "light";
+  } catch {
+    return "dark";
+  }
 }
 
 function safePlatform(): string {
@@ -70,7 +76,7 @@ export function CloneWindow() {
           await invoke("set_theme_mode", { themeMode: persistedTheme });
         }
         const settings = await invoke<Settings>("get_settings");
-        document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
+        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
         // Initialise destination: last-used dir > settings default > OS default.
         const lastUsed = localStorage.getItem(CLONE_BASE_KEY);

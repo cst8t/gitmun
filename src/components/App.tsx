@@ -30,10 +30,16 @@ const SPLITTER_WIDTH = 6;
 const LEFT_PANE_TOGGLE_WIDTH = 22;
 const SPLITTER_SPACE = 12;
 
-function resolveTheme(mode: ThemeMode): "light" | "dark" {
+async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
   if (mode === "Light") return "light";
   if (mode === "Dark") return "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  try {
+    const hint = await api.getSystemThemeHint();
+    return hint === "dark" ? "dark" : "light";
+  } catch {
+    return "dark";
+  }
 }
 
 function supportsUpdater(): boolean {
@@ -226,7 +232,7 @@ export function App() {
         }
         const settings = await api.getSettings();
         if (cancelled) return;
-        document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
+        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
         const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
         const leftRatio = parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY));
         const rightRatio = parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY));
@@ -283,9 +289,9 @@ export function App() {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
-      const fn = await listen<Settings>("settings-updated", (event) => {
+      const fn = await listen<Settings>("settings-updated", async (event) => {
         const settings = event.payload;
-        document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
+        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
         localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
         localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
         localStorage.setItem(THEME_MODE_KEY, settings.themeMode);

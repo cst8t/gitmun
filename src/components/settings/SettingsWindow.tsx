@@ -6,7 +6,7 @@ import { ask, open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { check } from "@tauri-apps/plugin-updater";
 import type { AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode, Settings, ThemeMode } from "../../types";
-import { openResultLogWindow } from "../../api/commands";
+import { openResultLogWindow, getSystemThemeHint } from "../../api/commands";
 import { CloseIcon, FolderIcon } from "../icons";
 import "./SettingsWindow.css";
 
@@ -32,10 +32,16 @@ function diffToolLabel(tool: ExternalDiffTool): string {
   }
 }
 
-function resolveTheme(mode: ThemeMode): "light" | "dark" {
+async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
   if (mode === "Light") return "light";
   if (mode === "Dark") return "dark";
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
+  try {
+    const hint = await getSystemThemeHint();
+    return hint === "dark" ? "dark" : "light";
+  } catch {
+    return "dark";
+  }
 }
 
 function safePlatform(): string {
@@ -118,7 +124,7 @@ export function SettingsWindow() {
         setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
         setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
         setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
-        document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
+        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
         const cfgPath = await invoke<string | null>("get_config_file_path");
         setConfigFilePath(cfgPath ?? "");
@@ -162,7 +168,7 @@ export function SettingsWindow() {
       localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
       localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
       localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
-      document.documentElement.dataset.theme = resolveTheme(settings.themeMode);
+      document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
       await emit("settings-updated", settings);
       setStatus("Saved settings and updated global Git configuration.");
