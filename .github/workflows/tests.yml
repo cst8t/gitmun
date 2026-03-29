@@ -41,6 +41,9 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
+      - name: Generate icons
+        run: npm run generate:icons
+
       - name: Run frontend tests
         run: npm test
 
