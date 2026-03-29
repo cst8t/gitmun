@@ -14,13 +14,12 @@ function makeCommits(count: number, startHash = 0) {
   return Array.from({ length: count }, (_, i) => ({
     hash: `hash${startHash + i}`,
     shortHash: `h${startHash + i}`,
-    subject: `commit ${startHash + i}`,
+    message: `commit ${startHash + i}`,
     author: "Test User",
     authorEmail: "test@example.com",
     date: "2024-01-01T00:00:00Z",
-    body: "",
-    isMerge: false,
-    signatureStatus: null,
+    signatureStatus: "none" as const,
+    keyType: null,
   }));
 }
 
