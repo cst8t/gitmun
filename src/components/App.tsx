@@ -366,7 +366,8 @@ export function App() {
   useEffect(() => {
     if (repoPath) {
       localStorage.setItem(REPO_STORAGE_KEY, repoPath);
-      api.setMainWindowTitle(`${repoPath.split("/").pop()} - ${repoPath}`).catch(() => {});
+      const repoName = repoPath.split(/[\\/]/).filter(Boolean).pop() ?? repoPath;
+      api.setMainWindowTitle(`${repoName} - ${repoPath}`).catch(() => {});
     }
   }, [repoPath]);
 
