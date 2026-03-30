@@ -464,3 +464,43 @@ jobs:
             src-tauri/target/release/bundle/dmg/*.dmg
             src-tauri/target/release/bundle/macos/*.app.tar.gz
             src-tauri/target/release/bundle/macos/*.sig
+
+  notify-r2-release-sync:
+    name: Notify R2 release sync
+    if: ${{ github.event_name == 'release' }}
+    needs:
+      - linux-bundles
+      - flatpak-bundle
+      - windows-nsis-cross
+      - macos-bundles
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Notify R2 sync worker
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          CI_TRIGGER_SECRET: ${{ secrets.CI_TRIGGER_SECRET }}
+          WORKER_URL: ${{ vars.WORKER_URL || secrets.WORKER_URL }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CI_TRIGGER_SECRET:-}" ]; then
+            echo "CI_TRIGGER_SECRET is not configured." >&2
+            exit 1
+          fi
+
+          if [ -z "${WORKER_URL:-}" ]; then
+            echo "WORKER_URL is not configured." >&2
+            exit 1
+          fi
+
+          PAYLOAD="$(jq -cn --arg tag "$TAG" '{tag: $tag}')"
+          SIGNATURE="$(printf '%s' "$PAYLOAD" | openssl dgst -sha256 -hmac "$CI_TRIGGER_SECRET" -binary | xxd -p -c 256)"
+
+          curl --fail-with-body \
+            --request POST \
+            --header "Content-Type: application/json" \
+            --header "x-ci-signature: sha256=$SIGNATURE" \
+            --data "$PAYLOAD" \
+            "${WORKER_URL%/}/webhook"
