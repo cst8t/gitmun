@@ -69,6 +69,7 @@ package() {
   fi
 
   bsdtar -xf "\${data_tar}" -C "\${pkgdir}"
+  install -Dm644 /dev/null "\${pkgdir}/usr/share/gitmun/system-managed"
 }
 EOF
 
