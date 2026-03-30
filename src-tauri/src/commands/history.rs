@@ -39,7 +39,7 @@ pub async fn verify_commits(
         // Read the allowedSignersFile path directly from git config. This is
         // more reliable than detecting from stderr, since error message wording
         // can change across git versions.
-        let configured_signers = crate::git_command()
+        let configured_signers = crate::configured_git_command()
             .current_dir(&repo_path)
             .args(["config", "--get", "gpg.ssh.allowedSignersFile"])
             .output()
@@ -84,7 +84,7 @@ pub async fn verify_commits(
             None
         };
 
-        let mut cmd = crate::git_command();
+        let mut cmd = crate::configured_git_command();
         cmd.current_dir(&repo_path);
         if let Some(ref path) = signers_override {
             cmd.arg("-c")
