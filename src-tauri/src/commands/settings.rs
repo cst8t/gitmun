@@ -2,8 +2,139 @@ use crate::git::types::{
     AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode,
     OperationResult, Settings, ThemeMode,
 };
-use crate::{configure_command, git_command, AppState};
+use crate::{AppState, configure_command, git_command};
+use reqwest::header::{ACCEPT, HeaderValue, RANGE};
+use serde::Serialize;
+use std::time::Duration;
 use tauri::Manager;
+use tauri_plugin_updater::{Update, UpdaterExt};
+use url::Url;
+
+const GITHUB_UPDATE_ENDPOINT: &str =
+    "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
+const UPDATE_TIMEOUT: Duration = Duration::from_secs(20);
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AvailableUpdate {
+    current_version: String,
+    version: String,
+    date: Option<String>,
+    body: Option<String>,
+}
+
+fn parse_update_endpoint(update_endpoint: &str) -> Result<Url, String> {
+    let update_endpoint = update_endpoint.trim();
+    if update_endpoint.is_empty() {
+        return Err(format!(
+            "Update feed URL cannot be empty. The default is {GITHUB_UPDATE_ENDPOINT}."
+        ));
+    }
+
+    let url = Url::parse(update_endpoint).map_err(|error| error.to_string())?;
+    match url.scheme() {
+        "https" | "http" => Ok(url),
+        scheme => Err(format!(
+            "Update feed URL must use http or https, got {scheme}."
+        )),
+    }
+}
+
+fn current_update_endpoint(state: &tauri::State<'_, AppState>) -> String {
+    let update_endpoint = state.git_service.get_settings().update_endpoint;
+    if update_endpoint.trim().is_empty() {
+        GITHUB_UPDATE_ENDPOINT.to_string()
+    } else {
+        update_endpoint
+    }
+}
+
+async fn check_update_from_endpoint(
+    app: &tauri::AppHandle,
+    update_endpoint: &str,
+) -> Result<Option<Update>, String> {
+    let endpoint = parse_update_endpoint(update_endpoint)?;
+    let updater = app
+        .updater_builder()
+        .endpoints(vec![endpoint])
+        .map_err(|error| error.to_string())?
+        .timeout(UPDATE_TIMEOUT)
+        .build()
+        .map_err(|error| error.to_string())?;
+
+    updater.check().await.map_err(|error| error.to_string())
+}
+
+async fn ensure_download_url_reachable(update: &Update) -> Result<(), String> {
+    let mut headers = update.headers.clone();
+    if !headers.contains_key(ACCEPT) {
+        headers.insert(ACCEPT, HeaderValue::from_static("application/octet-stream"));
+    }
+    headers.insert(RANGE, HeaderValue::from_static("bytes=0-0"));
+
+    let mut request = reqwest::Client::builder()
+        .user_agent("gitmun-updater-connectivity-check")
+        .timeout(update.timeout.unwrap_or(UPDATE_TIMEOUT));
+    if update.no_proxy {
+        request = request.no_proxy();
+    } else if let Some(proxy) = &update.proxy {
+        let proxy = reqwest::Proxy::all(proxy.as_str()).map_err(|error| error.to_string())?;
+        request = request.proxy(proxy);
+    }
+
+    let response = request
+        .build()
+        .map_err(|error| error.to_string())?
+        .get(update.download_url.clone())
+        .headers(headers)
+        .send()
+        .await
+        .map_err(|error| error.to_string())?;
+
+    if response.status().is_success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "download URL responded with status {}",
+            response.status()
+        ))
+    }
+}
+
+fn available_update_from(update: &Update) -> AvailableUpdate {
+    AvailableUpdate {
+        current_version: update.current_version.clone(),
+        version: update.version.clone(),
+        date: update.date.map(|date| date.to_string()),
+        body: update.body.clone(),
+    }
+}
+
+fn check_expected_version(update: &Update, expected_version: Option<&str>) -> Result<(), String> {
+    if let Some(expected_version) = expected_version {
+        if update.version != expected_version {
+            return Err(format!(
+                "Update version changed from {expected_version} to {}. Please check again.",
+                update.version
+            ));
+        }
+    }
+    Ok(())
+}
+
+async fn get_installable_update(
+    app: &tauri::AppHandle,
+    update_endpoint: &str,
+    expected_version: Option<&str>,
+) -> Result<Update, String> {
+    let mut update = check_update_from_endpoint(app, update_endpoint)
+        .await?
+        .ok_or_else(|| "No update is currently available.".to_string())?;
+    check_expected_version(&update, expected_version)?;
+    ensure_download_url_reachable(&update).await?;
+    update.timeout = Some(UPDATE_TIMEOUT);
+    Ok(update)
+}
 
 #[tauri::command]
 pub fn get_settings(state: tauri::State<'_, AppState>) -> Settings {
@@ -82,6 +213,35 @@ pub fn is_updater_enabled() -> bool {
         return false;
     }
     true
+}
+
+#[tauri::command]
+pub async fn check_for_app_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<AvailableUpdate>, String> {
+    let update_endpoint = current_update_endpoint(&state);
+    let update = check_update_from_endpoint(&app, &update_endpoint).await?;
+    let Some(update) = update else {
+        return Ok(None);
+    };
+    ensure_download_url_reachable(&update).await?;
+    Ok(Some(available_update_from(&update)))
+}
+
+#[tauri::command]
+pub async fn download_and_install_app_update(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    expected_version: Option<String>,
+) -> Result<(), String> {
+    let update_endpoint = current_update_endpoint(&state);
+    let expected_version = expected_version.as_deref();
+    let update = get_installable_update(&app, &update_endpoint, expected_version).await?;
+    update
+        .download_and_install(|_, _| {}, || {})
+        .await
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -231,13 +391,22 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
         ExternalDiffTool::VsCode => {
             git_config_global_set("diff.tool", "vscode")?;
             git_config_global_set("difftool.vscode.cmd", "code --wait --diff $LOCAL $REMOTE")?;
-            git_config_global_set("mergetool.vscode.cmd", "code --wait --merge $REMOTE $LOCAL $BASE $MERGED")?;
+            git_config_global_set(
+                "mergetool.vscode.cmd",
+                "code --wait --merge $REMOTE $LOCAL $BASE $MERGED",
+            )?;
             "Set git global diff.tool=vscode (with difftool/mergetool cmd)".to_string()
         }
         ExternalDiffTool::VsCodium => {
             git_config_global_set("diff.tool", "vscodium")?;
-            git_config_global_set("difftool.vscodium.cmd", "codium --wait --diff $LOCAL $REMOTE")?;
-            git_config_global_set("mergetool.vscodium.cmd", "codium --wait --merge $REMOTE $LOCAL $BASE $MERGED")?;
+            git_config_global_set(
+                "difftool.vscodium.cmd",
+                "codium --wait --diff $LOCAL $REMOTE",
+            )?;
+            git_config_global_set(
+                "mergetool.vscodium.cmd",
+                "codium --wait --merge $REMOTE $LOCAL $BASE $MERGED",
+            )?;
             "Set git global diff.tool=vscodium (with difftool/mergetool cmd)".to_string()
         }
     };
@@ -285,7 +454,9 @@ pub fn set_try_platform_first(
     try_platform_first: bool,
     state: tauri::State<'_, AppState>,
 ) -> Settings {
-    state.avatar_service.set_try_platform_first(try_platform_first);
+    state
+        .avatar_service
+        .set_try_platform_first(try_platform_first);
     state.git_service.set_try_platform_first(try_platform_first)
 }
 
@@ -306,10 +477,7 @@ pub fn set_commit_date_mode(
 }
 
 #[tauri::command]
-pub fn set_push_follow_tags(
-    push_follow_tags: bool,
-    state: tauri::State<'_, AppState>,
-) -> Settings {
+pub fn set_push_follow_tags(push_follow_tags: bool, state: tauri::State<'_, AppState>) -> Settings {
     state.git_service.set_push_follow_tags(push_follow_tags)
 }
 
@@ -328,7 +496,18 @@ pub fn set_auto_install_updates(
     auto_install_updates: bool,
     state: tauri::State<'_, AppState>,
 ) -> Settings {
-    state.git_service.set_auto_install_updates(auto_install_updates)
+    state
+        .git_service
+        .set_auto_install_updates(auto_install_updates)
+}
+
+#[tauri::command]
+pub fn set_update_endpoint(
+    update_endpoint: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Settings, String> {
+    let parsed = parse_update_endpoint(&update_endpoint)?;
+    Ok(state.git_service.set_update_endpoint(parsed.to_string()))
 }
 
 #[tauri::command]
