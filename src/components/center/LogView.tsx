@@ -224,6 +224,7 @@ const CommitRow = React.memo(function CommitRow({
 });
 
 type LogViewProps = {
+  active: boolean;
   repoPath: string | null;
   commits: CommitHistoryItem[];
   loadMore: () => void;
@@ -241,6 +242,7 @@ type LogViewProps = {
 const MAX_CONCURRENT_FETCHES = 3;
 
 export function LogView({
+  active,
   repoPath,
   commits,
   loadMore,
@@ -264,6 +266,7 @@ export function LogView({
   const prevRepoRef = useRef<string | null>(null);
   const currentRepoRef = useRef(repoPath);
   currentRepoRef.current = repoPath;
+  const verifyGenerationRef = useRef(0);
 
   // A generation counter lets us abandon in-flight fetches on repo change
   // without needing to cancel the underlying Promises.
@@ -334,6 +337,7 @@ export function LogView({
       fetchedRef.current.clear();
       setAvatars({});
       setVerified({});
+      verifyGenerationRef.current++;
       verifyingRef.current.clear();
     }
   }, [repoPath]);
@@ -342,26 +346,29 @@ export function LogView({
   // Log tab is hidden (display:none) on load it never fires, so we eagerly
   // schedule the first page here. scheduleRef deduplicates if it fires later too.
   useEffect(() => {
+    if (!active) return;
     const eager = Math.min(commits.length, 20);
     for (let i = 0; i < eager; i++) {
       const email = commits[i]?.authorEmail;
       if (email) scheduleRef.current(email);
     }
-  }, [commits]);
+  }, [active, commits]);
 
-  // For commits flagged as "signed" by the fast gix detection path, fire a
-  // batch verify call so we can upgrade the badge to Verified / Bad / UnknownKey.
-  // CLI-path commits already have a final status and are skipped.
-  useEffect(() => {
-    if (!repoPath) return;
+  const verifyVisibleSignedCommits = useCallback((startIndex: number, endIndex: number) => {
+    if (!active || !repoPath || commits.length === 0) return;
+    const verifyStart = Math.min(startIndex, commits.length - 1);
+    const verifyEnd = Math.min(endIndex + 6, commits.length - 1);
     const pending = commits
+      .slice(verifyStart, verifyEnd + 1)
       .filter(c => c.signatureStatus === "signed" && !verifyingRef.current.has(c.hash))
       .map(c => c.hash);
     if (pending.length === 0) return;
+
     for (const h of pending) verifyingRef.current.add(h);
-    let cancelled = false;
+    const generation = verifyGenerationRef.current;
+
     verifyCommits(repoPath, pending).then(results => {
-      if (cancelled) return;
+      if (verifyGenerationRef.current !== generation || currentRepoRef.current !== repoPath) return;
       startTransition(() => {
         setVerified(prev => {
           const next = { ...prev };
@@ -374,12 +381,18 @@ export function LogView({
           return next;
         });
       });
-    }).catch(() => {});
-    return () => {
-      cancelled = true;
+    }).catch(() => {
+      if (verifyGenerationRef.current !== generation || currentRepoRef.current !== repoPath) return;
       for (const h of pending) verifyingRef.current.delete(h);
-    };
-  }, [repoPath, commits]);
+    });
+  }, [active, repoPath, commits]);
+
+  // For commits flagged as "signed" by the fast gix detection path, fire a
+  // batch verify call so we can upgrade the badge to Verified / Bad / UnknownKey.
+  // CLI-path commits already have a final status and are skipped.
+  useEffect(() => {
+    verifyVisibleSignedCommits(0, 19);
+  }, [verifyVisibleSignedCommits]);
 
   useEffect(() => {
     let cancelled = false;
@@ -445,6 +458,8 @@ export function LogView({
           );
         }}
         rangeChanged={({ startIndex, endIndex }) => {
+          if (!active) return;
+          verifyVisibleSignedCommits(startIndex, endIndex);
           for (let i = startIndex; i <= Math.min(endIndex + 5, commits.length - 1); i++) {
             const email = commits[i]?.authorEmail;
             if (email) scheduleRef.current(email);
