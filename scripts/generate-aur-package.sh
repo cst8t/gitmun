@@ -23,9 +23,15 @@ if [[ -z "${PKGVER}" || "${PKGVER}" == "${DEB_NAME}" ]]; then
 fi
 SHA256="$(sha256sum "${DEB_FILE}" | awk '{print $1}')"
 INSTALL_FILE="${PKGNAME}.install"
+UPSTREAM_LICENSE_FILE="LICENSE.${PKGNAME}"
+UPSTREAM_LICENSE_SHA256="$(sha256sum "${ROOT_DIR}/LICENSE" | awk '{print $1}')"
 REPO_SLUG="${REPO_SLUG:-${GITHUB_REPOSITORY:-${FORGEJO_REPOSITORY:-}}}"
 if [[ -z "${REPO_SLUG}" ]]; then
-  REPO_SLUG="$(git -C "${ROOT_DIR}" remote get-url origin | sed -E 's#^https?://[^/]+/([^/]+/[^/.]+)(\.git)?$#\1#')"
+  REMOTE_URL="$(git -C "${ROOT_DIR}" remote get-url origin)"
+  REPO_SLUG="$(printf '%s' "${REMOTE_URL}" | sed -E \
+    -e 's#^https?://[^/]+/([^/]+/[^/.]+)(\.git)?$#\1#' \
+    -e 's#^ssh://git@[^/]+/([^/]+/[^/.]+)(\.git)?$#\1#' \
+    -e 's#^git@[^:]+:([^/]+/[^/.]+)(\.git)?$#\1#')"
 fi
 if [[ -z "${REPO_SLUG}" ]]; then
   REPO_SLUG="owner/repo"
@@ -43,33 +49,48 @@ pkgrel=1
 pkgdesc="A cross-platform Git GUI built with Tauri"
 arch=('x86_64')
 url="${PROJECT_URL}"
-license=('GPL3')
-depends=('cairo' 'desktop-file-utils' 'gdk-pixbuf2' 'glib2' 'git' 'gtk3' 'hicolor-icon-theme' 'libsoup' 'pango' 'webkit2gtk-4.1')
+license=('GPL-3.0-only')
+depends=(
+  'cairo'
+  'desktop-file-utils'
+  'gdk-pixbuf2'
+  'git'
+  'glib2'
+  'gtk-update-icon-cache'
+  'gtk3'
+  'hicolor-icon-theme'
+  'libsoup3'
+  'pango'
+  'webkit2gtk-4.1'
+)
 options=('!strip' '!debug' '!emptydirs')
 install=${INSTALL_FILE}
 
+source=("${UPSTREAM_LICENSE_FILE}")
 source_x86_64=("${RELEASE_BASE_URL}/v\${pkgver}/${DEB_NAME}")
+sha256sums=('${UPSTREAM_LICENSE_SHA256}')
 sha256sums_x86_64=('${SHA256}')
 
 package() {
   cd "\${srcdir}"
   ar x "${DEB_NAME}"
-  local data_tar
-  data_tar=""
-  for candidate in data.tar.zst data.tar.xz data.tar.gz data.tar.bz2; do
-    if [[ -f "\${candidate}" ]]; then
-      data_tar="\${candidate}"
+  local _data_tar
+  _data_tar=""
+  for _candidate in data.tar.zst data.tar.xz data.tar.gz data.tar.bz2; do
+    if [[ -f "\${_candidate}" ]]; then
+      _data_tar="\${_candidate}"
       break
     fi
   done
 
-  if [[ -z "\${data_tar}" ]]; then
+  if [[ -z "\${_data_tar}" ]]; then
     echo "No data.tar.* payload found in ${DEB_NAME}" >&2
     return 1
   fi
 
-  bsdtar -xf "\${data_tar}" -C "\${pkgdir}"
+  bsdtar -xf "\${_data_tar}" -C "\${pkgdir}"
   install -Dm644 /dev/null "\${pkgdir}/usr/share/gitmun/system-managed"
+  install -Dm644 "${UPSTREAM_LICENSE_FILE}" "\${pkgdir}/usr/share/licenses/\${pkgname}/LICENSE"
 }
 EOF
 
@@ -79,19 +100,23 @@ pkgbase = ${PKGNAME}
   pkgver = ${PKGVER}
   pkgrel = 1
   url = ${PROJECT_URL}
+  install = ${INSTALL_FILE}
   arch = x86_64
-  license = GPL3
+  license = GPL-3.0-only
   depends = cairo
   depends = desktop-file-utils
   depends = gdk-pixbuf2
-  depends = glib2
   depends = git
+  depends = glib2
+  depends = gtk-update-icon-cache
   depends = gtk3
   depends = hicolor-icon-theme
-  depends = libsoup
+  depends = libsoup3
   depends = pango
   depends = webkit2gtk-4.1
+  source = ${UPSTREAM_LICENSE_FILE}
   source_x86_64 = ${RELEASE_BASE_URL}/v${PKGVER}/${DEB_NAME}
+  sha256sums = ${UPSTREAM_LICENSE_SHA256}
   sha256sums_x86_64 = ${SHA256}
 
 pkgname = ${PKGNAME}
@@ -111,6 +136,41 @@ post_remove() {
   gtk-update-icon-cache -q -t -f usr/share/icons/hicolor || true
   update-desktop-database -q || true
 }
+EOF
+
+cp "${ROOT_DIR}/LICENSE" "${AUR_DIR}/${UPSTREAM_LICENSE_FILE}"
+
+cat > "${AUR_DIR}/LICENSE" <<'EOF'
+Copyright Arch Linux Contributors
+
+Permission to use, copy, modify, and/or distribute this software for
+any purpose with or without fee is hereby granted.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL
+WARRANTIES WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE
+FOR ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY
+DAMAGES WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN
+AN ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT
+OF OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+EOF
+
+cat > "${AUR_DIR}/REUSE.toml" <<EOF
+version = 1
+
+[[annotations]]
+path = [
+    "PKGBUILD",
+    ".SRCINFO",
+    "${INSTALL_FILE}",
+]
+SPDX-FileCopyrightText = "Arch Linux contributors"
+SPDX-License-Identifier = "0BSD"
+
+[[annotations]]
+path = "${UPSTREAM_LICENSE_FILE}"
+SPDX-FileCopyrightText = "cst8t"
+SPDX-License-Identifier = "GPL-3.0-only"
 EOF
 
 echo "Generated AUR files in ${AUR_DIR}"
