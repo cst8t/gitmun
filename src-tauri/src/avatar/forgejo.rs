@@ -227,7 +227,7 @@ impl ForgejoProvider {
     }
 
     fn find_local_commit_sha(email: &str, repo_path: &str) -> Option<String> {
-        let output = crate::git_command()
+        let output = crate::configured_git_command()
             .arg("-C")
             .arg(repo_path)
             .arg("log")

@@ -559,7 +559,7 @@ impl GixGitHandler {
 
     fn detect_conflicted_files(git_dir: &Path) -> Vec<ConflictFileItem> {
         let repo_path = git_dir.parent().unwrap_or(git_dir);
-        let output = crate::git_command()
+        let output = crate::configured_git_command()
             .args(["-c", "core.quotepath=false", "status", "--porcelain=v1"])
             .current_dir(repo_path)
             .output()
@@ -609,7 +609,7 @@ impl GixGitHandler {
     }
 
     fn collect_numstat(repo_path: &Path, staged: bool) -> HashMap<String, (u32, u32)> {
-        let mut command = crate::git_command();
+        let mut command = crate::configured_git_command();
         command.arg("-c").arg("core.quotepath=false").arg("diff");
         if staged {
             command.arg("--cached");

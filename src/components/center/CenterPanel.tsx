@@ -12,6 +12,7 @@ export type CenterTab = "changes" | "log";
 
 type CenterPanelProps = {
   repoPath: string | null;
+  activeTab: CenterTab;
   currentBranch: string | null;
   stagedFiles: FileStatusItem[];
   unstagedFiles: FileStatusItem[];
@@ -30,7 +31,6 @@ type CenterPanelProps = {
   loadMore: () => void;
   hasMore: boolean;
   commitMarkers: CommitMarkers;
-  activeTab: CenterTab;
   onTabChange: (tab: CenterTab) => void;
   selectedCommitHash: string | null;
   onSelectCommit: (commitHash: string) => void;
@@ -174,6 +174,7 @@ export function CenterPanel(props: CenterPanelProps) {
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>
         <LogView
+          active={tab === "log"}
           repoPath={props.repoPath}
           commits={props.commits}
           loadMore={props.loadMore}

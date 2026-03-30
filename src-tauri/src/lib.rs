@@ -41,6 +41,12 @@ pub(crate) fn git_command() -> std::process::Command {
     std::process::Command::new(resolve_git_exe())
 }
 
+pub(crate) fn configured_git_command() -> std::process::Command {
+    let mut command = git_command();
+    configure_command(&mut command);
+    command
+}
+
 /// On Windows, the installer may launch Gitmun before the updated PATH (with
 /// Git's bin dir) propagates to child processes. Check known install locations
 /// as a fallback so git.exe is found even in that window.
