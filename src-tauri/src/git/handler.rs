@@ -9,14 +9,14 @@ use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
     CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
     CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest,
-    CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo, ThemeMode,
+    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
+    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExternalDiffRequest, FetchRequest,
+    FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, MergeRequest,
+    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PushRequest,
+    PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
+    RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest, Settings, StageFilesRequest,
+    StashEntry, StashPushRequest, StashRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -249,10 +249,13 @@ impl GitService {
         })
     }
 
-    pub fn set_linux_graphics_mode(
-        &self,
-        mode: super::types::LinuxGraphicsMode,
-    ) -> Settings {
+    pub fn set_update_endpoint(&self, update_endpoint: String) -> Settings {
+        self.update_settings(|settings| {
+            settings.update_endpoint = update_endpoint;
+        })
+    }
+
+    pub fn set_linux_graphics_mode(&self, mode: super::types::LinuxGraphicsMode) -> Settings {
         self.update_settings(|settings| {
             settings.linux_graphics_mode = mode;
         })

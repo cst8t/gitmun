@@ -113,6 +113,8 @@ pub struct Settings {
     pub auto_check_for_updates_on_launch: bool,
     #[serde(default)]
     pub auto_install_updates: bool,
+    #[serde(default = "Settings::default_update_endpoint")]
+    pub update_endpoint: String,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
 }
@@ -134,6 +136,7 @@ impl Default for Settings {
             push_follow_tags: false,
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
+            update_endpoint: Self::default_update_endpoint(),
             linux_graphics_mode: LinuxGraphicsMode::Auto,
         }
     }
@@ -150,6 +153,10 @@ impl Settings {
 
     fn default_auto_check_for_updates_on_launch() -> bool {
         true
+    }
+
+    fn default_update_endpoint() -> String {
+        "https://github.com/cst8t/gitmun/releases/latest/download/latest.json".to_string()
     }
 }
 
