@@ -331,7 +331,7 @@ jobs:
       - name: Cache xwin (MSVC CRT / Windows SDK)
         uses: actions/cache@v4
         with:
-          path: ~/.cache/xwin
+          path: /home/runner/.cache/xwin
           key: xwin-v1
 
       - name: Install cross-build dependencies
@@ -375,6 +375,7 @@ jobs:
           APP_VERSION: ${{ env.BUNDLE_VERSION }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          XWIN_CACHE_DIR: /home/runner/.cache/xwin
         with:
           releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
           tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
