@@ -123,7 +123,10 @@ jobs:
             zip -9 -j "../../src-tauri/target/release/bundle/aur/${ZIP_NAME}" \
               PKGBUILD \
               .SRCINFO \
-              *.install
+              *.install \
+              LICENSE \
+              LICENSE.* \
+              REUSE.toml
           )
 
       - name: Upload Linux artifacts
