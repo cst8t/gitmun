@@ -1,11 +1,11 @@
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitRequest, DiffRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
-    IdentityRequest, NumstatRequest, NumstatResult, OperationResult, PushRequest, RepoRequest,
+    CommitMarkers, CommitRequest, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff,
+    FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, NumstatRequest, NumstatResult,
+    OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest,
     RepoStatus, SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
 };
-use crate::{configure_command, AppState, CloneCancelFlag};
+use crate::{AppState, CloneCancelFlag, configure_command};
 use std::io::Read;
 use std::process::Stdio;
 use std::sync::atomic::Ordering;
@@ -94,7 +94,9 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
             .output()
             .map_err(|e| format!("Failed to launch git: {e}"))?;
         if !fallback_output.status.success() {
-            let stderr = String::from_utf8_lossy(&fallback_output.stderr).trim().to_string();
+            let stderr = String::from_utf8_lossy(&fallback_output.stderr)
+                .trim()
+                .to_string();
             return Err(if stderr.is_empty() {
                 "Failed to initialize repository".to_string()
             } else {
@@ -163,8 +165,7 @@ pub async fn clone_repo(
                 Ok(n) => {
                     let chunk = String::from_utf8_lossy(&buf[..n]);
                     partial.push_str(&chunk);
-                    let parts: Vec<&str> =
-                        partial.split(|c| c == '\r' || c == '\n').collect();
+                    let parts: Vec<&str> = partial.split(|c| c == '\r' || c == '\n').collect();
                     for part in &parts[..parts.len() - 1] {
                         let line = part.trim();
                         if !line.is_empty() {
@@ -283,6 +284,32 @@ pub async fn pull_changes(
 ) -> Result<OperationResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().git_service.pull_changes(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn analyze_pull(
+    request: RepoRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<PullAnalysis, String> {
+    state
+        .git_service
+        .analyze_pull(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn pull_with_strategy(
+    request: PullStrategyRequest,
+    app: tauri::AppHandle,
+) -> Result<OperationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .pull_with_strategy(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -504,7 +531,7 @@ pub fn set_identity(
 pub async fn push_changes(
     request: PushRequest,
     app: tauri::AppHandle,
-) -> Result<OperationResult, String> {
+) -> Result<PushResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().git_service.push_changes(request)
     })

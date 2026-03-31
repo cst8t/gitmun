@@ -270,7 +270,10 @@ pub fn run() {
         .plugin(tauri_plugin_os::init())
         .manage(AppState {
             git_service: GitService::new(),
-            avatar_service: Arc::new(avatar::AvatarService::new(AvatarProviderMode::default(), true)),
+            avatar_service: Arc::new(avatar::AvatarService::new(
+                AvatarProviderMode::default(),
+                true,
+            )),
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
@@ -359,7 +362,9 @@ pub fn run() {
             commands::repo::open_external_diff,
             commands::repo::open_working_tree_diff,
             commands::repo::get_repo_diff_tool,
+            commands::repo::analyze_pull,
             commands::repo::pull_changes,
+            commands::repo::pull_with_strategy,
             commands::repo::get_repo_status,
             commands::repo::get_numstat,
             commands::repo::stage_files,
