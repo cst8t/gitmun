@@ -428,6 +428,31 @@ fn push_changes_classifies_non_fast_forward() {
 }
 
 #[test]
+fn status_detects_remote_tracking_merge_branch_from_merge_msg() {
+    let dir = init_repo();
+    let git_dir = dir.path().join(".git");
+    fs::write(git_dir.join("MERGE_HEAD"), format!("{}\n", head_hash(dir.path())))
+        .expect("write MERGE_HEAD");
+    fs::write(
+        git_dir.join("MERGE_MSG"),
+        "Merge remote-tracking branch 'origin/main' into main\n",
+    )
+    .expect("write MERGE_MSG");
+
+    let cli_status = handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("cli get_repo_status");
+    assert!(cli_status.merge_in_progress);
+    assert_eq!(cli_status.merge_head_branch.as_deref(), Some("origin/main"));
+
+    let gix_status = gix_handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("gix get_repo_status");
+    assert!(gix_status.merge_in_progress);
+    assert_eq!(gix_status.merge_head_branch.as_deref(), Some("origin/main"));
+}
+
+#[test]
 fn cli_commit_details_trailers_parsed() {
     let dir = init_repo();
     git(

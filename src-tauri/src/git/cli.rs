@@ -3591,22 +3591,27 @@ impl CliGitHandler {
             .collect()
     }
 
+    fn parse_merge_subject_branch(first_line: &str, prefix: &str) -> Option<String> {
+        first_line
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split('\'').next())
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .map(|branch| branch.to_string())
+    }
+
     fn detect_merge_branch(repo_path: &Path) -> Option<String> {
         let merge_msg_path = repo_path.join(".git/MERGE_MSG");
         if let Ok(msg) = std::fs::read_to_string(&merge_msg_path) {
             if let Some(first_line) = msg.lines().next() {
-                if let Some(branch) = first_line
-                    .strip_prefix("Merge branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-                    .map(|s| s.to_string())
+                if let Some(branch) = Self::parse_merge_subject_branch(first_line, "Merge branch '")
                 {
                     return Some(branch);
                 }
-                if let Some(branch) = first_line
-                    .strip_prefix("Merge remote-tracking branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-                    .map(|s| s.to_string())
-                {
+                if let Some(branch) = Self::parse_merge_subject_branch(
+                    first_line,
+                    "Merge remote-tracking branch '",
+                ) {
                     return Some(branch);
                 }
             }

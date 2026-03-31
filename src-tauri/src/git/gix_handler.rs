@@ -549,18 +549,21 @@ impl GixGitHandler {
             .filter(|s| !s.is_empty())
     }
 
+    fn parse_merge_subject_branch(first_line: &str, prefix: &str) -> Option<String> {
+        first_line
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split('\'').next())
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .map(|branch| branch.to_string())
+    }
+
     fn detect_merge_branch(git_dir: &Path) -> Option<String> {
         let msg = std::fs::read_to_string(git_dir.join("MERGE_MSG")).ok()?;
         let first_line = msg.lines().next()?;
-        first_line
-            .strip_prefix("Merge branch '")
-            .and_then(|rest| rest.strip_suffix('\''))
-            .or_else(|| {
-                first_line
-                    .strip_prefix("Merge remote-tracking branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-            })
-            .map(|s| s.to_string())
+        Self::parse_merge_subject_branch(first_line, "Merge branch '").or_else(|| {
+            Self::parse_merge_subject_branch(first_line, "Merge remote-tracking branch '")
+        })
     }
 
     fn detect_conflicted_files(git_dir: &Path) -> Vec<ConflictFileItem> {
