@@ -1,0 +1,28 @@
+.push-rejected-dialog {
+  width: 460px;
+}
+
+.push-rejected-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.push-rejected-dialog__body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.push-rejected-dialog__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
