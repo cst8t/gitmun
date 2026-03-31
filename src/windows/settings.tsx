@@ -54,7 +54,7 @@ class SettingsErrorBoundary extends React.Component<React.PropsWithChildren, Bou
     if (this.state.error) {
       return (
         <div style={{ padding: 16, fontFamily: "monospace", fontSize: 12, whiteSpace: "pre-wrap" }}>
-          Settings failed to render. See `gitmun.settingsWindowError` in localStorage for details.
+          Settings failed to render in Gitmun. See `gitmun.settingsWindowError` in localStorage for details.
           {"\n\n"}
           {this.state.error.message}
         </div>
