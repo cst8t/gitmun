@@ -8,11 +8,25 @@ finish-args:
   - --share=ipc
   - --socket=fallback-x11
   - --socket=wayland
+  - --socket=ssh-auth
   - --device=dri
   - --filesystem=home
   - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.freedesktop.secrets
+  - --filesystem=xdg-run/keyring
 
 modules:
+  - name: git
+    make-args:
+      - NO_TCLTK=1
+      - INSTALL_SYMLINKS=1
+    make-install-args:
+      - NO_TCLTK=1
+      - INSTALL_SYMLINKS=1
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.53.0.tar.xz
+        sha256: 5818bd7d80b061bbbdfec8a433d609dc8818a05991f731ffc4a561e2ca18c653
   - name: gitmun-files
     buildsystem: simple
     build-commands:
