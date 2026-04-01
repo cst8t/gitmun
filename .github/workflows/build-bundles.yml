@@ -260,7 +260,7 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.cst8t.gitmun.yml
-          bundle: gitmun.flatpak
+          bundle: com.cst8t.gitmun.flatpak
           cache-key: flatpak-builder-v1-${{ hashFiles('packaging/flatpak/com.cst8t.gitmun.yml') }}
           upload-artifact: true
 
@@ -268,7 +268,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p src-tauri/target/release/bundle/flatpak
-          mv -f gitmun.flatpak src-tauri/target/release/bundle/flatpak/gitmun.flatpak
+          mv -f com.cst8t.gitmun.flatpak src-tauri/target/release/bundle/flatpak/com.cst8t.gitmun.flatpak
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v7
