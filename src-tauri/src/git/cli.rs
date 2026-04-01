@@ -12,16 +12,18 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitTrailer,
-    CommitMarkers, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff,
-    FileRequest, FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope,
-    LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
-    PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo,
-    RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus,
-    ResetMode, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo,
+    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, CommitTrailer,
+    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffHunk, DiffLine,
+    DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
+    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, LineEndingStyle,
+    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
+    PullAnalysis, PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest,
+    PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest,
+    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
+    RepoRequest, RepoStatus, ResetMode, ResetRequest, RevertCommitRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, TagInfo,
 };
 
 pub struct CliGitHandler;
@@ -180,7 +182,9 @@ impl CliGitHandler {
     ) -> GitResult<()> {
         let mut command = crate::git_command();
         Self::configure_command(&mut command);
-        command.args(overrides.iter().map(String::as_str)).args(args);
+        command
+            .args(overrides.iter().map(String::as_str))
+            .args(args);
         if let Some(path) = current_dir {
             command.current_dir(path);
         }
@@ -243,6 +247,270 @@ impl CliGitHandler {
 
     fn path_to_string(path: &Path) -> String {
         path.to_string_lossy().to_string()
+    }
+
+    fn current_branch_name(repo_path: &Path) -> Option<String> {
+        Self::run_git_allow_exit_codes(
+            &["rev-parse", "--abbrev-ref", "HEAD"],
+            Some(repo_path),
+            &[128],
+        )
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    }
+
+    fn upstream_branch_name(repo_path: &Path) -> Option<String> {
+        Self::run_git_allow_exit_codes(
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}",
+            ],
+            Some(repo_path),
+            &[128],
+        )
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    }
+
+    fn repo_request(repo_path: &Path) -> RepoRequest {
+        RepoRequest {
+            repo_path: Self::path_to_string(repo_path),
+        }
+    }
+
+    fn is_detached_head(branch_name: Option<&str>) -> bool {
+        matches!(branch_name, Some("HEAD"))
+    }
+
+    fn has_active_operation(status: &RepoStatus) -> bool {
+        status.merge_in_progress
+            || status.rebase_in_progress
+            || status.cherry_pick_in_progress
+            || status.revert_in_progress
+    }
+
+    fn classify_pull_state(
+        current_branch: Option<&str>,
+        upstream_branch: Option<&str>,
+        ahead: u32,
+        behind: u32,
+        status: &RepoStatus,
+    ) -> (PullState, PullRecommendedAction, String) {
+        if Self::is_detached_head(current_branch) {
+            return (
+                PullState::DetachedHead,
+                PullRecommendedAction::None,
+                "Pull is unavailable while HEAD is detached.".to_string(),
+            );
+        }
+
+        if Self::has_active_operation(status) {
+            return (
+                PullState::OperationInProgress,
+                PullRecommendedAction::None,
+                "Finish or abort the current merge, rebase, cherry-pick, or revert before pulling."
+                    .to_string(),
+            );
+        }
+
+        if upstream_branch.is_none() {
+            return (
+                PullState::NoUpstream,
+                PullRecommendedAction::None,
+                "This branch does not have an upstream configured.".to_string(),
+            );
+        }
+
+        let has_working_tree_changes =
+            !status.changed_files.is_empty() || !status.unversioned_files.is_empty();
+        let has_staged_changes = !status.staged_files.is_empty();
+        if has_working_tree_changes || has_staged_changes {
+            return (
+                PullState::BlockedDirtyWorktree,
+                PullRecommendedAction::None,
+                "Commit, stash, or discard local changes before integrating remote changes."
+                    .to_string(),
+            );
+        }
+
+        match (ahead, behind) {
+            (0, 0) => (
+                PullState::UpToDate,
+                PullRecommendedAction::None,
+                "This branch is already up to date with its upstream.".to_string(),
+            ),
+            (0, _) => (
+                PullState::BehindOnly,
+                PullRecommendedAction::FfOnlyPull,
+                "Remote changes are available and can be fast-forwarded into this branch."
+                    .to_string(),
+            ),
+            (_, 0) => (
+                PullState::AheadOnly,
+                PullRecommendedAction::Push,
+                "This branch only has local commits. Push it instead of pulling.".to_string(),
+            ),
+            _ => (
+                PullState::Divergent,
+                PullRecommendedAction::Rebase,
+                "This branch and its upstream both have unique commits. Choose rebase or merge before integrating."
+                    .to_string(),
+            ),
+        }
+    }
+
+    fn build_pull_analysis(&self, repo_path: &Path) -> GitResult<PullAnalysis> {
+        let status = self.get_repo_status(&Self::repo_request(repo_path))?;
+        let current_branch = status
+            .current_branch
+            .clone()
+            .or_else(|| Self::current_branch_name(repo_path));
+        let upstream_branch = Self::upstream_branch_name(repo_path);
+        let (ahead, behind) = match (&current_branch, &upstream_branch) {
+            (Some(branch), Some(upstream)) if !Self::is_detached_head(Some(branch)) => {
+                Self::get_ahead_behind(repo_path, branch, upstream)
+            }
+            _ => (0, 0),
+        };
+        let has_staged_changes = !status.staged_files.is_empty();
+        let has_working_tree_changes = has_staged_changes
+            || !status.changed_files.is_empty()
+            || !status.unversioned_files.is_empty();
+        let (state, recommended_action, message) = Self::classify_pull_state(
+            current_branch.as_deref(),
+            upstream_branch.as_deref(),
+            ahead,
+            behind,
+            &status,
+        );
+
+        Ok(PullAnalysis {
+            repo_path: Self::path_to_string(repo_path),
+            current_branch,
+            upstream_branch,
+            ahead,
+            behind,
+            has_working_tree_changes,
+            has_staged_changes,
+            merge_in_progress: status.merge_in_progress,
+            rebase_in_progress: status.rebase_in_progress,
+            cherry_pick_in_progress: status.cherry_pick_in_progress,
+            revert_in_progress: status.revert_in_progress,
+            state,
+            recommended_action,
+            message,
+        })
+    }
+
+    fn push_failure_branch_context(repo_path: &Path) -> (Option<String>, Option<String>) {
+        (
+            Self::current_branch_name(repo_path)
+                .filter(|branch| !Self::is_detached_head(Some(branch))),
+            Self::upstream_branch_name(repo_path),
+        )
+    }
+
+    fn classify_push_failure(repo_path: &Path, stderr: &str) -> PushRejectionAnalysis {
+        let stderr_lower = stderr.to_ascii_lowercase();
+        let (current_branch, upstream_branch) = Self::push_failure_branch_context(repo_path);
+
+        let (kind, message, suggested_next_actions) = if stderr_lower.contains("non-fast-forward")
+            || stderr_lower.contains("[rejected]")
+            || stderr_lower.contains("fetch first")
+            || stderr_lower.contains("tip of your current branch is behind")
+        {
+            (
+                PushFailureKind::NonFastForward,
+                "Push was rejected because the remote branch has new commits. Integrate remote changes before pushing again.".to_string(),
+                vec![
+                    "fetch".to_string(),
+                    "review".to_string(),
+                    "integrate".to_string(),
+                ],
+            )
+        } else if stderr_lower.contains("no upstream branch") {
+            (
+                PushFailureKind::NoUpstream,
+                "This branch does not have an upstream yet. Push again with upstream configuration.".to_string(),
+                vec!["push-set-upstream".to_string()],
+            )
+        } else if stderr_lower.contains("authentication failed")
+            || stderr_lower.contains("could not read from remote repository")
+            || stderr_lower.contains("permission denied")
+            || stderr_lower.contains("permission to")
+            || stderr_lower.contains("repository not found")
+        {
+            (
+                PushFailureKind::Auth,
+                "Push failed because Git could not authenticate with the remote.".to_string(),
+                vec!["retry".to_string()],
+            )
+        } else if stderr_lower.contains("could not resolve host")
+            || stderr_lower.contains("failed to connect")
+            || stderr_lower.contains("connection timed out")
+            || stderr_lower.contains("network is unreachable")
+            || stderr_lower.contains("connection reset")
+        {
+            (
+                PushFailureKind::Network,
+                "Push failed because Git could not reach the remote.".to_string(),
+                vec!["retry".to_string()],
+            )
+        } else {
+            (
+                PushFailureKind::Other,
+                "Push failed. Review the Git output and retry when the repository state is clear."
+                    .to_string(),
+                vec!["retry".to_string()],
+            )
+        };
+
+        PushRejectionAnalysis {
+            repo_path: Self::path_to_string(repo_path),
+            current_branch,
+            upstream_branch,
+            kind,
+            message,
+            suggested_next_actions,
+        }
+    }
+
+    fn execute_pull_command(
+        &self,
+        repo_path: &Path,
+        args: &[&str],
+        success_message: &str,
+        conflict_message: &str,
+    ) -> GitResult<OperationResult> {
+        match Self::run_git(args, Some(repo_path)) {
+            Ok(output) => Ok(OperationResult {
+                message: success_message.to_string(),
+                output: (!output.is_empty()).then_some(output),
+                repo_path: Some(Self::path_to_string(repo_path)),
+                backend_used: "git-cli".to_string(),
+            }),
+            Err(GitError::CommandFailed { stderr, .. }) => {
+                let status = self.get_repo_status(&Self::repo_request(repo_path))?;
+                if status.merge_in_progress || status.rebase_in_progress {
+                    return Ok(OperationResult {
+                        message: conflict_message.to_string(),
+                        output: (!stderr.is_empty()).then_some(stderr),
+                        repo_path: Some(Self::path_to_string(repo_path)),
+                        backend_used: "git-cli".to_string(),
+                    });
+                }
+
+                Err(GitError::CommandFailed {
+                    command: format!("git {}", args.join(" ")),
+                    stderr,
+                })
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn try_rev_parse(repo_path: &Path, rev: &str) -> Option<String> {
@@ -620,11 +888,7 @@ impl CliGitHandler {
         }
 
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if value.is_empty() {
-            None
-        } else {
-            Some(value)
-        }
+        if value.is_empty() { None } else { Some(value) }
     }
 
     fn require_configured_diff_tool(repo_path: &Path) -> GitResult<String> {
@@ -650,11 +914,7 @@ impl CliGitHandler {
         }
 
         let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        if value.is_empty() {
-            None
-        } else {
-            Some(value)
-        }
+        if value.is_empty() { None } else { Some(value) }
     }
 
     fn require_configured_merge_tool(repo_path: &Path) -> GitResult<String> {
@@ -813,16 +1073,72 @@ impl GitOperationHandler for CliGitHandler {
         })
     }
 
+    fn analyze_pull(&self, request: &RepoRequest) -> GitResult<PullAnalysis> {
+        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        self.build_pull_analysis(&repo_path)
+    }
+
     fn pull_changes(&self, request: &RepoRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
-        let output = Self::run_git(&["pull"], Some(&repo_path))?;
+        self.execute_pull_command(
+            &repo_path,
+            &["pull"],
+            &format!("Pulled latest changes in {}", repo_path.display()),
+            "Pull started a conflict resolution flow. Resolve the conflicts, then continue or complete the operation.",
+        )
+    }
 
-        Ok(OperationResult {
-            message: format!("Pulled latest changes in {}", repo_path.display()),
-            output: (!output.is_empty()).then_some(output),
-            repo_path: Some(Self::path_to_string(&repo_path)),
-            backend_used: "git-cli".to_string(),
-        })
+    fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult> {
+        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let analysis = self.build_pull_analysis(&repo_path)?;
+
+        match request.strategy {
+            PullStrategy::FfOnly => {
+                if !matches!(analysis.state, PullState::BehindOnly) {
+                    return Err(GitError::InvalidInput(
+                        "Fast-forward pull is only available when the branch is behind its upstream."
+                            .to_string(),
+                    ));
+                }
+
+                self.execute_pull_command(
+                    &repo_path,
+                    &["pull", "--ff-only"],
+                    "Fast-forward pull complete.",
+                    "Pull started a conflict resolution flow. Resolve the conflicts, then continue or complete the operation.",
+                )
+            }
+            PullStrategy::Rebase => {
+                if !matches!(analysis.state, PullState::BehindOnly | PullState::Divergent) {
+                    return Err(GitError::InvalidInput(
+                        "Rebase pull is only available when remote changes need to be integrated."
+                            .to_string(),
+                    ));
+                }
+
+                self.execute_pull_command(
+                    &repo_path,
+                    &["pull", "--rebase"],
+                    "Rebase pull complete.",
+                    "Rebase started and needs conflict resolution. Resolve the conflicts, then continue the rebase.",
+                )
+            }
+            PullStrategy::Merge => {
+                if !matches!(analysis.state, PullState::BehindOnly | PullState::Divergent) {
+                    return Err(GitError::InvalidInput(
+                        "Merge pull is only available when remote changes need to be integrated."
+                            .to_string(),
+                    ));
+                }
+
+                self.execute_pull_command(
+                    &repo_path,
+                    &["pull", "--no-rebase"],
+                    "Merge pull complete.",
+                    "Merge started and needs conflict resolution. Resolve the conflicts, then complete or abort the merge.",
+                )
+            }
+        }
     }
 
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult> {
@@ -843,9 +1159,10 @@ impl GitOperationHandler for CliGitHandler {
         )
         .ok()
         .map(|value| value.trim().to_ascii_lowercase());
-        let has_signing_key = Self::run_git(&["config", "--get", "user.signingkey"], Some(&repo_path))
-            .map(|value| !value.trim().is_empty())
-            .unwrap_or(false);
+        let has_signing_key =
+            Self::run_git(&["config", "--get", "user.signingkey"], Some(&repo_path))
+                .map(|value| !value.trim().is_empty())
+                .unwrap_or(false);
         let should_sign = match commit_gpgsign.as_deref() {
             Some("false") | Some("0") | Some("no") | Some("off") => false,
             Some("true") | Some("1") | Some("yes") | Some("on") => true,
@@ -1234,18 +1551,26 @@ impl GitOperationHandler for CliGitHandler {
         let hash = request.commit_hash.trim();
 
         if hash.is_empty() {
-            return Err(GitError::InvalidInput("Commit hash is required".to_string()));
+            return Err(GitError::InvalidInput(
+                "Commit hash is required".to_string(),
+            ));
         }
 
         // Single call: fields separated by \x1f (unit separator), record ends with \x1e
         let format = "%H\x1f%an\x1f%ae\x1f%aI\x1f%cn\x1f%ce\x1f%cI\x1f%P\x1f%b\x1e";
-        let output = Self::run_git(&["log", "-1", &format!("--format={}", format), hash], Some(&repo_path))?;
+        let output = Self::run_git(
+            &["log", "-1", &format!("--format={}", format), hash],
+            Some(&repo_path),
+        )?;
 
         // Split on record separator; take the first record
         let record = output.split('\x1e').next().unwrap_or_default();
         let parts: Vec<&str> = record.splitn(9, '\x1f').collect();
         if parts.len() < 8 {
-            return Err(GitError::InvalidInput(format!("Unexpected git log output for {}", hash)));
+            return Err(GitError::InvalidInput(format!(
+                "Unexpected git log output for {}",
+                hash
+            )));
         }
 
         let full_hash = parts[0].trim().to_string();
@@ -1264,8 +1589,8 @@ impl GitOperationHandler for CliGitHandler {
         let trailers = parse_commit_trailers(body);
 
         // Tags pointing at this commit (may be empty output)
-        let tags_output = Self::run_git(&["tag", "--points-at", hash], Some(&repo_path))
-            .unwrap_or_default();
+        let tags_output =
+            Self::run_git(&["tag", "--points-at", hash], Some(&repo_path)).unwrap_or_default();
         let tags = tags_output
             .lines()
             .map(|l| l.trim().to_string())
@@ -1290,7 +1615,8 @@ impl GitOperationHandler for CliGitHandler {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         let line_ending = Self::detect_line_ending(&repo_path, file_path, request.staged);
-        let detected_file_type = Self::detect_file_type_label(&repo_path, file_path, request.staged);
+        let detected_file_type =
+            Self::detect_file_type_label(&repo_path, file_path, request.staged);
 
         let mut args = vec!["diff"];
         if request.staged {
@@ -1740,16 +2066,14 @@ impl GitOperationHandler for CliGitHandler {
             Some(&repo_path),
         )
         .ok();
-        let commit_signing_enabled = Self::run_git(
-            &["config", scope_flag, "commit.gpgsign"],
-            Some(&repo_path),
-        )
-        .ok()
-        .map(|value| {
-            let normalized = value.trim().to_ascii_lowercase();
-            matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
-        })
-        .unwrap_or(false);
+        let commit_signing_enabled =
+            Self::run_git(&["config", scope_flag, "commit.gpgsign"], Some(&repo_path))
+                .ok()
+                .map(|value| {
+                    let normalized = value.trim().to_ascii_lowercase();
+                    matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
+                })
+                .unwrap_or(false);
 
         Ok(GitIdentity {
             name,
@@ -1899,7 +2223,7 @@ impl GitOperationHandler for CliGitHandler {
         Ok(remotes)
     }
 
-    fn push_changes(&self, request: &PushRequest) -> GitResult<OperationResult> {
+    fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult> {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
         let mut args = vec!["push"];
         if request.force {
@@ -1910,11 +2234,13 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         match Self::run_git(&args, Some(&repo_path)) {
-            Ok(output) => Ok(OperationResult {
+            Ok(output) => Ok(PushResult {
                 message: "Pushed changes".to_string(),
                 output: (!output.is_empty()).then_some(output),
                 repo_path: Some(Self::path_to_string(&repo_path)),
                 backend_used: "git-cli".to_string(),
+                success: true,
+                rejection: None,
             }),
             Err(GitError::CommandFailed { ref stderr, .. })
                 if stderr.contains("no upstream branch") =>
@@ -1931,11 +2257,24 @@ impl GitOperationHandler for CliGitHandler {
                     upstream_args.insert(1, "--follow-tags");
                 }
                 let output = Self::run_git(&upstream_args, Some(&repo_path))?;
-                Ok(OperationResult {
+                Ok(PushResult {
                     message: format!("Pushed and set upstream to origin/{branch}"),
                     output: (!output.is_empty()).then_some(output),
                     repo_path: Some(Self::path_to_string(&repo_path)),
                     backend_used: "git-cli".to_string(),
+                    success: true,
+                    rejection: None,
+                })
+            }
+            Err(GitError::CommandFailed { stderr, .. }) => {
+                let rejection = Self::classify_push_failure(&repo_path, &stderr);
+                Ok(PushResult {
+                    message: rejection.message.clone(),
+                    output: (!stderr.is_empty()).then_some(stderr),
+                    repo_path: Some(Self::path_to_string(&repo_path)),
+                    backend_used: "git-cli".to_string(),
+                    success: false,
+                    rejection: Some(rejection),
                 })
             }
             Err(e) => Err(e),
@@ -3004,7 +3343,8 @@ impl CliGitHandler {
         file_path: &str,
         staged: bool,
     ) -> Option<LineEndingStyle> {
-        let output = Self::run_git(&["ls-files", "--eol", "--", file_path], Some(repo_path)).ok()?;
+        let output =
+            Self::run_git(&["ls-files", "--eol", "--", file_path], Some(repo_path)).ok()?;
         let first_line = output.lines().find(|line| !line.trim().is_empty())?;
 
         let prefix = if staged { "i/" } else { "w/" };
@@ -3063,16 +3403,25 @@ impl CliGitHandler {
 
     fn is_untracked_file(repo_path: &Path, file_path: &str) -> bool {
         let output = match Self::run_git(
-            &["-c", "core.quotepath=false", "status", "--porcelain=v1", "--", file_path],
+            &[
+                "-c",
+                "core.quotepath=false",
+                "status",
+                "--porcelain=v1",
+                "--",
+                file_path,
+            ],
             Some(repo_path),
         ) {
             Ok(value) => value,
             Err(_) => return false,
         };
 
-        output
-            .lines()
-            .any(|line| line.strip_prefix("?? ").map(|path| path.trim() == file_path).unwrap_or(false))
+        output.lines().any(|line| {
+            line.strip_prefix("?? ")
+                .map(|path| path.trim() == file_path)
+                .unwrap_or(false)
+        })
     }
 
     fn is_added_in_index(repo_path: &Path, file_path: &str) -> bool {
@@ -3242,22 +3591,27 @@ impl CliGitHandler {
             .collect()
     }
 
+    fn parse_merge_subject_branch(first_line: &str, prefix: &str) -> Option<String> {
+        first_line
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split('\'').next())
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .map(|branch| branch.to_string())
+    }
+
     fn detect_merge_branch(repo_path: &Path) -> Option<String> {
         let merge_msg_path = repo_path.join(".git/MERGE_MSG");
         if let Ok(msg) = std::fs::read_to_string(&merge_msg_path) {
             if let Some(first_line) = msg.lines().next() {
-                if let Some(branch) = first_line
-                    .strip_prefix("Merge branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-                    .map(|s| s.to_string())
+                if let Some(branch) = Self::parse_merge_subject_branch(first_line, "Merge branch '")
                 {
                     return Some(branch);
                 }
-                if let Some(branch) = first_line
-                    .strip_prefix("Merge remote-tracking branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-                    .map(|s| s.to_string())
-                {
+                if let Some(branch) = Self::parse_merge_subject_branch(
+                    first_line,
+                    "Merge remote-tracking branch '",
+                ) {
                     return Some(branch);
                 }
             }
@@ -3637,8 +3991,8 @@ pub(super) fn parse_commit_trailers(body: &str) -> Vec<CommitTrailer> {
         if let Some(colon_pos) = trimmed.find(':') {
             let key = &trimmed[..colon_pos];
             let value = trimmed[colon_pos + 1..].trim();
-            let key_valid = !key.is_empty()
-                && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
+            let key_valid =
+                !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
             if key_valid && !value.is_empty() {
                 trailers.push(CommitTrailer {
                     key: key.to_string(),
@@ -3660,7 +4014,10 @@ mod tests {
 
     #[test]
     fn hunk_header_standard() {
-        assert_eq!(CliGitHandler::parse_hunk_header("@@ -10,6 +10,7 @@"), (10, 10));
+        assert_eq!(
+            CliGitHandler::parse_hunk_header("@@ -10,6 +10,7 @@"),
+            (10, 10)
+        );
     }
 
     #[test]

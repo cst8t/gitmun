@@ -12,11 +12,11 @@ use super::types::{
     CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
     DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExternalDiffRequest, FetchRequest,
     FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, MergeRequest,
-    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PushRequest,
-    PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest, Settings, StageFilesRequest,
-    StashEntry, StashPushRequest, StashRequest, TagInfo, ThemeMode,
+    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -24,8 +24,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn get_numstat(&self, request: &NumstatRequest) -> GitResult<NumstatResult>;
     #[allow(dead_code)]
     fn clone_repo(&self, request: &CloneRequest) -> GitResult<OperationResult>;
+    fn analyze_pull(&self, request: &RepoRequest) -> GitResult<PullAnalysis>;
     fn pull_changes(&self, request: &RepoRequest) -> GitResult<OperationResult>;
-    fn push_changes(&self, request: &PushRequest) -> GitResult<OperationResult>;
+    fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult>;
+    fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult>;
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult>;
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult>;
     fn get_configured_diff_tool(&self, request: &RepoRequest) -> GitResult<Option<String>>;
@@ -303,8 +305,10 @@ impl GitService {
     }
 
     forward_write_methods! {
+        fn analyze_pull(request: RepoRequest) -> GitResult<PullAnalysis>;
         fn pull_changes(request: RepoRequest) -> GitResult<OperationResult>;
-        fn push_changes(request: PushRequest) -> GitResult<OperationResult>;
+        fn pull_with_strategy(request: PullStrategyRequest) -> GitResult<OperationResult>;
+        fn push_changes(request: PushRequest) -> GitResult<PushResult>;
         fn commit_changes(request: CommitRequest) -> GitResult<OperationResult>;
         fn stage_files(request: StageFilesRequest) -> GitResult<OperationResult>;
         fn create_branch(request: CreateBranchRequest) -> GitResult<OperationResult>;

@@ -8,11 +8,25 @@ finish-args:
   - --share=ipc
   - --socket=fallback-x11
   - --socket=wayland
+  - --socket=ssh-auth
   - --device=dri
   - --filesystem=home
   - --talk-name=org.freedesktop.Flatpak
+  - --talk-name=org.freedesktop.secrets
+  - --filesystem=xdg-run/keyring
 
 modules:
+  - name: git
+    make-args:
+      - NO_TCLTK=1
+      - INSTALL_SYMLINKS=1
+    make-install-args:
+      - NO_TCLTK=1
+      - INSTALL_SYMLINKS=1
+    sources:
+      - type: archive
+        url: https://mirrors.edge.kernel.org/pub/software/scm/git/git-2.53.0.tar.xz
+        sha256: 5818bd7d80b061bbbdfec8a433d609dc8818a05991f731ffc4a561e2ca18c653
   - name: gitmun-files
     buildsystem: simple
     build-commands:
@@ -38,17 +52,27 @@ modules:
         install -Dm755 "$BIN_PATH" /app/bin/gitmun
       - |
         DESKTOP_PATH=""
-        for candidate in \
-          usr/share/applications/gitmun.desktop \
-          rootfs/usr/share/applications/gitmun.desktop; do
-          if [ -f "$candidate" ]; then
-            DESKTOP_PATH="$candidate"
+        for desktop_dir in usr/share/applications rootfs/usr/share/applications; do
+          if [ -d "$desktop_dir" ]; then
+            DESKTOP_PATH="$(find "$desktop_dir" -maxdepth 1 -type f -iname 'gitmun.desktop' | head -n 1)"
+          fi
+          if [ -n "$DESKTOP_PATH" ]; then
             break
           fi
         done
+        if [ -z "$DESKTOP_PATH" ]; then
+          for desktop_dir in usr/share/applications rootfs/usr/share/applications; do
+            if [ -d "$desktop_dir" ]; then
+              DESKTOP_PATH="$(find "$desktop_dir" -maxdepth 1 -type f -iname '*.desktop' | head -n 1)"
+            fi
+            if [ -n "$DESKTOP_PATH" ]; then
+              break
+            fi
+          done
+        fi
 
         if [ -z "$DESKTOP_PATH" ]; then
-          echo "Unable to locate gitmun.desktop in extracted rootfs sources." >&2
+          echo "Unable to locate a desktop file in extracted rootfs sources." >&2
           find . -maxdepth 5 -type f | sort >&2
           exit 1
         fi
@@ -56,11 +80,11 @@ modules:
         install -Dm644 "$DESKTOP_PATH" /app/share/applications/com.cst8t.gitmun.desktop
       - |
         ICON_PATH=""
-        for candidate in \
-          usr/share/icons/hicolor/128x128/apps/gitmun.png \
-          rootfs/usr/share/icons/hicolor/128x128/apps/gitmun.png; do
-          if [ -f "$candidate" ]; then
-            ICON_PATH="$candidate"
+        for icon_dir in usr/share/icons/hicolor/128x128/apps rootfs/usr/share/icons/hicolor/128x128/apps; do
+          if [ -d "$icon_dir" ]; then
+            ICON_PATH="$(find "$icon_dir" -maxdepth 1 -type f -iname 'gitmun.png' | head -n 1)"
+          fi
+          if [ -n "$ICON_PATH" ]; then
             break
           fi
         done

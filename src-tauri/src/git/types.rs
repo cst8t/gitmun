@@ -595,6 +595,95 @@ pub struct PushRequest {
     pub push_follow_tags: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PullState {
+    UpToDate,
+    BehindOnly,
+    AheadOnly,
+    Divergent,
+    NoUpstream,
+    DetachedHead,
+    BlockedDirtyWorktree,
+    OperationInProgress,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PullRecommendedAction {
+    None,
+    FfOnlyPull,
+    Push,
+    Rebase,
+    Merge,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullAnalysis {
+    pub repo_path: String,
+    pub current_branch: Option<String>,
+    pub upstream_branch: Option<String>,
+    pub ahead: u32,
+    pub behind: u32,
+    pub has_working_tree_changes: bool,
+    pub has_staged_changes: bool,
+    pub merge_in_progress: bool,
+    pub rebase_in_progress: bool,
+    pub cherry_pick_in_progress: bool,
+    pub revert_in_progress: bool,
+    pub state: PullState,
+    pub recommended_action: PullRecommendedAction,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PullStrategyRequest {
+    pub repo_path: String,
+    pub strategy: PullStrategy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PullStrategy {
+    FfOnly,
+    Rebase,
+    Merge,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum PushFailureKind {
+    NonFastForward,
+    NoUpstream,
+    Auth,
+    Network,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushRejectionAnalysis {
+    pub repo_path: String,
+    pub current_branch: Option<String>,
+    pub upstream_branch: Option<String>,
+    pub kind: PushFailureKind,
+    pub message: String,
+    pub suggested_next_actions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PushResult {
+    pub message: String,
+    pub output: Option<String>,
+    pub repo_path: Option<String>,
+    pub backend_used: String,
+    pub success: bool,
+    pub rejection: Option<PushRejectionAnalysis>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchRequest {

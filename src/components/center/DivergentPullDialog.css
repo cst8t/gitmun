@@ -1,0 +1,77 @@
+.divergent-pull-dialog {
+  width: 520px;
+}
+
+.divergent-pull-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+}
+
+.divergent-pull-dialog__body p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.divergent-pull-dialog__stats {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.divergent-pull-dialog__stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.divergent-pull-dialog__label {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.divergent-pull-dialog__options {
+  display: grid;
+  gap: 10px;
+}
+
+.divergent-pull-dialog__option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.divergent-pull-dialog__option:hover {
+  border-color: var(--accent);
+  background: var(--bg-hover);
+}
+
+.divergent-pull-dialog__option-title {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.divergent-pull-dialog__option-copy {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.divergent-pull-dialog__note {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}

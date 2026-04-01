@@ -102,6 +102,67 @@ export type PushRequest = {
     pushFollowTags: boolean;
 };
 
+export type PullState =
+    | "up_to_date"
+    | "behind_only"
+    | "ahead_only"
+    | "divergent"
+    | "no_upstream"
+    | "detached_head"
+    | "blocked_dirty_worktree"
+    | "operation_in_progress";
+
+export type PullRecommendedAction =
+    | "none"
+    | "ff-only-pull"
+    | "push"
+    | "rebase"
+    | "merge";
+
+export type PullAnalysis = {
+    repoPath: string;
+    currentBranch: string | null;
+    upstreamBranch: string | null;
+    ahead: number;
+    behind: number;
+    hasWorkingTreeChanges: boolean;
+    hasStagedChanges: boolean;
+    mergeInProgress: boolean;
+    rebaseInProgress: boolean;
+    cherryPickInProgress: boolean;
+    revertInProgress: boolean;
+    state: PullState;
+    recommendedAction: PullRecommendedAction;
+    message: string;
+};
+
+export type PullStrategy = "ff-only" | "rebase" | "merge";
+
+export type PushFailureKind =
+    | "non-fast-forward"
+    | "no-upstream"
+    | "auth"
+    | "network"
+    | "other";
+
+export type PushRejectionAnalysis = {
+    repoPath: string;
+    currentBranch: string | null;
+    upstreamBranch: string | null;
+    kind: PushFailureKind;
+    message: string;
+    suggestedNextActions: Array<"fetch" | "review" | "integrate" | "push-set-upstream" | "retry">;
+};
+
+export type PushResult = {
+    message: string;
+    output?: string | null;
+    repoPath?: string | null;
+    backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
+    success: boolean;
+    rejection?: PushRejectionAnalysis | null;
+};
+
 export type FileStatusItem = {
     path: string;
     status: string;
