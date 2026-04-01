@@ -78,6 +78,33 @@ fn initial_theme_injection_script(system_theme: &str) -> String {
     .replace("__GITMUN_SYSTEM_THEME__", system_theme)
 }
 
+fn centered_sub_window_position(app: &tauri::AppHandle, width: f64, height: f64) -> Option<(f64, f64)> {
+    let main_window = app.get_webview_window("main")?;
+    let scale_factor = main_window.scale_factor().ok()?;
+    let outer_position = main_window.outer_position().ok()?;
+    let outer_size = main_window.outer_size().ok()?;
+    let inner_size = main_window.inner_size().ok()?;
+
+    let main_x = outer_position.x as f64 / scale_factor;
+    let main_y = outer_position.y as f64 / scale_factor;
+    let main_width = outer_size.width as f64 / scale_factor;
+    let main_height = outer_size.height as f64 / scale_factor;
+
+    // Use the main window's current decoration thickness to better estimate
+    // the child window's outer frame on the active platform.
+    let decoration_width = outer_size.width.saturating_sub(inner_size.width) as f64 / scale_factor;
+    let decoration_height =
+        outer_size.height.saturating_sub(inner_size.height) as f64 / scale_factor;
+
+    let child_outer_width = width + decoration_width;
+    let child_outer_height = height + decoration_height;
+
+    Some((
+        (main_x + (main_width - child_outer_width) / 2.0).round(),
+        (main_y + (main_height - child_outer_height) / 2.0).round(),
+    ))
+}
+
 #[tauri::command]
 pub async fn open_sub_window(
     app: tauri::AppHandle,
@@ -119,7 +146,7 @@ pub async fn open_sub_window(
         return Ok(());
     }
 
-    let _window = tauri::WebviewWindowBuilder::new(
+    let mut builder = tauri::WebviewWindowBuilder::new(
         &app,
         &label,
         tauri::WebviewUrl::App(path.clone().into()),
@@ -134,7 +161,13 @@ pub async fn open_sub_window(
     .focused(show_immediately)
     .visible(show_immediately)
     .background_color(background_colour)
-    .initialization_script(initial_theme_injection_script(system_theme))
+    .initialization_script(initial_theme_injection_script(system_theme));
+
+    if let Some((x, y)) = centered_sub_window_position(&app, width, height) {
+        builder = builder.position(x, y);
+    }
+
+    let _window = builder
     .build()
     .map_err(|e| e.to_string())?;
 
