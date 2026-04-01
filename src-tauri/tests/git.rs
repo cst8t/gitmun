@@ -14,7 +14,7 @@ use gitmun_lib::git::types::{
 fn init_repo() -> TempDir {
     let dir = TempDir::new().expect("create temp dir");
     let path = dir.path();
-    git(path, &["init"]);
+    git(path, &["init", "-b", "main"]);
     git(path, &["config", "user.email", "test@gitmun.test"]);
     git(path, &["config", "user.name", "Gitmun Test"]);
     git(path, &["config", "commit.gpgsign", "false"]);
@@ -52,10 +52,10 @@ fn gix_handler() -> GixGitHandler {
 
 fn init_remote_with_clone() -> (TempDir, TempDir) {
     let remote = TempDir::new().expect("create remote dir");
-    git(remote.path(), &["init", "--bare"]);
+    git(remote.path(), &["init", "--bare", "-b", "main"]);
 
     let local = TempDir::new().expect("create local dir");
-    git(local.path(), &["init"]);
+    git(local.path(), &["init", "-b", "main"]);
     git(local.path(), &["config", "user.email", "test@gitmun.test"]);
     git(local.path(), &["config", "user.name", "Gitmun Test"]);
     git(local.path(), &["config", "commit.gpgsign", "false"]);
@@ -66,7 +66,6 @@ fn init_remote_with_clone() -> (TempDir, TempDir) {
     write_file(local.path(), "seed.txt", "seed");
     git(local.path(), &["add", "seed.txt"]);
     git(local.path(), &["commit", "-m", "seed"]);
-    git(local.path(), &["branch", "-M", "main"]);
     git(local.path(), &["push", "-u", "origin", "main"]);
     (remote, local)
 }
