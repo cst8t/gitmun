@@ -17,10 +17,11 @@ fi
 DEB_FILE="${DEB_FILES[0]}"
 DEB_NAME="$(basename "${DEB_FILE}")"
 PKGNAME="$(jq -r '.productName' "${TAURI_CONF}" | tr '[:upper:]' '[:lower:]')"
-PKGVER="$(printf '%s' "${DEB_NAME}" | sed -E "s/^${PKGNAME}_([^_]+)_.+\.deb$/\1/")"
-if [[ -z "${PKGVER}" || "${PKGVER}" == "${DEB_NAME}" ]]; then
-  PKGVER="$(jq -r '.version' "${TAURI_CONF}")"
+PKGVER_RAW="$(printf '%s' "${DEB_NAME}" | sed -E "s/^${PKGNAME}_([^_]+)_.+\.deb$/\1/")"
+if [[ -z "${PKGVER_RAW}" || "${PKGVER_RAW}" == "${DEB_NAME}" ]]; then
+  PKGVER_RAW="$(jq -r '.version' "${TAURI_CONF}")"
 fi
+PKGVER="$(printf '%s' "${PKGVER_RAW}" | sed -E 's/[^[:alnum:]._+]+/_/g')"
 SHA256="$(sha256sum "${DEB_FILE}" | awk '{print $1}')"
 INSTALL_FILE="${PKGNAME}.install"
 UPSTREAM_LICENSE_FILE="LICENSE.${PKGNAME}"
@@ -41,6 +42,7 @@ SERVER_URL="${SERVER_URL:-${GITHUB_SERVER_URL:-${FORGEJO_SERVER_URL:-https://git
 SERVER_URL="${SERVER_URL%/}"
 PROJECT_URL="${SERVER_URL}/${REPO_SLUG}"
 RELEASE_BASE_URL="${RELEASE_BASE_URL:-${PROJECT_URL}/releases/download}"
+RELEASE_TAG="${RELEASE_TAG:-v${PKGVER_RAW}}"
 
 cat > "${AUR_DIR}/PKGBUILD" <<EOF
 pkgname=${PKGNAME}
@@ -67,7 +69,7 @@ options=('!strip' '!debug' '!emptydirs')
 install=${INSTALL_FILE}
 
 source=("${UPSTREAM_LICENSE_FILE}")
-source_x86_64=("${RELEASE_BASE_URL}/v\${pkgver}/${DEB_NAME}")
+source_x86_64=("${RELEASE_BASE_URL}/${RELEASE_TAG}/${DEB_NAME}")
 sha256sums=('${UPSTREAM_LICENSE_SHA256}')
 sha256sums_x86_64=('${SHA256}')
 
@@ -115,7 +117,7 @@ pkgbase = ${PKGNAME}
   depends = pango
   depends = webkit2gtk-4.1
   source = ${UPSTREAM_LICENSE_FILE}
-  source_x86_64 = ${RELEASE_BASE_URL}/v${PKGVER}/${DEB_NAME}
+  source_x86_64 = ${RELEASE_BASE_URL}/${RELEASE_TAG}/${DEB_NAME}
   sha256sums = ${UPSTREAM_LICENSE_SHA256}
   sha256sums_x86_64 = ${SHA256}
 
