@@ -16,6 +16,8 @@ import { CenterPanel, type CenterTab } from "./center/CenterPanel";
 import { DiffPanel } from "./diff/DiffPanel";
 import { IdentityPanel } from "./identity/IdentityPanel";
 import { ConfirmRevertDialog } from "./center/ConfirmRevertDialog";
+import { DivergentPullDialog } from "./center/DivergentPullDialog";
+import { PushRejectedDialog } from "./center/PushRejectedDialog";
 import { NoDiffToolWarning } from "./NoDiffToolWarning";
 import { MergeDialog, type MergeStrategy } from "./sidebar/MergeDialog";
 import { AddRemoteDialog } from "./sidebar/AddRemoteDialog";
@@ -35,7 +37,15 @@ import { useGitTags } from "../hooks/useGitTags";
 import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
-import type { CommitMarkers, CreateBranchRequest, GitIdentity, RemoteInfo } from "../types";
+import type {
+  CommitMarkers,
+  CreateBranchRequest,
+  GitIdentity,
+  PullAnalysis,
+  PullStrategy,
+  PushRejectionAnalysis,
+  RemoteInfo,
+} from "../types";
 import type { ResultLogEntry } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
@@ -177,6 +187,8 @@ export function ProjectView({
   const [stashBusy, setStashBusy] = useState(false);
   const [hunkActionBusy, setHunkActionBusy] = useState(false);
   const [remoteOp, setRemoteOp] = useState<"fetch" | "pull" | "push" | null>(null);
+  const [divergentPullAnalysis, setDivergentPullAnalysis] = useState<PullAnalysis | null>(null);
+  const [pushRejectionAnalysis, setPushRejectionAnalysis] = useState<PushRejectionAnalysis | null>(null);
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -515,29 +527,102 @@ export function ProjectView({
     finally { setRemoteOp(null); }
   }, [repoPath, remoteOp, refreshAll, showToast]);
 
-  const handlePull = useCallback(async () => {
+  const runPullWithStrategy = useCallback(async (strategy: PullStrategy) => {
     if (!repoPath || remoteOp) return;
     setRemoteOp("pull");
     try {
-      const result = await api.pullChanges(repoPath);
-      showToast("Pull complete");
-      appendResultLog("success", "Pull complete", result.backendUsed);
+      const result = await api.pullWithStrategy(repoPath, strategy);
+      const conflictStarted = /conflict resolution flow|needs conflict resolution/i.test(result.message);
+      if (conflictStarted) {
+        showToast(result.message, "info");
+        appendResultLog("info", result.message, result.backendUsed);
+      } else if (strategy === "ff-only") {
+        showToast("Pull complete");
+        appendResultLog("success", result.message, result.backendUsed);
+      } else {
+        showToast("Integration complete. Push your branch to update the remote.");
+        appendResultLog("success", result.message, result.backendUsed);
+      }
       await refreshAll();
     } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Pull failed: ${String(e)}`, "unknown"); }
     finally { setRemoteOp(null); }
   }, [repoPath, remoteOp, refreshAll, showToast]);
+
+  const startPullFlow = useCallback(async () => {
+    if (!repoPath || remoteOp) return;
+    try {
+      const analysis = await api.analyzePull(repoPath);
+      setPushRejectionAnalysis(null);
+      switch (analysis.state) {
+        case "up_to_date":
+          showToast("Already up to date", "info");
+          appendResultLog("info", analysis.message, "unknown");
+          return;
+        case "behind_only":
+          await runPullWithStrategy("ff-only");
+          return;
+        case "ahead_only":
+          showToast(analysis.message, "info");
+          appendResultLog("info", analysis.message, "unknown");
+          return;
+        case "divergent":
+          setDivergentPullAnalysis(analysis);
+          return;
+        case "no_upstream":
+        case "detached_head":
+        case "blocked_dirty_worktree":
+        case "operation_in_progress":
+          showToast(analysis.message, "error");
+          appendResultLog("error", analysis.message, "unknown");
+          return;
+      }
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", `Pull analysis failed: ${String(e)}`, "unknown");
+    }
+  }, [repoPath, remoteOp, runPullWithStrategy, showToast]);
+
+  const handlePull = useCallback(async () => {
+    await startPullFlow();
+  }, [startPullFlow]);
+
+  const handleDivergentPullConfirm = useCallback(async (strategy: PullStrategy) => {
+    setDivergentPullAnalysis(null);
+    await runPullWithStrategy(strategy);
+  }, [runPullWithStrategy]);
 
   const handlePush = useCallback(async () => {
     if (!repoPath || remoteOp) return;
     setRemoteOp("push");
     try {
       const result = await api.pushChanges(repoPath, false, pushFollowTags);
+      if (!result.success) {
+        if (result.rejection?.kind === "non-fast-forward") {
+          setPushRejectionAnalysis(result.rejection);
+          showToast(result.rejection.message, "error");
+          appendResultLog("error", result.rejection.message, result.backendUsed);
+        } else {
+          showToast(result.message, "error");
+          appendResultLog("error", result.output?.trim() || result.message, result.backendUsed);
+        }
+        return;
+      }
       showToast("Push complete");
       appendResultLog("success", "Push complete", result.backendUsed);
       await refreshAll();
     } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Push failed: ${String(e)}`, "unknown"); }
     finally { setRemoteOp(null); }
   }, [repoPath, remoteOp, refreshAll, showToast, pushFollowTags]);
+
+  const handlePushRejectedFetch = useCallback(async () => {
+    setPushRejectionAnalysis(null);
+    await handleFetch();
+  }, [handleFetch]);
+
+  const handlePushRejectedIntegrate = useCallback(async () => {
+    setPushRejectionAnalysis(null);
+    await startPullFlow();
+  }, [startPullFlow]);
 
   const handleStash = useCallback(() => {
     if (!repoPath) return;
@@ -1508,6 +1593,23 @@ export function ProjectView({
           targetBranch={currentBranch ?? "current branch"}
           onConfirm={handleMergeConfirm}
           onCancel={() => setMergePendingBranch(null)}
+        />
+      )}
+
+      {divergentPullAnalysis && (
+        <DivergentPullDialog
+          analysis={divergentPullAnalysis}
+          onConfirm={handleDivergentPullConfirm}
+          onCancel={() => setDivergentPullAnalysis(null)}
+        />
+      )}
+
+      {pushRejectionAnalysis && (
+        <PushRejectedDialog
+          analysis={pushRejectionAnalysis}
+          onFetch={handlePushRejectedFetch}
+          onIntegrate={handlePushRejectedIntegrate}
+          onCancel={() => setPushRejectionAnalysis(null)}
         />
       )}
 

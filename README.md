@@ -1,10 +1,10 @@
-# gitmun
+# Gitmun
 
-gitmun is a crossplatform desktop Git client built with Tauri (Rust + React/TypeScript).
+Gitmun is a crossplatform desktop Git client built with Tauri (Rust + React/TypeScript).
 
 ![gitmun screenshot placeholder](docs/gitmun-example-screenshot.png)
 
-## Get gitmun
+## Get Gitmun
 
 - Releases: https://github.com/cst8t/gitmun/releases
 
@@ -49,6 +49,6 @@ npm run linux:setup
 
 ## Notes
 
-- gitmun uses your system Git authentication setup (SSH agent, credential helpers, HTTPS tokens).
+- Gitmun uses your system Git authentication setup (SSH agent, credential helpers, HTTPS tokens).
 - Settings are stored in a JSON config file; the path is shown in the Settings window.
 - macOS bundles are built in CI but are currently untested because I do not have access to macOS hardware. Any help testing macOS releases is greatly appreciated.

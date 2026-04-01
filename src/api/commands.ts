@@ -29,7 +29,10 @@ import type {
     RebaseRequest,
     RebaseResult,
     OperationResult,
+    PullAnalysis,
+    PullStrategy,
     PushRequest,
+    PushResult,
     RemoteInfo,
     RepoRequest,
     RepoStatus,
@@ -173,12 +176,20 @@ export function pullChanges(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("pull_changes", {request: {repoPath}});
 }
 
+export function analyzePull(repoPath: string): Promise<PullAnalysis> {
+    return invoke<PullAnalysis>("analyze_pull", {request: {repoPath}});
+}
+
+export function pullWithStrategy(repoPath: string, strategy: PullStrategy): Promise<OperationResult> {
+    return invoke<OperationResult>("pull_with_strategy", {request: {repoPath, strategy}});
+}
+
 export function pushChanges(
     repoPath: string,
     force: boolean = false,
     pushFollowTags: boolean = false,
-): Promise<OperationResult> {
-    return invoke<OperationResult>("push_changes", {request: {repoPath, force, pushFollowTags}});
+): Promise<PushResult> {
+    return invoke<PushResult>("push_changes", {request: {repoPath, force, pushFollowTags}});
 }
 
 export function stash(

@@ -7,8 +7,8 @@ use gitmun_lib::git::cli::CliGitHandler;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, RepoRequest,
-    StageFilesRequest,
+    CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, PushRequest,
+    RepoRequest, StageFilesRequest,
 };
 
 fn init_repo() -> TempDir {
@@ -48,6 +48,27 @@ fn handler() -> CliGitHandler {
 
 fn gix_handler() -> GixGitHandler {
     GixGitHandler::new()
+}
+
+fn init_remote_with_clone() -> (TempDir, TempDir) {
+    let remote = TempDir::new().expect("create remote dir");
+    git(remote.path(), &["init", "--bare"]);
+
+    let local = TempDir::new().expect("create local dir");
+    git(local.path(), &["init"]);
+    git(local.path(), &["config", "user.email", "test@gitmun.test"]);
+    git(local.path(), &["config", "user.name", "Gitmun Test"]);
+    git(local.path(), &["config", "commit.gpgsign", "false"]);
+    git(
+        local.path(),
+        &["remote", "add", "origin", remote.path().to_str().unwrap()],
+    );
+    write_file(local.path(), "seed.txt", "seed");
+    git(local.path(), &["add", "seed.txt"]);
+    git(local.path(), &["commit", "-m", "seed"]);
+    git(local.path(), &["branch", "-M", "main"]);
+    git(local.path(), &["push", "-u", "origin", "main"]);
+    (remote, local)
 }
 
 fn head_hash(repo: &Path) -> String {
@@ -264,9 +285,187 @@ fn cli_commit_details_parent_hash() {
 }
 
 #[test]
+fn analyze_pull_reports_up_to_date() {
+    let (_remote, local) = init_remote_with_clone();
+    let analysis = handler()
+        .analyze_pull(&repo_request(&local))
+        .expect("analyze_pull");
+
+    assert_eq!(analysis.current_branch.as_deref(), Some("main"));
+    assert_eq!(analysis.upstream_branch.as_deref(), Some("origin/main"));
+    assert_eq!(analysis.ahead, 0);
+    assert_eq!(analysis.behind, 0);
+    assert!(matches!(
+        analysis.state,
+        gitmun_lib::git::types::PullState::UpToDate
+    ));
+}
+
+#[test]
+fn analyze_pull_reports_behind_only() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = TempDir::new().expect("create peer dir");
+    git(
+        Path::new("."),
+        &[
+            "clone",
+            remote.path().to_str().unwrap(),
+            peer.path().to_str().unwrap(),
+        ],
+    );
+    git(peer.path(), &["config", "user.email", "peer@gitmun.test"]);
+    git(peer.path(), &["config", "user.name", "Peer"]);
+    git(peer.path(), &["config", "commit.gpgsign", "false"]);
+    write_file(peer.path(), "peer.txt", "remote");
+    git(peer.path(), &["add", "peer.txt"]);
+    git(peer.path(), &["commit", "-m", "remote commit"]);
+    git(peer.path(), &["push", "origin", "main"]);
+    git(local.path(), &["fetch", "origin"]);
+
+    let analysis = handler()
+        .analyze_pull(&repo_request(&local))
+        .expect("analyze_pull");
+
+    assert_eq!(analysis.ahead, 0);
+    assert_eq!(analysis.behind, 1);
+    assert!(matches!(
+        analysis.state,
+        gitmun_lib::git::types::PullState::BehindOnly
+    ));
+}
+
+#[test]
+fn analyze_pull_reports_divergent() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = TempDir::new().expect("create peer dir");
+    git(
+        Path::new("."),
+        &[
+            "clone",
+            remote.path().to_str().unwrap(),
+            peer.path().to_str().unwrap(),
+        ],
+    );
+    git(peer.path(), &["config", "user.email", "peer@gitmun.test"]);
+    git(peer.path(), &["config", "user.name", "Peer"]);
+    git(peer.path(), &["config", "commit.gpgsign", "false"]);
+    write_file(peer.path(), "peer.txt", "remote");
+    git(peer.path(), &["add", "peer.txt"]);
+    git(peer.path(), &["commit", "-m", "remote commit"]);
+    git(peer.path(), &["push", "origin", "main"]);
+
+    write_file(local.path(), "local.txt", "local");
+    git(local.path(), &["add", "local.txt"]);
+    git(local.path(), &["commit", "-m", "local commit"]);
+    git(local.path(), &["fetch", "origin"]);
+
+    let analysis = handler()
+        .analyze_pull(&repo_request(&local))
+        .expect("analyze_pull");
+
+    assert_eq!(analysis.ahead, 1);
+    assert_eq!(analysis.behind, 1);
+    assert!(matches!(
+        analysis.state,
+        gitmun_lib::git::types::PullState::Divergent
+    ));
+}
+
+#[test]
+fn analyze_pull_blocks_dirty_worktree() {
+    let (_remote, local) = init_remote_with_clone();
+    write_file(local.path(), "seed.txt", "changed");
+
+    let analysis = handler()
+        .analyze_pull(&repo_request(&local))
+        .expect("analyze_pull");
+
+    assert!(analysis.has_working_tree_changes);
+    assert!(matches!(
+        analysis.state,
+        gitmun_lib::git::types::PullState::BlockedDirtyWorktree
+    ));
+}
+
+#[test]
+fn push_changes_classifies_non_fast_forward() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = TempDir::new().expect("create peer dir");
+    git(
+        Path::new("."),
+        &[
+            "clone",
+            remote.path().to_str().unwrap(),
+            peer.path().to_str().unwrap(),
+        ],
+    );
+    git(peer.path(), &["config", "user.email", "peer@gitmun.test"]);
+    git(peer.path(), &["config", "user.name", "Peer"]);
+    git(peer.path(), &["config", "commit.gpgsign", "false"]);
+    write_file(peer.path(), "peer.txt", "remote");
+    git(peer.path(), &["add", "peer.txt"]);
+    git(peer.path(), &["commit", "-m", "remote commit"]);
+    git(peer.path(), &["push", "origin", "main"]);
+
+    write_file(local.path(), "local.txt", "local");
+    git(local.path(), &["add", "local.txt"]);
+    git(local.path(), &["commit", "-m", "local commit"]);
+
+    let result = handler()
+        .push_changes(&PushRequest {
+            repo_path: local.path().to_str().unwrap().to_string(),
+            force: false,
+            push_follow_tags: false,
+        })
+        .expect("push_changes");
+
+    assert!(!result.success);
+    let rejection = result.rejection.expect("push rejection");
+    assert!(matches!(
+        rejection.kind,
+        gitmun_lib::git::types::PushFailureKind::NonFastForward
+    ));
+}
+
+#[test]
+fn status_detects_remote_tracking_merge_branch_from_merge_msg() {
+    let dir = init_repo();
+    let git_dir = dir.path().join(".git");
+    fs::write(git_dir.join("MERGE_HEAD"), format!("{}\n", head_hash(dir.path())))
+        .expect("write MERGE_HEAD");
+    fs::write(
+        git_dir.join("MERGE_MSG"),
+        "Merge remote-tracking branch 'origin/main' into main\n",
+    )
+    .expect("write MERGE_MSG");
+
+    let cli_status = handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("cli get_repo_status");
+    assert!(cli_status.merge_in_progress);
+    assert_eq!(cli_status.merge_head_branch.as_deref(), Some("origin/main"));
+
+    let gix_status = gix_handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("gix get_repo_status");
+    assert!(gix_status.merge_in_progress);
+    assert_eq!(gix_status.merge_head_branch.as_deref(), Some("origin/main"));
+}
+
+#[test]
 fn cli_commit_details_trailers_parsed() {
     let dir = init_repo();
-    git(dir.path(), &["commit", "--allow-empty", "-m", "subject", "-m", "Reviewed-by: Alice <a@b.com>"]);
+    git(
+        dir.path(),
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "subject",
+            "-m",
+            "Reviewed-by: Alice <a@b.com>",
+        ],
+    );
     let hash = head_hash(dir.path());
 
     let details = handler()
@@ -281,7 +480,10 @@ fn cli_commit_details_trailers_parsed() {
 #[test]
 fn cli_commit_details_no_trailers() {
     let dir = init_repo();
-    git(dir.path(), &["commit", "--allow-empty", "-m", "plain message"]);
+    git(
+        dir.path(),
+        &["commit", "--allow-empty", "-m", "plain message"],
+    );
     let hash = head_hash(dir.path());
 
     let details = handler()
@@ -312,7 +514,10 @@ fn cli_commit_details_merge_has_two_parents() {
     git(dir.path(), &["add", "feature.txt"]);
     git(dir.path(), &["commit", "-m", "feature commit"]);
     git(dir.path(), &["checkout", "-"]);
-    git(dir.path(), &["merge", "--no-ff", "feature", "-m", "merge feature"]);
+    git(
+        dir.path(),
+        &["merge", "--no-ff", "feature", "-m", "merge feature"],
+    );
     let merge_hash = head_hash(dir.path());
 
     let details = handler()
@@ -371,7 +576,17 @@ fn gix_commit_details_parent_hash() {
 #[test]
 fn gix_commit_details_trailers_parsed() {
     let dir = init_repo();
-    git(dir.path(), &["commit", "--allow-empty", "-m", "subject", "-m", "Reviewed-by: Alice <a@b.com>"]);
+    git(
+        dir.path(),
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "subject",
+            "-m",
+            "Reviewed-by: Alice <a@b.com>",
+        ],
+    );
     let hash = head_hash(dir.path());
 
     let details = gix_handler()
@@ -386,7 +601,10 @@ fn gix_commit_details_trailers_parsed() {
 #[test]
 fn gix_commit_details_no_trailers() {
     let dir = init_repo();
-    git(dir.path(), &["commit", "--allow-empty", "-m", "plain message"]);
+    git(
+        dir.path(),
+        &["commit", "--allow-empty", "-m", "plain message"],
+    );
     let hash = head_hash(dir.path());
 
     let details = gix_handler()
@@ -417,7 +635,10 @@ fn gix_commit_details_merge_has_two_parents() {
     git(dir.path(), &["add", "feature.txt"]);
     git(dir.path(), &["commit", "-m", "feature commit"]);
     git(dir.path(), &["checkout", "-"]);
-    git(dir.path(), &["merge", "--no-ff", "feature", "-m", "merge feature"]);
+    git(
+        dir.path(),
+        &["merge", "--no-ff", "feature", "-m", "merge feature"],
+    );
     let merge_hash = head_hash(dir.path());
 
     let details = gix_handler()

@@ -67,10 +67,13 @@ jobs:
           fi
           if [[ "$RAW_VERSION" =~ ^v[0-9] ]]; then
             BUNDLE_VERSION="${RAW_VERSION#v}"
+            RELEASE_TAG="${RAW_VERSION}"
           else
             BUNDLE_VERSION="0.1.0"
+            RELEASE_TAG="v${BUNDLE_VERSION}"
           fi
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Build Tauri Linux bundles and updater metadata
@@ -94,6 +97,7 @@ jobs:
         env:
           REPO_SLUG: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: bash ./scripts/generate-aur-package.sh
 
       - name: Validate generated AUR metadata
@@ -103,7 +107,7 @@ jobs:
             exit 1
           fi
 
-          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/v"
+          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}"
           if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
             echo "PKGBUILD source URL does not match expected repository release path." >&2
             exit 1
@@ -260,7 +264,7 @@ jobs:
         uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         with:
           manifest-path: packaging/flatpak/com.cst8t.gitmun.yml
-          bundle: gitmun.flatpak
+          bundle: com.cst8t.gitmun.flatpak
           cache-key: flatpak-builder-v1-${{ hashFiles('packaging/flatpak/com.cst8t.gitmun.yml') }}
           upload-artifact: true
 
@@ -268,7 +272,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p src-tauri/target/release/bundle/flatpak
-          mv -f gitmun.flatpak src-tauri/target/release/bundle/flatpak/gitmun.flatpak
+          mv -f com.cst8t.gitmun.flatpak src-tauri/target/release/bundle/flatpak/com.cst8t.gitmun.flatpak
 
       - name: Upload Flatpak artifact
         uses: actions/upload-artifact@v7

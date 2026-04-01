@@ -8,12 +8,12 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest,
-    CommitMarkers, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
-    GitIdentity, HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest,
-    NumstatResult, OperationResult, PruneRemoteRequest, PushRequest, PushTagRequest, RebaseRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, ConflictFileItem,
+    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
+    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExternalDiffRequest, FetchRequest,
+    FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest,
+    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
     RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest,
     SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
@@ -46,6 +46,11 @@ impl GixGitHandler {
     }
 
     fn with_cli_fallback_backend(mut result: OperationResult) -> OperationResult {
+        result.backend_used = "gix+cli-fallback".to_string();
+        result
+    }
+
+    fn with_cli_fallback_push_backend(mut result: PushResult) -> PushResult {
         result.backend_used = "gix+cli-fallback".to_string();
         result
     }
@@ -248,8 +253,13 @@ impl GixGitHandler {
         }
     }
 
-    fn collect_commit_tags(repo: &gix::Repository, target: &gix::ObjectId) -> GitResult<Vec<String>> {
-        let refs = repo.references().map_err(|e| GitError::GixError(e.to_string()))?;
+    fn collect_commit_tags(
+        repo: &gix::Repository,
+        target: &gix::ObjectId,
+    ) -> GitResult<Vec<String>> {
+        let refs = repo
+            .references()
+            .map_err(|e| GitError::GixError(e.to_string()))?;
         let tag_iter = refs.tags().map_err(|e| GitError::GixError(e.to_string()))?;
 
         let mut matching = Vec::new();
@@ -297,11 +307,7 @@ impl GixGitHandler {
                     // The message field contains the full tag message body.
                     // Take the first line (title) and return None if empty.
                     let title = msg.lines().next().unwrap_or("").trim().to_string();
-                    if title.is_empty() {
-                        None
-                    } else {
-                        Some(title)
-                    }
+                    if title.is_empty() { None } else { Some(title) }
                 })
             });
 
@@ -543,18 +549,21 @@ impl GixGitHandler {
             .filter(|s| !s.is_empty())
     }
 
+    fn parse_merge_subject_branch(first_line: &str, prefix: &str) -> Option<String> {
+        first_line
+            .strip_prefix(prefix)
+            .and_then(|rest| rest.split('\'').next())
+            .map(str::trim)
+            .filter(|branch| !branch.is_empty())
+            .map(|branch| branch.to_string())
+    }
+
     fn detect_merge_branch(git_dir: &Path) -> Option<String> {
         let msg = std::fs::read_to_string(git_dir.join("MERGE_MSG")).ok()?;
         let first_line = msg.lines().next()?;
-        first_line
-            .strip_prefix("Merge branch '")
-            .and_then(|rest| rest.strip_suffix('\''))
-            .or_else(|| {
-                first_line
-                    .strip_prefix("Merge remote-tracking branch '")
-                    .and_then(|rest| rest.strip_suffix('\''))
-            })
-            .map(|s| s.to_string())
+        Self::parse_merge_subject_branch(first_line, "Merge branch '").or_else(|| {
+            Self::parse_merge_subject_branch(first_line, "Merge remote-tracking branch '")
+        })
     }
 
     fn detect_conflicted_files(git_dir: &Path) -> Vec<ConflictFileItem> {
@@ -836,6 +845,11 @@ impl GitOperationHandler for GixGitHandler {
         })
     }
 
+    fn analyze_pull(&self, request: &RepoRequest) -> GitResult<PullAnalysis> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.analyze_pull(request)
+    }
+
     fn pull_changes(&self, request: &RepoRequest) -> GitResult<OperationResult> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
@@ -843,11 +857,18 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
-    fn push_changes(&self, request: &PushRequest) -> GitResult<OperationResult> {
+    fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .pull_with_strategy(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
             .push_changes(request)
-            .map(Self::with_cli_fallback_backend)
+            .map(Self::with_cli_fallback_push_backend)
     }
 
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult> {
@@ -939,14 +960,18 @@ impl GitOperationHandler for GixGitHandler {
             .try_into_commit()
             .map_err(|e| GitError::GixError(e.to_string()))?;
 
-        let author_sig = commit.author().map_err(|e| GitError::GixError(e.to_string()))?;
+        let author_sig = commit
+            .author()
+            .map_err(|e| GitError::GixError(e.to_string()))?;
         let author = Self::bstr_to_string(author_sig.name);
         let author_email = Self::bstr_to_string(author_sig.email);
         let author_date = gix::date::parse_header(author_sig.time)
             .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
             .unwrap_or_else(|| author_sig.time.to_string());
 
-        let committer_sig = commit.committer().map_err(|e| GitError::GixError(e.to_string()))?;
+        let committer_sig = commit
+            .committer()
+            .map_err(|e| GitError::GixError(e.to_string()))?;
         let committer = Self::bstr_to_string(committer_sig.name);
         let committer_email = Self::bstr_to_string(committer_sig.email);
         let committer_date = gix::date::parse_header(committer_sig.time)
@@ -1109,7 +1134,6 @@ impl GitOperationHandler for GixGitHandler {
             Err(_) => self.cli_fallback.get_remotes(request),
         }
     }
-
 
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult> {
         self.cli_fallback.switch_branch(request)
