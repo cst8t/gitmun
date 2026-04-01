@@ -37,9 +37,24 @@ modules:
 
         install -Dm755 "$BIN_PATH" /app/bin/gitmun
       - |
-        DESKTOP_PATH="$(find rootfs/usr/share/applications -maxdepth 1 -type f -iname 'gitmun.desktop' | head -n 1)"
+        DESKTOP_PATH=""
+        for desktop_dir in usr/share/applications rootfs/usr/share/applications; do
+          if [ -d "$desktop_dir" ]; then
+            DESKTOP_PATH="$(find "$desktop_dir" -maxdepth 1 -type f -iname 'gitmun.desktop' | head -n 1)"
+          fi
+          if [ -n "$DESKTOP_PATH" ]; then
+            break
+          fi
+        done
         if [ -z "$DESKTOP_PATH" ]; then
-          DESKTOP_PATH="$(find rootfs/usr/share/applications -maxdepth 1 -type f -iname '*.desktop' | head -n 1)"
+          for desktop_dir in usr/share/applications rootfs/usr/share/applications; do
+            if [ -d "$desktop_dir" ]; then
+              DESKTOP_PATH="$(find "$desktop_dir" -maxdepth 1 -type f -iname '*.desktop' | head -n 1)"
+            fi
+            if [ -n "$DESKTOP_PATH" ]; then
+              break
+            fi
+          done
         fi
 
         if [ -z "$DESKTOP_PATH" ]; then
@@ -50,7 +65,15 @@ modules:
 
         install -Dm644 "$DESKTOP_PATH" /app/share/applications/com.cst8t.gitmun.desktop
       - |
-        ICON_PATH="$(find rootfs/usr/share/icons/hicolor/128x128/apps -maxdepth 1 -type f -iname 'gitmun.png' | head -n 1)"
+        ICON_PATH=""
+        for icon_dir in usr/share/icons/hicolor/128x128/apps rootfs/usr/share/icons/hicolor/128x128/apps; do
+          if [ -d "$icon_dir" ]; then
+            ICON_PATH="$(find "$icon_dir" -maxdepth 1 -type f -iname 'gitmun.png' | head -n 1)"
+          fi
+          if [ -n "$ICON_PATH" ]; then
+            break
+          fi
+        done
 
         if [ -n "$ICON_PATH" ]; then
           install -Dm644 "$ICON_PATH" /app/share/icons/hicolor/128x128/apps/com.cst8t.gitmun.png
