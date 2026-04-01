@@ -6,7 +6,7 @@ mod window_manager;
 use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use std::sync::{Arc, Mutex, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
@@ -31,14 +31,45 @@ pub(crate) fn configure_command(_command: &mut std::process::Command) {
     }
 }
 
-pub(crate) fn git_command() -> std::process::Command {
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[derive(Clone, Copy)]
+enum GitBackend {
+    System,
+    FlatpakHost,
+    FlatpakBundled,
+}
+
+static GIT_BACKEND: OnceLock<GitBackend> = OnceLock::new();
+
+fn git_backend() -> GitBackend {
+    *GIT_BACKEND.get_or_init(detect_git_backend)
+}
+
+fn detect_git_backend() -> GitBackend {
     #[cfg(target_os = "linux")]
     if std::env::var_os("FLATPAK_ID").is_some() {
-        let mut cmd = std::process::Command::new("flatpak-spawn");
-        cmd.args(["--host", "git"]);
-        return cmd;
+        let mut probe = std::process::Command::new("flatpak-spawn");
+        probe.args(["--host", "git", "--version"]);
+        configure_command(&mut probe);
+        if probe.output().is_ok_and(|output| output.status.success()) {
+            return GitBackend::FlatpakHost;
+        }
+        return GitBackend::FlatpakBundled;
     }
-    std::process::Command::new(resolve_git_exe())
+
+    GitBackend::System
+}
+
+pub(crate) fn git_command() -> std::process::Command {
+    match git_backend() {
+        GitBackend::FlatpakHost => {
+            let mut cmd = std::process::Command::new("flatpak-spawn");
+            cmd.args(["--host", "git"]);
+            cmd
+        }
+        GitBackend::FlatpakBundled => std::process::Command::new("/app/bin/git"),
+        GitBackend::System => std::process::Command::new(resolve_git_exe()),
+    }
 }
 
 pub(crate) fn configured_git_command() -> std::process::Command {
