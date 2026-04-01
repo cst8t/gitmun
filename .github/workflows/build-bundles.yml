@@ -339,7 +339,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: /home/runner/.cache/xwin
-          key: xwin-v1
+          key: xwin-v2-x86_64
 
       - name: Install cross-build dependencies
         run: |
