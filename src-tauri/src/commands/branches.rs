@@ -1,10 +1,11 @@
+use crate::AppState;
 use crate::git::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CreateBranchRequest, CreateTagRequest,
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     OperationResult, PruneRemoteRequest, PushTagRequest, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, SetRemoteUrlRequest, TagInfo,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, SetBranchUpstreamRequest,
+    SetRemoteUrlRequest, TagInfo,
 };
-use crate::AppState;
 
 #[tauri::command]
 pub fn get_branches(
@@ -25,6 +26,17 @@ pub fn switch_branch(
     state
         .git_service
         .switch_branch(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_branch_upstream(
+    request: SetBranchUpstreamRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .set_branch_upstream(request)
         .map_err(|error| error.to_string())
 }
 
@@ -104,7 +116,10 @@ pub fn delete_remote_tag(
     request: DeleteRemoteTagRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.delete_remote_tag(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .delete_remote_tag(request)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -142,7 +157,10 @@ pub fn remove_remote(
     request: RemoveRemoteRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.remove_remote(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .remove_remote(request)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -158,7 +176,10 @@ pub fn set_remote_url(
     request: SetRemoteUrlRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.set_remote_url(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .set_remote_url(request)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

@@ -15,8 +15,9 @@ use super::types::{
     MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo, ThemeMode,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -61,6 +62,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>>;
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult>;
+    fn set_branch_upstream(
+        &self,
+        request: &SetBranchUpstreamRequest,
+    ) -> GitResult<OperationResult>;
     fn delete_branch(&self, request: &DeleteBranchRequest) -> GitResult<OperationResult>;
     fn rename_branch(&self, request: &RenameBranchRequest) -> GitResult<OperationResult>;
     fn delete_tag(&self, request: &DeleteTagRequest) -> GitResult<OperationResult>;
@@ -325,6 +330,7 @@ impl GitService {
         fn stash_drop(request: StashRequest) -> GitResult<OperationResult>;
         fn set_identity(request: SetIdentityRequest) -> GitResult<OperationResult>;
         fn switch_branch(request: BranchRequest) -> GitResult<OperationResult>;
+        fn set_branch_upstream(request: SetBranchUpstreamRequest) -> GitResult<OperationResult>;
         fn delete_branch(request: DeleteBranchRequest) -> GitResult<OperationResult>;
         fn rename_branch(request: RenameBranchRequest) -> GitResult<OperationResult>;
         fn delete_tag(request: DeleteTagRequest) -> GitResult<OperationResult>;

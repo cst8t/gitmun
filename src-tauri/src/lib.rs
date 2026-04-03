@@ -419,6 +419,7 @@ pub fn run() {
             commands::repo::fetch_avatar,
             commands::branches::get_branches,
             commands::branches::switch_branch,
+            commands::branches::set_branch_upstream,
             commands::branches::create_branch,
             commands::branches::delete_branch,
             commands::branches::rename_branch,

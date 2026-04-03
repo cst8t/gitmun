@@ -15,9 +15,9 @@ use super::types::{
     MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
     PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
-    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, TagInfo,
+    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
+    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -147,32 +147,34 @@ impl GixGitHandler {
             // lock during a concurrent fetch) we propagate the error so the
             // caller falls back to the CLI path rather than silently returning
             // ahead=0 and causing a badge flicker.
-            let (ahead, behind) = if let Some(ref upstream_name) = upstream {
+            let (upstream_status, ahead, behind) = if let Some(ref upstream_name) = upstream {
                 let local_oid = reference.id().detach();
                 let remote_ref_name = format!("refs/remotes/{}", upstream_name);
-                let remote_ref = repo.find_reference(remote_ref_name.as_str()).map_err(|e| {
-                    GitError::GixError(format!("remote ref not found for {upstream_name}: {e}"))
-                })?;
-                let remote_oid = remote_ref.id().detach();
-                if local_oid == remote_oid {
-                    (0, 0)
-                } else {
-                    let ahead = repo
-                        .rev_walk([local_oid])
-                        .with_hidden([remote_oid])
-                        .all()
-                        .map(|walk| walk.filter_map(|r| r.ok()).count() as u32)
-                        .unwrap_or(0);
-                    let behind = repo
-                        .rev_walk([remote_oid])
-                        .with_hidden([local_oid])
-                        .all()
-                        .map(|walk| walk.filter_map(|r| r.ok()).count() as u32)
-                        .unwrap_or(0);
-                    (ahead, behind)
+                match repo.find_reference(remote_ref_name.as_str()) {
+                    Ok(remote_ref) => {
+                        let remote_oid = remote_ref.id().detach();
+                        if local_oid == remote_oid {
+                            (UpstreamStatus::Tracked, 0, 0)
+                        } else {
+                            let ahead = repo
+                                .rev_walk([local_oid])
+                                .with_hidden([remote_oid])
+                                .all()
+                                .map(|walk| walk.filter_map(|r| r.ok()).count() as u32)
+                                .unwrap_or(0);
+                            let behind = repo
+                                .rev_walk([remote_oid])
+                                .with_hidden([local_oid])
+                                .all()
+                                .map(|walk| walk.filter_map(|r| r.ok()).count() as u32)
+                                .unwrap_or(0);
+                            (UpstreamStatus::Tracked, ahead, behind)
+                        }
+                    }
+                    Err(_) => (UpstreamStatus::Missing, 0, 0),
                 }
             } else {
-                (0, 0)
+                (UpstreamStatus::None, 0, 0)
             };
 
             branches.push(BranchInfo {
@@ -180,6 +182,7 @@ impl GixGitHandler {
                 is_current,
                 is_remote: false,
                 upstream,
+                upstream_status,
                 ahead,
                 behind,
             });
@@ -201,6 +204,7 @@ impl GixGitHandler {
                 is_current: false,
                 is_remote: true,
                 upstream: None,
+                upstream_status: UpstreamStatus::None,
                 ahead: 0,
                 behind: 0,
             });
@@ -869,6 +873,16 @@ impl GitOperationHandler for GixGitHandler {
         self.cli_fallback
             .push_changes(request)
             .map(Self::with_cli_fallback_push_backend)
+    }
+
+    fn set_branch_upstream(
+        &self,
+        request: &SetBranchUpstreamRequest,
+    ) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .set_branch_upstream(request)
+            .map(Self::with_cli_fallback_backend)
     }
 
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult> {

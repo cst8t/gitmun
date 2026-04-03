@@ -21,9 +21,9 @@ use super::types::{
     PullAnalysis, PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest,
     PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest,
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
-    RepoRequest, RepoStatus, ResetMode, ResetRequest, RevertCommitRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, TagInfo,
+    RepoRequest, RepoStatus, ResetMode, ResetRequest, RevertCommitRequest,
+    SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus,
+    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -276,6 +276,30 @@ impl CliGitHandler {
         .filter(|value| !value.is_empty())
     }
 
+    fn remote_tracking_ref_exists(repo_path: &Path, upstream: &str) -> bool {
+        let trimmed = upstream.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+
+        let full_ref = format!("refs/remotes/{trimmed}");
+        Self::run_git(
+            &["rev-parse", "--verify", "--quiet", &full_ref],
+            Some(repo_path),
+        )
+        .is_ok()
+    }
+
+    fn branch_upstream_status(repo_path: &Path, upstream: Option<&str>) -> UpstreamStatus {
+        match upstream {
+            Some(upstream_name) if Self::remote_tracking_ref_exists(repo_path, upstream_name) => {
+                UpstreamStatus::Tracked
+            }
+            Some(_) => UpstreamStatus::Missing,
+            None => UpstreamStatus::None,
+        }
+    }
+
     fn repo_request(repo_path: &Path) -> RepoRequest {
         RepoRequest {
             repo_path: Self::path_to_string(repo_path),
@@ -425,7 +449,7 @@ impl CliGitHandler {
         {
             (
                 PushFailureKind::NonFastForward,
-                "Push was rejected because the remote branch has new commits. Integrate remote changes before pushing again.".to_string(),
+                "Push was rejected because the remote branch has new commits. Fetch, review, and integrate those changes before pushing again.".to_string(),
                 vec![
                     "fetch".to_string(),
                     "review".to_string(),
@@ -435,8 +459,22 @@ impl CliGitHandler {
         } else if stderr_lower.contains("no upstream branch") {
             (
                 PushFailureKind::NoUpstream,
-                "This branch does not have an upstream yet. Push again with upstream configuration.".to_string(),
-                vec!["push-set-upstream".to_string()],
+                "This branch does not have an upstream yet. Publish it to a remote before pushing normally.".to_string(),
+                vec!["publish".to_string()],
+            )
+        } else if stderr_lower.contains("upstream branch of your current branch does not match")
+            || stderr_lower.contains("has no such ref was fetched")
+            || stderr_lower.contains("couldn't find remote ref")
+            || stderr_lower.contains("upstream is gone")
+            || stderr_lower.contains("remote branch")
+                && (stderr_lower.contains("not found")
+                    || stderr_lower.contains("does not exist")
+                    || stderr_lower.contains("missing"))
+        {
+            (
+                PushFailureKind::UpstreamMissing,
+                "The configured upstream branch is missing or no longer matches this branch. Repair the upstream before retrying.".to_string(),
+                vec!["repair-upstream".to_string()],
             )
         } else if stderr_lower.contains("authentication failed")
             || stderr_lower.contains("could not read from remote repository")
@@ -1748,8 +1786,14 @@ impl GitOperationHandler for CliGitHandler {
             };
 
             let is_remote = full_ref.starts_with("refs/remotes/");
+            let upstream_status = if is_remote {
+                UpstreamStatus::None
+            } else {
+                Self::branch_upstream_status(&repo_path, upstream.as_deref())
+            };
 
-            let (ahead, behind) = if let Some(ref up) = upstream {
+            let (ahead, behind) = if matches!(upstream_status, UpstreamStatus::Tracked) {
+                let up = upstream.as_deref().unwrap_or_default();
                 Self::get_ahead_behind(&repo_path, &name, up)
             } else {
                 (0, 0)
@@ -1760,6 +1804,7 @@ impl GitOperationHandler for CliGitHandler {
                 is_current,
                 is_remote,
                 upstream,
+                upstream_status,
                 ahead,
                 behind,
             });
@@ -2225,47 +2270,82 @@ impl GitOperationHandler for CliGitHandler {
 
     fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult> {
         let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let current_branch = Self::current_branch_name(&repo_path)
+            .filter(|branch| !Self::is_detached_head(Some(branch)))
+            .ok_or_else(|| {
+                GitError::InvalidInput("Push is unavailable while HEAD is detached.".to_string())
+            })?;
+        let remote = request
+            .remote
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let explicit_remote_branch = request
+            .remote_branch
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+
+        if remote.is_none() && (request.set_upstream || explicit_remote_branch.is_some()) {
+            return Err(GitError::InvalidInput(
+                "Publishing requires an explicit remote selection.".to_string(),
+            ));
+        }
+
+        let target_remote_branch = match (remote, explicit_remote_branch) {
+            (Some(_), Some(branch)) => Some(branch.to_string()),
+            (Some(_), None) => Some(current_branch.clone()),
+            (None, Some(_)) => unreachable!(),
+            (None, None) => None,
+        };
+
         let mut args = vec!["push"];
-        if request.force {
-            args.push("--force");
+        if request.force_with_lease {
+            args.push("--force-with-lease");
         }
         if request.push_follow_tags {
             args.push("--follow-tags");
         }
+        if request.set_upstream {
+            args.push("--set-upstream");
+        }
+
+        let refspec = match (remote, target_remote_branch.as_deref()) {
+            (Some(_), Some(target_branch)) if target_branch != current_branch => {
+                Some(format!("{current_branch}:{target_branch}"))
+            }
+            (Some(_), Some(_)) => Some(current_branch.clone()),
+            _ => None,
+        };
+
+        if let Some(remote_name) = remote {
+            args.push(remote_name);
+            if let Some(target_refspec) = refspec.as_deref() {
+                args.push(target_refspec);
+            }
+        }
 
         match Self::run_git(&args, Some(&repo_path)) {
             Ok(output) => Ok(PushResult {
-                message: "Pushed changes".to_string(),
+                message: match (
+                    remote,
+                    target_remote_branch.as_deref(),
+                    request.set_upstream,
+                ) {
+                    (Some(remote_name), Some(target_branch), true) => {
+                        format!("Published branch to {remote_name}/{target_branch}")
+                    }
+                    (Some(remote_name), Some(target_branch), false) => {
+                        format!("Pushed changes to {remote_name}/{target_branch}")
+                    }
+                    _ => "Pushed changes".to_string(),
+                },
                 output: (!output.is_empty()).then_some(output),
                 repo_path: Some(Self::path_to_string(&repo_path)),
                 backend_used: "git-cli".to_string(),
                 success: true,
                 rejection: None,
             }),
-            Err(GitError::CommandFailed { ref stderr, .. })
-                if stderr.contains("no upstream branch") =>
-            {
-                let branch =
-                    Self::run_git(&["rev-parse", "--abbrev-ref", "HEAD"], Some(&repo_path))
-                        .unwrap_or_default();
-                let branch = branch.trim();
-                let mut upstream_args = vec!["push", "--set-upstream", "origin", branch];
-                if request.force {
-                    upstream_args.insert(1, "--force");
-                }
-                if request.push_follow_tags {
-                    upstream_args.insert(1, "--follow-tags");
-                }
-                let output = Self::run_git(&upstream_args, Some(&repo_path))?;
-                Ok(PushResult {
-                    message: format!("Pushed and set upstream to origin/{branch}"),
-                    output: (!output.is_empty()).then_some(output),
-                    repo_path: Some(Self::path_to_string(&repo_path)),
-                    backend_used: "git-cli".to_string(),
-                    success: true,
-                    rejection: None,
-                })
-            }
             Err(GitError::CommandFailed { stderr, .. }) => {
                 let rejection = Self::classify_push_failure(&repo_path, &stderr);
                 Ok(PushResult {
@@ -2301,6 +2381,58 @@ impl GitOperationHandler for CliGitHandler {
 
         Ok(OperationResult {
             message: format!("Switched to branch '{branch_name}'"),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+        })
+    }
+
+    fn set_branch_upstream(
+        &self,
+        request: &SetBranchUpstreamRequest,
+    ) -> GitResult<OperationResult> {
+        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let branch_name = request.branch_name.trim();
+        let remote = request.remote.trim();
+        let remote_branch = request.remote_branch.trim();
+
+        if branch_name.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Branch name cannot be empty".to_string(),
+            ));
+        }
+        if remote.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Remote name cannot be empty".to_string(),
+            ));
+        }
+        if remote_branch.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Remote branch name cannot be empty".to_string(),
+            ));
+        }
+
+        Self::ensure_no_active_branch_operation(&repo_path, "change upstream tracking")?;
+
+        let remote_tracking_ref = format!("{remote}/{remote_branch}");
+        if !Self::remote_tracking_ref_exists(&repo_path, &remote_tracking_ref) {
+            return Err(GitError::InvalidInput(format!(
+                "Remote branch '{remote_tracking_ref}' was not found. Fetch or choose a different branch."
+            )));
+        }
+
+        Self::run_git(
+            &[
+                "branch",
+                "--set-upstream-to",
+                &remote_tracking_ref,
+                branch_name,
+            ],
+            Some(&repo_path),
+        )?;
+
+        Ok(OperationResult {
+            message: format!("Set upstream for '{branch_name}' to '{remote_tracking_ref}'"),
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
@@ -3608,10 +3740,9 @@ impl CliGitHandler {
                 {
                     return Some(branch);
                 }
-                if let Some(branch) = Self::parse_merge_subject_branch(
-                    first_line,
-                    "Merge remote-tracking branch '",
-                ) {
+                if let Some(branch) =
+                    Self::parse_merge_subject_branch(first_line, "Merge remote-tracking branch '")
+                {
                     return Some(branch);
                 }
             }
