@@ -2,7 +2,7 @@ import React, {useState, useEffect, useCallback} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {ask, open} from "@tauri-apps/plugin-dialog";
+import {open} from "@tauri-apps/plugin-dialog";
 import {platform} from "@tauri-apps/plugin-os";
 import type {
     AvatarProviderMode,
@@ -14,8 +14,6 @@ import type {
     ThemeMode
 } from "../../types";
 import {
-    checkForAppUpdate,
-    downloadAndInstallAppUpdate,
     getSystemThemeHint,
     isUpdaterEnabled,
     openResultLogWindow,
@@ -95,7 +93,6 @@ export function SettingsWindow() {
     const [buildVersion, setBuildVersion] = useState<string>("");
     const [status, setStatus] = useState("Ready.");
     const [saving, setSaving] = useState(false);
-    const [checkingForUpdates, setCheckingForUpdates] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
 
     useEffect(() => {
@@ -250,43 +247,6 @@ export function SettingsWindow() {
         }
     }, [defaultCloneDir]);
 
-    const handleCheckForUpdates = useCallback(async () => {
-        if (!updaterSupported) {
-            setStatus("Updates are unavailable on this platform build.");
-            return;
-        }
-
-        setCheckingForUpdates(true);
-        try {
-            setStatus("Checking for updates...");
-            const update = await checkForAppUpdate();
-            if (!update) {
-                setStatus("You're already running the latest version.");
-                return;
-            }
-
-            if (!autoInstallUpdates) {
-                const installNow = await ask(`Version ${update.version} is available. Download and install it now?`, {
-                    title: "Update available",
-                    kind: "info",
-                });
-
-                if (!installNow) {
-                    setStatus(`Update ${update.version} is available.`);
-                    return;
-                }
-            }
-
-            setStatus(`Downloading update ${update.version}...`);
-            await downloadAndInstallAppUpdate(update.version);
-            setStatus("Update installed. Restart Gitmun to finish applying it.");
-        } catch (e) {
-            setStatus(`Update check failed: ${e}`);
-        } finally {
-            setCheckingForUpdates(false);
-        }
-    }, [autoInstallUpdates, updaterSupported]);
-
     const handleClose = useCallback(() => {
         getCurrentWindow().close();
     }, []);
@@ -322,16 +282,6 @@ export function SettingsWindow() {
                         <div className="settings-window__row">
                             <label className="settings-window__label">Updates</label>
                             <div className="settings-window__sub-section">
-                                <div className="settings-window__inline-controls">
-                                    <button
-                                        className="settings-window__btn settings-window__btn--secondary settings-window__btn--full-width"
-                                        onClick={handleCheckForUpdates}
-                                        disabled={checkingForUpdates}
-                                    >
-                                        {checkingForUpdates ? "Checking..." : "Check for updates"}
-                                    </button>
-                                </div>
-
                                 <label className="settings-window__switch-row">
                   <span className="settings-window__switch">
                     <input
@@ -343,28 +293,8 @@ export function SettingsWindow() {
                   </span>
                                     <span className="settings-window__switch-label">Automatically check for updates on launch</span>
                                 </label>
-
-                                <label
-                                    className="settings-window__switch-row"
-                                    style={{
-                                        opacity: autoCheckForUpdatesOnLaunch ? 1 : 0.4,
-                                        cursor: autoCheckForUpdatesOnLaunch ? "pointer" : "default",
-                                    }}
-                                >
-                  <span className="settings-window__switch">
-                    <input
-                        type="checkbox"
-                        checked={autoInstallUpdates}
-                        disabled={!autoCheckForUpdatesOnLaunch}
-                        onChange={e => setAutoInstallUpdates(e.target.checked)}
-                    />
-                    <span className="settings-window__switch-track"/>
-                  </span>
-                                    <span className="settings-window__switch-label">Automatically download and install updates</span>
-                                </label>
-
                                 <div className="settings-window__section-note">
-                                    Automatic install applies when an update is found during an automatic launch check.
+                                    Use About to check manually. Automatic checks only show the updater prompt on launch when this is enabled.
                                 </div>
 
                                 <div className="settings-window__row">
