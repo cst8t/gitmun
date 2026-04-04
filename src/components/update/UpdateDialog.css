@@ -1,0 +1,159 @@
+.update-dialog__backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 220;
+  animation: fadeIn 0.1s ease;
+}
+
+.update-dialog {
+  position: fixed;
+  inset: 0;
+  width: 420px;
+  max-width: calc(100vw - 24px);
+  height: fit-content;
+  margin: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  z-index: 221;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  animation: dialogIn 0.15s ease;
+}
+
+.update-dialog__title {
+  font-size: var(--font-size-base);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.update-dialog__body {
+  font-size: var(--font-size-sm);
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.update-dialog__meta {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-dialog__date {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.update-dialog__notes {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 140px;
+  overflow: auto;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.update-dialog__error {
+  font-size: var(--font-size-xs);
+  color: var(--red);
+}
+
+.update-dialog__progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.update-dialog__progress-track {
+  position: relative;
+  height: 10px;
+  overflow: hidden;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+}
+
+.update-dialog__progress-track--indeterminate .update-dialog__progress-fill {
+  width: 40%;
+  animation: update-dialog-progress 1.2s ease-in-out infinite;
+}
+
+.update-dialog__progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: inherit;
+  transition: width 0.12s linear;
+}
+
+.update-dialog__progress-label {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+}
+
+.update-dialog__suppress {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.update-dialog__suppress input[type="checkbox"] {
+  cursor: pointer;
+  accent-color: var(--accent);
+}
+
+.update-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.update-dialog__btn {
+  padding: 6px 14px;
+  border-radius: var(--radius-lg);
+  border: 1px solid transparent;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.update-dialog__btn:hover {
+  opacity: 0.88;
+}
+
+.update-dialog__btn--primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.update-dialog__btn--secondary {
+  background: var(--bg-subtle);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+@keyframes update-dialog-progress {
+  0% {
+    transform: translateX(-120%);
+  }
+
+  100% {
+    transform: translateX(320%);
+  }
+}

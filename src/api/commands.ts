@@ -1,4 +1,4 @@
-import {invoke} from "@tauri-apps/api/core";
+import {Channel, invoke} from "@tauri-apps/api/core";
 import type {
     BranchInfo,
     CommitDetails,
@@ -46,6 +46,7 @@ import type {
     SetIdentityRequest,
     AddRemoteRequest,
     AvailableUpdate,
+    UpdateDownloadEvent,
     RemoveRemoteRequest,
     RenameRemoteRequest,
     SetRemoteUrlRequest,
@@ -385,7 +386,17 @@ export function checkForAppUpdate(): Promise<AvailableUpdate | null> {
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {
-    return invoke<void>("download_and_install_app_update", {expectedVersion});
+    const onEvent = new Channel<UpdateDownloadEvent>();
+    return invoke<void>("download_and_install_app_update", {expectedVersion, onEvent});
+}
+
+export function downloadAndInstallAppUpdateWithProgress(
+    onProgress: (event: UpdateDownloadEvent) => void,
+    expectedVersion?: string,
+): Promise<void> {
+    const onEvent = new Channel<UpdateDownloadEvent>();
+    onEvent.onmessage = onProgress;
+    return invoke<void>("download_and_install_app_update", {expectedVersion, onEvent});
 }
 
 export function getCommitHash(): Promise<string> {
