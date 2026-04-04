@@ -63,7 +63,12 @@ export function UpstreamDialog({
   const trimmedRemote = remote.trim();
   const trimmedRemoteBranch = remoteBranch.trim();
   const hasRemotes = remotes.length > 0;
-  const canConfirm = hasRemotes && Boolean(trimmedRemote) && Boolean(trimmedRemoteBranch);
+  const hasKnownRemote = remotes.some(candidate => candidate.name === trimmedRemote);
+  const canConfirm =
+    hasRemotes &&
+    hasKnownRemote &&
+    Boolean(trimmedRemote) &&
+    Boolean(trimmedRemoteBranch);
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault();

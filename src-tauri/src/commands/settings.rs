@@ -5,6 +5,7 @@ use crate::git::types::{
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
 use serde::Serialize;
+#[cfg(windows)]
 use std::path::Path;
 use std::time::Duration;
 use tauri::Manager;
