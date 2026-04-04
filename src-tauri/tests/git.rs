@@ -8,7 +8,7 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, PushRequest,
-    RepoRequest, StageFilesRequest,
+    RepoRequest, SetBranchUpstreamRequest, StageFilesRequest,
 };
 
 fn init_repo() -> TempDir {
@@ -30,6 +30,16 @@ fn git(repo: &Path, args: &[&str]) {
         .status()
         .expect("git command");
     assert!(status.success(), "git {:?} failed", args);
+}
+
+fn git_stdout(repo: &Path, args: &[&str]) -> String {
+    let output = Command::new("git")
+        .args(args)
+        .current_dir(repo)
+        .output()
+        .expect("git command output");
+    assert!(output.status.success(), "git {:?} failed", args);
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
 fn write_file(repo: &Path, name: &str, content: &str) {
@@ -83,6 +93,17 @@ fn details_request(dir: &TempDir, hash: &str) -> CommitDetailsRequest {
     CommitDetailsRequest {
         repo_path: dir.path().to_str().unwrap().to_string(),
         commit_hash: hash.to_string(),
+    }
+}
+
+fn push_request(repo: &TempDir) -> PushRequest {
+    PushRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        remote: None,
+        remote_branch: None,
+        set_upstream: false,
+        force_with_lease: false,
+        push_follow_tags: false,
     }
 }
 
@@ -411,11 +432,7 @@ fn push_changes_classifies_non_fast_forward() {
     git(local.path(), &["commit", "-m", "local commit"]);
 
     let result = handler()
-        .push_changes(&PushRequest {
-            repo_path: local.path().to_str().unwrap().to_string(),
-            force: false,
-            push_follow_tags: false,
-        })
+        .push_changes(&push_request(&local))
         .expect("push_changes");
 
     assert!(!result.success);
@@ -427,11 +444,181 @@ fn push_changes_classifies_non_fast_forward() {
 }
 
 #[test]
+fn publish_branch_sets_upstream() {
+    let (_remote, local) = init_remote_with_clone();
+    git(local.path(), &["switch", "-c", "feature/publish"]);
+    write_file(local.path(), "publish.txt", "publish");
+    git(local.path(), &["add", "publish.txt"]);
+    git(local.path(), &["commit", "-m", "publish branch"]);
+
+    let mut request = push_request(&local);
+    request.remote = Some("origin".to_string());
+    request.remote_branch = Some("feature/publish".to_string());
+    request.set_upstream = true;
+
+    let result = handler().push_changes(&request).expect("publish branch");
+
+    assert!(result.success);
+    assert_eq!(result.message, "Published branch to origin/feature/publish");
+    assert_eq!(
+        git_stdout(
+            local.path(),
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}"
+            ],
+        ),
+        "origin/feature/publish"
+    );
+}
+
+#[test]
+fn publish_branch_can_target_non_origin_remote() {
+    let (_remote, local) = init_remote_with_clone();
+    let backup = TempDir::new().expect("create backup remote");
+    git(backup.path(), &["init", "--bare", "-b", "main"]);
+    git(
+        local.path(),
+        &["remote", "add", "backup", backup.path().to_str().unwrap()],
+    );
+    git(local.path(), &["switch", "-c", "feature/backup"]);
+    write_file(local.path(), "backup.txt", "backup");
+    git(local.path(), &["add", "backup.txt"]);
+    git(local.path(), &["commit", "-m", "backup branch"]);
+
+    let mut request = push_request(&local);
+    request.remote = Some("backup".to_string());
+    request.remote_branch = Some("feature/backup".to_string());
+    request.set_upstream = true;
+
+    let result = handler().push_changes(&request).expect("publish branch");
+
+    assert!(result.success);
+    assert_eq!(
+        git_stdout(
+            local.path(),
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}"
+            ],
+        ),
+        "backup/feature/backup"
+    );
+}
+
+#[test]
+fn set_branch_upstream_changes_tracking_without_push() {
+    let (_remote, local) = init_remote_with_clone();
+    let backup = TempDir::new().expect("create backup remote");
+    git(backup.path(), &["init", "--bare", "-b", "main"]);
+    git(
+        local.path(),
+        &["remote", "add", "backup", backup.path().to_str().unwrap()],
+    );
+    git(local.path(), &["push", "backup", "main"]);
+
+    let result = handler()
+        .set_branch_upstream(&SetBranchUpstreamRequest {
+            repo_path: local.path().to_str().unwrap().to_string(),
+            branch_name: "main".to_string(),
+            remote: "backup".to_string(),
+            remote_branch: "main".to_string(),
+        })
+        .expect("set_branch_upstream");
+
+    assert_eq!(result.message, "Set upstream for 'main' to 'backup/main'");
+    assert_eq!(
+        git_stdout(
+            local.path(),
+            &[
+                "rev-parse",
+                "--abbrev-ref",
+                "--symbolic-full-name",
+                "@{upstream}"
+            ],
+        ),
+        "backup/main"
+    );
+}
+
+#[test]
+fn get_branches_marks_missing_upstream() {
+    let (_remote, local) = init_remote_with_clone();
+    git(
+        local.path(),
+        &["update-ref", "-d", "refs/remotes/origin/main"],
+    );
+
+    let branches = handler()
+        .get_branches(&repo_request(&local))
+        .expect("get_branches");
+    let main = branches
+        .into_iter()
+        .find(|branch| branch.name == "main")
+        .expect("main branch");
+
+    assert_eq!(main.upstream.as_deref(), Some("origin/main"));
+    assert!(matches!(
+        main.upstream_status,
+        gitmun_lib::git::types::UpstreamStatus::Missing
+    ));
+}
+
+#[test]
+fn push_without_upstream_returns_publish_guidance() {
+    let (_remote, local) = init_remote_with_clone();
+    git(local.path(), &["switch", "-c", "feature/no-upstream"]);
+    write_file(local.path(), "no-upstream.txt", "publish me");
+    git(local.path(), &["add", "no-upstream.txt"]);
+    git(local.path(), &["commit", "-m", "no upstream"]);
+
+    let result = handler()
+        .push_changes(&push_request(&local))
+        .expect("push_changes");
+
+    assert!(!result.success);
+    let rejection = result.rejection.expect("push rejection");
+    assert!(matches!(
+        rejection.kind,
+        gitmun_lib::git::types::PushFailureKind::NoUpstream
+    ));
+}
+
+#[test]
+fn force_with_lease_push_succeeds_when_plain_push_would_reject() {
+    let (_remote, local) = init_remote_with_clone();
+    write_file(local.path(), "seed.txt", "updated");
+    git(local.path(), &["add", "seed.txt"]);
+    git(local.path(), &["commit", "--amend", "-m", "seed updated"]);
+
+    let rejected = handler()
+        .push_changes(&push_request(&local))
+        .expect("plain push");
+    assert!(!rejected.success);
+
+    let mut request = push_request(&local);
+    request.force_with_lease = true;
+
+    let forced = handler()
+        .push_changes(&request)
+        .expect("force-with-lease push");
+
+    assert!(forced.success);
+}
+
+#[test]
 fn status_detects_remote_tracking_merge_branch_from_merge_msg() {
     let dir = init_repo();
     let git_dir = dir.path().join(".git");
-    fs::write(git_dir.join("MERGE_HEAD"), format!("{}\n", head_hash(dir.path())))
-        .expect("write MERGE_HEAD");
+    fs::write(
+        git_dir.join("MERGE_HEAD"),
+        format!("{}\n", head_hash(dir.path())),
+    )
+    .expect("write MERGE_HEAD");
     fs::write(
         git_dir.join("MERGE_MSG"),
         "Merge remote-tracking branch 'origin/main' into main\n",

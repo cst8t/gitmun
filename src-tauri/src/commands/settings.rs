@@ -5,6 +5,8 @@ use crate::git::types::{
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
 use serde::Serialize;
+#[cfg(windows)]
+use std::path::Path;
 use std::time::Duration;
 use tauri::Manager;
 use tauri_plugin_updater::{Update, UpdaterExt};
@@ -319,6 +321,45 @@ fn git_config_global_get(key: &str) -> Result<Option<String>, String> {
     })
 }
 
+#[cfg(windows)]
+fn first_existing_path<'a>(candidates: &'a [&'a str]) -> Option<&'a str> {
+    candidates
+        .iter()
+        .copied()
+        .find(|candidate| Path::new(candidate).exists())
+}
+
+fn maybe_set_tool_paths(tool_key: &str) -> Result<bool, String> {
+    #[cfg(windows)]
+    {
+        let candidates = match tool_key {
+            "meld" => &[
+                r"C:\Program Files\Meld\Meld.exe",
+                r"C:\Program Files (x86)\Meld\Meld.exe",
+            ][..],
+            "winmerge" => &[
+                r"C:\Program Files\WinMerge\WinMergeU.exe",
+                r"C:\Program Files (x86)\WinMerge\WinMergeU.exe",
+            ][..],
+            _ => return Ok(false),
+        };
+
+        let Some(path) = first_existing_path(candidates) else {
+            return Ok(false);
+        };
+
+        git_config_global_set(&format!("difftool.{tool_key}.path"), path)?;
+        git_config_global_set(&format!("mergetool.{tool_key}.path"), path)?;
+        return Ok(true);
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = tool_key;
+        Ok(false)
+    }
+}
+
 fn validate_branch_name(name: &str) -> Result<(), String> {
     let mut command = git_command();
     configure_command(&mut command);
@@ -367,6 +408,10 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
         "mergetool.vscode.cmd",
         "difftool.vscodium.cmd",
         "mergetool.vscodium.cmd",
+        "difftool.meld.path",
+        "mergetool.meld.path",
+        "difftool.winmerge.path",
+        "mergetool.winmerge.path",
     ] {
         let _ = git_config_global_unset(key);
     }
@@ -378,7 +423,11 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
         }
         ExternalDiffTool::Meld => {
             git_config_global_set("diff.tool", "meld")?;
-            "Set git global diff.tool=meld".to_string()
+            if maybe_set_tool_paths("meld")? {
+                "Set git global diff.tool=meld (with detected tool path)".to_string()
+            } else {
+                "Set git global diff.tool=meld".to_string()
+            }
         }
         ExternalDiffTool::Kompare => {
             git_config_global_set("diff.tool", "kompare")?;
@@ -386,7 +435,11 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
         }
         ExternalDiffTool::WinMerge => {
             git_config_global_set("diff.tool", "winmerge")?;
-            "Set git global diff.tool=winmerge".to_string()
+            if maybe_set_tool_paths("winmerge")? {
+                "Set git global diff.tool=winmerge (with detected tool path)".to_string()
+            } else {
+                "Set git global diff.tool=winmerge".to_string()
+            }
         }
         ExternalDiffTool::VsCode => {
             git_config_global_set("diff.tool", "vscode")?;

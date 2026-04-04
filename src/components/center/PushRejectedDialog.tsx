@@ -6,6 +6,8 @@ type PushRejectedDialogProps = {
   analysis: PushRejectionAnalysis;
   onFetch: () => void;
   onIntegrate: () => void;
+  onPublish: () => void;
+  onRepairUpstream: () => void;
   onCancel: () => void;
 };
 
@@ -13,6 +15,8 @@ export function PushRejectedDialog({
   analysis,
   onFetch,
   onIntegrate,
+  onPublish,
+  onRepairUpstream,
   onCancel,
 }: PushRejectedDialogProps) {
   useEffect(() => {
@@ -41,12 +45,26 @@ export function PushRejectedDialog({
           <button className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
             Cancel
           </button>
-          <button className="dialog__btn dialog__btn--cancel" onClick={onFetch}>
-            Fetch
-          </button>
-          <button className="dialog__btn dialog__btn--confirm" onClick={onIntegrate}>
-            Integrate Changes
-          </button>
+          {analysis.suggestedNextActions.includes("fetch") && (
+            <button className="dialog__btn dialog__btn--cancel" onClick={onFetch}>
+              Fetch
+            </button>
+          )}
+          {analysis.suggestedNextActions.includes("integrate") && (
+            <button className="dialog__btn dialog__btn--confirm" onClick={onIntegrate}>
+              Integrate Changes
+            </button>
+          )}
+          {analysis.suggestedNextActions.includes("publish") && (
+            <button className="dialog__btn dialog__btn--confirm" onClick={onPublish}>
+              Publish Branch
+            </button>
+          )}
+          {analysis.suggestedNextActions.includes("repair-upstream") && (
+            <button className="dialog__btn dialog__btn--confirm" onClick={onRepairUpstream}>
+              Repair Upstream
+            </button>
+          )}
         </div>
       </div>
     </>
