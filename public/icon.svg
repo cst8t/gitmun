@@ -13,7 +13,6 @@
    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
    inkscape:version="1.3"
    sodipodi:docname="gitmun-icon.inkscape.svg">
-
   <sodipodi:namedview
      id="namedview1"
      pagecolor="#0d1117"
@@ -26,28 +25,38 @@
      showgrid="false"
      inkscape:document-units="px">
   </sodipodi:namedview>
-
   <title>Gitmun Icon</title>
-
   <defs id="defs1">
     <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#0d1117"/>
       <stop offset="100%" style="stop-color:#111827"/>
     </linearGradient>
-    <linearGradient id="mainGrad" x1="176" y1="126" x2="176" y2="390" gradientUnits="userSpaceOnUse">
+    <linearGradient id="mainGrad" x1="210" y1="100" x2="210" y2="412" gradientUnits="userSpaceOnUse">
       <stop offset="0%" style="stop-color:#818cf8"/>
       <stop offset="100%" style="stop-color:#6366f1"/>
     </linearGradient>
-    <linearGradient id="featureGrad" x1="176" y1="270" x2="336" y2="126" gradientUnits="userSpaceOnUse">
+    <linearGradient id="featureGrad" x1="210" y1="280" x2="370" y2="100" gradientUnits="userSpaceOnUse">
       <stop offset="0%" style="stop-color:#7c7ff5"/>
       <stop offset="100%" style="stop-color:#a855f7"/>
     </linearGradient>
+    <filter id="lineGlow" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <filter id="nodeGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="8" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
     <clipPath id="iconClip">
       <rect width="512" height="512" rx="112" ry="112"/>
     </clipPath>
   </defs>
-
-  <!-- Layer: Background -->
   <g inkscape:label="Background" inkscape:groupmode="layer" id="layer-background">
     <rect
        id="background-rect"
@@ -55,46 +64,32 @@
        fill="url(#bgGrad)"
        clip-path="url(#iconClip)"/>
   </g>
-
-  <!-- Layer: Graph Lines -->
-  <g inkscape:label="Graph Lines" inkscape:groupmode="layer" id="layer-lines">
+  <g inkscape:label="Graph Lines" inkscape:groupmode="layer" id="layer-lines" filter="url(#lineGlow)">
     <line
        id="main-branch-line"
-       x1="176" y1="126" x2="176" y2="390"
-       stroke="url(#mainGrad)" stroke-width="14" stroke-linecap="round"/>
+       x1="210" y1="100" x2="210" y2="412"
+       stroke="url(#mainGrad)" stroke-width="22" stroke-linecap="round"/>
     <path
        id="feature-branch-curve"
-       d="M176,270 C176,160 336,200 336,126"
-       stroke="url(#featureGrad)" stroke-width="14" fill="none" stroke-linecap="round"/>
+       d="M210,280 C210,165 370,205 370,100"
+       stroke="url(#featureGrad)" stroke-width="22" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-
-  <!-- Layer: Nodes -->
-  <g inkscape:label="Nodes" inkscape:groupmode="layer" id="layer-nodes">
-
-    <!-- Bottom commit -->
+  <g inkscape:label="Nodes" inkscape:groupmode="layer" id="layer-nodes" filter="url(#nodeGlow)">
     <g id="node-bottom" inkscape:label="Node: Bottom commit">
-      <circle cx="176" cy="390" r="20" fill="#0d1117" stroke="#6366f1" stroke-width="8"/>
-      <circle cx="176" cy="390" r="7" fill="#818cf8"/>
+      <circle cx="210" cy="412" r="28" fill="#0d1117" stroke="#6366f1" stroke-width="11"/>
+      <circle cx="210" cy="412" r="10" fill="#818cf8"/>
     </g>
-
-    <!-- Branch point -->
     <g id="node-branch-point" inkscape:label="Node: Branch point">
-      <circle cx="176" cy="270" r="22" fill="#0d1117" stroke="#7c7ff5" stroke-width="8"/>
-      <circle cx="176" cy="270" r="8" fill="#a5b4fc"/>
+      <circle cx="210" cy="280" r="31" fill="#0d1117" stroke="#7c7ff5" stroke-width="11"/>
+      <circle cx="210" cy="280" r="11" fill="#a5b4fc"/>
     </g>
-
-    <!-- Top of main branch -->
     <g id="node-main-top" inkscape:label="Node: Main top">
-      <circle cx="176" cy="126" r="20" fill="#0d1117" stroke="#818cf8" stroke-width="8"/>
-      <circle cx="176" cy="126" r="7" fill="#a5b4fc"/>
+      <circle cx="210" cy="100" r="28" fill="#0d1117" stroke="#818cf8" stroke-width="11"/>
+      <circle cx="210" cy="100" r="10" fill="#a5b4fc"/>
     </g>
-
-    <!-- Feature branch tip -->
     <g id="node-feature-tip" inkscape:label="Node: Feature tip">
-      <circle cx="336" cy="126" r="22" fill="#0d1117" stroke="#a855f7" stroke-width="8"/>
-      <circle cx="336" cy="126" r="8" fill="#c084fc"/>
+      <circle cx="370" cy="100" r="31" fill="#0d1117" stroke="#a855f7" stroke-width="11"/>
+      <circle cx="370" cy="100" r="11" fill="#c084fc"/>
     </g>
-
   </g>
-
 </svg>
