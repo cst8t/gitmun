@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { useGitBranches } from "./useGitBranches";
+import type { BranchInfo } from "../types";
 
 vi.mock("../api/commands", () => ({
   getBranches: vi.fn(),
@@ -10,6 +11,19 @@ vi.mock("../api/commands", () => ({
 import { getBranches } from "../api/commands";
 const mockGetBranches = vi.mocked(getBranches);
 
+function makeBranch(name: string, overrides: Partial<BranchInfo> = {}): BranchInfo {
+  return {
+    name,
+    isCurrent: false,
+    isRemote: false,
+    upstream: null,
+    upstreamStatus: "none",
+    ahead: 0,
+    behind: 0,
+    ...overrides,
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -17,8 +31,8 @@ beforeEach(() => {
 describe("useGitBranches", () => {
   test("fetches branches on mount", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
-      { name: "dev", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      makeBranch("main", { isCurrent: true }),
+      makeBranch("dev"),
     ]);
     const { result } = renderHook(() => useGitBranches("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
@@ -44,7 +58,7 @@ describe("useGitBranches", () => {
 
   test("clears branches immediately when repoPath changes", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      makeBranch("main", { isCurrent: true }),
     ]);
     const { result, rerender } = renderHook(
       ({ path }) => useGitBranches(path),
@@ -77,7 +91,7 @@ describe("useGitBranches", () => {
 
     // Now resolve the stale /repo-a response
     act(() => {
-      resolveFirst([{ name: "stale", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 }]);
+      resolveFirst([makeBranch("stale")]);
     });
     await waitFor(() => expect(result.current.loading).toBe(false));
 
@@ -87,14 +101,14 @@ describe("useGitBranches", () => {
 
   test("refresh re-fetches branches", async () => {
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      makeBranch("main", { isCurrent: true }),
     ]);
     const { result } = renderHook(() => useGitBranches("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     mockGetBranches.mockResolvedValue([
-      { name: "main", isCurrent: true, isRemote: false, upstream: null, ahead: 0, behind: 0 },
-      { name: "feature", isCurrent: false, isRemote: false, upstream: null, ahead: 0, behind: 0 },
+      makeBranch("main", { isCurrent: true }),
+      makeBranch("feature"),
     ]);
     act(() => { result.current.refresh(); });
     await waitFor(() => expect(result.current.branches).toHaveLength(2));
