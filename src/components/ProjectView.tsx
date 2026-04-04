@@ -26,6 +26,7 @@ import { CreateTagDialog } from "./sidebar/CreateTagDialog";
 import { CreateBranchDialog } from "./sidebar/CreateBranchDialog";
 import { RenameBranchDialog } from "./sidebar/RenameBranchDialog";
 import { StashPushDialog } from "./sidebar/StashPushDialog";
+import { UpstreamDialog, type UpstreamDialogMode } from "./sidebar/UpstreamDialog";
 import { FolderIcon, GitIcon } from "./icons";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
@@ -43,6 +44,7 @@ import type {
   GitIdentity,
   PullAnalysis,
   PullStrategy,
+  PushRequest,
   PushRejectionAnalysis,
   RemoteInfo,
 } from "../types";
@@ -50,6 +52,7 @@ import type { ResultLogEntry } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
+import { getRemoteActionState } from "../utils/remoteActionState";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
 // (lives outside the component so repo switches don't reset it).
@@ -189,6 +192,7 @@ export function ProjectView({
   const [remoteOp, setRemoteOp] = useState<"fetch" | "pull" | "push" | null>(null);
   const [divergentPullAnalysis, setDivergentPullAnalysis] = useState<PullAnalysis | null>(null);
   const [pushRejectionAnalysis, setPushRejectionAnalysis] = useState<PushRejectionAnalysis | null>(null);
+  const [upstreamDialogMode, setUpstreamDialogMode] = useState<UpstreamDialogMode | null>(null);
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -228,7 +232,9 @@ export function ProjectView({
   const hasWorkingTreeChanges =
     stagedFiles.length > 0 || unstagedFiles.length > 0 || unversionedFiles.length > 0;
   const lastCommitMessage = commits[0]?.message ?? "";
-  const currentBranchInfo = branches.find(b => b.isCurrent);
+  const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
+  const remoteBranches = branches.filter(b => b.isRemote);
+  const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
   const commitMarkersKey = [
     commits[0]?.hash ?? "",
     currentBranchInfo?.upstream ?? "",
@@ -591,28 +597,105 @@ export function ProjectView({
     await runPullWithStrategy(strategy);
   }, [runPullWithStrategy]);
 
-  const handlePush = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
+  const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
+    if (result.rejection && ["non-fast-forward", "no-upstream", "upstream-missing"].includes(result.rejection.kind)) {
+      setPushRejectionAnalysis(result.rejection);
+      showToast(result.rejection.message, "error");
+      appendResultLog("error", result.rejection.message, result.backendUsed);
+      return;
+    }
+
+    showToast(result.message, "error");
+    appendResultLog("error", result.output?.trim() || result.message, result.backendUsed);
+  }, [showToast]);
+
+  const runPushRequest = useCallback(async (
+    request: PushRequest,
+    successToast: string,
+    failurePrefix: string,
+  ) => {
+    if (!repoPath || remoteOp) {
+      return;
+    }
+
     setRemoteOp("push");
     try {
-      const result = await api.pushChanges(repoPath, false, pushFollowTags);
+      const result = await api.pushChanges(request);
       if (!result.success) {
-        if (result.rejection?.kind === "non-fast-forward") {
-          setPushRejectionAnalysis(result.rejection);
-          showToast(result.rejection.message, "error");
-          appendResultLog("error", result.rejection.message, result.backendUsed);
-        } else {
-          showToast(result.message, "error");
-          appendResultLog("error", result.output?.trim() || result.message, result.backendUsed);
-        }
+        handlePushFailure(result);
         return;
       }
-      showToast("Push complete");
-      appendResultLog("success", "Push complete", result.backendUsed);
+      showToast(successToast);
+      appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Push failed: ${String(e)}`, "unknown"); }
-    finally { setRemoteOp(null); }
-  }, [repoPath, remoteOp, refreshAll, showToast, pushFollowTags]);
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", `${failurePrefix}: ${String(e)}`, "unknown");
+    } finally {
+      setRemoteOp(null);
+    }
+  }, [handlePushFailure, refreshAll, remoteOp, repoPath, showToast]);
+
+  const handlePush = useCallback(async () => {
+    if (!repoPath || remoteOp) {
+      return;
+    }
+
+    if (remoteActionState.kind === "publish") {
+      setPushRejectionAnalysis(null);
+      setUpstreamDialogMode("publish");
+      return;
+    }
+    if (remoteActionState.kind === "repair-upstream") {
+      setPushRejectionAnalysis(null);
+      setUpstreamDialogMode("repair");
+      return;
+    }
+    if (remoteActionState.kind === "detached") {
+      showToast(remoteActionState.title ?? "Push is unavailable while HEAD is detached.", "error");
+      return;
+    }
+
+    await runPushRequest({
+      repoPath,
+      pushFollowTags,
+    }, "Push complete", "Push failed");
+  }, [remoteActionState, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags]);
+
+  const handleUpstreamDialogConfirm = useCallback(async (selection: { remote: string; remoteBranch: string }) => {
+    if (!repoPath || !currentBranchInfo || !upstreamDialogMode) {
+      return;
+    }
+
+    const mode = upstreamDialogMode;
+    setUpstreamDialogMode(null);
+
+    if (mode === "publish") {
+      await runPushRequest({
+        repoPath,
+        remote: selection.remote,
+        remoteBranch: selection.remoteBranch,
+        setUpstream: true,
+        pushFollowTags,
+      }, "Branch published", "Publish failed");
+      return;
+    }
+
+    try {
+      const result = await api.setBranchUpstream({
+        repoPath,
+        branchName: currentBranchInfo.name,
+        remote: selection.remote,
+        remoteBranch: selection.remoteBranch,
+      });
+      showToast(mode === "repair" ? "Upstream repaired" : "Upstream changed");
+      appendResultLog("success", result.message, result.backendUsed);
+      await refreshAll();
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", `${mode === "repair" ? "Repair upstream failed" : "Change upstream failed"}: ${String(e)}`, "unknown");
+    }
+  }, [currentBranchInfo, pushFollowTags, refreshAll, repoPath, runPushRequest, showToast, upstreamDialogMode]);
 
   const handlePushRejectedFetch = useCallback(async () => {
     setPushRejectionAnalysis(null);
@@ -623,6 +706,16 @@ export function ProjectView({
     setPushRejectionAnalysis(null);
     await startPullFlow();
   }, [startPullFlow]);
+
+  const handlePushRejectedPublish = useCallback(() => {
+    setPushRejectionAnalysis(null);
+    setUpstreamDialogMode("publish");
+  }, []);
+
+  const handlePushRejectedRepairUpstream = useCallback(() => {
+    setPushRejectionAnalysis(null);
+    setUpstreamDialogMode("repair");
+  }, []);
 
   const handleStash = useCallback(() => {
     if (!repoPath) return;
@@ -829,6 +922,21 @@ export function ProjectView({
       appendResultLog("error", `Create branch failed: ${String(e)}`, "unknown");
     }
   }, [repoPath, refreshAll, showToast]);
+
+  const handleOpenPublishDialog = useCallback(() => {
+    setPushRejectionAnalysis(null);
+    setUpstreamDialogMode("publish");
+  }, []);
+
+  const handleOpenRepairUpstreamDialog = useCallback(() => {
+    setPushRejectionAnalysis(null);
+    setUpstreamDialogMode("repair");
+  }, []);
+
+  const handleOpenChangeUpstreamDialog = useCallback(() => {
+    setPushRejectionAnalysis(null);
+    setUpstreamDialogMode("change");
+  }, []);
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
@@ -1609,7 +1717,21 @@ export function ProjectView({
           analysis={pushRejectionAnalysis}
           onFetch={handlePushRejectedFetch}
           onIntegrate={handlePushRejectedIntegrate}
+          onPublish={handlePushRejectedPublish}
+          onRepairUpstream={handlePushRejectedRepairUpstream}
           onCancel={() => setPushRejectionAnalysis(null)}
+        />
+      )}
+
+      {upstreamDialogMode && currentBranchInfo && (
+        <UpstreamDialog
+          mode={upstreamDialogMode}
+          branchName={currentBranchInfo.name}
+          remotes={remotes}
+          remoteBranches={remoteBranches}
+          initialUpstream={currentBranchInfo.upstream}
+          onConfirm={handleUpstreamDialogConfirm}
+          onCancel={() => setUpstreamDialogMode(null)}
         />
       )}
 
@@ -1705,6 +1827,9 @@ export function ProjectView({
           onFetch={handleFetch}
           onPull={handlePull}
           onPush={handlePush}
+          pushLabel={remoteActionState.label}
+          pushDisabled={remoteActionState.disabled}
+          pushTitle={remoteActionState.title}
           onStash={handleStash}
           remoteOp={remoteOp}
           identityOpen={identityOpen}
@@ -1728,6 +1853,9 @@ export function ProjectView({
                         onRenameBranch={handleBeginRenameBranch}
                         onDeleteBranch={handleDeleteBranch}
                         onForceDeleteBranch={handleForceDeleteBranch}
+                        onPublishBranch={handleOpenPublishDialog}
+                        onRepairUpstream={handleOpenRepairUpstreamDialog}
+                        onChangeUpstream={handleOpenChangeUpstreamDialog}
                         onDeleteTag={handleDeleteTag}
                         onCreateTag={() => { setCreateTagTarget(null); setShowCreateTagDialog(true); }}
                         onPushTag={handlePushTag}

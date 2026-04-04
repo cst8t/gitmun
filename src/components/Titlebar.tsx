@@ -30,6 +30,9 @@ type TitlebarProps = {
   onFetch: () => void;
   onPull: () => void;
   onPush: () => void;
+  pushLabel?: string;
+  pushDisabled?: boolean;
+  pushTitle?: string;
   onStash: () => void;
   remoteOp?: "fetch" | "pull" | "push" | null;
   identityOpen: boolean;
@@ -52,7 +55,7 @@ export function Titlebar({
   platform, native, repoPath, currentBranch, branches,
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
-  onRepoSelect, onFetch, onPull, onPush, onStash,
+  onRepoSelect, onFetch, onPull, onPush, pushLabel = "Push", pushDisabled = false, pushTitle, onStash,
   identityOpen, remoteOp,
 }: TitlebarProps) {
   const [searchFocused, setSearchFocused] = useState(false);
@@ -102,7 +105,15 @@ export function Titlebar({
       <div className="titlebar__actions">
         <ActionBtn icon={<FetchIcon />} label="Fetch" onClick={onFetch} disabled={!repoPath} loading={remoteOp === "fetch"} />
         <ActionBtn icon={<PullIcon />} label="Pull" badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath} loading={remoteOp === "pull"} />
-        <ActionBtn icon={<PushIcon />} label="Push" badge={ahead > 0 ? String(ahead) : undefined} onClick={onPush} disabled={!repoPath} loading={remoteOp === "push"} />
+        <ActionBtn
+          icon={<PushIcon />}
+          label={pushLabel}
+          badge={pushLabel === "Push" && ahead > 0 ? String(ahead) : undefined}
+          onClick={onPush}
+          disabled={!repoPath || pushDisabled}
+          loading={remoteOp === "push"}
+          title={pushTitle}
+        />
         <ActionBtn icon={<StashIcon />} label="Stash" onClick={onStash} disabled={!repoPath} />
       </div>
       <div className="titlebar__sep" />
