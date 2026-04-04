@@ -3,10 +3,12 @@ import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
 import {Toast} from "./Toast";
 import {ProjectView} from "./ProjectView";
+import {UpdateDialog} from "./update/UpdateDialog";
 import {useToast} from "../hooks/useToast";
+import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {Settings, ThemeMode} from "../types";
+import type {AvailableUpdate, Settings, ThemeMode} from "../types";
 import {appendResultLog} from "../utils/resultLog";
 import "./App.css";
 
@@ -126,6 +128,15 @@ function clampPaneLayout(totalWidth: number, desiredLeft: number, desiredRight: 
 export function App() {
     const platform = usePlatform();
     const {toast, showToast} = useToast();
+    const {
+        dialog: updateDialog,
+        checkForUpdatesOnLaunch,
+        showUpdatePrompt,
+        installUpdate,
+        closeDialog: closeUpdateDialog,
+        remindLater: remindAboutUpdateLater,
+        setDontShowAgain: setSuppressUpdatePrompt,
+    } = useUpdateFlow();
 
     const [repoPath, setRepoPath] = useState<string | null>(null);
     const [recentRepos, setRecentRepos] = useState<string[]>(() => {
@@ -158,27 +169,6 @@ export function App() {
             return next;
         });
     }, []);
-
-    const checkForUpdatesOnLaunch = useCallback(async (autoInstallUpdates: boolean) => {
-        try {
-            const update = await api.checkForAppUpdate();
-            if (!update) {
-                return;
-            }
-
-            showToast(`Update ${update.version} is available.`, "info");
-
-            if (!autoInstallUpdates) {
-                return;
-            }
-
-            showToast(`Downloading update ${update.version}...`, "info");
-            await api.downloadAndInstallAppUpdate(update.version);
-            showToast("Update installed. Restart Gitmun to finish applying it.", "success");
-        } catch {
-            return;
-        }
-    }, [showToast]);
 
     useEffect(() => {
         paneLayoutRef.current = {left: leftPaneWidth, right: rightPaneWidth};
@@ -254,8 +244,8 @@ export function App() {
                     });
                 }
 
-                if (settings.autoCheckForUpdatesOnLaunch && await api.isUpdaterEnabled()) {
-                    void checkForUpdatesOnLaunch(settings.autoInstallUpdates ?? false);
+                if (settings.autoCheckForUpdatesOnLaunch) {
+                    void checkForUpdatesOnLaunch();
                 }
             } catch {
                 document.documentElement.dataset.theme = "dark";
@@ -321,6 +311,25 @@ export function App() {
             unlisten?.();
         };
     }, [showToast]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let unlisten: (() => void) | null = null;
+        (async () => {
+            const fn = await listen<AvailableUpdate>("update-available", (event) => {
+                showUpdatePrompt(event.payload);
+            });
+            if (cancelled) {
+                fn();
+            } else {
+                unlisten = fn;
+            }
+        })();
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, [showUpdatePrompt]);
 
     useEffect(() => {
         if (!draggingPane) return;
@@ -482,6 +491,13 @@ export function App() {
     return (
         <div className="app" style={{padding: 0}}>
             <Toast {...toast} />
+            <UpdateDialog
+                dialog={updateDialog}
+                onClose={closeUpdateDialog}
+                onRemindLater={remindAboutUpdateLater}
+                onUpdateNow={() => void installUpdate()}
+                onDontShowAgainChange={setSuppressUpdatePrompt}
+            />
             <ProjectView
                 key={repoPath ?? "__no_repo__"}
                 repoPath={repoPath}
