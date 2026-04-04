@@ -361,6 +361,14 @@ jobs:
       - name: Generate icons
         run: npm run generate:icons
 
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Generate attribution file
+        run: bash ./scripts/generate-attributions.sh
+
       - name: Resolve build version
         run: |
           RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
@@ -432,6 +440,14 @@ jobs:
 
       - name: Generate icons
         run: npm run generate:icons
+
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Generate attribution file
+        run: bash ./scripts/generate-attributions.sh
 
       - name: Resolve build version
         run: |
