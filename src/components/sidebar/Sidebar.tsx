@@ -18,6 +18,9 @@ type SidebarProps = {
   onRenameBranch: (branchName: string) => void;
   onDeleteBranch: (branchName: string) => void;
   onForceDeleteBranch: (branchName: string) => void;
+  onPublishBranch: () => void;
+  onRepairUpstream: () => void;
+  onChangeUpstream: () => void;
   onDeleteTag: (tagName: string) => void;
   onCreateTag: () => void;
   onPushTag: (tagName: string) => void;
@@ -49,6 +52,9 @@ export function Sidebar({
   onRenameBranch,
   onDeleteBranch,
   onForceDeleteBranch,
+  onPublishBranch,
+  onRepairUpstream,
+  onChangeUpstream,
   onDeleteTag,
   onCreateTag,
   onPushTag,
@@ -97,6 +103,9 @@ export function Sidebar({
             onForceDeleteBranch={onForceDeleteBranch}
             onMergeBranch={onMergeBranch}
             onRebaseBranch={onRebaseBranch}
+            onPublishBranch={onPublishBranch}
+            onRepairUpstream={onRepairUpstream}
+            onChangeUpstream={onChangeUpstream}
           />
         )}
         {tab === "tags" && (

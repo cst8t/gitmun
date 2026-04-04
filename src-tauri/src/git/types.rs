@@ -488,12 +488,21 @@ pub enum DiffLineKind {
 
 // Branch info
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum UpstreamStatus {
+    Tracked,
+    None,
+    Missing,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BranchInfo {
     pub name: String,
     pub is_current: bool,
     pub is_remote: bool,
     pub upstream: Option<String>,
+    pub upstream_status: UpstreamStatus,
     pub ahead: u32,
     pub behind: u32,
 }
@@ -590,9 +599,25 @@ pub struct FetchRequest {
 #[serde(rename_all = "camelCase")]
 pub struct PushRequest {
     pub repo_path: String,
-    pub force: bool,
+    #[serde(default)]
+    pub remote: Option<String>,
+    #[serde(default)]
+    pub remote_branch: Option<String>,
+    #[serde(default)]
+    pub set_upstream: bool,
+    #[serde(default)]
+    pub force_with_lease: bool,
     #[serde(default)]
     pub push_follow_tags: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SetBranchUpstreamRequest {
+    pub repo_path: String,
+    pub branch_name: String,
+    pub remote: String,
+    pub remote_branch: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -657,6 +682,7 @@ pub enum PullStrategy {
 pub enum PushFailureKind {
     NonFastForward,
     NoUpstream,
+    UpstreamMissing,
     Auth,
     Network,
     Other,

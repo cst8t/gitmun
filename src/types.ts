@@ -98,8 +98,17 @@ export type FetchRequest = {
 
 export type PushRequest = {
     repoPath: string;
-    force: boolean;
+    remote?: string | null;
+    remoteBranch?: string | null;
+    setUpstream?: boolean;
+    forceWithLease?: boolean;
     pushFollowTags: boolean;
+};
+
+export type SetBranchUpstreamRequest = RepoRequest & {
+    branchName: string;
+    remote: string;
+    remoteBranch: string;
 };
 
 export type PullState =
@@ -141,6 +150,7 @@ export type PullStrategy = "ff-only" | "rebase" | "merge";
 export type PushFailureKind =
     | "non-fast-forward"
     | "no-upstream"
+    | "upstream-missing"
     | "auth"
     | "network"
     | "other";
@@ -151,7 +161,7 @@ export type PushRejectionAnalysis = {
     upstreamBranch: string | null;
     kind: PushFailureKind;
     message: string;
-    suggestedNextActions: Array<"fetch" | "review" | "integrate" | "push-set-upstream" | "retry">;
+    suggestedNextActions: Array<"fetch" | "review" | "integrate" | "publish" | "repair-upstream" | "retry">;
 };
 
 export type PushResult = {
@@ -316,11 +326,14 @@ export type FileDiff = {
     detectedFileType?: string | null;
 };
 
+export type UpstreamStatus = "tracked" | "none" | "missing";
+
 export type BranchInfo = {
     name: string;
     isCurrent: boolean;
     isRemote: boolean;
     upstream: string | null;
+    upstreamStatus: UpstreamStatus;
     ahead: number;
     behind: number;
 };

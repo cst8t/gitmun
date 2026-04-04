@@ -36,6 +36,7 @@ import type {
     RemoteInfo,
     RepoRequest,
     RepoStatus,
+    SetBranchUpstreamRequest,
     Settings,
     StageFilesRequest,
     TagInfo,
@@ -184,12 +185,12 @@ export function pullWithStrategy(repoPath: string, strategy: PullStrategy): Prom
     return invoke<OperationResult>("pull_with_strategy", {request: {repoPath, strategy}});
 }
 
-export function pushChanges(
-    repoPath: string,
-    force: boolean = false,
-    pushFollowTags: boolean = false,
-): Promise<PushResult> {
-    return invoke<PushResult>("push_changes", {request: {repoPath, force, pushFollowTags}});
+export function pushChanges(request: PushRequest): Promise<PushResult> {
+    return invoke<PushResult>("push_changes", {request});
+}
+
+export function setBranchUpstream(request: SetBranchUpstreamRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("set_branch_upstream", {request});
 }
 
 export function stash(
