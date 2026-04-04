@@ -87,10 +87,25 @@
 }
 
 .sidebar__branch-name {
-  flex: 1;
+  display: block;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
   font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sidebar__branch-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sidebar__branch-status {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--font-size-xxs);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
