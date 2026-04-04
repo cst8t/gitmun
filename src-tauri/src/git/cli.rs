@@ -994,38 +994,14 @@ impl CliGitHandler {
         left_path: &Path,
         right_path: &Path,
     ) -> GitResult<()> {
-        let lower = tool_name.to_lowercase();
-
-        let command = match lower.as_str() {
-            "meld" => {
-                let mut cmd = Command::new("meld");
-                Self::configure_command(&mut cmd);
-                cmd.arg(left_path).arg(right_path);
-                cmd
-            }
-            "kompare" => {
-                let mut cmd = Command::new("kompare");
-                Self::configure_command(&mut cmd);
-                cmd.arg(left_path).arg(right_path);
-                cmd
-            }
-            "winmerge" => {
-                let mut cmd = Command::new("WinMergeU");
-                Self::configure_command(&mut cmd);
-                cmd.arg(left_path).arg(right_path);
-                cmd
-            }
-            _ => {
-                let mut cmd = crate::git_command();
-                Self::configure_command(&mut cmd);
-                cmd.args(Self::difftool_cmd_overrides(tool_name))
-                    .args(["difftool", "-y", "--tool", tool_name, "--no-index", "--"])
-                    .arg(left_path)
-                    .arg(right_path)
-                    .current_dir(repo_path);
-                cmd
-            }
-        };
+        let mut command = crate::git_command();
+        Self::configure_command(&mut command);
+        command
+            .args(Self::difftool_cmd_overrides(tool_name))
+            .args(["difftool", "-y", "--tool", tool_name, "--no-index", "--"])
+            .arg(left_path)
+            .arg(right_path)
+            .current_dir(repo_path);
 
         Self::spawn_command_and_reap(command, "external diff tool".to_string())
     }
