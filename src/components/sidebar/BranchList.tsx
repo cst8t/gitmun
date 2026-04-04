@@ -3,6 +3,7 @@ import { BranchIcon } from "../icons";
 import { CreateBranchDialog } from "./CreateBranchDialog";
 import { ContextMenu } from "../shared/ContextMenu";
 import type { BranchInfo, CreateBranchRequest, TagInfo } from "../../types";
+import { getUpstreamStatusLabel } from "../../utils/remoteActionState";
 
 type BranchListProps = {
   branches: BranchInfo[];
@@ -15,6 +16,9 @@ type BranchListProps = {
   onForceDeleteBranch: (branchName: string) => void;
   onMergeBranch: (branchName: string) => void;
   onRebaseBranch: (branchName: string) => void;
+  onPublishBranch: () => void;
+  onRepairUpstream: () => void;
+  onChangeUpstream: () => void;
 };
 
 export function BranchList({
@@ -28,12 +32,16 @@ export function BranchList({
   onForceDeleteBranch,
   onMergeBranch,
   onRebaseBranch,
+  onPublishBranch,
+  onRepairUpstream,
+  onChangeUpstream,
 }: BranchListProps) {
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; branch: string } | null>(null);
 
   const currentBranch = branches.find(b => b.isCurrent && !b.isRemote);
+  const currentBranchStatus = getUpstreamStatusLabel(currentBranch?.name ?? null, currentBranch);
 
   const handleCreateBranch = (request: CreateBranchRequest) => {
     onCreateBranch(request);
@@ -66,7 +74,12 @@ export function BranchList({
             onContextMenu={(e) => handleContextMenu(e, b.name)}
           >
             <BranchIcon size={14} />
-            <span className="sidebar__branch-name">{b.name}</span>
+            <div className="sidebar__branch-text">
+              <span className="sidebar__branch-name">{b.name}</span>
+              {b.isCurrent && currentBranchStatus && (
+                <span className="sidebar__branch-status">{currentBranchStatus}</span>
+              )}
+            </div>
             {(b.behind > 0 || b.ahead > 0) && (
               <div className="sidebar__branch-counts">
                 {b.behind > 0 && <span className="sidebar__branch-behind">{"\u2193"}{b.behind}</span>}
@@ -94,6 +107,18 @@ export function BranchList({
             y={contextMenu.y}
             onClose={() => setContextMenu(null)}
             items={[
+              ...(isCurrentBranch && currentBranch?.upstreamStatus === "none" ? [{
+                label: "Publish Branch...",
+                onClick: onPublishBranch,
+              }] : []),
+              ...(isCurrentBranch && currentBranch?.upstreamStatus === "missing" ? [{
+                label: "Repair Upstream...",
+                onClick: onRepairUpstream,
+              }] : []),
+              ...(isCurrentBranch && currentBranch?.upstreamStatus === "tracked" ? [{
+                label: "Change Upstream...",
+                onClick: onChangeUpstream,
+              }] : []),
               {
                 label: `Rename "${contextMenu.branch}"`,
                 onClick: () => onRenameBranch(contextMenu.branch),
