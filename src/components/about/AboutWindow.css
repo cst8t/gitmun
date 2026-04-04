@@ -38,7 +38,7 @@
 }
 
 .about__attributions-btn {
-  margin-top: 8px;
+  margin-top: 4px;
   padding: 6px 16px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
@@ -52,6 +52,19 @@
 .about__attributions-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.about__attributions-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.about__status {
+  max-width: 280px;
+  text-align: center;
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  line-height: 1.5;
 }
 
 .about__links {

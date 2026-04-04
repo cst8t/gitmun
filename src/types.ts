@@ -27,9 +27,26 @@ export type Settings = {
 export type AvailableUpdate = {
     currentVersion: string;
     version: string;
-    date: string | null;
+    date: number | null;
     body: string | null;
 };
+
+export type UpdateDownloadEvent =
+    | {
+        event: "Started";
+        data: {
+            contentLength: number | null;
+        };
+    }
+    | {
+        event: "Progress";
+        data: {
+            chunkLength: number;
+        };
+    }
+    | {
+        event: "Finished";
+    };
 
 export type OperationResult = {
     message: string;

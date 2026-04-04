@@ -8,7 +8,7 @@ use serde::Serialize;
 #[cfg(windows)]
 use std::path::Path;
 use std::time::Duration;
-use tauri::Manager;
+use tauri::{Manager, ipc::Channel};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
@@ -21,8 +21,19 @@ const UPDATE_TIMEOUT: Duration = Duration::from_secs(20);
 pub struct AvailableUpdate {
     current_version: String,
     version: String,
-    date: Option<String>,
+    date: Option<i64>,
     body: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "event", content = "data")]
+pub enum UpdateDownloadEvent {
+    #[serde(rename = "Started", rename_all = "camelCase")]
+    Started { content_length: Option<u64> },
+    #[serde(rename = "Progress", rename_all = "camelCase")]
+    Progress { chunk_length: usize },
+    #[serde(rename = "Finished")]
+    Finished,
 }
 
 fn parse_update_endpoint(update_endpoint: &str) -> Result<Url, String> {
@@ -107,7 +118,7 @@ fn available_update_from(update: &Update) -> AvailableUpdate {
     AvailableUpdate {
         current_version: update.current_version.clone(),
         version: update.version.clone(),
-        date: update.date.map(|date| date.to_string()),
+        date: update.date.map(|date| date.unix_timestamp()),
         body: update.body.clone(),
     }
 }
@@ -236,12 +247,25 @@ pub async fn download_and_install_app_update(
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
     expected_version: Option<String>,
+    on_event: Channel<UpdateDownloadEvent>,
 ) -> Result<(), String> {
     let update_endpoint = current_update_endpoint(&state);
     let expected_version = expected_version.as_deref();
     let update = get_installable_update(&app, &update_endpoint, expected_version).await?;
+    let mut started = false;
     update
-        .download_and_install(|_, _| {}, || {})
+        .download_and_install(
+            |chunk_length, content_length| {
+                if !started {
+                    let _ = on_event.send(UpdateDownloadEvent::Started { content_length });
+                    started = true;
+                }
+                let _ = on_event.send(UpdateDownloadEvent::Progress { chunk_length });
+            },
+            || {
+                let _ = on_event.send(UpdateDownloadEvent::Finished);
+            },
+        )
         .await
         .map_err(|error| error.to_string())
 }
