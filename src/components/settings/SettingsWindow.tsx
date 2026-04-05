@@ -14,9 +14,11 @@ import type {
     ThemeMode
 } from "../../types";
 import {
+    getGlobalDiffToolPath,
     getSystemThemeHint,
     isUpdaterEnabled,
     openResultLogWindow,
+    setGlobalDiffToolWithPath,
     setUpdateEndpoint,
 } from "../../api/commands";
 import {CloseIcon, FolderIcon} from "../icons";
@@ -47,6 +49,10 @@ function diffToolLabel(tool: ExternalDiffTool): string {
         default:
             return tool;
     }
+}
+
+function requiresWindowsDiffToolPath(tool: ExternalDiffTool): boolean {
+    return tool === "Meld" || tool === "WinMerge";
 }
 
 async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
@@ -88,9 +94,11 @@ export function SettingsWindow() {
     const [updateEndpoint, setUpdateEndpointState] = useState(DEFAULT_UPDATE_ENDPOINT);
     const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
     const [isLinux, setIsLinux] = useState(false);
+    const [isWindows, setIsWindows] = useState(false);
     const [updaterSupported, setUpdaterSupported] = useState(false);
     const [configFilePath, setConfigFilePath] = useState<string>("");
     const [buildVersion, setBuildVersion] = useState<string>("");
+    const [externalDiffToolPath, setExternalDiffToolPath] = useState("");
     const [status, setStatus] = useState("Ready.");
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
@@ -118,6 +126,7 @@ export function SettingsWindow() {
                 setAllowedDiffTools(supported);
                 setUpdaterSupported(await isUpdaterEnabled());
                 setIsLinux(os === "linux");
+                setIsWindows(os === "windows");
 
                 const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
                 setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
@@ -153,6 +162,30 @@ export function SettingsWindow() {
     }, []);
 
     useEffect(() => {
+        if (!isWindows || !requiresWindowsDiffToolPath(externalDiffTool)) {
+            setExternalDiffToolPath("");
+            return;
+        }
+
+        let cancelled = false;
+        (async () => {
+            try {
+                const path = await getGlobalDiffToolPath(externalDiffTool);
+                if (!cancelled) setExternalDiffToolPath(path ?? "");
+            } catch (e) {
+                if (!cancelled) {
+                    setExternalDiffToolPath("");
+                    setStatus(`Failed to load diff tool path: ${e}`);
+                }
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [externalDiffTool, isWindows]);
+
+    useEffect(() => {
         const handler = (e: KeyboardEvent) => {
             if (e.key === "Escape") getCurrentWindow().close();
         };
@@ -170,7 +203,12 @@ export function SettingsWindow() {
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
             await invoke("set_default_clone_dir", {defaultCloneDir});
-            await invoke("set_global_diff_tool", {tool: externalDiffTool});
+            const diffToolResult = await setGlobalDiffToolWithPath(
+                externalDiffTool,
+                isWindows && requiresWindowsDiffToolPath(externalDiffTool)
+                    ? (externalDiffToolPath.trim() || null)
+                    : null,
+            );
             await invoke("set_global_default_branch", {defaultBranch: globalDefaultBranch});
             await invoke("set_commit_date_mode", {commitDateMode});
             await invoke("set_push_follow_tags", {pushFollowTags});
@@ -185,8 +223,12 @@ export function SettingsWindow() {
             localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
             document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
+            if (isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {
+                setExternalDiffToolPath(await getGlobalDiffToolPath(externalDiffTool) ?? "");
+            }
+
             await emit("settings-updated", settings);
-            setStatus("Saved settings and updated global Git configuration.");
+            setStatus(`Saved settings. ${diffToolResult.message}`);
         } catch (e) {
             setStatus(`Save failed: ${e}`);
         } finally {
@@ -208,7 +250,9 @@ export function SettingsWindow() {
         autoInstallUpdates,
         updateEndpoint,
         isLinux,
+        isWindows,
         linuxGraphicsMode,
+        externalDiffToolPath,
     ]);
 
     const handleOpenResultLog = useCallback(async () => {
@@ -246,6 +290,21 @@ export function SettingsWindow() {
             setStatus(`Browse failed: ${e}`);
         }
     }, [defaultCloneDir]);
+
+    const handleBrowseDiffToolPath = useCallback(async () => {
+        try {
+            const selected = await open({
+                directory: false,
+                multiple: false,
+                title: `Select ${diffToolLabel(externalDiffTool)} executable`,
+                defaultPath: externalDiffToolPath || undefined,
+                filters: [{name: "Windows executables", extensions: ["exe"]}],
+            });
+            if (typeof selected === "string") setExternalDiffToolPath(selected);
+        } catch (e) {
+            setStatus(`Browse failed: ${e}`);
+        }
+    }, [externalDiffTool, externalDiffToolPath]);
 
     const handleClose = useCallback(() => {
         getCurrentWindow().close();
@@ -537,6 +596,39 @@ export function SettingsWindow() {
                                         closed, so conflicts will be marked as resolved even if you close without
                                         explicitly accepting a side. Use the Accept buttons inside the editor to choose
                                         which version to keep.
+                                    </div>
+                                )}
+                                {isWindows && requiresWindowsDiffToolPath(externalDiffTool) && (
+                                    <div className="settings-window__row">
+                                        <label className="settings-window__label">Diff tool executable</label>
+                                        <div className="settings-window__inline-controls"
+                                             style={{gap: "6px", flexWrap: "nowrap"}}>
+                                            <input
+                                                className="settings-window__input"
+                                                type="text"
+                                                value={externalDiffToolPath}
+                                                onChange={e => setExternalDiffToolPath(e.target.value)}
+                                                placeholder={`Auto-detect ${diffToolLabel(externalDiffTool)} or choose its .exe`}
+                                                spellCheck={false}
+                                                autoCapitalize="off"
+                                                autoCorrect="off"
+                                            />
+                                            <button
+                                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                                onClick={handleBrowseDiffToolPath}>
+                                                <FolderIcon/>
+                                            </button>
+                                        </div>
+                                        <div className="settings-window__section-note">
+                                            Gitmun searches PATH first, then common Windows install folders. If that
+                                            fails, choose the executable manually.
+                                        </div>
+                                        {!externalDiffToolPath && (
+                                            <div className="settings-window__warning">
+                                                {diffToolLabel(externalDiffTool)} could not be found automatically.
+                                                Saving will fail until you choose its executable.
+                                            </div>
+                                        )}
                                     </div>
                                 )}
                             </div>

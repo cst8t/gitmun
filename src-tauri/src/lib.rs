@@ -72,6 +72,106 @@ pub(crate) fn git_command() -> std::process::Command {
     }
 }
 
+#[cfg(windows)]
+fn resolve_git_bash_exe() -> Option<std::path::PathBuf> {
+    let git_exe = resolve_git_exe();
+    let git_path = std::path::PathBuf::from(&git_exe);
+    if git_path.is_absolute() {
+        if let Some(parent) = git_path.parent() {
+            let direct = parent.join("bash.exe");
+            if direct.exists() {
+                return Some(direct);
+            }
+            if let Some(root) = parent.parent() {
+                let sibling = root.join("bin").join("bash.exe");
+                if sibling.exists() {
+                    return Some(sibling);
+                }
+            }
+        }
+    }
+
+    [
+        r"C:\Program Files\Git\bin\bash.exe",
+        r"C:\Program Files (x86)\Git\bin\bash.exe",
+    ]
+    .iter()
+    .map(std::path::PathBuf::from)
+    .find(|candidate| candidate.exists())
+}
+
+#[cfg(windows)]
+pub(crate) fn git_bash_command() -> Option<std::process::Command> {
+    resolve_git_bash_exe().map(std::process::Command::new)
+}
+
+#[cfg(windows)]
+fn known_diff_tool_path_names(tool_key: &str) -> &'static [&'static str] {
+    match tool_key {
+        "meld" => &["Meld.exe", "meld.exe"],
+        "winmerge" => &["WinMergeU.exe", "winmergeu.exe"],
+        _ => &[],
+    }
+}
+
+#[cfg(windows)]
+fn known_diff_tool_install_paths(tool_key: &str) -> &'static [&'static str] {
+    match tool_key {
+        "meld" => &[
+            r"C:\Program Files\Meld\Meld.exe",
+            r"C:\Program Files (x86)\Meld\Meld.exe",
+        ],
+        "winmerge" => &[
+            r"C:\Program Files\WinMerge\WinMergeU.exe",
+            r"C:\Program Files (x86)\WinMerge\WinMergeU.exe",
+        ],
+        _ => &[],
+    }
+}
+
+#[cfg(windows)]
+fn known_diff_tool_local_appdata_paths(tool_key: &str) -> Vec<std::path::PathBuf> {
+    let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") else {
+        return vec![];
+    };
+    let root = std::path::PathBuf::from(local_appdata);
+    match tool_key {
+        "meld" => vec![root.join("Programs").join("Meld").join("Meld.exe")],
+        "winmerge" => vec![root.join("Programs").join("WinMerge").join("WinMergeU.exe")],
+        _ => vec![],
+    }
+}
+
+#[cfg(windows)]
+fn resolve_on_windows_path(names: &[&str]) -> Option<std::path::PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+#[cfg(windows)]
+pub(crate) fn resolve_known_diff_tool_path(tool_key: &str) -> Option<std::path::PathBuf> {
+    resolve_on_windows_path(known_diff_tool_path_names(tool_key))
+        .or_else(|| {
+            known_diff_tool_install_paths(tool_key)
+                .iter()
+                .map(std::path::PathBuf::from)
+                .find(|candidate| candidate.exists())
+        })
+        .or_else(|| {
+            known_diff_tool_local_appdata_paths(tool_key)
+                .into_iter()
+                .find(|candidate| candidate.exists())
+        })
+}
+
 pub(crate) fn configured_git_command() -> std::process::Command {
     let mut command = git_command();
     configure_command(&mut command);
@@ -353,6 +453,7 @@ pub fn run() {
             commands::settings::check_for_app_update,
             commands::settings::download_and_install_app_update,
             commands::settings::get_global_diff_tool,
+            commands::settings::get_global_diff_tool_path,
             commands::settings::get_global_default_branch,
             commands::settings::set_global_diff_tool,
             commands::settings::set_global_default_branch,
