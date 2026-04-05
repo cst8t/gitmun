@@ -299,6 +299,17 @@ pub fn get_global_default_branch() -> Result<Option<String>, String> {
     git_config_global_get("init.defaultBranch")
 }
 
+fn diff_tool_key(tool: &ExternalDiffTool) -> Option<&'static str> {
+    match tool {
+        ExternalDiffTool::Meld => Some("meld"),
+        ExternalDiffTool::Kompare => Some("kompare"),
+        ExternalDiffTool::WinMerge => Some("winmerge"),
+        ExternalDiffTool::VsCode => Some("vscode"),
+        ExternalDiffTool::VsCodium => Some("vscodium"),
+        ExternalDiffTool::Other => None,
+    }
+}
+
 fn git_config_global_set(key: &str, value: &str) -> Result<(), String> {
     let mut command = git_command();
     configure_command(&mut command);
@@ -346,41 +357,91 @@ fn git_config_global_get(key: &str) -> Result<Option<String>, String> {
 }
 
 #[cfg(windows)]
-fn first_existing_path<'a>(candidates: &'a [&'a str]) -> Option<&'a str> {
-    candidates
-        .iter()
-        .copied()
-        .find(|candidate| Path::new(candidate).exists())
+fn configured_global_tool_path(tool_key: &str) -> Result<Option<String>, String> {
+    let Some(path) = git_config_global_get(&format!("difftool.{tool_key}.path"))? else {
+        return Ok(None);
+    };
+    if Path::new(&path).exists() {
+        Ok(Some(path))
+    } else {
+        Ok(None)
+    }
 }
 
-fn maybe_set_tool_paths(tool_key: &str) -> Result<bool, String> {
+#[cfg(windows)]
+fn resolve_windows_diff_tool_path(tool_key: &str) -> Result<Option<String>, String> {
+    if let Some(path) = configured_global_tool_path(tool_key)? {
+        return Ok(Some(path));
+    }
+    Ok(crate::resolve_known_diff_tool_path(tool_key).map(|path| path.to_string_lossy().into()))
+}
+
+#[cfg(windows)]
+fn validate_windows_tool_path(tool_path: &str) -> Result<String, String> {
+    let trimmed = tool_path.trim();
+    if trimmed.is_empty() {
+        return Err("Select a diff tool executable or leave the field blank.".to_string());
+    }
+    if !Path::new(trimmed).exists() {
+        return Err(format!("Diff tool executable was not found: {trimmed}"));
+    }
+    Ok(trimmed.to_string())
+}
+
+#[cfg(windows)]
+fn windows_tool_path_message(tool_label: &str) -> String {
+    format!(
+        "Could not find {tool_label} on PATH or in common install locations. Select its executable in Settings."
+    )
+}
+
+#[cfg(not(windows))]
+fn windows_tool_path_message(tool_label: &str) -> String {
+    format!("Could not find {tool_label}.")
+}
+
+fn maybe_set_tool_paths(tool_key: &str, tool_path: Option<&str>) -> Result<bool, String> {
     #[cfg(windows)]
     {
-        let candidates = match tool_key {
-            "meld" => &[
-                r"C:\Program Files\Meld\Meld.exe",
-                r"C:\Program Files (x86)\Meld\Meld.exe",
-            ][..],
-            "winmerge" => &[
-                r"C:\Program Files\WinMerge\WinMergeU.exe",
-                r"C:\Program Files (x86)\WinMerge\WinMergeU.exe",
-            ][..],
-            _ => return Ok(false),
+        let path = if let Some(path) = tool_path {
+            validate_windows_tool_path(path)?
+        } else {
+            match resolve_windows_diff_tool_path(tool_key)? {
+                Some(path) => path,
+                None => return Ok(false),
+            }
         };
 
-        let Some(path) = first_existing_path(candidates) else {
-            return Ok(false);
-        };
-
-        git_config_global_set(&format!("difftool.{tool_key}.path"), path)?;
-        git_config_global_set(&format!("mergetool.{tool_key}.path"), path)?;
+        git_config_global_set(&format!("difftool.{tool_key}.path"), &path)?;
+        git_config_global_set(&format!("mergetool.{tool_key}.path"), &path)?;
         return Ok(true);
     }
 
     #[cfg(not(windows))]
     {
         let _ = tool_key;
+        let _ = tool_path;
         Ok(false)
+    }
+}
+
+#[tauri::command]
+pub fn get_global_diff_tool_path(tool: ExternalDiffTool) -> Result<Option<String>, String> {
+    #[cfg(windows)]
+    {
+        let Some(tool_key) = diff_tool_key(&tool) else {
+            return Ok(None);
+        };
+        match tool_key {
+            "meld" | "winmerge" => resolve_windows_diff_tool_path(tool_key),
+            _ => Ok(None),
+        }
+    }
+
+    #[cfg(not(windows))]
+    {
+        let _ = tool;
+        Ok(None)
     }
 }
 
@@ -424,7 +485,10 @@ fn git_config_global_unset(key: &str) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, String> {
+pub fn set_global_diff_tool(
+    tool: ExternalDiffTool,
+    tool_path: Option<String>,
+) -> Result<OperationResult, String> {
     // Always clean up tool-specific cmd keys Gitmun may have written previously,
     // so switching away from VS Code/Codium leaves no stale entries behind.
     for key in &[
@@ -446,11 +510,11 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
             "Cleared diff.tool from global git config".to_string()
         }
         ExternalDiffTool::Meld => {
-            git_config_global_set("diff.tool", "meld")?;
-            if maybe_set_tool_paths("meld")? {
+            if maybe_set_tool_paths("meld", tool_path.as_deref())? {
+                git_config_global_set("diff.tool", "meld")?;
                 "Set git global diff.tool=meld (with detected tool path)".to_string()
             } else {
-                "Set git global diff.tool=meld".to_string()
+                return Err(windows_tool_path_message("Meld"));
             }
         }
         ExternalDiffTool::Kompare => {
@@ -458,11 +522,11 @@ pub fn set_global_diff_tool(tool: ExternalDiffTool) -> Result<OperationResult, S
             "Set git global diff.tool=kompare".to_string()
         }
         ExternalDiffTool::WinMerge => {
-            git_config_global_set("diff.tool", "winmerge")?;
-            if maybe_set_tool_paths("winmerge")? {
+            if maybe_set_tool_paths("winmerge", tool_path.as_deref())? {
+                git_config_global_set("diff.tool", "winmerge")?;
                 "Set git global diff.tool=winmerge (with detected tool path)".to_string()
             } else {
-                "Set git global diff.tool=winmerge".to_string()
+                return Err(windows_tool_path_message("WinMerge"));
             }
         }
         ExternalDiffTool::VsCode => {

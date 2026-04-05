@@ -407,8 +407,15 @@ export function getGlobalDiffTool(): Promise<ExternalDiffTool> {
     return invoke<ExternalDiffTool>("get_global_diff_tool");
 }
 
-export function setGlobalDiffTool(tool: ExternalDiffTool): Promise<OperationResult> {
-    return invoke<OperationResult>("set_global_diff_tool", {tool});
+export function getGlobalDiffToolPath(tool: ExternalDiffTool): Promise<string | null> {
+    return invoke<string | null>("get_global_diff_tool_path", {tool});
+}
+
+export function setGlobalDiffToolWithPath(
+    tool: ExternalDiffTool,
+    toolPath?: string | null,
+): Promise<OperationResult> {
+    return invoke<OperationResult>("set_global_diff_tool", {tool, toolPath});
 }
 
 export function fetchAvatar(email: string, repoPath: string): Promise<string | null> {

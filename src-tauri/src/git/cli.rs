@@ -180,6 +180,14 @@ impl CliGitHandler {
         args: &[&str],
         current_dir: Option<&Path>,
     ) -> GitResult<()> {
+        #[cfg(windows)]
+        if matches!(args.first().copied(), Some("difftool" | "mergetool")) {
+            if let Some(command) = Self::git_bash_command_for_args(overrides, args, current_dir) {
+                let joined_args = args.join(" ");
+                return Self::spawn_command_and_reap(command, format!("git {joined_args}"));
+            }
+        }
+
         let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command
@@ -199,6 +207,34 @@ impl CliGitHandler {
         current_dir: Option<&Path>,
         extra_ok_codes: &[i32],
     ) -> GitResult<String> {
+        #[cfg(windows)]
+        if matches!(args.first().copied(), Some("difftool" | "mergetool")) {
+            if let Some(mut command) =
+                Self::git_bash_command_for_args(overrides, args, current_dir)
+            {
+                let output = command.output()?;
+                let exit_ok = output.status.success()
+                    || output
+                        .status
+                        .code()
+                        .map(|c| extra_ok_codes.contains(&c))
+                        .unwrap_or(false);
+
+                if !exit_ok {
+                    let stderr = Self::append_auth_help(
+                        String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                    );
+                    let joined = format!("git {}", args.join(" "));
+                    return Err(GitError::CommandFailed {
+                        command: joined,
+                        stderr,
+                    });
+                }
+
+                return Ok(String::from_utf8_lossy(&output.stdout).trim().to_string());
+            }
+        }
+
         let prefix: Vec<&str> = overrides.iter().map(String::as_str).collect();
         let mut all: Vec<&str> = prefix;
         all.extend_from_slice(args);
@@ -929,6 +965,68 @@ impl CliGitHandler {
         if value.is_empty() { None } else { Some(value) }
     }
 
+    fn get_git_config_value(repo_path: &Path, key: &str) -> Option<String> {
+        let mut command = crate::git_command();
+        Self::configure_command(&mut command);
+        let output = command
+            .args(["config", "--get", key])
+            .current_dir(repo_path)
+            .output()
+            .ok()?;
+
+        if !output.status.success() {
+            return None;
+        }
+
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if value.is_empty() { None } else { Some(value) }
+    }
+
+    #[cfg(windows)]
+    fn resolved_windows_diff_tool_path(repo_path: &Path, tool_name: &str) -> Option<PathBuf> {
+        let configured = Self::get_git_config_value(repo_path, &format!("difftool.{tool_name}.path"))
+            .map(PathBuf::from)
+            .filter(|path| path.exists());
+        configured.or_else(|| crate::resolve_known_diff_tool_path(tool_name))
+    }
+
+    #[cfg(windows)]
+    fn ensure_windows_diff_tool_available(repo_path: &Path, tool_name: &str) -> GitResult<()> {
+        if matches!(tool_name, "meld" | "winmerge")
+            && Self::resolved_windows_diff_tool_path(repo_path, tool_name).is_none()
+        {
+            return Err(GitError::InvalidInput(format!(
+                "Could not find selected diff tool '{tool_name}'. Search PATH and common install locations failed. Select its executable in Settings."
+            )));
+        }
+        Ok(())
+    }
+
+    #[cfg(not(windows))]
+    fn ensure_windows_diff_tool_available(_repo_path: &Path, _tool_name: &str) -> GitResult<()> {
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    fn difftool_path_overrides(repo_path: &Path, tool_name: &str) -> Vec<String> {
+        let Some(path) = Self::resolved_windows_diff_tool_path(repo_path, tool_name) else {
+            return vec![];
+        };
+
+        let path = path.to_string_lossy().into_owned();
+        vec![
+            "-c".to_string(),
+            format!("difftool.{tool_name}.path={path}"),
+            "-c".to_string(),
+            format!("mergetool.{tool_name}.path={path}"),
+        ]
+    }
+
+    #[cfg(not(windows))]
+    fn difftool_path_overrides(_repo_path: &Path, _tool_name: &str) -> Vec<String> {
+        vec![]
+    }
+
     fn require_configured_diff_tool(repo_path: &Path) -> GitResult<String> {
         Self::get_diff_tool_name(repo_path).ok_or_else(|| {
             GitError::InvalidInput(
@@ -994,16 +1092,44 @@ impl CliGitHandler {
         left_path: &Path,
         right_path: &Path,
     ) -> GitResult<()> {
+        Self::ensure_windows_diff_tool_available(repo_path, tool_name)?;
         let mut command = crate::git_command();
         Self::configure_command(&mut command);
         command
             .args(Self::difftool_cmd_overrides(tool_name))
+            .args(Self::difftool_path_overrides(repo_path, tool_name))
             .args(["difftool", "-y", "--tool", tool_name, "--no-index", "--"])
             .arg(left_path)
             .arg(right_path)
             .current_dir(repo_path);
 
         Self::spawn_command_and_reap(command, "external diff tool".to_string())
+    }
+
+    #[cfg(windows)]
+    fn git_bash_command_for_args(
+        overrides: &[String],
+        args: &[&str],
+        current_dir: Option<&Path>,
+    ) -> Option<Command> {
+        let repo_path = current_dir
+            .unwrap_or_else(|| Path::new("."))
+            .to_string_lossy()
+            .replace('\\', "/");
+        let mut command = crate::git_bash_command()?;
+        Self::configure_command(&mut command);
+        command
+            .arg("-lc")
+            .arg("repo=$1; shift; git -C \"$repo\" \"$@\"")
+            .arg("gitmun")
+            .arg(repo_path);
+        for override_arg in overrides {
+            command.arg(override_arg);
+        }
+        for arg in args {
+            command.arg(arg);
+        }
+        Some(command)
     }
 
     /// Returns an error if the repository's HEAD ref is broken (e.g. from an
@@ -1261,8 +1387,10 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         let tool_name = Self::require_configured_diff_tool(&repo_path)?;
+        Self::ensure_windows_diff_tool_available(&repo_path, &tool_name)?;
         let parent = format!("{commit_hash}^");
-        let overrides = Self::difftool_cmd_overrides(&tool_name);
+        let mut overrides = Self::difftool_cmd_overrides(&tool_name);
+        overrides.extend(Self::difftool_path_overrides(&repo_path, &tool_name));
         let args = [
             "difftool",
             "-y",
@@ -1293,7 +1421,9 @@ impl GitOperationHandler for CliGitHandler {
 
         if request.staged {
             let tool_name = Self::require_configured_diff_tool(&repo_path)?;
-            let overrides = Self::difftool_cmd_overrides(&tool_name);
+            Self::ensure_windows_diff_tool_available(&repo_path, &tool_name)?;
+            let mut overrides = Self::difftool_cmd_overrides(&tool_name);
+            overrides.extend(Self::difftool_path_overrides(&repo_path, &tool_name));
             let args = [
                 "difftool",
                 "-y",
@@ -3276,10 +3406,12 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         let tool_name = Self::require_configured_merge_tool(&repo_path)?;
+        Self::ensure_windows_diff_tool_available(&repo_path, &tool_name)?;
 
         // All tools go through git mergetool.
         // -c mergetool.keepBackup=false suppresses the .orig backup file.
         let mut overrides = Self::mergetool_cmd_overrides(&tool_name);
+        overrides.extend(Self::difftool_path_overrides(&repo_path, &tool_name));
         overrides.extend(["-c".to_string(), "mergetool.keepBackup=false".to_string()]);
         let args = [
             "mergetool",
