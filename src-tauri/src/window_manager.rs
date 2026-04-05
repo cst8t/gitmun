@@ -1,5 +1,7 @@
 use crate::git::types::ThemeMode;
+use tauri::webview::NewWindowResponse;
 use tauri::{Manager, Theme, window::Color};
+use tauri_plugin_shell::ShellExt;
 
 const LIGHT_WINDOW_BACKGROUND_COLOUR: Color = Color(244, 246, 251, 255);
 const DARK_WINDOW_BACKGROUND_COLOUR: Color = Color(15, 17, 23, 255);
@@ -105,6 +107,15 @@ fn centered_sub_window_position(app: &tauri::AppHandle, width: f64, height: f64)
     ))
 }
 
+fn should_open_url_externally(url: &url::Url) -> bool {
+    matches!(url.scheme(), "http" | "https") && url.host_str() != Some("tauri.localhost")
+}
+
+#[allow(deprecated)]
+fn open_url_in_system_browser(app: &tauri::AppHandle, url: &url::Url) {
+    let _ = app.shell().open(url.to_string(), None);
+}
+
 #[tauri::command]
 pub async fn open_sub_window(
     app: tauri::AppHandle,
@@ -162,6 +173,26 @@ pub async fn open_sub_window(
     .visible(show_immediately)
     .background_color(background_colour)
     .initialization_script(initial_theme_injection_script(system_theme));
+
+    if label == "attributions" {
+        let app_handle_for_navigation = app.clone();
+        let app_handle_for_new_window = app.clone();
+        builder = builder
+            .on_navigation(move |url| {
+                if should_open_url_externally(url) {
+                    open_url_in_system_browser(&app_handle_for_navigation, url);
+                    false
+                } else {
+                    true
+                }
+            })
+            .on_new_window(move |url, _features| {
+                if should_open_url_externally(&url) {
+                    open_url_in_system_browser(&app_handle_for_new_window, &url);
+                }
+                NewWindowResponse::Deny
+            });
+    }
 
     if let Some((x, y)) = centered_sub_window_position(&app, width, height) {
         builder = builder.position(x, y);
