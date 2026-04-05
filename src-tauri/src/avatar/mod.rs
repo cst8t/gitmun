@@ -19,7 +19,7 @@ pub struct AvatarService {
     provider: Mutex<Option<Box<dyn AvatarProvider>>>,
     conditional_providers: Vec<Box<dyn ConditionalProvider>>,
     try_platform_first: Mutex<bool>,
-    cache: Mutex<HashMap<(String, String), Option<String>>>,
+    cache: Mutex<HashMap<(String, String), String>>,
 }
 
 fn make_provider(mode: &AvatarProviderMode) -> Option<Box<dyn AvatarProvider>> {
@@ -83,7 +83,7 @@ impl AvatarService {
         {
             let cache = lock_or_recover(&self.cache, "cache");
             if let Some(cached) = cache.get(&cache_key) {
-                return cached.clone();
+                return Some(cached.clone());
             }
         }
 
@@ -100,7 +100,9 @@ impl AvatarService {
             self.fetch_from_provider(&key_email)
         };
 
-        lock_or_recover(&self.cache, "cache").insert(cache_key, result.clone());
+        if let Some(ref avatar_url) = result {
+            lock_or_recover(&self.cache, "cache").insert(cache_key, avatar_url.clone());
+        }
         result
     }
 
