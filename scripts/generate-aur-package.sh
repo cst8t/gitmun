@@ -17,7 +17,7 @@ fi
 DEB_FILE="${DEB_FILES[0]}"
 DEB_NAME="$(basename "${DEB_FILE}")"
 PKGNAME="$(jq -r '.productName' "${TAURI_CONF}" | tr '[:upper:]' '[:lower:]')"
-PKGVER_RAW="$(printf '%s' "${DEB_NAME}" | sed -E "s/^${PKGNAME}_([^_]+)_.+\.deb$/\1/")"
+PKGVER_RAW="$(printf '%s' "${DEB_NAME}" | sed -E 's/^[^_]+_([^_]+)_.+\.deb$/\1/')"
 if [[ -z "${PKGVER_RAW}" || "${PKGVER_RAW}" == "${DEB_NAME}" ]]; then
   PKGVER_RAW="$(jq -r '.version' "${TAURI_CONF}")"
 fi
