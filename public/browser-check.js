@@ -7,6 +7,7 @@
  *
  * Required features (determined from caniuse-lite against the app's CSS/JS):
  *   CSS Grid, CSS Custom Properties, position:sticky (or -webkit-sticky)
+ *   ES2020 syntax used by the bundle, currently optional chaining and nullish coalescing
  *
  * Chromium version is still checked via UA for WebView2 on Windows, where the
  * version string is accurate and ES module support (Chrome 61+) is the constraint.
@@ -14,6 +15,15 @@
 (function () {
   var unsupported = false;
   var body = '';
+
+  function canParse(source) {
+    try {
+      new Function(source);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   /* CSS feature detection -------------------------------------------------- */
   if (typeof CSS === 'undefined' || !CSS.supports) {
@@ -29,6 +39,16 @@
     if (missing.length > 0) {
       unsupported = true;
       body = 'Missing required CSS features: <strong style="color:#e2e4eb;">' + missing.join(', ') + '</strong>.';
+    }
+  }
+
+  if (!unsupported) {
+    var missingJs = [];
+    if (!canParse('var value = ({ a: 1 })?.a;')) missingJs.push('optional chaining');
+    if (!canParse('var value = null ?? 1;')) missingJs.push('nullish coalescing');
+    if (missingJs.length > 0) {
+      unsupported = true;
+      body = 'Missing required JavaScript features: <strong style="color:#e2e4eb;">' + missingJs.join(', ') + '</strong>.';
     }
   }
 
