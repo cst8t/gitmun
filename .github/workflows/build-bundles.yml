@@ -121,7 +121,7 @@ jobs:
       - name: Package AUR files
         run: |
           mkdir -p src-tauri/target/release/bundle/aur
-          ZIP_NAME="gitmun-aur-${BUNDLE_VERSION}.zip"
+          ZIP_NAME="gitmun-bin-aur-${BUNDLE_VERSION}.zip"
           (
             cd packaging/aur
             zip -9 -j "../../src-tauri/target/release/bundle/aur/${ZIP_NAME}" \

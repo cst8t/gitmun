@@ -16,15 +16,16 @@ if [[ ${#DEB_FILES[@]} -eq 0 ]]; then
 fi
 DEB_FILE="${DEB_FILES[0]}"
 DEB_NAME="$(basename "${DEB_FILE}")"
-PKGNAME="$(jq -r '.productName' "${TAURI_CONF}" | tr '[:upper:]' '[:lower:]')"
+APP_NAME="$(jq -r '.productName' "${TAURI_CONF}" | tr '[:upper:]' '[:lower:]')"
+PKGNAME="${APP_NAME}-bin"
 PKGVER_RAW="$(printf '%s' "${DEB_NAME}" | sed -E 's/^[^_]+_([^_]+)_.+\.deb$/\1/')"
 if [[ -z "${PKGVER_RAW}" || "${PKGVER_RAW}" == "${DEB_NAME}" ]]; then
   PKGVER_RAW="$(jq -r '.version' "${TAURI_CONF}")"
 fi
 PKGVER="$(printf '%s' "${PKGVER_RAW}" | sed -E 's/[^[:alnum:]._+]+/_/g')"
 SHA256="$(sha256sum "${DEB_FILE}" | awk '{print $1}')"
-INSTALL_FILE="${PKGNAME}.install"
-UPSTREAM_LICENSE_FILE="LICENSE.${PKGNAME}"
+INSTALL_FILE="${APP_NAME}.install"
+UPSTREAM_LICENSE_FILE="LICENSE.${APP_NAME}"
 UPSTREAM_LICENSE_SHA256="$(sha256sum "${ROOT_DIR}/LICENSE" | awk '{print $1}')"
 REPO_SLUG="${REPO_SLUG:-${GITHUB_REPOSITORY:-${FORGEJO_REPOSITORY:-}}}"
 if [[ -z "${REPO_SLUG}" ]]; then
@@ -52,6 +53,8 @@ pkgdesc="A cross-platform Git GUI built with Tauri"
 arch=('x86_64')
 url="${PROJECT_URL}"
 license=('GPL-3.0-only')
+provides=('${APP_NAME}')
+conflicts=('${APP_NAME}')
 depends=(
   'cairo'
   'desktop-file-utils'
@@ -105,6 +108,8 @@ pkgbase = ${PKGNAME}
   install = ${INSTALL_FILE}
   arch = x86_64
   license = GPL-3.0-only
+  provides = ${APP_NAME}
+  conflicts = ${APP_NAME}
   depends = cairo
   depends = desktop-file-utils
   depends = gdk-pixbuf2
