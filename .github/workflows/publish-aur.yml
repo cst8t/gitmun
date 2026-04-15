@@ -110,6 +110,9 @@ jobs:
         run: git clone ssh://aur@aur.archlinux.org/gitmun-bin.git aur-repo
 
       - name: Update AUR repository
+        env:
+          AUR_COMMIT_NAME: ${{ vars.AUR_COMMIT_NAME }}
+          AUR_COMMIT_EMAIL: ${{ vars.AUR_COMMIT_EMAIL }}
         run: |
           set -euo pipefail
 
@@ -122,8 +125,13 @@ jobs:
             aur-repo/
 
           cd aur-repo
-          git config user.name "cst8t"
-          git config user.email "actions@github.com"
+          if [[ -z "${AUR_COMMIT_NAME}" || -z "${AUR_COMMIT_EMAIL}" ]]; then
+            echo "AUR_COMMIT_NAME and AUR_COMMIT_EMAIL variables must be set." >&2
+            exit 1
+          fi
+
+          git config user.name "${AUR_COMMIT_NAME}"
+          git config user.email "${AUR_COMMIT_EMAIL}"
 
           git add PKGBUILD .SRCINFO gitmun.install LICENSE LICENSE.gitmun REUSE.toml
 
