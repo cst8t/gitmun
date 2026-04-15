@@ -1,0 +1,137 @@
+name: Publish AUR
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "GitHub release tag to publish to AUR. Leave empty to use the latest release."
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish gitmun-bin
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Resolve release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_RELEASE_TAG}" ]]; then
+            RELEASE_TAG="${INPUT_RELEASE_TAG}"
+          else
+            RELEASE_TAG="$(gh release view --json tagName --jq '.tagName')"
+          fi
+
+          if [[ -z "${RELEASE_TAG}" ]]; then
+            echo "Could not resolve a release tag." >&2
+            exit 1
+          fi
+
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "Publishing AUR package from ${RELEASE_TAG}"
+
+      - name: Download AUR bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-aur
+          gh release download "${RELEASE_TAG}" \
+            --pattern 'gitmun-bin-aur-*.zip' \
+            --dir release-aur
+
+          mapfile -t bundles < <(find release-aur -maxdepth 1 -type f -name 'gitmun-bin-aur-*.zip' | sort)
+          if [[ "${#bundles[@]}" -ne 1 ]]; then
+            echo "Expected exactly one gitmun-bin AUR bundle, found ${#bundles[@]}." >&2
+            printf '%s\n' "${bundles[@]}" >&2
+            exit 1
+          fi
+
+          echo "AUR_BUNDLE=${bundles[0]}" >> "${GITHUB_ENV}"
+
+      - name: Extract and validate AUR files
+        run: |
+          set -euo pipefail
+
+          mkdir -p aur-files
+          unzip -q "${AUR_BUNDLE}" -d aur-files
+
+          grep -qx "pkgname=gitmun-bin" aur-files/PKGBUILD
+          grep -qx "pkgname = gitmun-bin" aur-files/.SRCINFO
+
+          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${RELEASE_TAG}"
+          if ! grep -q "${expected_prefix}" aur-files/PKGBUILD; then
+            echo "PKGBUILD source URL does not match ${expected_prefix}." >&2
+            exit 1
+          fi
+          if ! grep -q "${expected_prefix}" aur-files/.SRCINFO; then
+            echo ".SRCINFO source URL does not match ${expected_prefix}." >&2
+            exit 1
+          fi
+
+      - name: Configure SSH
+        env:
+          AUR_SSH_PRIVATE_KEY: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${AUR_SSH_PRIVATE_KEY}" ]]; then
+            echo "Missing AUR_SSH_PRIVATE_KEY secret." >&2
+            exit 1
+          fi
+
+          mkdir -p "${HOME}/.ssh"
+          chmod 700 "${HOME}/.ssh"
+          printf '%s\n' "${AUR_SSH_PRIVATE_KEY}" > "${HOME}/.ssh/aur"
+          chmod 600 "${HOME}/.ssh/aur"
+          ssh-keyscan aur.archlinux.org >> "${HOME}/.ssh/known_hosts"
+
+          cat > "${HOME}/.ssh/config" <<'EOF'
+          Host aur.archlinux.org
+            User aur
+            IdentityFile ~/.ssh/aur
+            IdentitiesOnly yes
+            StrictHostKeyChecking yes
+          EOF
+          chmod 600 "${HOME}/.ssh/config"
+
+      - name: Clone AUR repository
+        run: git clone ssh://aur@aur.archlinux.org/gitmun-bin.git aur-repo
+
+      - name: Update AUR repository
+        run: |
+          set -euo pipefail
+
+          cp aur-files/PKGBUILD \
+            aur-files/.SRCINFO \
+            aur-files/gitmun.install \
+            aur-files/LICENSE \
+            aur-files/LICENSE.gitmun \
+            aur-files/REUSE.toml \
+            aur-repo/
+
+          cd aur-repo
+          git config user.name "cst8t"
+          git config user.email "actions@github.com"
+
+          git add PKGBUILD .SRCINFO gitmun.install LICENSE LICENSE.gitmun REUSE.toml
+
+          if git diff --cached --quiet --exit-code; then
+            echo "AUR repository is already up to date."
+            exit 0
+          fi
+
+          pkgver="$(sed -n 's/^pkgver=//p' PKGBUILD)"
+          git commit -m "Update to ${pkgver}"
+          git push origin HEAD:master
