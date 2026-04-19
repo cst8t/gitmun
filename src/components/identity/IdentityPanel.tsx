@@ -91,7 +91,7 @@ export function IdentityPanel({
     }
   }, [tab]);
 
-  // Initialize edit form when entering edit mode
+  // Initialise edit form when entering edit mode
   React.useEffect(() => {
     if (!open) return;
     if (editMode) {

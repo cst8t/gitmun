@@ -4,6 +4,7 @@ use crate::git::types::{
     FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, NumstatRequest, NumstatResult,
     OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest,
     RepoStatus, SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
 use std::io::Read;
@@ -72,7 +73,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
 
     if path.join(".git").exists() {
         return Ok(OperationResult {
-            message: format!("Repository already initialized at {}", path.display()),
+            message: format!("Repository already initialised at {}", path.display()),
             output: None,
             repo_path: Some(path.to_string_lossy().to_string()),
             backend_used: "git-cli".to_string(),
@@ -98,7 +99,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
                 .trim()
                 .to_string();
             return Err(if stderr.is_empty() {
-                "Failed to initialize repository".to_string()
+                "Failed to initialise repository".to_string()
             } else {
                 stderr
             });
@@ -106,7 +107,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
     }
 
     Ok(OperationResult {
-        message: format!("Initialized repository at {}", path.display()),
+        message: format!("Initialised repository at {}", path.display()),
         output: None,
         repo_path: Some(path.to_string_lossy().to_string()),
         backend_used: "git-cli".to_string(),
@@ -434,6 +435,61 @@ pub fn discard_file(
     state
         .git_service
         .discard_file(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn submodule_init(
+    request: SubmoduleActionRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .submodule_init(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn submodule_update(
+    request: SubmoduleActionRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .submodule_update(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn submodule_sync(
+    request: SubmoduleActionRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .submodule_sync(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn submodule_fetch(
+    request: SubmoduleActionRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .submodule_fetch(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn submodule_pull(
+    request: SubmoduleActionRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .submodule_pull(request)
         .map_err(|error| error.to_string())
 }
 

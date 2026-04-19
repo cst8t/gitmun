@@ -8,16 +8,17 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, ConflictFileItem,
-    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
-    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExternalDiffRequest, FetchRequest,
-    FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest,
-    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
-    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
-    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
-    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
-    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, TagInfo, UpstreamStatus,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
+    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
+    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
+    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
+    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
+    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -424,8 +425,8 @@ impl GixGitHandler {
             ssh_key_path: get("gpg.ssh.allowedSignersFile"),
             commit_signing_enabled: get("commit.gpgsign")
                 .map(|value| {
-                    let normalized = value.trim().to_ascii_lowercase();
-                    matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
+                    let normalised = value.trim().to_ascii_lowercase();
+                    matches!(normalised.as_str(), "true" | "yes" | "on" | "1")
                 })
                 .unwrap_or(false),
         })
@@ -786,11 +787,14 @@ impl GixGitHandler {
             None
         };
 
-        Ok(RepoStatus {
+        let mut status = RepoStatus {
             changed_files,
             staged_files,
             unversioned_files,
+            submodules: CliGitHandler::collect_submodules_for_status(repo_path),
             current_branch: Self::current_branch(repo),
+            detached_head: matches!(repo.head_name(), Ok(None)),
+            shallow: CliGitHandler::repo_is_shallow(repo_path),
             merge_in_progress,
             merge_head_branch,
             conflicted_files,
@@ -801,7 +805,9 @@ impl GixGitHandler {
             cherry_pick_head,
             revert_in_progress,
             revert_head,
-        })
+        };
+        CliGitHandler::remove_submodule_file_entries(&mut status);
+        Ok(status)
     }
 }
 
@@ -935,6 +941,10 @@ impl GitOperationHandler for GixGitHandler {
         &self,
         request: &CommitHistoryRequest,
     ) -> GitResult<Vec<CommitHistoryItem>> {
+        if request.scope == CommitLogScope::AllRefs {
+            return self.cli_fallback.get_commit_history(request);
+        }
+
         let repo_path = Path::new(request.repo_path.trim());
         let limit = request.limit.unwrap_or(100).clamp(1, 5000);
         let after_hash = request.after_hash.as_deref();
@@ -1072,6 +1082,41 @@ impl GitOperationHandler for GixGitHandler {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
             .discard_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_init(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .submodule_init(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_update(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .submodule_update(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .submodule_sync(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_fetch(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .submodule_fetch(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .submodule_pull(request)
             .map(Self::with_cli_fallback_backend)
     }
 

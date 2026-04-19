@@ -546,11 +546,11 @@ export function SettingsWindow() {
                 <div className="settings-window__column">
                     <div className="settings-window__section-title">Git</div>
                     <div className="settings-window__section-note">
-                        These options control Git behavior in Gitmun.
+                        These options control Git behaviour in Gitmun.
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Push behavior</label>
+                        <label className="settings-window__label">Push behaviour</label>
                         <label className="settings-window__switch-row">
               <span className="settings-window__switch">
                 <input
