@@ -39,6 +39,7 @@ import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
 import type {
+  CommitLogScope,
   CommitMarkers,
   CreateBranchRequest,
   GitIdentity,
@@ -153,7 +154,7 @@ export function ProjectView({
   const { tags, refresh: refreshTags } = useGitTags(repoPath);
   const { remotes, refresh: refreshRemotes } = useGitRemotes(repoPath);
   const { stashes, refresh: refreshStashes } = useGitStashes(repoPath);
-  const { commits, loadMore, hasMore, refresh: refreshLog } = useGitLog(repoPath);
+  const [logScope, setLogScope] = useState<CommitLogScope>("currentCheckout");
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
@@ -217,6 +218,9 @@ export function ProjectView({
   const [identityAvatar, setIdentityAvatar] = useState<string | null>(null);
 
   const currentBranch = status?.currentBranch ?? null;
+  const showLogScopeControl = Boolean(status?.detachedHead || status?.shallow);
+  const effectiveLogScope = showLogScopeControl ? logScope : "currentCheckout";
+  const { commits, loadMore, hasMore, refresh: refreshLog } = useGitLog(repoPath, effectiveLogScope);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -239,6 +243,16 @@ export function ProjectView({
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+
+  useEffect(() => {
+    setLogScope("currentCheckout");
+  }, [repoPath]);
+
+  useEffect(() => {
+    if (!showLogScopeControl) {
+      setLogScope("currentCheckout");
+    }
+  }, [showLogScopeControl]);
 
   const commitMarkersKey = [
     commits[0]?.hash ?? "",
@@ -2005,6 +2019,11 @@ export function ProjectView({
                   loadMore={searchQuery ? () => {} : loadMore}
                   hasMore={searchQuery ? false : hasMore}
                   commitMarkers={commitMarkers}
+                  logScope={effectiveLogScope}
+                  onLogScopeChange={setLogScope}
+                  showLogScopeControl={showLogScopeControl}
+                  detachedHead={status?.detachedHead ?? false}
+                  shallow={status?.shallow ?? false}
                   activeTab={centreTab}
                   onTabChange={setCentreTab}
                   selectedCommitHash={selectedCommitHash}

@@ -2,7 +2,7 @@ import React, { startTransition, useCallback, useEffect, useRef, useState } from
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { Virtuoso } from "react-virtuoso";
-import type { CommitHistoryItem, CommitMarkers, SignatureStatus } from "../../types";
+import type { CommitHistoryItem, CommitLogScope, CommitMarkers, SignatureStatus } from "../../types";
 import { verifyCommits } from "../../api/commands";
 import { ContextMenu } from "../shared/ContextMenu";
 
@@ -230,6 +230,11 @@ type LogViewProps = {
   loadMore: () => void;
   hasMore: boolean;
   commitMarkers: CommitMarkers;
+  logScope: CommitLogScope;
+  onLogScopeChange: (scope: CommitLogScope) => void;
+  showLogScopeControl: boolean;
+  detachedHead: boolean;
+  shallow: boolean;
   selectedCommitHash: string | null;
   onSelectCommit: (commitHash: string) => void;
   onCreateTagAtCommit?: (commitHash: string) => void;
@@ -248,6 +253,11 @@ export function LogView({
   loadMore,
   hasMore,
   commitMarkers,
+  logScope,
+  onLogScopeChange,
+  showLogScopeControl,
+  detachedHead,
+  shallow,
   selectedCommitHash,
   onSelectCommit,
   onCreateTagAtCommit,
@@ -422,11 +432,41 @@ export function LogView({
   const showUpstreamNotice = Boolean(
     commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
   );
+  const historyNotice = logScope === "allRefs"
+    ? "Showing commits from all local branches, remote branches, tags, and the current checkout."
+    : detachedHead && shallow
+      ? "This checkout is detached and shallow, so current checkout history may stop at the pinned commit."
+      : detachedHead
+        ? "This checkout is detached. Current checkout history only follows the pinned HEAD commit."
+        : shallow
+          ? "This checkout is shallow, so current checkout history may be incomplete."
+          : null;
 
   const handleCloseSigPopover = useCallback(() => setSigPopover(null), []);
 
   return (
     <div className="log-view">
+      {showLogScopeControl && (
+        <div className="log-view__scope">
+          <div className="log-view__notice">{historyNotice}</div>
+          <div className="log-view__scope-actions" role="group" aria-label="Commit log scope">
+            <button
+              type="button"
+              className={`log-view__scope-btn ${logScope === "currentCheckout" ? "log-view__scope-btn--active" : ""}`}
+              onClick={() => onLogScopeChange("currentCheckout")}
+            >
+              Current checkout
+            </button>
+            <button
+              type="button"
+              className={`log-view__scope-btn ${logScope === "allRefs" ? "log-view__scope-btn--active" : ""}`}
+              onClick={() => onLogScopeChange("allRefs")}
+            >
+              All refs
+            </button>
+          </div>
+        </div>
+      )}
       {showUpstreamNotice && (
         <div className="log-view__notice">
           Upstream tip {commitMarkers.upstreamRef} is outside this local history view.

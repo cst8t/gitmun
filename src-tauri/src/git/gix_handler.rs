@@ -8,8 +8,8 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, ConflictFileItem,
-    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
+    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
     ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
     HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
@@ -793,6 +793,8 @@ impl GixGitHandler {
             unversioned_files,
             submodules: CliGitHandler::collect_submodules_for_status(repo_path),
             current_branch: Self::current_branch(repo),
+            detached_head: matches!(repo.head_name(), Ok(None)),
+            shallow: CliGitHandler::repo_is_shallow(repo_path),
             merge_in_progress,
             merge_head_branch,
             conflicted_files,
@@ -939,6 +941,10 @@ impl GitOperationHandler for GixGitHandler {
         &self,
         request: &CommitHistoryRequest,
     ) -> GitResult<Vec<CommitHistoryItem>> {
+        if request.scope == CommitLogScope::AllRefs {
+            return self.cli_fallback.get_commit_history(request);
+        }
+
         let repo_path = Path::new(request.repo_path.trim());
         let limit = request.limit.unwrap_or(100).clamp(1, 5000);
         let after_hash = request.after_hash.as_deref();

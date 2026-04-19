@@ -12,6 +12,19 @@ impl Default for CommitDateMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitLogScope {
+    CurrentCheckout,
+    AllRefs,
+}
+
+impl Default for CommitLogScope {
+    fn default() -> Self {
+        Self::CurrentCheckout
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum BackendMode {
     Default,
@@ -210,6 +223,8 @@ pub struct CommitHistoryRequest {
     pub offset: Option<usize>,
     #[serde(default)]
     pub commit_date_mode: CommitDateMode,
+    #[serde(default)]
+    pub scope: CommitLogScope,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -338,6 +353,8 @@ pub struct RepoStatus {
     pub unversioned_files: Vec<String>,
     pub submodules: Vec<SubmoduleStatus>,
     pub current_branch: Option<String>,
+    pub detached_head: bool,
+    pub shallow: bool,
     /// True when the repo is in a merge state (.git/MERGE_HEAD exists).
     pub merge_in_progress: bool,
     /// The branch being merged (parsed from MERGE_MSG or MERGE_HEAD).

@@ -7,8 +7,8 @@ use gitmun_lib::git::cli::CliGitHandler;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, PushRequest,
-    RepoRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
+    CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
+    PushRequest, RepoRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
     SubmoduleState,
 };
 
@@ -418,9 +418,46 @@ fn commit_creates_entry_in_log() {
             after_hash: None,
             offset: None,
             commit_date_mode: Default::default(),
+            scope: Default::default(),
         })
         .expect("get_commit_history");
     assert!(commits.iter().any(|c| c.message == "add b.txt"));
+}
+
+#[test]
+fn commit_history_all_refs_includes_branch_outside_detached_head() {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "side"]);
+    write_file(dir.path(), "side.txt", "side");
+    git(dir.path(), &["add", "side.txt"]);
+    git(dir.path(), &["commit", "-m", "side branch commit"]);
+    git(dir.path(), &["checkout", "main"]);
+    git(dir.path(), &["checkout", "--detach"]);
+
+    let current_commits = handler()
+        .get_commit_history(&CommitHistoryRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            limit: Some(10),
+            after_hash: None,
+            offset: None,
+            commit_date_mode: Default::default(),
+            scope: CommitLogScope::CurrentCheckout,
+        })
+        .expect("get current checkout history");
+
+    let all_ref_commits = handler()
+        .get_commit_history(&CommitHistoryRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            limit: Some(10),
+            after_hash: None,
+            offset: None,
+            commit_date_mode: Default::default(),
+            scope: CommitLogScope::AllRefs,
+        })
+        .expect("get all refs history");
+
+    assert!(!current_commits.iter().any(|c| c.message == "side branch commit"));
+    assert!(all_ref_commits.iter().any(|c| c.message == "side branch commit"));
 }
 
 #[test]
@@ -472,6 +509,7 @@ fn commit_history_respects_limit() {
             after_hash: None,
             offset: None,
             commit_date_mode: Default::default(),
+            scope: Default::default(),
         })
         .expect("get_commit_history");
     assert_eq!(commits.len(), 3);
@@ -492,6 +530,7 @@ fn commit_history_returns_commits_newest_first() {
             after_hash: None,
             offset: None,
             commit_date_mode: Default::default(),
+            scope: Default::default(),
         })
         .expect("get_commit_history");
     assert_eq!(commits[0].message, "third");

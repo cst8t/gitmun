@@ -410,6 +410,48 @@
   font-size: var(--font-size-xs);
 }
 
+.log-view__scope {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin: 6px 10px 8px;
+}
+
+.log-view__scope .log-view__notice {
+  flex: 1;
+  margin: 0;
+}
+
+.log-view__scope-actions {
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-surface);
+}
+
+.log-view__scope-btn {
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 5px 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.log-view__scope-btn:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.log-view__scope-btn--active {
+  color: var(--bg);
+  background: var(--accent);
+}
+
 .log-view__row {
   display: flex;
   align-items: flex-start;

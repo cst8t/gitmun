@@ -4,6 +4,7 @@ import type {
     CommitDetails,
     CommitFileItem,
     CommitHistoryItem,
+    CommitLogScope,
     CommitMarkers,
     CommitVerification,
     CommitRequest,
@@ -112,8 +113,9 @@ export function getCommitHistory(
     limit?: number,
     afterHash?: string,
     offset?: number,
+    scope?: CommitLogScope,
 ): Promise<CommitHistoryItem[]> {
-    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset}});
+    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset, scope}});
 }
 
 export function verifyCommits(repoPath: string, hashes: string[]): Promise<CommitVerification[]> {
