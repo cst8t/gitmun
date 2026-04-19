@@ -80,7 +80,11 @@ fn initial_theme_injection_script(system_theme: &str) -> String {
     .replace("__GITMUN_SYSTEM_THEME__", system_theme)
 }
 
-fn centered_sub_window_position(app: &tauri::AppHandle, width: f64, height: f64) -> Option<(f64, f64)> {
+fn centred_sub_window_position(
+    app: &tauri::AppHandle,
+    width: f64,
+    height: f64,
+) -> Option<(f64, f64)> {
     let main_window = app.get_webview_window("main")?;
     let scale_factor = main_window.scale_factor().ok()?;
     let outer_position = main_window.outer_position().ok()?;
@@ -157,22 +161,19 @@ pub async fn open_sub_window(
         return Ok(());
     }
 
-    let mut builder = tauri::WebviewWindowBuilder::new(
-        &app,
-        &label,
-        tauri::WebviewUrl::App(path.clone().into()),
-    )
-    .title(title)
-    .inner_size(width, height)
-    .resizable(resizable)
-    .decorations(true)
-    .closable(true)
-    .minimizable(true)
-    .maximizable(false)
-    .focused(show_immediately)
-    .visible(show_immediately)
-    .background_color(background_colour)
-    .initialization_script(initial_theme_injection_script(system_theme));
+    let mut builder =
+        tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(path.clone().into()))
+            .title(title)
+            .inner_size(width, height)
+            .resizable(resizable)
+            .decorations(true)
+            .closable(true)
+            .minimizable(true)
+            .maximizable(false)
+            .focused(show_immediately)
+            .visible(show_immediately)
+            .background_color(background_colour)
+            .initialization_script(initial_theme_injection_script(system_theme));
 
     if label == "attributions" {
         let app_handle_for_navigation = app.clone();
@@ -194,13 +195,11 @@ pub async fn open_sub_window(
             });
     }
 
-    if let Some((x, y)) = centered_sub_window_position(&app, width, height) {
+    if let Some((x, y)) = centred_sub_window_position(&app, width, height) {
         builder = builder.position(x, y);
     }
 
-    let _window = builder
-    .build()
-    .map_err(|e| e.to_string())?;
+    let _window = builder.build().map_err(|e| e.to_string())?;
 
     // WebView2 on Windows can fail to navigate when the window is created
     // from the backend - the WebView2 controller initialises asynchronously
@@ -261,11 +260,16 @@ fn query_portal_color_scheme() -> Option<&'static str> {
     // 0 = no preference, 1 = prefer dark, 2 = prefer light
     let output = std::process::Command::new("gdbus")
         .args([
-            "call", "--session",
-            "--dest", "org.freedesktop.portal.Desktop",
-            "--object-path", "/org/freedesktop/portal/desktop",
-            "--method", "org.freedesktop.portal.Settings.Read",
-            "org.freedesktop.appearance", "color-scheme",
+            "call",
+            "--session",
+            "--dest",
+            "org.freedesktop.portal.Desktop",
+            "--object-path",
+            "/org/freedesktop/portal/desktop",
+            "--method",
+            "org.freedesktop.portal.Settings.Read",
+            "org.freedesktop.appearance",
+            "color-scheme",
         ])
         .output()
         .ok()?;

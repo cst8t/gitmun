@@ -12,12 +12,12 @@ import { ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import { Titlebar } from "./Titlebar";
 import { Sidebar } from "./sidebar/Sidebar";
-import { CenterPanel, type CenterTab } from "./center/CenterPanel";
+import { CentrePanel, type CentreTab } from "./centre/CentrePanel";
 import { DiffPanel } from "./diff/DiffPanel";
 import { IdentityPanel } from "./identity/IdentityPanel";
-import { ConfirmRevertDialog } from "./center/ConfirmRevertDialog";
-import { DivergentPullDialog } from "./center/DivergentPullDialog";
-import { PushRejectedDialog } from "./center/PushRejectedDialog";
+import { ConfirmRevertDialog } from "./centre/ConfirmRevertDialog";
+import { DivergentPullDialog } from "./centre/DivergentPullDialog";
+import { PushRejectedDialog } from "./centre/PushRejectedDialog";
 import { NoDiffToolWarning } from "./NoDiffToolWarning";
 import { MergeDialog, type MergeStrategy } from "./sidebar/MergeDialog";
 import { AddRemoteDialog } from "./sidebar/AddRemoteDialog";
@@ -157,21 +157,22 @@ export function ProjectView({
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
+  const [selectedSubmodulePath, setSelectedSubmodulePath] = useState<string | null>(null);
   const [diffRefreshKey, setDiffRefreshKey] = useState(0);
-  const [centerTab, setCenterTab] = useState<CenterTab>("changes");
+  const [centreTab, setCentreTab] = useState<CentreTab>("changes");
   const [selectedCommitHash, setSelectedCommitHash] = useState<string | null>(null);
   const [commitMarkers, setCommitMarkers] = useState<CommitMarkers>(EMPTY_COMMIT_MARKERS);
   const [repoDiffToolName, setRepoDiffToolName] = useState<string | null>(null);
   const [showNoDiffToolWarning, setShowNoDiffToolWarning] = useState(false);
   const { diff, loading: diffLoading } = useGitDiff(
     repoPath,
-    selectedFile,
+    selectedSubmodulePath ? null : selectedFile,
     selectedFileStaged,
     diffRefreshKey,
   );
   const { files: commitFiles, loading: commitFilesLoading } = useCommitFiles(
     repoPath,
-    centerTab === "log" ? selectedCommitHash : null,
+    centreTab === "log" ? selectedCommitHash : null,
   );
 
   const [revertPendingPaths, setRevertPendingPaths] = useState<string[] | null>(null);
@@ -219,6 +220,8 @@ export function ProjectView({
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
+  const submodules = status?.submodules ?? [];
+  const selectedSubmodule = submodules.find(submodule => submodule.path === selectedSubmodulePath) ?? null;
   const conflictedFiles = status?.conflictedFiles ?? [];
   const mergeInProgress = status?.mergeInProgress ?? false;
   const mergeHeadBranch = status?.mergeHeadBranch ?? null;
@@ -230,11 +233,13 @@ export function ProjectView({
   const revertInProgress = status?.revertInProgress ?? false;
   const revertHead = status?.revertHead ?? null;
   const hasWorkingTreeChanges =
-    stagedFiles.length > 0 || unstagedFiles.length > 0 || unversionedFiles.length > 0;
+    stagedFiles.length > 0 || unstagedFiles.length > 0 || unversionedFiles.length > 0
+    || submodules.some(submodule => submodule.state !== "clean");
   const lastCommitMessage = commits[0]?.message ?? "";
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+
   const commitMarkersKey = [
     commits[0]?.hash ?? "",
     currentBranchInfo?.upstream ?? "",
@@ -276,6 +281,14 @@ export function ProjectView({
       setSelectedFileStaged(true);
     }
   }, [selectedFile, selectedFileStaged, status]);
+
+  useEffect(() => {
+    if (!selectedSubmodulePath || !status) return;
+    const stillPresent = status.submodules.some(submodule => submodule.path === selectedSubmodulePath);
+    if (!stillPresent) {
+      setSelectedSubmodulePath(null);
+    }
+  }, [selectedSubmodulePath, status]);
 
   // Keep selectedCommitHash pointing to a real commit.
   useEffect(() => {
@@ -383,8 +396,15 @@ export function ProjectView({
   }, [repoPath]);
 
   const handleFileSelect = useCallback((path: string, staged: boolean) => {
+    setSelectedSubmodulePath(null);
     setSelectedFile(path);
     setSelectedFileStaged(staged);
+  }, []);
+
+  const handleSubmoduleSelect = useCallback((path: string) => {
+    setSelectedFile(null);
+    setSelectedFileStaged(false);
+    setSelectedSubmodulePath(path);
   }, []);
 
   const handleStageFile = useCallback(async (path: string) => {
@@ -1098,7 +1118,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1287,6 +1307,51 @@ export function ProjectView({
     } catch (e) { showToast(String(e), "error"); }
   }, [repoPath, showToast]);
 
+  const runSubmoduleAction = useCallback(async (
+    path: string,
+    label: string,
+    action: (request: { repoPath: string; path: string; recursive?: boolean }) => Promise<{ message: string; backendUsed: ResultLogEntry["backend"] }>,
+  ) => {
+    if (!repoPath) return;
+    try {
+      const result = await action({ repoPath, path, recursive: false });
+      showToast(result.message, "success");
+      appendResultLog("success", result.message, result.backendUsed);
+      await refreshStatus();
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", `${label} submodule failed: ${String(e)}`, "unknown");
+    }
+  }, [repoPath, refreshStatus, showToast]);
+
+  const handleSubmoduleInit = useCallback((path: string) => {
+    void runSubmoduleAction(path, "Initialise", api.submoduleInit);
+  }, [runSubmoduleAction]);
+
+  const handleSubmoduleUpdate = useCallback((path: string) => {
+    void runSubmoduleAction(path, "Update", api.submoduleUpdate);
+  }, [runSubmoduleAction]);
+
+  const handleSubmoduleSync = useCallback((path: string) => {
+    void runSubmoduleAction(path, "Sync", api.submoduleSync);
+  }, [runSubmoduleAction]);
+
+  const handleSubmoduleFetch = useCallback((path: string) => {
+    void runSubmoduleAction(path, "Fetch", api.submoduleFetch);
+  }, [runSubmoduleAction]);
+
+  const handleSubmodulePull = useCallback((path: string) => {
+    void runSubmoduleAction(path, "Pull", api.submodulePull);
+  }, [runSubmoduleAction]);
+
+  const handleSubmoduleOpen = useCallback((path: string) => {
+    if (!repoPath) return;
+    const separator = repoPath.includes("\\") ? "\\" : "/";
+    const base = repoPath.replace(/[\\/]+$/, "");
+    const submodulePath = `${base}${separator}${path.replace(/\//g, separator)}`;
+    onRepoSelect(submodulePath);
+  }, [repoPath, onRepoSelect]);
+
   const handleMergeBranch = useCallback((branchName: string) => {
     if (!repoPath) return;
     if (cherryPickInProgress) {
@@ -1339,7 +1404,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1361,7 +1426,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1405,7 +1470,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1476,7 +1541,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1498,7 +1563,7 @@ export function ProjectView({
       if (result.hasConflicts) {
         showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
         appendResultLog("error", result.message, result.backendUsed);
-        setCenterTab("changes");
+        setCentreTab("changes");
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
@@ -1573,7 +1638,7 @@ export function ProjectView({
         appendResultLog("success", result.message, result.backendUsed);
       }
       await refreshAll();
-      setCenterTab("changes");
+      setCentreTab("changes");
     } catch (e) {
       showToast(String(e), "error");
       appendResultLog("error", `Merge failed: ${String(e)}`, "unknown");
@@ -1648,7 +1713,7 @@ export function ProjectView({
       if (mod && e.key === ",") { e.preventDefault(); onSettingsClick(); return; }
       if (mod && !e.shiftKey && e.key.toLowerCase() === "f") {
         e.preventDefault();
-        setCenterTab("log");
+        setCentreTab("log");
         searchInputRef.current?.focus();
         searchInputRef.current?.select();
         return;
@@ -1818,7 +1883,7 @@ export function ProjectView({
           searchInputRef={searchInputRef}
           onSearchChange={(q) => {
             setSearchQuery(q);
-            if (q) setCenterTab("log");
+            if (q) setCentreTab("log");
           }}
           onCloneClick={onCloneClick}
           onInitRepoClick={onInitRepoClick}
@@ -1911,13 +1976,14 @@ export function ProjectView({
                 </button>
               )}
 
-              <div className="app__pane app__pane--center">
-                <CenterPanel
+              <div className="app__pane app__pane--centre">
+                <CentrePanel
                   repoPath={repoPath}
                   currentBranch={currentBranch}
                   stagedFiles={stagedFiles}
                   unstagedFiles={unstagedFiles}
                   unversionedFiles={unversionedFiles}
+                  submodules={submodules}
                   conflictedFiles={conflictedFiles}
                   mergeInProgress={mergeInProgress}
                   mergeHeadBranch={mergeHeadBranch}
@@ -1939,8 +2005,8 @@ export function ProjectView({
                   loadMore={searchQuery ? () => {} : loadMore}
                   hasMore={searchQuery ? false : hasMore}
                   commitMarkers={commitMarkers}
-                  activeTab={centerTab}
-                  onTabChange={setCenterTab}
+                  activeTab={centreTab}
+                  onTabChange={setCentreTab}
                   selectedCommitHash={selectedCommitHash}
                   onSelectCommit={setSelectedCommitHash}
                   onCreateTagAtCommit={handleCreateTagAtCommit}
@@ -1948,7 +2014,15 @@ export function ProjectView({
                   onRevertAtCommit={handleRevertAtCommit}
                   onResetToCommit={handleResetToCommit}
                   selectedFile={selectedFile}
+                  selectedSubmodulePath={selectedSubmodulePath}
                   onFileSelect={handleFileSelect}
+                  onSubmoduleSelect={handleSubmoduleSelect}
+                  onSubmoduleInit={handleSubmoduleInit}
+                  onSubmoduleUpdate={handleSubmoduleUpdate}
+                  onSubmoduleSync={handleSubmoduleSync}
+                  onSubmoduleFetch={handleSubmoduleFetch}
+                  onSubmodulePull={handleSubmodulePull}
+                  onSubmoduleOpen={handleSubmoduleOpen}
                   onStageFile={handleStageFile}
                   onStageFiles={handleStageFiles}
                   onUnstageFile={handleUnstageFile}
@@ -1987,10 +2061,11 @@ export function ProjectView({
 
               <div className="app__pane app__pane--right" style={{ width: effectiveRightPaneWidth }}>
                 <DiffPanel
-                  mode={centerTab}
+                  mode={centreTab}
                   diff={diff}
                   loading={diffLoading}
                   selectedFile={selectedFile}
+                  selectedSubmodule={selectedSubmodule}
                   selectedCommitHash={selectedCommitHash}
                   repoPath={repoPath}
                   commitFiles={commitFiles}
@@ -1999,7 +2074,7 @@ export function ProjectView({
                   onCompareCurrentFile={handleCompareCurrentFile}
                   onOpenCommitFileDiff={handleOpenCommitFileDiff}
                   onSelectCommit={setSelectedCommitHash}
-                  hunkAction={selectedFile ? (selectedFileStaged ? "unstage" : "stage") : null}
+                  hunkAction={selectedFile && !selectedSubmodule ? (selectedFileStaged ? "unstage" : "stage") : null}
                   hunkActionBusy={hunkActionBusy}
                   wrapLines={wrapDiffLines}
                   onHunkAction={handleHunkAction}
@@ -2013,7 +2088,7 @@ export function ProjectView({
                   <GitIcon size={20} />
                 </div>
                 <h1 className="app__empty-title">No repository open</h1>
-                <p className="app__empty-subtitle">Clone a project, initialize a new repository, or open an existing one.</p>
+                <p className="app__empty-subtitle">Clone a project, initialise a new repository, or open an existing one.</p>
                 <div className="app__empty-actions">
                   <button className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
                     <GitIcon size={14} />
@@ -2021,7 +2096,7 @@ export function ProjectView({
                   </button>
                   <button className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
                     <GitIcon size={14} />
-                    <span>Initialize repository</span>
+                    <span>Initialise repository</span>
                   </button>
                   <button className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
                     <FolderIcon size={14} />

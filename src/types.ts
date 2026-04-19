@@ -66,6 +66,8 @@ export type CommitRequest = RepoRequest & {
 
 export type CommitHistoryRequest = RepoRequest & {
     limit?: number;
+    afterHash?: string;
+    offset?: number;
 };
 
 export type CommitFilesRequest = RepoRequest & {
@@ -79,6 +81,11 @@ export type ExternalDiffRequest = RepoRequest & {
 
 export type StageFilesRequest = RepoRequest & {
     files: string[];
+};
+
+export type SubmoduleActionRequest = RepoRequest & {
+    path: string;
+    recursive?: boolean;
 };
 
 export type CloneRequest = {
@@ -202,10 +209,37 @@ export type ConflictFileItem = {
     conflictType: string;
 };
 
+export type SubmoduleState =
+    | "clean"
+    | "uninitialised"
+    | "missing"
+    | "dirty"
+    | "outOfSync"
+    | "conflict"
+    | "syncRequired";
+
+export type SubmoduleStatus = {
+    path: string;
+    name: string;
+    configuredUrl: string | null;
+    localUrl: string | null;
+    branch: string | null;
+    currentBranch: string | null;
+    expectedCommit: string | null;
+    checkedOutCommit: string | null;
+    initialised: boolean;
+    missing: boolean;
+    dirty: boolean;
+    outOfSync: boolean;
+    syncRequired: boolean;
+    state: SubmoduleState;
+};
+
 export type RepoStatus = {
     changedFiles: FileStatusItem[];
     stagedFiles: FileStatusItem[];
     unversionedFiles: string[];
+    submodules: SubmoduleStatus[];
     currentBranch: string | null;
     mergeInProgress: boolean;
     mergeHeadBranch: string | null;

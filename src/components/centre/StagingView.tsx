@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
-import type { ConflictFileItem, FileStatusItem } from "../../types";
+import type { ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
 import { getNumstat } from "../../api/commands";
 
 type StagingViewProps = {
@@ -9,13 +9,22 @@ type StagingViewProps = {
   stagedFiles: FileStatusItem[];
   unstagedFiles: FileStatusItem[];
   unversionedFiles: string[];
+  submodules: SubmoduleStatus[];
   conflictedFiles: ConflictFileItem[];
   mergeInProgress: boolean;
   mergeMessage: string | null;
   rebaseInProgress: boolean;
   cherryPickInProgress: boolean;
   selectedFile: string | null;
+  selectedSubmodulePath: string | null;
   onFileSelect: (path: string, staged: boolean) => void;
+  onSubmoduleSelect: (path: string) => void;
+  onSubmoduleInit: (path: string) => void;
+  onSubmoduleUpdate: (path: string) => void;
+  onSubmoduleSync: (path: string) => void;
+  onSubmoduleFetch: (path: string) => void;
+  onSubmodulePull: (path: string) => void;
+  onSubmoduleOpen: (path: string) => void;
   onStageFile: (path: string) => void;
   onStageFiles: (paths: string[]) => void;
   onUnstageFile: (path: string) => void;
@@ -43,14 +52,91 @@ type CachedNumstat = {
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
 
+const SUBMODULE_STATE_LABELS: Record<SubmoduleStatus["state"], string> = {
+  clean: "Clean",
+  uninitialised: "Uninitialised",
+  missing: "Missing",
+  dirty: "Dirty",
+  outOfSync: "Out of sync",
+  conflict: "Conflict",
+  syncRequired: "Sync required",
+};
+
 function cacheKey(path: string, staged: boolean): string {
   return `${staged ? "s" : "u"}:${path}`;
 }
 
+function shortHash(hash: string | null): string {
+  return hash ? hash.slice(0, 8) : "-";
+}
+
+type SubmoduleRowProps = {
+  submodule: SubmoduleStatus;
+  selected: boolean;
+  onSelect: () => void;
+  onInit: () => void;
+  onUpdate: () => void;
+  onSync: () => void;
+  onFetch: () => void;
+  onPull: () => void;
+  onOpen: () => void;
+};
+
+function SubmoduleRow({
+  submodule,
+  selected,
+  onSelect,
+  onInit,
+  onUpdate,
+  onSync,
+  onFetch,
+  onPull,
+  onOpen,
+}: SubmoduleRowProps) {
+  const canInit = !submodule.initialised || submodule.state === "missing" || submodule.state === "uninitialised";
+  const canUpdate = submodule.initialised && submodule.state !== "missing";
+  const canSync = submodule.syncRequired;
+  const canFetch = submodule.initialised;
+  const canPull = submodule.initialised && !submodule.dirty && !!submodule.currentBranch;
+  const canOpen = submodule.initialised;
+
+  return (
+    <div
+      className={`submodule-row ${selected ? "submodule-row--selected" : ""}`}
+      onClick={onSelect}
+      onDoubleClick={canOpen ? onOpen : undefined}
+    >
+      <div className="submodule-row__main">
+        <span className={`submodule-row__state submodule-row__state--${submodule.state}`}>
+          {SUBMODULE_STATE_LABELS[submodule.state]}
+        </span>
+        <span className="submodule-row__path">{submodule.path}</span>
+        <span className="submodule-row__meta">
+          {submodule.currentBranch ?? submodule.branch ?? "detached or uninitialised"}
+        </span>
+      </div>
+      <div className="submodule-row__details">
+        <span>expected {shortHash(submodule.expectedCommit)}</span>
+        <span>checked out {shortHash(submodule.checkedOutCommit)}</span>
+        {submodule.configuredUrl && <span title={submodule.configuredUrl}>{submodule.configuredUrl}</span>}
+      </div>
+      <div className="submodule-row__actions" onClick={e => e.stopPropagation()}>
+        {canInit && <button onClick={onInit}>Init</button>}
+        {canUpdate && <button onClick={onUpdate}>Update</button>}
+        {canSync && <button onClick={onSync}>Sync URL</button>}
+        {canFetch && <button onClick={onFetch}>Fetch</button>}
+        {canPull && <button onClick={onPull}>Pull</button>}
+        {canOpen && <button onClick={onOpen}>Open</button>}
+      </div>
+    </div>
+  );
+}
+
 export function StagingView({
   repoPath,
-  stagedFiles, unstagedFiles, unversionedFiles, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
-  selectedFile, onFileSelect, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
+  stagedFiles, unstagedFiles, unversionedFiles, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
+  selectedFile, selectedSubmodulePath, onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
+  onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
   isCommitting, lastCommitMessage,
@@ -201,6 +287,31 @@ export function StagingView({
   return (
     <div className="staging">
       <div className="staging__files">
+        {submodules.length > 0 && (
+          <div className="staging__section">
+            <div className="staging__section-header">
+              <span className="staging__section-label">
+                Submodules {"\u00B7"} {submodules.length}
+              </span>
+            </div>
+            {submodules.map(submodule => (
+              <div key={submodule.path} className="staging__row-anim">
+                <SubmoduleRow
+                  submodule={submodule}
+                  selected={selectedSubmodulePath === submodule.path}
+                  onSelect={() => onSubmoduleSelect(submodule.path)}
+                  onInit={() => onSubmoduleInit(submodule.path)}
+                  onUpdate={() => onSubmoduleUpdate(submodule.path)}
+                  onSync={() => onSubmoduleSync(submodule.path)}
+                  onFetch={() => onSubmoduleFetch(submodule.path)}
+                  onPull={() => onSubmodulePull(submodule.path)}
+                  onOpen={() => onSubmoduleOpen(submodule.path)}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Conflicts section - shown during merge/rebase */}
         {(mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0 && (
           <div className="staging__section">
