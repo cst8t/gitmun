@@ -54,6 +54,7 @@ import type {
     SetRemoteUrlRequest,
     PruneRemoteRequest,
     StashEntry,
+    ShellStartupAction,
 } from "../types";
 
 export function getRepoStatus(repoPath: string): Promise<RepoStatus> {
@@ -537,4 +538,8 @@ export function openResultLogWindow(): Promise<void> {
         resizable: true,
         showImmediately: false,
     });
+}
+
+export function getStartupAction(): Promise<ShellStartupAction | null> {
+    return invoke<ShellStartupAction | null>("get_startup_action");
 }

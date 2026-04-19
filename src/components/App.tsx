@@ -8,7 +8,7 @@ import {useToast} from "../hooks/useToast";
 import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {AvailableUpdate, Settings, ThemeMode} from "../types";
+import type {AvailableUpdate, Settings, ShellStartupAction, ThemeMode} from "../types";
 import {appendResultLog} from "../utils/resultLog";
 import "./App.css";
 
@@ -277,6 +277,61 @@ export function App() {
             unlisten?.();
         };
     }, [pushRecentRepo, showToast]);
+
+    const handleShellAction = useCallback((action: ShellStartupAction) => {
+        if (action.action === "openRepo") {
+            api.validateRepoPath(action.path).then(() => {
+                setRepoPath(action.path);
+                pushRecentRepo(action.path);
+                showToast(`Opened ${action.path.split("/").pop()}`);
+                appendResultLog("info", `Opened repository ${action.path} from shell`, "unknown");
+            }).catch(async (e: unknown) => {
+                if (isLikelyNotRepoError(e)) {
+                    const confirmed = await ask(
+                        `"${action.path.split("/").pop()}" is not a Git repository yet. Initialise a new repository here?`,
+                        {title: "Initialise Repository", kind: "info", okLabel: "Initialise", cancelLabel: "Cancel"},
+                    );
+                    if (confirmed) {
+                        const result = await api.initRepo(action.path);
+                        await api.validateRepoPath(action.path);
+                        setRepoPath(action.path);
+                        pushRecentRepo(action.path);
+                        showToast("Repository initialised", "success");
+                        appendResultLog("success", result.message, result.backendUsed);
+                    }
+                } else {
+                    showToast(String(e), "error");
+                }
+            });
+        } else if (action.action === "cloneHere") {
+            localStorage.setItem("gitmun.pendingCloneDestination", action.path);
+            api.openCloneWindow().catch(e => {
+                showToast(String(e), "error");
+                appendResultLog("error", `Clone window failed to open: ${String(e)}`, "unknown");
+            });
+        }
+    }, [pushRecentRepo, showToast]);
+
+    useEffect(() => {
+        api.getStartupAction().then((action) => {
+            if (action) handleShellAction(action);
+        }).catch(() => {});
+    }, [handleShellAction]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let unlisten: (() => void) | null = null;
+        (async () => {
+            const fn = await listen<ShellStartupAction>("shell-action", (event) => {
+                handleShellAction(event.payload);
+            });
+            if (cancelled) fn(); else unlisten = fn;
+        })();
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, [handleShellAction]);
 
     useEffect(() => {
         let cancelled = false;
