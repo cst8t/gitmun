@@ -17,6 +17,8 @@ function makeStatus(overrides = {}) {
     unversionedFiles: [],
     submodules: [],
     currentBranch: "main",
+    detachedHead: false,
+    shallow: false,
     mergeInProgress: false,
     mergeHeadBranch: null,
     conflictedFiles: [],

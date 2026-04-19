@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { getCommitHistory } from "../api/commands";
-import type { CommitHistoryItem } from "../types";
+import type { CommitHistoryItem, CommitLogScope } from "../types";
 
 const PAGE_SIZE = 100;
 
-export function useGitLog(repoPath: string | null) {
+export function useGitLog(repoPath: string | null, scope: CommitLogScope = "currentCheckout") {
   const [commits, setCommits] = useState<CommitHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -13,6 +13,8 @@ export function useGitLog(repoPath: string | null) {
 
   const currentRepoRef = useRef(repoPath);
   currentRepoRef.current = repoPath;
+  const currentScopeRef = useRef(scope);
+  currentScopeRef.current = scope;
 
   const fetchId = useRef(0);
   // Cursor: hash of the last commit in the current list. The Rust side starts
@@ -27,7 +29,7 @@ export function useGitLog(repoPath: string | null) {
     setError(null);
     cursorRef.current = undefined;
     commitCountRef.current = 0;
-  }, [repoPath]);
+  }, [repoPath, scope]);
 
   const refresh = useCallback(async () => {
     if (!repoPath) {
@@ -42,23 +44,23 @@ export function useGitLog(repoPath: string | null) {
     cursorRef.current = undefined;
     commitCountRef.current = 0;
     try {
-      const page = await getCommitHistory(repoPath, PAGE_SIZE);
-      if (currentRepoRef.current === repoPath && fetchId.current === myId) {
+      const page = await getCommitHistory(repoPath, PAGE_SIZE, undefined, undefined, scope);
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && fetchId.current === myId) {
         setCommits(page);
         setHasMore(page.length === PAGE_SIZE);
         cursorRef.current = page[page.length - 1]?.hash;
         commitCountRef.current = page.length;
       }
     } catch (e) {
-      if (currentRepoRef.current === repoPath && fetchId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && fetchId.current === myId) {
         setError(String(e));
       }
     } finally {
-      if (currentRepoRef.current === repoPath && fetchId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && fetchId.current === myId) {
         setLoading(false);
       }
     }
-  }, [repoPath]);
+  }, [repoPath, scope]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
@@ -70,8 +72,8 @@ export function useGitLog(repoPath: string | null) {
     setLoadingMore(true);
     try {
       const offset = commitCountRef.current; // CLI fallback uses --skip
-      const page = await getCommitHistory(repoPath, PAGE_SIZE, afterHash, offset);
-      if (currentRepoRef.current === repoPath && fetchId.current === myId) {
+      const page = await getCommitHistory(repoPath, PAGE_SIZE, afterHash, offset, scope);
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && fetchId.current === myId) {
         setCommits(prev => [...prev, ...page]);
         setHasMore(page.length === PAGE_SIZE);
         if (page.length > 0) {
@@ -82,11 +84,11 @@ export function useGitLog(repoPath: string | null) {
     } catch {
       // silently ignore - user can scroll up and back to retry
     } finally {
-      if (currentRepoRef.current === repoPath && fetchId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && fetchId.current === myId) {
         setLoadingMore(false);
       }
     }
-  }, [repoPath, loadingMore, hasMore]);
+  }, [repoPath, scope, loadingMore, hasMore]);
 
   return { commits, loading, loadingMore, hasMore, error, refresh, loadMore };
 }

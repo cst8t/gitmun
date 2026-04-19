@@ -5,7 +5,7 @@ import { MergeBanner } from "./MergeBanner";
 import { RebaseBanner } from "./RebaseBanner";
 import { CherryPickBanner } from "./CherryPickBanner";
 import { RevertBanner } from "./RevertBanner";
-import type { CommitHistoryItem, CommitMarkers, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
+import type { CommitHistoryItem, CommitLogScope, CommitMarkers, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
 import "./CentrePanel.css";
 
 export type CentreTab = "changes" | "log";
@@ -32,6 +32,11 @@ type CentrePanelProps = {
   loadMore: () => void;
   hasMore: boolean;
   commitMarkers: CommitMarkers;
+  logScope: CommitLogScope;
+  onLogScopeChange: (scope: CommitLogScope) => void;
+  showLogScopeControl: boolean;
+  detachedHead: boolean;
+  shallow: boolean;
   onTabChange: (tab: CentreTab) => void;
   selectedCommitHash: string | null;
   onSelectCommit: (commitHash: string) => void;
@@ -199,6 +204,11 @@ export function CentrePanel(props: CentrePanelProps) {
           loadMore={props.loadMore}
           hasMore={props.hasMore}
           commitMarkers={props.commitMarkers}
+          logScope={props.logScope}
+          onLogScopeChange={props.onLogScopeChange}
+          showLogScopeControl={props.showLogScopeControl}
+          detachedHead={props.detachedHead}
+          shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}
           onSelectCommit={props.onSelectCommit}
           onCreateTagAtCommit={props.onCreateTagAtCommit}

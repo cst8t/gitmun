@@ -3,6 +3,7 @@ export type ThemeMode = "System" | "Light" | "Dark";
 export type ExternalDiffTool = "Other" | "Meld" | "Kompare" | "WinMerge" | "VsCode" | "VsCodium";
 export type AvatarProviderMode = "Off" | "Libravatar";
 export type CommitDateMode = "AuthorDate" | "CommitterDate";
+export type CommitLogScope = "currentCheckout" | "allRefs";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 
 export type Settings = {
@@ -68,6 +69,7 @@ export type CommitHistoryRequest = RepoRequest & {
     limit?: number;
     afterHash?: string;
     offset?: number;
+    scope?: CommitLogScope;
 };
 
 export type CommitFilesRequest = RepoRequest & {
@@ -241,6 +243,8 @@ export type RepoStatus = {
     unversionedFiles: string[];
     submodules: SubmoduleStatus[];
     currentBranch: string | null;
+    detachedHead: boolean;
+    shallow: boolean;
     mergeInProgress: boolean;
     mergeHeadBranch: string | null;
     conflictedFiles: ConflictFileItem[];

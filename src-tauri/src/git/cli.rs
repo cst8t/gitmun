@@ -12,8 +12,8 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, CommitTrailer,
-    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
+    CommitTrailer, ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffHunk, DiffLine,
     DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
     FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, LineEndingStyle,
@@ -665,6 +665,16 @@ impl CliGitHandler {
 
     fn is_detached_head(branch_name: Option<&str>) -> bool {
         matches!(branch_name, Some("HEAD"))
+    }
+
+    pub(crate) fn repo_is_shallow(repo_path: &Path) -> bool {
+        Self::run_git_allow_exit_codes(
+            &["rev-parse", "--is-shallow-repository"],
+            Some(repo_path),
+            &[128],
+        )
+        .map(|value| value.trim() == "true")
+        .unwrap_or(false)
     }
 
     fn has_active_operation(status: &RepoStatus) -> bool {
@@ -1800,6 +1810,12 @@ impl GitOperationHandler for CliGitHandler {
         status.submodules = Self::collect_submodules_for_status(&repo_path);
         Self::remove_submodule_file_entries(&mut status);
         status.current_branch = Self::detect_current_branch(&repo_path);
+        status.detached_head = status
+            .current_branch
+            .as_deref()
+            .map(|branch| branch.starts_with("detached@"))
+            .unwrap_or(false);
+        status.shallow = Self::repo_is_shallow(&repo_path);
 
         // Detect merge state
         let merge_head_path = repo_path.join(".git/MERGE_HEAD");
@@ -1878,17 +1894,20 @@ impl GitOperationHandler for CliGitHandler {
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
         let pretty = format!("--pretty=format:{log_format}");
 
-        let output = match Self::run_git(
-            &[
-                "log",
-                "-n",
-                limit.as_str(),
-                skip.as_str(),
-                "--date=iso-strict",
-                pretty.as_str(),
-            ],
-            Some(&repo_path),
-        ) {
+        let mut args = vec![
+            "log",
+            "-n",
+            limit.as_str(),
+            skip.as_str(),
+            "--date=iso-strict",
+            pretty.as_str(),
+        ];
+        if request.scope == CommitLogScope::AllRefs {
+            args.push("--all");
+            args.push("--date-order");
+        }
+
+        let output = match Self::run_git(args.as_slice(), Some(&repo_path)) {
             Ok(stdout) => stdout,
             Err(GitError::CommandFailed { command: _, stderr })
                 if stderr.contains("does not have any commits yet")
@@ -4230,6 +4249,8 @@ impl CliGitHandler {
             unversioned_files,
             submodules: vec![],
             current_branch: None,
+            detached_head: false,
+            shallow: false,
             merge_in_progress: false,
             merge_head_branch: None,
             conflicted_files: vec![],
