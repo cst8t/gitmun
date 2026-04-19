@@ -96,6 +96,76 @@
   font-family: var(--font-ui);
 }
 
+.diff-panel__submodule-details {
+  padding: 18px;
+  font-family: var(--font-ui);
+}
+
+.diff-panel__submodule-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  padding: 16px;
+}
+
+.diff-panel__submodule-card h2 {
+  margin: 10px 0 6px;
+  color: var(--text-primary);
+  font-size: var(--font-size-lg);
+  font-family: var(--font-mono);
+  word-break: break-all;
+}
+
+.diff-panel__submodule-card p {
+  margin: 0 0 14px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.diff-panel__submodule-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.diff-panel__submodule-card dl div {
+  display: grid;
+  grid-template-columns: 130px minmax(0, 1fr);
+  gap: 10px;
+}
+
+.diff-panel__submodule-card dt {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.diff-panel__submodule-card dd {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  word-break: break-all;
+}
+
+.diff-panel__submodule-state {
+  display: inline-flex;
+  border-radius: 999px;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: 700;
+  padding: 3px 8px;
+}
+
+.diff-panel__submodule-state--clean { color: var(--green); }
+.diff-panel__submodule-state--dirty,
+.diff-panel__submodule-state--outOfSync,
+.diff-panel__submodule-state--syncRequired { color: var(--yellow); }
+.diff-panel__submodule-state--missing,
+.diff-panel__submodule-state--uninitialised,
+.diff-panel__submodule-state--conflict { color: var(--red); }
+
 .diff-panel__commit-files {
   padding: 8px 0;
 }

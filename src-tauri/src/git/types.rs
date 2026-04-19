@@ -190,6 +190,15 @@ pub struct StageFilesRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct SubmoduleActionRequest {
+    pub repo_path: String,
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitHistoryRequest {
     pub repo_path: String,
     pub limit: Option<usize>,
@@ -290,12 +299,44 @@ pub struct ConflictFileItem {
     pub conflict_type: String,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SubmoduleState {
+    Clean,
+    Uninitialised,
+    Missing,
+    Dirty,
+    OutOfSync,
+    Conflict,
+    SyncRequired,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleStatus {
+    pub path: String,
+    pub name: String,
+    pub configured_url: Option<String>,
+    pub local_url: Option<String>,
+    pub branch: Option<String>,
+    pub current_branch: Option<String>,
+    pub expected_commit: Option<String>,
+    pub checked_out_commit: Option<String>,
+    pub initialised: bool,
+    pub missing: bool,
+    pub dirty: bool,
+    pub out_of_sync: bool,
+    pub sync_required: bool,
+    pub state: SubmoduleState,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoStatus {
     pub changed_files: Vec<FileStatusItem>,
     pub staged_files: Vec<FileStatusItem>,
     pub unversioned_files: Vec<String>,
+    pub submodules: Vec<SubmoduleStatus>,
     pub current_branch: Option<String>,
     /// True when the repo is in a merge state (.git/MERGE_HEAD exists).
     pub merge_in_progress: bool,

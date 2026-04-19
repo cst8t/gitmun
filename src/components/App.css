@@ -33,7 +33,7 @@
   min-height: 0;
 }
 
-.app__pane--center {
+.app__pane--centre {
   flex: 1;
   display: flex;
 }

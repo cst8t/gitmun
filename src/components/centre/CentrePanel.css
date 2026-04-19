@@ -1,11 +1,11 @@
-.center {
+.centre {
   flex: 1;
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
 
-.center__tabs {
+.centre__tabs {
   display: flex;
   align-items: stretch;
   height: var(--panel-header-height);
@@ -13,7 +13,7 @@
   background: var(--bg-surface);
 }
 
-.center__tab {
+.centre__tab {
   height: 100%;
   display: flex;
   align-items: center;
@@ -29,12 +29,12 @@
   text-transform: capitalize;
 }
 
-.center__tab--active {
+.centre__tab--active {
   color: var(--text-primary);
   border-bottom-color: var(--accent);
 }
 
-.center__tab-badge {
+.centre__tab-badge {
   margin-left: 6px;
   background: var(--yellow);
   color: var(--bg);
@@ -200,6 +200,92 @@
 
 .file-row__stat-add { color: var(--green); }
 .file-row__stat-del { color: var(--red); }
+
+.submodule-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-surface);
+  cursor: pointer;
+}
+
+.submodule-row:hover,
+.submodule-row--selected {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.submodule-row__main,
+.submodule-row__details,
+.submodule-row__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.submodule-row__path {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submodule-row__meta,
+.submodule-row__details {
+  color: var(--text-muted);
+  font-size: var(--font-size-xs);
+}
+
+.submodule-row__details span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.submodule-row__state {
+  flex-shrink: 0;
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: var(--font-size-xxs);
+  font-weight: 700;
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+}
+
+.submodule-row__state--clean { color: var(--green); }
+.submodule-row__state--dirty,
+.submodule-row__state--outOfSync,
+.submodule-row__state--syncRequired { color: var(--yellow); }
+.submodule-row__state--missing,
+.submodule-row__state--uninitialised,
+.submodule-row__state--conflict { color: var(--red); }
+
+.submodule-row__actions {
+  flex-wrap: wrap;
+}
+
+.submodule-row__actions button {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.submodule-row__actions button:hover {
+  color: var(--text-primary);
+  border-color: var(--border);
+}
 
 /* Commit box */
 .commit-box {

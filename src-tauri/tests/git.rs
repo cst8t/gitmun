@@ -8,7 +8,8 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitRequest, CreateBranchRequest, PushRequest,
-    RepoRequest, SetBranchUpstreamRequest, StageFilesRequest,
+    RepoRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
+    SubmoduleState,
 };
 
 fn init_repo() -> TempDir {
@@ -80,6 +81,33 @@ fn init_remote_with_clone() -> (TempDir, TempDir) {
     (remote, local)
 }
 
+fn init_submodule_source() -> TempDir {
+    let dir = init_repo();
+    write_file(dir.path(), "lib.txt", "v1");
+    git(dir.path(), &["add", "lib.txt"]);
+    git(dir.path(), &["commit", "-m", "add lib"]);
+    dir
+}
+
+fn repo_with_submodule() -> (TempDir, TempDir) {
+    let parent = init_repo();
+    let submodule = init_submodule_source();
+    let submodule_path = submodule.path().to_str().unwrap();
+    git(
+        parent.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            submodule_path,
+            "deps/lib",
+        ],
+    );
+    git(parent.path(), &["commit", "-m", "add submodule"]);
+    (parent, submodule)
+}
+
 fn head_hash(repo: &Path) -> String {
     let output = Command::new("git")
         .args(["rev-parse", "HEAD"])
@@ -107,6 +135,14 @@ fn push_request(repo: &TempDir) -> PushRequest {
     }
 }
 
+fn submodule_action_request(repo: &TempDir, path: &str) -> SubmoduleActionRequest {
+    SubmoduleActionRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        path: path.to_string(),
+        recursive: false,
+    }
+}
+
 #[test]
 fn status_clean_repo() {
     let dir = init_repo();
@@ -116,6 +152,7 @@ fn status_clean_repo() {
     assert!(status.staged_files.is_empty());
     assert!(status.changed_files.is_empty());
     assert!(status.unversioned_files.is_empty());
+    assert!(status.submodules.is_empty());
 }
 
 #[test]
@@ -168,6 +205,198 @@ fn stage_files_moves_file_to_staged() {
         .expect("get_repo_status");
     assert!(status.staged_files.iter().any(|f| f.path == "a.txt"));
     assert!(status.unversioned_files.is_empty());
+}
+
+#[test]
+fn status_detects_clean_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+
+    assert_eq!(status.submodules.len(), 1);
+    let submodule = &status.submodules[0];
+    assert_eq!(submodule.path, "deps/lib");
+    assert_eq!(submodule.state, SubmoduleState::Clean);
+    assert!(submodule.initialised);
+    assert!(!submodule.dirty);
+    assert!(!submodule.out_of_sync);
+    assert!(submodule.expected_commit.is_some());
+    assert_eq!(submodule.expected_commit, submodule.checked_out_commit);
+}
+
+#[test]
+fn status_detects_uninitialised_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    git(
+        parent.path(),
+        &["submodule", "deinit", "-f", "--", "deps/lib"],
+    );
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+
+    let submodule = &status.submodules[0];
+    assert_eq!(submodule.state, SubmoduleState::Uninitialised);
+    assert!(!submodule.initialised);
+    assert!(submodule.checked_out_commit.is_none());
+}
+
+#[test]
+fn status_detects_dirty_submodule_without_normal_file_entry() {
+    let (parent, _submodule) = repo_with_submodule();
+    write_file(&parent.path().join("deps/lib"), "lib.txt", "dirty");
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+
+    let submodule = &status.submodules[0];
+    assert_eq!(submodule.state, SubmoduleState::Dirty);
+    assert!(submodule.dirty);
+    assert!(
+        status
+            .changed_files
+            .iter()
+            .all(|file| file.path != "deps/lib")
+    );
+    assert!(
+        status
+            .staged_files
+            .iter()
+            .all(|file| file.path != "deps/lib")
+    );
+    assert!(
+        status
+            .unversioned_files
+            .iter()
+            .all(|path| path != "deps/lib")
+    );
+}
+
+#[test]
+fn status_detects_out_of_sync_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    let submodule_path = parent.path().join("deps/lib");
+    git(
+        &submodule_path,
+        &["config", "user.email", "test@gitmun.test"],
+    );
+    git(&submodule_path, &["config", "user.name", "Gitmun Test"]);
+    git(&submodule_path, &["config", "commit.gpgsign", "false"]);
+    write_file(&submodule_path, "lib.txt", "v2");
+    git(&submodule_path, &["add", "lib.txt"]);
+    git(&submodule_path, &["commit", "-m", "advance submodule"]);
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+
+    let submodule = &status.submodules[0];
+    assert_eq!(submodule.state, SubmoduleState::OutOfSync);
+    assert!(submodule.out_of_sync);
+    assert_ne!(submodule.expected_commit, submodule.checked_out_commit);
+    assert!(
+        status
+            .changed_files
+            .iter()
+            .all(|file| file.path != "deps/lib")
+    );
+}
+
+#[test]
+fn status_detects_sync_required_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    git(
+        parent.path(),
+        &[
+            "config",
+            "--file",
+            ".gitmodules",
+            "submodule.deps/lib.url",
+            "https://example.invalid/changed.git",
+        ],
+    );
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+
+    let submodule = &status.submodules[0];
+    assert_eq!(submodule.state, SubmoduleState::SyncRequired);
+    assert!(submodule.sync_required);
+    assert_ne!(submodule.configured_url, submodule.local_url);
+}
+
+#[test]
+fn submodule_init_initialises_deinitialised_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    git(
+        parent.path(),
+        &["submodule", "deinit", "-f", "--", "deps/lib"],
+    );
+    git(parent.path(), &["config", "protocol.file.allow", "always"]);
+
+    handler()
+        .submodule_init(&submodule_action_request(&parent, "deps/lib"))
+        .expect("submodule_init");
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+    assert_eq!(status.submodules[0].state, SubmoduleState::Clean);
+    assert!(status.submodules[0].initialised);
+}
+
+#[test]
+fn submodule_sync_clears_url_mismatch() {
+    let (parent, _submodule) = repo_with_submodule();
+    git(
+        parent.path(),
+        &[
+            "config",
+            "--file",
+            ".gitmodules",
+            "submodule.deps/lib.url",
+            "https://example.invalid/changed.git",
+        ],
+    );
+
+    handler()
+        .submodule_sync(&submodule_action_request(&parent, "deps/lib"))
+        .expect("submodule_sync");
+
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("get_repo_status");
+    assert!(!status.submodules[0].sync_required);
+    assert_eq!(
+        status.submodules[0].configured_url,
+        status.submodules[0].local_url
+    );
+}
+
+#[test]
+fn submodule_action_rejects_unknown_path() {
+    let (parent, _submodule) = repo_with_submodule();
+    let error = handler()
+        .submodule_update(&submodule_action_request(&parent, "../outside"))
+        .expect_err("unknown submodule path should fail");
+
+    assert!(error.to_string().contains("Invalid submodule path"));
+}
+
+#[test]
+fn submodule_pull_rejects_dirty_submodule() {
+    let (parent, _submodule) = repo_with_submodule();
+    write_file(&parent.path().join("deps/lib"), "lib.txt", "dirty");
+
+    let error = handler()
+        .submodule_pull(&submodule_action_request(&parent, "deps/lib"))
+        .expect_err("dirty submodule pull should fail");
+
+    assert!(error.to_string().contains("local changes"));
 }
 
 #[test]

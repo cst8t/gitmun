@@ -25,7 +25,7 @@ const DEFAULT_LEFT_PANE_RATIO = 0.22;
 const DEFAULT_RIGHT_PANE_RATIO = 0.34;
 const MIN_LEFT_PANE_WIDTH = 220;
 const MIN_RIGHT_PANE_WIDTH = 360;
-const MIN_CENTER_PANE_WIDTH = 420;
+const MIN_CENTRE_PANE_WIDTH = 420;
 const SPLITTER_WIDTH = 6;
 const LEFT_PANE_TOGGLE_WIDTH = 22;
 const SPLITTER_SPACE = 12;
@@ -83,7 +83,7 @@ function clampPaneLayout(totalWidth: number, desiredLeft: number, desiredRight: 
     let left = isValidPaneWidth(desiredLeft) ? desiredLeft : defaultLeft;
     let right = isValidPaneWidth(desiredRight) ? desiredRight : defaultRight;
 
-    const targetSides = Math.max(0, totalWidth - MIN_CENTER_PANE_WIDTH - SPLITTER_SPACE);
+    const targetSides = Math.max(0, totalWidth - MIN_CENTRE_PANE_WIDTH - SPLITTER_SPACE);
     if (targetSides <= 0) {
         const half = Math.max(0, Math.floor((totalWidth - SPLITTER_SPACE) / 2));
         return {left: half, right: Math.max(0, totalWidth - SPLITTER_SPACE - half)};
@@ -418,14 +418,14 @@ export function App() {
         });
     }, [showToast]);
 
-    const maybeInitializeRepo = useCallback(async (path: string, error: unknown): Promise<boolean> => {
+    const maybeInitialiseRepo = useCallback(async (path: string, error: unknown): Promise<boolean> => {
         if (!isLikelyNotRepoError(error)) {
             return false;
         }
 
         const confirmed = await ask(
-            `"${path.split("/").pop()}" is not a Git repository yet. Initialize a new repository here?`,
-            {title: "Initialize Repository", kind: "info", okLabel: "Initialize", cancelLabel: "Cancel"},
+            `"${path.split("/").pop()}" is not a Git repository yet. Initialise a new repository here?`,
+            {title: "Initialise Repository", kind: "info", okLabel: "Initialise", cancelLabel: "Cancel"},
         );
         if (!confirmed) {
             return true;
@@ -435,14 +435,14 @@ export function App() {
         await api.validateRepoPath(path);
         setRepoPath(path);
         pushRecentRepo(path);
-        showToast("Repository initialized", "success");
+        showToast("Repository initialised", "success");
         appendResultLog("success", result.message, result.backendUsed);
         return true;
     }, [pushRecentRepo, showToast]);
 
     const handleInitRepoClick = useCallback(async () => {
         try {
-            const selected = await open({directory: true, multiple: false, title: "Initialize repository in folder"});
+            const selected = await open({directory: true, multiple: false, title: "Initialise repository in folder"});
             if (typeof selected !== "string") {
                 return;
             }
@@ -450,7 +450,7 @@ export function App() {
             await api.validateRepoPath(selected);
             setRepoPath(selected);
             pushRecentRepo(selected);
-            showToast("Repository initialized", "success");
+            showToast("Repository initialised", "success");
             appendResultLog("success", result.message, result.backendUsed);
         } catch (e) {
             showToast(String(e), "error");
@@ -469,10 +469,10 @@ export function App() {
             setRepoPath(selected);
             pushRecentRepo(selected);
         } catch (e) {
-            if (selected && await maybeInitializeRepo(selected, e)) return;
+            if (selected && await maybeInitialiseRepo(selected, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitializeRepo, pushRecentRepo, showToast]);
+    }, [maybeInitialiseRepo, pushRecentRepo, showToast]);
 
     const handleRepoSelect = useCallback(async (path: string) => {
         try {
@@ -480,10 +480,10 @@ export function App() {
             setRepoPath(path);
             pushRecentRepo(path);
         } catch (e) {
-            if (await maybeInitializeRepo(path, e)) return;
+            if (await maybeInitialiseRepo(path, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitializeRepo, pushRecentRepo, showToast]);
+    }, [maybeInitialiseRepo, pushRecentRepo, showToast]);
 
     const isNative = true;
     const winRadius = 0;

@@ -10,11 +10,11 @@ function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 }
 
-function hashColor(name: string): string {
+function hashColour(name: string): string {
   let h = 0;
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  const colors = ["#6ee7b7", "#93c5fd", "#fca5a5", "#c4b5fd", "#fcd34d", "#f0abfc"];
-  return colors[Math.abs(h) % colors.length];
+  const colours = ["#6ee7b7", "#93c5fd", "#fca5a5", "#c4b5fd", "#fcd34d", "#f0abfc"];
+  return colours[Math.abs(h) % colours.length];
 }
 
 function relativeTime(dateStr: string): string {
@@ -175,7 +175,7 @@ const CommitRow = React.memo(function CommitRow({
   onContextMenu,
   onBadgeClick,
 }: CommitRowProps) {
-  const color = hashColor(c.author);
+  const colour = hashColour(c.author);
   const initials = getInitials(c.author);
   const handleClick = useCallback(() => onSelectCommit(c.hash), [onSelectCommit, c.hash]);
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -190,7 +190,7 @@ const CommitRow = React.memo(function CommitRow({
       onContextMenu={handleContextMenu}
     >
       {/* Initials are the base layer; the image fades in on top - no layout shift. */}
-      <div className="log-view__avatar" style={{ background: `${color}18`, color }}>
+      <div className="log-view__avatar" style={{ background: `${colour}18`, color: colour }}>
         {initials}
         {avatarUrl && (
           <img

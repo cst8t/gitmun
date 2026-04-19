@@ -39,11 +39,11 @@ type TitlebarProps = {
 };
 
 function splitRepoPath(repoPath: string): { repoDir: string; repoName: string } {
-  const normalized = repoPath.replace(/[\\/]+$/, "");
-  const match = normalized.match(/^(.*[\\/])([^\\/]+)$/);
+  const normalised = repoPath.replace(/[\\/]+$/, "");
+  const match = normalised.match(/^(.*[\\/])([^\\/]+)$/);
 
   if (!match) {
-    return { repoDir: "", repoName: normalized };
+    return { repoDir: "", repoName: normalised };
   }
 
   const [, repoDir, repoName] = match;
@@ -119,7 +119,7 @@ export function Titlebar({
       <div className="titlebar__sep" />
 
       {/* New / clone / open repo */}
-      <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title="Initialize a repository">
+      <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title="Initialise a repository">
         <GitIcon /><span className="titlebar__btn-label">New</span>
       </div>
       <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onCloneClick} title="Clone a repository">
