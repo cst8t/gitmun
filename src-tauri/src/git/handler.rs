@@ -17,7 +17,7 @@ use super::types::{
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
     SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    TagInfo, ThemeMode,
+    SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -51,6 +51,11 @@ pub trait GitOperationHandler: Send + Sync {
     fn stage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult>;
     fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult>;
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult>;
+    fn submodule_init(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
+    fn submodule_update(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
+    fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
+    fn submodule_fetch(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
+    fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
     fn fetch_remote(&self, request: &FetchRequest) -> GitResult<OperationResult>;
     fn stash(&self, request: &StashPushRequest) -> GitResult<OperationResult>;
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>>;
@@ -62,10 +67,8 @@ pub trait GitOperationHandler: Send + Sync {
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>>;
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult>;
-    fn set_branch_upstream(
-        &self,
-        request: &SetBranchUpstreamRequest,
-    ) -> GitResult<OperationResult>;
+    fn set_branch_upstream(&self, request: &SetBranchUpstreamRequest)
+    -> GitResult<OperationResult>;
     fn delete_branch(&self, request: &DeleteBranchRequest) -> GitResult<OperationResult>;
     fn rename_branch(&self, request: &RenameBranchRequest) -> GitResult<OperationResult>;
     fn delete_tag(&self, request: &DeleteTagRequest) -> GitResult<OperationResult>;
@@ -135,7 +138,7 @@ impl GitService {
         }
     }
 
-    pub fn initialize_config(&self, path: PathBuf) {
+    pub fn initialise_config(&self, path: PathBuf) {
         if let Ok(mut config_path) = self.config_path.write() {
             *config_path = Some(path.clone());
         }
@@ -323,6 +326,11 @@ impl GitService {
         fn stage_hunk(request: HunkStageRequest) -> GitResult<OperationResult>;
         fn unstage_hunk(request: HunkStageRequest) -> GitResult<OperationResult>;
         fn discard_file(request: FileRequest) -> GitResult<OperationResult>;
+        fn submodule_init(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
+        fn submodule_update(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
+        fn submodule_sync(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
+        fn submodule_fetch(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
+        fn submodule_pull(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
         fn fetch_remote(request: FetchRequest) -> GitResult<OperationResult>;
         fn stash(request: StashPushRequest) -> GitResult<OperationResult>;
         fn stash_apply(request: StashRequest) -> GitResult<OperationResult>;
@@ -382,7 +390,7 @@ impl GitService {
             .read()
             .map_err(|_| "Failed to acquire config path lock".to_string())?
             .clone()
-            .ok_or_else(|| "Config path is not initialized".to_string())?;
+            .ok_or_else(|| "Config path is not initialised".to_string())?;
 
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;

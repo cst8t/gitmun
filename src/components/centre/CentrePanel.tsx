@@ -5,18 +5,19 @@ import { MergeBanner } from "./MergeBanner";
 import { RebaseBanner } from "./RebaseBanner";
 import { CherryPickBanner } from "./CherryPickBanner";
 import { RevertBanner } from "./RevertBanner";
-import type { CommitHistoryItem, CommitMarkers, ConflictFileItem, FileStatusItem } from "../../types";
-import "./CenterPanel.css";
+import type { CommitHistoryItem, CommitLogScope, CommitMarkers, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
+import "./CentrePanel.css";
 
-export type CenterTab = "changes" | "log";
+export type CentreTab = "changes" | "log";
 
-type CenterPanelProps = {
+type CentrePanelProps = {
   repoPath: string | null;
-  activeTab: CenterTab;
+  activeTab: CentreTab;
   currentBranch: string | null;
   stagedFiles: FileStatusItem[];
   unstagedFiles: FileStatusItem[];
   unversionedFiles: string[];
+  submodules: SubmoduleStatus[];
   conflictedFiles: ConflictFileItem[];
   mergeInProgress: boolean;
   mergeHeadBranch: string | null;
@@ -31,7 +32,12 @@ type CenterPanelProps = {
   loadMore: () => void;
   hasMore: boolean;
   commitMarkers: CommitMarkers;
-  onTabChange: (tab: CenterTab) => void;
+  logScope: CommitLogScope;
+  onLogScopeChange: (scope: CommitLogScope) => void;
+  showLogScopeControl: boolean;
+  detachedHead: boolean;
+  shallow: boolean;
+  onTabChange: (tab: CentreTab) => void;
   selectedCommitHash: string | null;
   onSelectCommit: (commitHash: string) => void;
   onCreateTagAtCommit?: (commitHash: string) => void;
@@ -39,7 +45,15 @@ type CenterPanelProps = {
   onRevertAtCommit?: (commitHash: string) => void;
   onResetToCommit?: (commitHash: string, mode: "soft" | "mixed") => void;
   selectedFile: string | null;
+  selectedSubmodulePath: string | null;
   onFileSelect: (path: string, staged: boolean) => void;
+  onSubmoduleSelect: (path: string) => void;
+  onSubmoduleInit: (path: string) => void;
+  onSubmoduleUpdate: (path: string) => void;
+  onSubmoduleSync: (path: string) => void;
+  onSubmoduleFetch: (path: string) => void;
+  onSubmodulePull: (path: string) => void;
+  onSubmoduleOpen: (path: string) => void;
   onStageFile: (path: string) => void;
   onStageFiles: (paths: string[]) => void;
   onUnstageFile: (path: string) => void;
@@ -68,9 +82,10 @@ type CenterPanelProps = {
   lastCommitMessage: string;
 };
 
-export function CenterPanel(props: CenterPanelProps) {
+export function CentrePanel(props: CentrePanelProps) {
   const tab = props.activeTab;
-  const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length;
+  const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
+  const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
 
   const handleCommitMerge = () => {
     const message = props.mergeMessage?.split("\n").find(l => !l.startsWith("#"))?.trim()
@@ -80,7 +95,7 @@ export function CenterPanel(props: CenterPanelProps) {
   };
 
   return (
-    <div className="center">
+    <div className="centre">
       {props.mergeInProgress && (
         <MergeBanner
           currentBranch={props.currentBranch}
@@ -121,15 +136,15 @@ export function CenterPanel(props: CenterPanelProps) {
           isRunning={props.isRevertActionRunning}
         />
       )}
-      <div className="center__tabs">
+      <div className="centre__tabs">
         <button
-          className={`center__tab ${tab === "changes" ? "center__tab--active" : ""}`}
+          className={`centre__tab ${tab === "changes" ? "centre__tab--active" : ""}`}
           onClick={() => props.onTabChange("changes")}>
           Changes
-          {totalChanges > 0 && <span className="center__tab-badge">{totalChanges}</span>}
+          {totalChanges > 0 && <span className="centre__tab-badge">{totalChanges}</span>}
         </button>
         <button
-          className={`center__tab ${tab === "log" ? "center__tab--active" : ""}`}
+          className={`centre__tab ${tab === "log" ? "centre__tab--active" : ""}`}
           onClick={() => props.onTabChange("log")}>
           Log
         </button>
@@ -147,13 +162,22 @@ export function CenterPanel(props: CenterPanelProps) {
           stagedFiles={props.stagedFiles}
           unstagedFiles={props.unstagedFiles}
           unversionedFiles={props.unversionedFiles}
+          submodules={props.submodules}
           conflictedFiles={props.conflictedFiles}
           mergeInProgress={props.mergeInProgress}
           mergeMessage={props.mergeMessage}
           rebaseInProgress={props.rebaseInProgress}
           cherryPickInProgress={props.cherryPickInProgress}
           selectedFile={props.selectedFile}
+          selectedSubmodulePath={props.selectedSubmodulePath}
           onFileSelect={props.onFileSelect}
+          onSubmoduleSelect={props.onSubmoduleSelect}
+          onSubmoduleInit={props.onSubmoduleInit}
+          onSubmoduleUpdate={props.onSubmoduleUpdate}
+          onSubmoduleSync={props.onSubmoduleSync}
+          onSubmoduleFetch={props.onSubmoduleFetch}
+          onSubmodulePull={props.onSubmodulePull}
+          onSubmoduleOpen={props.onSubmoduleOpen}
           onStageFile={props.onStageFile}
           onStageFiles={props.onStageFiles}
           onUnstageFile={props.onUnstageFile}
@@ -180,6 +204,11 @@ export function CenterPanel(props: CenterPanelProps) {
           loadMore={props.loadMore}
           hasMore={props.hasMore}
           commitMarkers={props.commitMarkers}
+          logScope={props.logScope}
+          onLogScopeChange={props.onLogScopeChange}
+          showLogScopeControl={props.showLogScopeControl}
+          detachedHead={props.detachedHead}
+          shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}
           onSelectCommit={props.onSelectCommit}
           onCreateTagAtCommit={props.onCreateTagAtCommit}

@@ -4,6 +4,7 @@ import type {
     CommitDetails,
     CommitFileItem,
     CommitHistoryItem,
+    CommitLogScope,
     CommitMarkers,
     CommitVerification,
     CommitRequest,
@@ -39,6 +40,7 @@ import type {
     SetBranchUpstreamRequest,
     Settings,
     StageFilesRequest,
+    SubmoduleActionRequest,
     TagInfo,
     BackendMode,
     ThemeMode,
@@ -106,8 +108,14 @@ export function deleteRemoteBranch(request: DeleteRemoteBranchRequest): Promise<
     return invoke<OperationResult>("delete_remote_branch", {request});
 }
 
-export function getCommitHistory(repoPath: string, limit?: number, afterHash?: string, offset?: number): Promise<CommitHistoryItem[]> {
-    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset}});
+export function getCommitHistory(
+    repoPath: string,
+    limit?: number,
+    afterHash?: string,
+    offset?: number,
+    scope?: CommitLogScope,
+): Promise<CommitHistoryItem[]> {
+    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset, scope}});
 }
 
 export function verifyCommits(repoPath: string, hashes: string[]): Promise<CommitVerification[]> {
@@ -164,6 +172,26 @@ export function unstageHunk(repoPath: string, filePath: string, hunkIndex: numbe
 
 export function discardFile(repoPath: string, filePath: string): Promise<OperationResult> {
     return invoke<OperationResult>("discard_file", {request: {repoPath, filePath}});
+}
+
+export function submoduleInit(request: SubmoduleActionRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_init", {request});
+}
+
+export function submoduleUpdate(request: SubmoduleActionRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_update", {request});
+}
+
+export function submoduleSync(request: SubmoduleActionRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_sync", {request});
+}
+
+export function submoduleFetch(request: SubmoduleActionRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_fetch", {request});
+}
+
+export function submodulePull(request: SubmoduleActionRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_pull", {request});
 }
 
 export function commitChanges(repoPath: string, message: string, amend?: boolean): Promise<OperationResult> {

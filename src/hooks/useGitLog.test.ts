@@ -2,6 +2,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { useGitLog } from "./useGitLog";
+import type { CommitLogScope } from "../types";
 
 vi.mock("../api/commands", () => ({
   getCommitHistory: vi.fn(),
@@ -89,6 +90,22 @@ describe("useGitLog", () => {
     expect(result.current.commits).toHaveLength(0);
     expect(result.current.hasMore).toBe(true);
     await waitFor(() => expect(result.current.commits).toHaveLength(2));
+  });
+
+  test("refetches when log scope changes", async () => {
+    mockGetCommitHistory
+      .mockResolvedValueOnce(makeCommits(1))
+      .mockResolvedValueOnce(makeCommits(2, 10));
+    const { result, rerender } = renderHook(
+      ({ scope }) => useGitLog("/repo", scope),
+      { initialProps: { scope: "currentCheckout" as CommitLogScope } },
+    );
+    await waitFor(() => expect(result.current.commits).toHaveLength(1));
+
+    rerender({ scope: "allRefs" });
+    expect(result.current.commits).toHaveLength(0);
+    await waitFor(() => expect(result.current.commits).toHaveLength(2));
+    expect(mockGetCommitHistory).toHaveBeenLastCalledWith("/repo", 100, undefined, undefined, "allRefs");
   });
 
   test("sets error on fetch failure", async () => {

@@ -2,15 +2,15 @@ import React from "react";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
 import { FileIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
-import type { CommitDetails, CommitFileItem, FileDiff } from "../../types";
+import type { CommitDetails, CommitFileItem, FileDiff, SubmoduleStatus } from "../../types";
 import { getCommitDetails } from "../../api/commands";
-import type { CenterTab } from "../center/CenterPanel";
+import type { CentreTab } from "../centre/CentrePanel";
 import "react-diff-view/style/index.css";
 import "./DiffPanel.css";
 
 const HUNK_HEADER_RE = /^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s*@@/;
 
-function normalizedKind(kind: string): "add" | "remove" | "context" {
+function normalisedKind(kind: string): "add" | "remove" | "context" {
   const lower = kind.toLowerCase();
   if (lower === "add") return "add";
   if (lower === "remove") return "remove";
@@ -158,10 +158,11 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
 }
 
 type DiffPanelProps = {
-  mode: CenterTab;
+  mode: CentreTab;
   diff: FileDiff | null;
   loading: boolean;
   selectedFile: string | null;
+  selectedSubmodule: SubmoduleStatus | null;
   selectedCommitHash: string | null;
   repoPath: string | null;
   commitFiles: CommitFileItem[];
@@ -176,11 +177,26 @@ type DiffPanelProps = {
   onHunkAction: (hunkIndex: number) => void;
 };
 
+const SUBMODULE_STATE_TEXT: Record<SubmoduleStatus["state"], string> = {
+  clean: "Clean",
+  uninitialised: "Uninitialised",
+  missing: "Missing",
+  dirty: "Dirty",
+  outOfSync: "Out of sync",
+  conflict: "Conflict",
+  syncRequired: "Sync required",
+};
+
+function compactHash(hash: string | null): string {
+  return hash ? hash.slice(0, 12) : "None";
+}
+
 export function DiffPanel({
   mode,
   diff,
   loading,
   selectedFile,
+  selectedSubmodule,
   selectedCommitHash,
   repoPath,
   commitFiles,
@@ -209,12 +225,13 @@ export function DiffPanel({
   }, [selectedCommitHash]);
 
   const hasSelectedFile = mode === "changes" && !!selectedFile;
+  const hasSelectedSubmodule = mode === "changes" && !!selectedSubmodule;
   const currentDiff =
-    mode === "changes" && selectedFile && diff?.filePath === selectedFile
+    mode === "changes" && selectedFile && !selectedSubmodule && diff?.filePath === selectedFile
       ? diff
       : null;
-  const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "add").length, 0) ?? 0;
-  const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalizedKind(l.kind) === "remove").length, 0) ?? 0;
+  const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "add").length, 0) ?? 0;
+  const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "remove").length, 0) ?? 0;
   const fileName = selectedFile ? selectedFile.split("/").pop() ?? selectedFile : null;
   const language = currentDiff?.detectedFileType ?? "Text";
   const lineEndingLabel = currentDiff ? (() => {
@@ -250,7 +267,7 @@ export function DiffPanel({
       let newLinesCount = 0;
 
       const changes: ChangeData[] = hunk.lines.map((line) => {
-        const kind = normalizedKind(line.kind);
+        const kind = normalisedKind(line.kind);
         if (kind === "add") {
           const lineNumber = line.newLineNo ?? newCursor;
           newCursor = lineNumber + 1;
@@ -291,7 +308,7 @@ export function DiffPanel({
     let hasRemoves = false;
     for (const hunk of currentDiff.hunks) {
       for (const line of hunk.lines) {
-        const kind = normalizedKind(line.kind);
+        const kind = normalisedKind(line.kind);
         if (kind === "add") hasAdds = true;
         if (kind === "remove") hasRemoves = true;
       }
@@ -309,7 +326,7 @@ export function DiffPanel({
         <span className="diff-panel__filename">
           {mode === "log"
             ? (selectedCommitHash ? `Commit ${selectedCommitHash.slice(0, 8)}` : "Commit files")
-            : (selectedFile ?? "Click a file to show changes")}
+            : (selectedSubmodule ? `Submodule ${selectedSubmodule.path}` : (selectedFile ?? "Click a file to show changes"))}
         </span>
         {mode === "changes" && hasSelectedFile && currentDiff && (
           <span className="diff-panel__stats">
@@ -339,7 +356,7 @@ export function DiffPanel({
             {detailsLoading ? "…" : "···"}
           </button>
         )}
-        {mode === "changes" && hasSelectedFile && (
+        {mode === "changes" && hasSelectedFile && !hasSelectedSubmodule && (
           <div className="diff-panel__view-toggle">
             <button
               className="diff-panel__view-btn"
@@ -391,7 +408,45 @@ export function DiffPanel({
             <div className="diff-panel__placeholder">Select a commit to view changed files</div>
           )
         ) : (
-          loading ? (
+          hasSelectedSubmodule && selectedSubmodule ? (
+            <div className="diff-panel__submodule-details">
+              <div className="diff-panel__submodule-card">
+                <span className={`diff-panel__submodule-state diff-panel__submodule-state--${selectedSubmodule.state}`}>
+                  {SUBMODULE_STATE_TEXT[selectedSubmodule.state]}
+                </span>
+                <h2>{selectedSubmodule.path}</h2>
+                <p>
+                  This path is a separate Git repository. Gitmun shows it here as a submodule boundary, not as a normal parent-repo file diff.
+                </p>
+                <dl>
+                  <div>
+                    <dt>Configured URL</dt>
+                    <dd>{selectedSubmodule.configuredUrl ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Local URL</dt>
+                    <dd>{selectedSubmodule.localUrl ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Configured branch</dt>
+                    <dd>{selectedSubmodule.branch ?? "None"}</dd>
+                  </div>
+                  <div>
+                    <dt>Current branch</dt>
+                    <dd>{selectedSubmodule.currentBranch ?? "Detached or unavailable"}</dd>
+                  </div>
+                  <div>
+                    <dt>Expected commit</dt>
+                    <dd>{compactHash(selectedSubmodule.expectedCommit)}</dd>
+                  </div>
+                  <div>
+                    <dt>Checked-out commit</dt>
+                    <dd>{compactHash(selectedSubmodule.checkedOutCommit)}</dd>
+                  </div>
+                </dl>
+              </div>
+            </div>
+          ) : loading ? (
             <div className="diff-panel__placeholder">Loading diff...</div>
           ) : currentDiff ? (
             currentDiff.isBinary ? (
@@ -435,9 +490,11 @@ export function DiffPanel({
       </div>
 
       {/* Status bar (only when an actual file is selected in Changes view) */}
-      {mode === "changes" && selectedFile && (
+      {mode === "changes" && (selectedFile || selectedSubmodule) && (
         <div className="diff-panel__statusbar">
-          <span className="diff-panel__meta">{statusBarMeta}</span>
+          <span className="diff-panel__meta">
+            {selectedSubmodule ? "Submodule boundary" : statusBarMeta}
+          </span>
         </div>
       )}
 

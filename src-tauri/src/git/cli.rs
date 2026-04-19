@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::io::Write;
 #[cfg(windows)]
@@ -12,8 +12,8 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest, CommitTrailer,
-    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
+    CommitTrailer, ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffHunk, DiffLine,
     DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
     FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, LineEndingStyle,
@@ -23,10 +23,19 @@ use super::types::{
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
     RepoRequest, RepoStatus, ResetMode, ResetRequest, RevertCommitRequest,
     SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, TagInfo, UpstreamStatus,
+    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
+    SubmoduleState, SubmoduleStatus, TagInfo, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
+
+#[derive(Debug, Clone)]
+struct ConfiguredSubmodule {
+    name: String,
+    path: String,
+    configured_url: Option<String>,
+    branch: Option<String>,
+}
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -53,19 +62,19 @@ impl CliGitHandler {
             return None;
         }
 
-        let normalized: String = ext
+        let normalised: String = ext
             .chars()
             .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '+' | '-' | '_' | '.'))
             .collect();
-        if normalized.is_empty() {
+        if normalised.is_empty() {
             return None;
         }
 
-        if normalized.len() <= 4 && normalized.chars().all(|ch| ch.is_ascii_alphanumeric()) {
-            return Some(normalized.to_ascii_uppercase());
+        if normalised.len() <= 4 && normalised.chars().all(|ch| ch.is_ascii_alphanumeric()) {
+            return Some(normalised.to_ascii_uppercase());
         }
 
-        Self::mime_token_to_label(&normalized)
+        Self::mime_token_to_label(&normalised)
     }
 
     pub fn new() -> Self {
@@ -79,7 +88,7 @@ impl CliGitHandler {
         }
     }
 
-    fn normalize_repo_path(repo_path: &str) -> GitResult<PathBuf> {
+    fn normalise_repo_path(repo_path: &str) -> GitResult<PathBuf> {
         let path = PathBuf::from(repo_path.trim());
 
         if repo_path.trim().is_empty() {
@@ -209,8 +218,7 @@ impl CliGitHandler {
     ) -> GitResult<String> {
         #[cfg(windows)]
         if matches!(args.first().copied(), Some("difftool" | "mergetool")) {
-            if let Some(mut command) =
-                Self::git_bash_command_for_args(overrides, args, current_dir)
+            if let Some(mut command) = Self::git_bash_command_for_args(overrides, args, current_dir)
             {
                 let output = command.output()?;
                 let exit_ok = output.status.success()
@@ -285,6 +293,319 @@ impl CliGitHandler {
         path.to_string_lossy().to_string()
     }
 
+    fn split_config_entry(line: &str) -> Option<(&str, &str)> {
+        let split_at = line.char_indices().find_map(|(index, ch)| {
+            if ch.is_whitespace() {
+                Some(index)
+            } else {
+                None
+            }
+        })?;
+        let key = line[..split_at].trim();
+        let value = line[split_at..].trim();
+        if key.is_empty() || value.is_empty() {
+            return None;
+        }
+        Some((key, value))
+    }
+
+    fn submodule_name_from_key<'a>(key: &'a str, suffix: &str) -> Option<&'a str> {
+        key.strip_prefix("submodule.")?.strip_suffix(suffix)
+    }
+
+    fn get_gitmodules_value(repo_path: &Path, name: &str, field: &str) -> Option<String> {
+        let key = format!("submodule.{name}.{field}");
+        Self::run_git_allow_exit_codes(
+            &["config", "--file", ".gitmodules", "--get", key.as_str()],
+            Some(repo_path),
+            &[1],
+        )
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    }
+
+    fn get_submodule_local_url(repo_path: &Path, name: &str) -> Option<String> {
+        let key = format!("submodule.{name}.url");
+        Self::run_git_allow_exit_codes(&["config", "--get", key.as_str()], Some(repo_path), &[1])
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn collect_configured_submodules(repo_path: &Path) -> GitResult<Vec<ConfiguredSubmodule>> {
+        if !repo_path.join(".gitmodules").exists() {
+            return Ok(vec![]);
+        }
+
+        let output = Self::run_git_allow_exit_codes(
+            &[
+                "config",
+                "--file",
+                ".gitmodules",
+                "--get-regexp",
+                r"^submodule\..*\.path$",
+            ],
+            Some(repo_path),
+            &[1],
+        )?;
+
+        let mut submodules = Vec::new();
+        for line in output.lines() {
+            let Some((key, path)) = Self::split_config_entry(line) else {
+                continue;
+            };
+            let Some(name) = Self::submodule_name_from_key(key, ".path") else {
+                continue;
+            };
+            submodules.push(ConfiguredSubmodule {
+                name: name.to_string(),
+                path: path.to_string(),
+                configured_url: Self::get_gitmodules_value(repo_path, name, "url"),
+                branch: Self::get_gitmodules_value(repo_path, name, "branch"),
+            });
+        }
+
+        submodules.sort_by(|left, right| left.path.cmp(&right.path));
+        Ok(submodules)
+    }
+
+    fn validate_submodule_action(
+        request: &SubmoduleActionRequest,
+    ) -> GitResult<(PathBuf, ConfiguredSubmodule)> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let path = request.path.trim();
+        if path.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Submodule path cannot be empty".to_string(),
+            ));
+        }
+        if path.contains('\0') {
+            return Err(GitError::InvalidInput(
+                "Submodule path contains an invalid character".to_string(),
+            ));
+        }
+        let requested_path = Path::new(path);
+        if requested_path.is_absolute()
+            || requested_path.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err(GitError::InvalidInput(format!(
+                "Invalid submodule path: {path}"
+            )));
+        }
+
+        let submodule = Self::collect_configured_submodules(&repo_path)?
+            .into_iter()
+            .find(|submodule| submodule.path == path)
+            .ok_or_else(|| {
+                GitError::InvalidInput(format!("No configured submodule found at {path}"))
+            })?;
+
+        Ok((repo_path, submodule))
+    }
+
+    fn ensure_submodule_initialised(
+        repo_path: &Path,
+        submodule: &ConfiguredSubmodule,
+    ) -> GitResult<PathBuf> {
+        let submodule_path = repo_path.join(&submodule.path);
+        if !submodule_path.join(".git").exists() {
+            return Err(GitError::InvalidInput(format!(
+                "Submodule {} is not initialised",
+                submodule.path
+            )));
+        }
+        Ok(submodule_path)
+    }
+
+    fn operation_result(message: String, output: String, repo_path: &Path) -> OperationResult {
+        OperationResult {
+            message,
+            output: (!output.trim().is_empty()).then_some(output),
+            repo_path: Some(Self::path_to_string(repo_path)),
+            backend_used: "git-cli".to_string(),
+        }
+    }
+
+    fn submodule_index_commit(repo_path: &Path, path: &str) -> Option<String> {
+        let output = Self::run_git_allow_exit_codes(
+            &["ls-files", "--stage", "--", path],
+            Some(repo_path),
+            &[1],
+        )
+        .ok()?;
+        let mut parts = output.split_whitespace();
+        let mode = parts.next()?;
+        let commit = parts.next()?;
+        if mode == "160000" {
+            Some(commit.to_string())
+        } else {
+            None
+        }
+    }
+
+    fn submodule_status_prefix(repo_path: &Path, path: &str) -> Option<char> {
+        Self::run_git_allow_exit_codes(&["submodule", "status", "--", path], Some(repo_path), &[1])
+            .ok()
+            .and_then(|output| output.chars().next())
+    }
+
+    fn submodule_checked_out_commit(repo_path: &Path, path: &str) -> Option<String> {
+        let submodule_path = repo_path.join(path);
+        if !submodule_path.join(".git").exists() {
+            return None;
+        }
+        Self::run_git_allow_exit_codes(&["rev-parse", "HEAD"], Some(&submodule_path), &[128])
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn submodule_current_branch(repo_path: &Path, path: &str) -> Option<String> {
+        let submodule_path = repo_path.join(path);
+        Self::run_git_allow_exit_codes(&["branch", "--show-current"], Some(&submodule_path), &[128])
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn submodule_is_dirty(repo_path: &Path, path: &str) -> bool {
+        let submodule_path = repo_path.join(path);
+        Self::run_git_allow_exit_codes(
+            &["-c", "core.quotepath=false", "status", "--porcelain=v1"],
+            Some(&submodule_path),
+            &[128],
+        )
+        .map(|output| !output.trim().is_empty())
+        .unwrap_or(false)
+    }
+
+    fn classify_submodule(
+        conflict: bool,
+        missing: bool,
+        uninitialised: bool,
+        sync_required: bool,
+        dirty: bool,
+        out_of_sync: bool,
+    ) -> SubmoduleState {
+        if conflict {
+            SubmoduleState::Conflict
+        } else if missing {
+            SubmoduleState::Missing
+        } else if uninitialised {
+            SubmoduleState::Uninitialised
+        } else if sync_required {
+            SubmoduleState::SyncRequired
+        } else if dirty {
+            SubmoduleState::Dirty
+        } else if out_of_sync {
+            SubmoduleState::OutOfSync
+        } else {
+            SubmoduleState::Clean
+        }
+    }
+
+    pub(crate) fn collect_submodules_for_status(repo_path: &Path) -> Vec<SubmoduleStatus> {
+        let configured = Self::collect_configured_submodules(repo_path).unwrap_or_default();
+        configured
+            .into_iter()
+            .map(|submodule| {
+                let worktree_path = repo_path.join(&submodule.path);
+                let expected_commit = Self::submodule_index_commit(repo_path, &submodule.path);
+                let checked_out_commit =
+                    Self::submodule_checked_out_commit(repo_path, &submodule.path);
+                let initialised = checked_out_commit.is_some();
+                let status_prefix = Self::submodule_status_prefix(repo_path, &submodule.path);
+                let conflict = status_prefix == Some('U');
+                let uninitialised = status_prefix == Some('-')
+                    || (!initialised && expected_commit.is_some() && status_prefix != Some('U'));
+                let missing = !worktree_path.exists() && !uninitialised;
+                let dirty = initialised && Self::submodule_is_dirty(repo_path, &submodule.path);
+                let out_of_sync = status_prefix == Some('+')
+                    || expected_commit
+                        .as_ref()
+                        .zip(checked_out_commit.as_ref())
+                        .map(|(expected, checked_out)| expected != checked_out)
+                        .unwrap_or(false);
+                let local_url = Self::get_submodule_local_url(repo_path, &submodule.name);
+                let sync_required = submodule
+                    .configured_url
+                    .as_ref()
+                    .zip(local_url.as_ref())
+                    .map(|(configured_url, local_url)| configured_url != local_url)
+                    .unwrap_or(false);
+                let state = Self::classify_submodule(
+                    conflict,
+                    missing,
+                    uninitialised,
+                    sync_required,
+                    dirty,
+                    out_of_sync,
+                );
+                let current_branch = if initialised {
+                    Self::submodule_current_branch(repo_path, &submodule.path)
+                } else {
+                    None
+                };
+
+                SubmoduleStatus {
+                    path: submodule.path,
+                    name: submodule.name,
+                    configured_url: submodule.configured_url,
+                    local_url,
+                    branch: submodule.branch,
+                    current_branch,
+                    expected_commit,
+                    checked_out_commit,
+                    initialised,
+                    missing,
+                    dirty,
+                    out_of_sync,
+                    sync_required,
+                    state,
+                }
+            })
+            .collect()
+    }
+
+    fn is_submodule_status_path(path: &str, submodule_paths: &HashSet<String>) -> bool {
+        submodule_paths.iter().any(|submodule_path| {
+            path == submodule_path
+                || path
+                    .strip_prefix(submodule_path)
+                    .map(|rest| rest.starts_with('/'))
+                    .unwrap_or(false)
+        })
+    }
+
+    pub(crate) fn remove_submodule_file_entries(status: &mut RepoStatus) {
+        let submodule_paths: HashSet<String> = status
+            .submodules
+            .iter()
+            .map(|submodule| submodule.path.clone())
+            .collect();
+        if submodule_paths.is_empty() {
+            return;
+        }
+
+        status
+            .changed_files
+            .retain(|file| !Self::is_submodule_status_path(&file.path, &submodule_paths));
+        status
+            .staged_files
+            .retain(|file| !Self::is_submodule_status_path(&file.path, &submodule_paths));
+        status
+            .unversioned_files
+            .retain(|path| !Self::is_submodule_status_path(path, &submodule_paths));
+    }
+
     fn current_branch_name(repo_path: &Path) -> Option<String> {
         Self::run_git_allow_exit_codes(
             &["rev-parse", "--abbrev-ref", "HEAD"],
@@ -344,6 +665,16 @@ impl CliGitHandler {
 
     fn is_detached_head(branch_name: Option<&str>) -> bool {
         matches!(branch_name, Some("HEAD"))
+    }
+
+    pub(crate) fn repo_is_shallow(repo_path: &Path) -> bool {
+        Self::run_git_allow_exit_codes(
+            &["rev-parse", "--is-shallow-repository"],
+            Some(repo_path),
+            &[128],
+        )
+        .map(|value| value.trim() == "true")
+        .unwrap_or(false)
     }
 
     fn has_active_operation(status: &RepoStatus) -> bool {
@@ -984,9 +1315,10 @@ impl CliGitHandler {
 
     #[cfg(windows)]
     fn resolved_windows_diff_tool_path(repo_path: &Path, tool_name: &str) -> Option<PathBuf> {
-        let configured = Self::get_git_config_value(repo_path, &format!("difftool.{tool_name}.path"))
-            .map(PathBuf::from)
-            .filter(|path| path.exists());
+        let configured =
+            Self::get_git_config_value(repo_path, &format!("difftool.{tool_name}.path"))
+                .map(PathBuf::from)
+                .filter(|path| path.exists());
         configured.or_else(|| crate::resolve_known_diff_tool_path(tool_name))
     }
 
@@ -1152,7 +1484,7 @@ impl CliGitHandler {
 
 impl GitOperationHandler for CliGitHandler {
     fn validate_repo_path(&self, repo_path: &str) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(repo_path)?;
+        let repo_path = Self::normalise_repo_path(repo_path)?;
         let output = Self::run_git(&["rev-parse", "--show-toplevel"], Some(&repo_path))?;
         let resolved_path = if output.is_empty() {
             repo_path
@@ -1173,7 +1505,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_numstat(&self, request: &NumstatRequest) -> GitResult<NumstatResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         if file_path.is_empty() {
             return Err(GitError::InvalidInput("File path is required".to_string()));
@@ -1214,12 +1546,12 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn analyze_pull(&self, request: &RepoRequest) -> GitResult<PullAnalysis> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         self.build_pull_analysis(&repo_path)
     }
 
     fn pull_changes(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         self.execute_pull_command(
             &repo_path,
             &["pull"],
@@ -1229,7 +1561,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let analysis = self.build_pull_analysis(&repo_path)?;
 
         match request.strategy {
@@ -1282,7 +1614,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let message = request.message.trim();
 
         if message.is_empty() {
@@ -1326,7 +1658,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let files: Vec<&str> = request
             .files
             .iter()
@@ -1353,12 +1685,12 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_configured_diff_tool(&self, request: &RepoRequest) -> GitResult<Option<String>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Ok(Self::get_diff_tool_name(&repo_path))
     }
 
     fn open_external_diff(&self, request: &ExternalDiffRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let commit_hash = request.commit_hash.trim();
         let file_path = request.file_path.trim();
 
@@ -1412,7 +1744,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn open_working_tree_diff(&self, request: &DiffRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
 
         if file_path.is_empty() {
@@ -1469,13 +1801,21 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let output = Self::run_git(
             &["-c", "core.quotepath=false", "status", "--porcelain=v1"],
             Some(&repo_path),
         )?;
         let mut status = Self::parse_repo_status(&output);
+        status.submodules = Self::collect_submodules_for_status(&repo_path);
+        Self::remove_submodule_file_entries(&mut status);
         status.current_branch = Self::detect_current_branch(&repo_path);
+        status.detached_head = status
+            .current_branch
+            .as_deref()
+            .map(|branch| branch.starts_with("detached@"))
+            .unwrap_or(false);
+        status.shallow = Self::repo_is_shallow(&repo_path);
 
         // Detect merge state
         let merge_head_path = repo_path.join(".git/MERGE_HEAD");
@@ -1549,22 +1889,25 @@ impl GitOperationHandler for CliGitHandler {
             CommitDateMode::CommitterDate => "%cd",
         };
         let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s%x1f%G?");
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let limit = request.limit.unwrap_or(100).clamp(1, 5000).to_string();
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
         let pretty = format!("--pretty=format:{log_format}");
 
-        let output = match Self::run_git(
-            &[
-                "log",
-                "-n",
-                limit.as_str(),
-                skip.as_str(),
-                "--date=iso-strict",
-                pretty.as_str(),
-            ],
-            Some(&repo_path),
-        ) {
+        let mut args = vec![
+            "log",
+            "-n",
+            limit.as_str(),
+            skip.as_str(),
+            "--date=iso-strict",
+            pretty.as_str(),
+        ];
+        if request.scope == CommitLogScope::AllRefs {
+            args.push("--all");
+            args.push("--date-order");
+        }
+
+        let output = match Self::run_git(args.as_slice(), Some(&repo_path)) {
             Ok(stdout) => stdout,
             Err(GitError::CommandFailed { command: _, stderr })
                 if stderr.contains("does not have any commits yet")
@@ -1617,7 +1960,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_commit_markers(&self, request: &RepoRequest) -> GitResult<CommitMarkers> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
 
         let local_head = Self::try_rev_parse(&repo_path, "HEAD");
         let upstream_ref = Self::run_git(
@@ -1644,7 +1987,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_commit_files(&self, request: &CommitFilesRequest) -> GitResult<Vec<CommitFileItem>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let commit_hash = request.commit_hash.trim();
 
         if commit_hash.is_empty() {
@@ -1691,7 +2034,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_commit_details(&self, request: &CommitDetailsRequest) -> GitResult<CommitDetails> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let hash = request.commit_hash.trim();
 
         if hash.is_empty() {
@@ -1756,7 +2099,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         let line_ending = Self::detect_line_ending(&repo_path, file_path, request.staged);
         let detected_file_type =
@@ -1860,7 +2203,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_branches(&self, request: &RepoRequest) -> GitResult<Vec<BranchInfo>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let output = Self::run_git(
             &[
                 "branch",
@@ -1920,7 +2263,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn unstage_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         Self::run_git(&["restore", "--staged", "--", file_path], Some(&repo_path))?;
 
@@ -1933,7 +2276,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn unstage_all(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::run_git(&["restore", "--staged", "."], Some(&repo_path))?;
 
         Ok(OperationResult {
@@ -1945,7 +2288,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stage_all(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::run_git(&["add", "-A"], Some(&repo_path))?;
 
         Ok(OperationResult {
@@ -1957,7 +2300,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
 
         // Get the full diff for the file
@@ -1997,7 +2340,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
 
         // Get the staged diff for the file.
@@ -2033,7 +2376,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
 
         // Check if the file is untracked
@@ -2070,8 +2413,130 @@ impl GitOperationHandler for CliGitHandler {
         })
     }
 
+    fn submodule_init(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        if submodule.configured_url.as_deref().unwrap_or("").is_empty() {
+            return Err(GitError::InvalidInput(format!(
+                "Submodule {} does not have a configured URL",
+                submodule.path
+            )));
+        }
+
+        let mut args = vec!["submodule", "update", "--init"];
+        if request.recursive {
+            args.push("--recursive");
+        }
+        args.extend(["--", submodule.path.as_str()]);
+        let output = Self::run_git(&args, Some(&repo_path))?;
+
+        Ok(Self::operation_result(
+            format!("Initialised submodule {}", submodule.path),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn submodule_update(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let mut args = vec!["submodule", "update"];
+        if request.recursive {
+            args.push("--recursive");
+        }
+        args.extend(["--", submodule.path.as_str()]);
+        let output = Self::run_git(&args, Some(&repo_path))?;
+
+        Ok(Self::operation_result(
+            format!("Updated submodule {}", submodule.path),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let mut args = vec!["submodule", "sync"];
+        if request.recursive {
+            args.push("--recursive");
+        }
+        args.extend(["--", submodule.path.as_str()]);
+        let output = Self::run_git(&args, Some(&repo_path))?;
+
+        Ok(Self::operation_result(
+            format!("Synced submodule {}", submodule.path),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn submodule_fetch(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
+        let mut output = Self::run_git(&["fetch", "--prune"], Some(&submodule_path))?;
+        if request.recursive {
+            let nested = Self::run_git(
+                &["submodule", "foreach", "--recursive", "git fetch --prune"],
+                Some(&submodule_path),
+            )?;
+            if !nested.trim().is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str(&nested);
+            }
+        }
+
+        Ok(Self::operation_result(
+            format!("Fetched submodule {}", submodule.path),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
+        if Self::submodule_is_dirty(&repo_path, &submodule.path) {
+            return Err(GitError::InvalidInput(format!(
+                "Submodule {} has local changes; commit, stash, or discard them before pulling",
+                submodule.path
+            )));
+        }
+        let branch = Self::current_branch_name(&submodule_path).ok_or_else(|| {
+            GitError::InvalidInput(format!(
+                "Submodule {} is detached; checkout a branch before pulling",
+                submodule.path
+            ))
+        })?;
+        let upstream = Self::upstream_branch_name(&submodule_path).ok_or_else(|| {
+            GitError::InvalidInput(format!(
+                "Submodule {} branch {branch} has no upstream",
+                submodule.path
+            ))
+        })?;
+
+        let mut output = Self::run_git(&["pull", "--ff-only"], Some(&submodule_path))?;
+        if request.recursive {
+            let nested = Self::run_git(
+                &["submodule", "update", "--init", "--recursive"],
+                Some(&submodule_path),
+            )?;
+            if !nested.trim().is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str(&nested);
+            }
+        }
+
+        Ok(Self::operation_result(
+            format!("Pulled submodule {} from {}", submodule.path, upstream),
+            output,
+            &repo_path,
+        ))
+    }
+
     fn fetch_remote(&self, request: &FetchRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let mut args = vec!["fetch", "--prune"];
         if let Some(ref remote) = request.remote {
             let remote = remote.trim();
@@ -2094,7 +2559,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stash(&self, request: &StashPushRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
 
         let mut cmd: Vec<String> = vec!["stash".into(), "push".into()];
         if request.include_untracked {
@@ -2124,7 +2589,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let output = match Self::run_git(&["stash", "list", "--format=%gd|%h|%s"], Some(&repo_path))
         {
             Ok(o) => o,
@@ -2164,7 +2629,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stash_apply(&self, request: &StashRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let stash_ref = format!("stash@{{{}}}", request.stash_index);
         let output = Self::run_git(&["stash", "apply", &stash_ref], Some(&repo_path))?;
         Ok(OperationResult {
@@ -2176,7 +2641,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stash_pop(&self, request: &StashRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let stash_ref = format!("stash@{{{}}}", request.stash_index);
         let output = Self::run_git(&["stash", "pop", &stash_ref], Some(&repo_path))?;
         Ok(OperationResult {
@@ -2188,7 +2653,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn stash_drop(&self, request: &StashRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let stash_ref = format!("stash@{{{}}}", request.stash_index);
         let output = Self::run_git(&["stash", "drop", &stash_ref], Some(&repo_path))?;
         Ok(OperationResult {
@@ -2200,7 +2665,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let scope_flag = match request.scope {
             IdentityScope::Local => "--local",
             IdentityScope::Global => "--global",
@@ -2221,8 +2686,8 @@ impl GitOperationHandler for CliGitHandler {
             Self::run_git(&["config", scope_flag, "commit.gpgsign"], Some(&repo_path))
                 .ok()
                 .map(|value| {
-                    let normalized = value.trim().to_ascii_lowercase();
-                    matches!(normalized.as_str(), "true" | "yes" | "on" | "1")
+                    let normalised = value.trim().to_ascii_lowercase();
+                    matches!(normalised.as_str(), "true" | "yes" | "on" | "1")
                 })
                 .unwrap_or(false);
 
@@ -2237,7 +2702,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let scope_flag = match request.scope {
             IdentityScope::Local => "--local",
             IdentityScope::Global => "--global",
@@ -2298,7 +2763,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let output = match Self::run_git(
             &[
                 "tag",
@@ -2349,7 +2814,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let output = Self::run_git(&["remote", "-v"], Some(&repo_path))?;
 
         let mut seen = HashMap::new();
@@ -2375,7 +2840,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let current_branch = Self::current_branch_name(&repo_path)
             .filter(|branch| !Self::is_detached_head(Some(branch)))
             .ok_or_else(|| {
@@ -2468,7 +2933,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let branch_name = request.branch_name.trim();
 
         if branch_name.is_empty() {
@@ -2497,7 +2962,7 @@ impl GitOperationHandler for CliGitHandler {
         &self,
         request: &SetBranchUpstreamRequest,
     ) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let branch_name = request.branch_name.trim();
         let remote = request.remote.trim();
         let remote_branch = request.remote_branch.trim();
@@ -2546,7 +3011,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn create_branch(&self, request: &CreateBranchRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::ensure_no_active_branch_operation(&repo_path, "create a branch")?;
 
         let base_ref = request
@@ -2631,7 +3096,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn delete_branch(&self, request: &DeleteBranchRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let branch_name = request.branch_name.trim();
 
         if branch_name.is_empty() {
@@ -2658,7 +3123,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn rename_branch(&self, request: &RenameBranchRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::ensure_no_active_branch_operation(&repo_path, "rename a branch")?;
 
         let old_name = request.old_name.trim();
@@ -2721,7 +3186,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn delete_tag(&self, request: &DeleteTagRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let tag_name = request.tag_name.trim();
 
         Self::ensure_valid_tag_name(&repo_path, tag_name)?;
@@ -2737,7 +3202,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn create_tag(&self, request: &CreateTagRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let tag_name = request.tag_name.trim();
 
         Self::ensure_valid_tag_name(&repo_path, tag_name)?;
@@ -2792,7 +3257,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn push_tag(&self, request: &PushTagRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let remote = request.remote.trim();
         let tag_name = request.tag_name.trim();
 
@@ -2810,7 +3275,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn delete_remote_tag(&self, request: &DeleteRemoteTagRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let remote = request.remote.trim();
         let tag_name = request.tag_name.trim();
 
@@ -2831,7 +3296,7 @@ impl GitOperationHandler for CliGitHandler {
         &self,
         request: &DeleteRemoteBranchRequest,
     ) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let remote = request.remote.trim();
         let branch = request.branch.trim();
 
@@ -2865,7 +3330,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn add_remote(&self, request: &AddRemoteRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let name = request.name.trim();
         let url = request.url.trim();
         if url.is_empty() {
@@ -2885,7 +3350,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn remove_remote(&self, request: &RemoveRemoteRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let name = request.name.trim();
         Self::ensure_valid_remote_name(&repo_path, name)?;
         Self::run_git(&["remote", "remove", name], Some(&repo_path))?;
@@ -2898,7 +3363,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn rename_remote(&self, request: &RenameRemoteRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let old_name = request.old_name.trim();
         let new_name = request.new_name.trim();
         Self::ensure_valid_remote_name(&repo_path, old_name)?;
@@ -2913,7 +3378,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn set_remote_url(&self, request: &SetRemoteUrlRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let name = request.name.trim();
         let url = request.url.trim();
         if url.is_empty() {
@@ -2933,7 +3398,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn prune_remote(&self, request: &PruneRemoteRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let name = request.name.trim();
         Self::ensure_valid_remote_name(&repo_path, name)?;
         let output = Self::run_git(&["remote", "prune", name], Some(&repo_path))?;
@@ -2946,7 +3411,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn merge_branch(&self, request: &MergeRequest) -> GitResult<MergeResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if Self::is_merge_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "Cannot start merge while another merge is in progress".to_string(),
@@ -3014,7 +3479,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn merge_abort(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
 
         let merge_head = repo_path.join(".git/MERGE_HEAD");
         if !merge_head.exists() {
@@ -3038,7 +3503,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn rebase_start(&self, request: &RebaseRequest) -> GitResult<RebaseResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::ensure_no_active_branch_operation(&repo_path, "start a rebase")?;
 
         let onto = request.onto.trim();
@@ -3077,7 +3542,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn rebase_continue(&self, request: &RepoRequest) -> GitResult<RebaseResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_rebase_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No rebase in progress to continue".to_string(),
@@ -3119,7 +3584,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn rebase_abort(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_rebase_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No rebase in progress to abort".to_string(),
@@ -3136,7 +3601,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn cherry_pick_start(&self, request: &CherryPickRequest) -> GitResult<CherryPickResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::ensure_no_active_branch_operation(&repo_path, "start a cherry-pick")?;
 
         let commit_hash = request.commit_hash.trim();
@@ -3176,7 +3641,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn cherry_pick_continue(&self, request: &RepoRequest) -> GitResult<CherryPickResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_cherry_pick_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No cherry-pick in progress to continue".to_string(),
@@ -3218,7 +3683,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn cherry_pick_abort(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_cherry_pick_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No cherry-pick in progress to abort".to_string(),
@@ -3235,7 +3700,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn revert_commit_start(&self, request: &RevertCommitRequest) -> GitResult<CherryPickResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::ensure_no_active_branch_operation(&repo_path, "start a revert")?;
 
         let commit_hash = request.commit_hash.trim();
@@ -3277,7 +3742,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn revert_continue(&self, request: &RepoRequest) -> GitResult<CherryPickResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_revert_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No revert in progress to continue".to_string(),
@@ -3319,7 +3784,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn revert_abort(&self, request: &RepoRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if !Self::is_revert_in_progress(&repo_path) {
             return Err(GitError::InvalidInput(
                 "No revert in progress to abort".to_string(),
@@ -3336,7 +3801,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn reset(&self, request: &ResetRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         if request.target.trim().is_empty() {
             return Err(GitError::InvalidInput(
                 "Reset target is required".to_string(),
@@ -3363,7 +3828,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn conflict_accept_theirs(&self, request: &FileRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         if file_path.is_empty() {
             return Err(GitError::InvalidInput("File path is required".to_string()));
@@ -3381,7 +3846,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn conflict_accept_ours(&self, request: &FileRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         if file_path.is_empty() {
             return Err(GitError::InvalidInput("File path is required".to_string()));
@@ -3399,7 +3864,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn open_merge_tool(&self, request: &FileRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalize_repo_path(&request.repo_path)?;
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
         if file_path.is_empty() {
             return Err(GitError::InvalidInput("File path is required".to_string()));
@@ -3782,7 +4247,10 @@ impl CliGitHandler {
             changed_files,
             staged_files,
             unversioned_files,
+            submodules: vec![],
             current_branch: None,
+            detached_head: false,
+            shallow: false,
             merge_in_progress: false,
             merge_head_branch: None,
             conflicted_files: vec![],
@@ -4014,12 +4482,12 @@ impl CliGitHandler {
     fn repo_name_from_url(repo_url: &str) -> Option<String> {
         let trimmed = repo_url.trim().trim_end_matches('/');
         let last_segment = trimmed.rsplit(['/', '\\', ':']).next()?;
-        let normalized = last_segment.trim_end_matches(".git").trim();
+        let normalised = last_segment.trim_end_matches(".git").trim();
 
-        if normalized.is_empty() {
+        if normalised.is_empty() {
             None
         } else {
-            Some(normalized.to_string())
+            Some(normalised.to_string())
         }
     }
 

@@ -417,7 +417,7 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 state
                     .git_service
-                    .initialize_config(config_dir.join("config.json"));
+                    .initialise_config(config_dir.join("config.json"));
 
                 // Sync avatar service with the loaded settings
                 let settings = state.git_service.get_settings();
@@ -508,6 +508,11 @@ pub fn run() {
             commands::repo::stage_hunk,
             commands::repo::unstage_hunk,
             commands::repo::discard_file,
+            commands::repo::submodule_init,
+            commands::repo::submodule_update,
+            commands::repo::submodule_sync,
+            commands::repo::submodule_fetch,
+            commands::repo::submodule_pull,
             commands::repo::fetch_remote,
             commands::repo::stash,
             commands::repo::stash_list,
