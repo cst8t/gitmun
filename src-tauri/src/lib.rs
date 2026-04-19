@@ -1,6 +1,7 @@
 mod avatar;
 pub mod commands;
 pub mod git;
+pub mod shell;
 mod window_manager;
 
 use git::handler::GitService;
@@ -8,6 +9,7 @@ use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
+use shell::cli::ShellStartupAction;
 
 pub struct AppState {
     pub git_service: GitService,
@@ -17,6 +19,8 @@ pub struct AppState {
 pub struct CloneCancelFlag(pub Arc<AtomicBool>);
 
 struct FsWatcherState(Mutex<Option<RecommendedWatcher>>);
+
+struct StartupState(Mutex<Option<ShellStartupAction>>);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -388,6 +392,11 @@ fn detect_desktop_environment() -> String {
         .to_lowercase()
 }
 
+#[tauri::command]
+fn get_startup_action(state: tauri::State<'_, StartupState>) -> Option<ShellStartupAction> {
+    state.0.lock().ok().and_then(|mut g| g.take())
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     sanitize_linux_xdg_env();
@@ -395,7 +404,17 @@ pub fn run() {
     #[cfg(target_os = "linux")]
     apply_linux_appimage_webkit_workarounds();
 
+    let startup_action = shell::cli::parse_shell_action(&std::env::args().collect::<Vec<String>>());
+
     let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            if let Some(action) = shell::cli::parse_shell_action(&args) {
+                let _ = app.emit("shell-action", action);
+            }
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -408,6 +427,7 @@ pub fn run() {
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
+        .manage(StartupState(Mutex::new(startup_action)))
         .setup(|app| {
             #[cfg(desktop)]
             app.handle()
@@ -547,6 +567,7 @@ pub fn run() {
             window_manager::open_sub_window,
             window_manager::show_window,
             window_manager::get_system_theme_hint,
+            get_startup_action,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

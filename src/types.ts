@@ -492,6 +492,13 @@ export type RemoteInfo = {
     url: string;
 };
 
+export type ContextAction = "openRepo" | "cloneHere";
+
+export type ShellStartupAction = {
+    action: ContextAction;
+    path: string;
+};
+
 export type RepositorySelectedPayload = {
     repoPath: string;
 };

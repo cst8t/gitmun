@@ -78,18 +78,26 @@ export function CloneWindow() {
         const settings = await invoke<Settings>("get_settings");
         document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
-        // Initialise destination: last-used dir > settings default > OS default.
-        const lastUsed = localStorage.getItem(CLONE_BASE_KEY);
-        if (lastUsed) {
-          baseDirRef.current = lastUsed;
-          setDestination(lastUsed);
-        } else if (settings.defaultCloneDir) {
-          baseDirRef.current = settings.defaultCloneDir;
-          setDestination(settings.defaultCloneDir);
+        // Initialise destination: pending shell destination > last-used dir > settings default > OS default.
+        const pendingDestination = localStorage.getItem("gitmun.pendingCloneDestination");
+        if (pendingDestination) {
+          localStorage.removeItem("gitmun.pendingCloneDestination");
+          baseDirRef.current = pendingDestination;
+          setDestination(pendingDestination);
+          isAutoRef.current = false;
         } else {
-          const dir = await invoke<string>("get_default_clone_dir");
-          baseDirRef.current = dir;
-          setDestination(dir);
+          const lastUsed = localStorage.getItem(CLONE_BASE_KEY);
+          if (lastUsed) {
+            baseDirRef.current = lastUsed;
+            setDestination(lastUsed);
+          } else if (settings.defaultCloneDir) {
+            baseDirRef.current = settings.defaultCloneDir;
+            setDestination(settings.defaultCloneDir);
+          } else {
+            const dir = await invoke<string>("get_default_clone_dir");
+            baseDirRef.current = dir;
+            setDestination(dir);
+          }
         }
       } catch (e) {
         setStatus(`Failed to load settings: ${e}`);
