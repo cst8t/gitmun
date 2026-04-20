@@ -34,7 +34,6 @@ type CentrePanelProps = {
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   onLogScopeChange: (scope: CommitLogScope) => void;
-  showLogScopeControl: boolean;
   detachedHead: boolean;
   shallow: boolean;
   onTabChange: (tab: CentreTab) => void;
@@ -205,10 +204,9 @@ export function CentrePanel(props: CentrePanelProps) {
           hasMore={props.hasMore}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
-          onLogScopeChange={props.onLogScopeChange}
-          showLogScopeControl={props.showLogScopeControl}
-          detachedHead={props.detachedHead}
-          shallow={props.shallow}
+           onLogScopeChange={props.onLogScopeChange}
+           detachedHead={props.detachedHead}
+           shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}
           onSelectCommit={props.onSelectCommit}
           onCreateTagAtCommit={props.onCreateTagAtCommit}

@@ -232,7 +232,6 @@ type LogViewProps = {
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   onLogScopeChange: (scope: CommitLogScope) => void;
-  showLogScopeControl: boolean;
   detachedHead: boolean;
   shallow: boolean;
   selectedCommitHash: string | null;
@@ -255,7 +254,6 @@ export function LogView({
   commitMarkers,
   logScope,
   onLogScopeChange,
-  showLogScopeControl,
   detachedHead,
   shallow,
   selectedCommitHash,
@@ -446,7 +444,6 @@ export function LogView({
 
   return (
     <div className="log-view">
-      {showLogScopeControl && (
         <div className="log-view__scope">
           <div className="log-view__notice">{historyNotice}</div>
           <div className="log-view__scope-actions" role="group" aria-label="Commit log scope">
@@ -464,9 +461,8 @@ export function LogView({
             >
               All refs
             </button>
-          </div>
-        </div>
-      )}
+           </div>
+         </div>
       {showUpstreamNotice && (
         <div className="log-view__notice">
           Upstream tip {commitMarkers.upstreamRef} is outside this local history view.
