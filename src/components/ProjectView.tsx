@@ -218,9 +218,7 @@ export function ProjectView({
   const [identityAvatar, setIdentityAvatar] = useState<string | null>(null);
 
   const currentBranch = status?.currentBranch ?? null;
-  const showLogScopeControl = Boolean(status?.detachedHead || status?.shallow);
-  const effectiveLogScope = showLogScopeControl ? logScope : "currentCheckout";
-  const { commits, loadMore, hasMore, refresh: refreshLog } = useGitLog(repoPath, effectiveLogScope);
+  const { commits, loadMore, hasMore, refresh: refreshLog } = useGitLog(repoPath, logScope);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -247,12 +245,6 @@ export function ProjectView({
   useEffect(() => {
     setLogScope("currentCheckout");
   }, [repoPath]);
-
-  useEffect(() => {
-    if (!showLogScopeControl) {
-      setLogScope("currentCheckout");
-    }
-  }, [showLogScopeControl]);
 
   const commitMarkersKey = [
     commits[0]?.hash ?? "",
@@ -2019,9 +2011,8 @@ export function ProjectView({
                   loadMore={searchQuery ? () => {} : loadMore}
                   hasMore={searchQuery ? false : hasMore}
                   commitMarkers={commitMarkers}
-                  logScope={effectiveLogScope}
+                  logScope={logScope}
                   onLogScopeChange={setLogScope}
-                  showLogScopeControl={showLogScopeControl}
                   detachedHead={status?.detachedHead ?? false}
                   shallow={status?.shallow ?? false}
                   activeTab={centreTab}
