@@ -229,9 +229,10 @@ type LogViewProps = {
   commits: CommitHistoryItem[];
   loadMore: () => void;
   hasMore: boolean;
+  logLoading: boolean;
+  logError: string | null;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
-  onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
   shallow: boolean;
   selectedCommitHash: string | null;
@@ -251,9 +252,10 @@ export function LogView({
   commits,
   loadMore,
   hasMore,
+  logLoading,
+  logError,
   commitMarkers,
   logScope,
-  onLogScopeChange,
   detachedHead,
   shallow,
   selectedCommitHash,
@@ -431,7 +433,7 @@ export function LogView({
     commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
   );
   const historyNotice = logScope === "allRefs"
-    ? "Showing commits from all local branches, remote branches, tags, and the current checkout."
+    ? "Showing one combined timeline from all local branches, remote branches, tags, and the current checkout. Branch-only commits may appear further down the list."
     : detachedHead && shallow
       ? "This checkout is detached and shallow, so current checkout history may stop at the pinned commit."
       : detachedHead
@@ -444,25 +446,7 @@ export function LogView({
 
   return (
     <div className="log-view">
-        <div className="log-view__scope">
-          <div className="log-view__notice">{historyNotice}</div>
-          <div className="log-view__scope-actions" role="group" aria-label="Commit log scope">
-            <button
-              type="button"
-              className={`log-view__scope-btn ${logScope === "currentCheckout" ? "log-view__scope-btn--active" : ""}`}
-              onClick={() => onLogScopeChange("currentCheckout")}
-            >
-              Current checkout
-            </button>
-            <button
-              type="button"
-              className={`log-view__scope-btn ${logScope === "allRefs" ? "log-view__scope-btn--active" : ""}`}
-              onClick={() => onLogScopeChange("allRefs")}
-            >
-              All refs
-            </button>
-           </div>
-         </div>
+      {historyNotice && <div className="log-view__notice">{historyNotice}</div>}
       {showUpstreamNotice && (
         <div className="log-view__notice">
           Upstream tip {commitMarkers.upstreamRef} is outside this local history view.
@@ -503,7 +487,19 @@ export function LogView({
         }}
         endReached={() => { if (hasMore) loadMore(); }}
         components={{
-          EmptyPlaceholder: () => <div className="log-view__empty">No commits yet</div>,
+          EmptyPlaceholder: () => {
+            if (logError) {
+              return <div className="log-view__empty">Could not load commit history: {logError}</div>;
+            }
+            if (logLoading) {
+              return <div className="log-view__empty">Loading commit history...</div>;
+            }
+            return (
+              <div className="log-view__empty">
+                {logScope === "allRefs" ? "No commits were returned for any refs." : "No commits yet"}
+              </div>
+            );
+          },
         }}
       />
       {sigPopover && <SignaturePopover data={sigPopover} onClose={handleCloseSigPopover} />}

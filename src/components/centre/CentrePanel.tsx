@@ -31,6 +31,8 @@ type CentrePanelProps = {
   commits: CommitHistoryItem[];
   loadMore: () => void;
   hasMore: boolean;
+  logLoading: boolean;
+  logError: string | null;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   onLogScopeChange: (scope: CommitLogScope) => void;
@@ -147,6 +149,27 @@ export function CentrePanel(props: CentrePanelProps) {
           onClick={() => props.onTabChange("log")}>
           Log
         </button>
+        <div className="centre__tabs-spacer" />
+        {tab === "log" && (
+          <div className="centre__tabs-actions">
+            <div className="log-view__scope-actions" role="group" aria-label="Commit log scope">
+              <button
+                type="button"
+                className={`log-view__scope-btn ${props.logScope === "currentCheckout" ? "log-view__scope-btn--active" : ""}`}
+                onClick={() => props.onLogScopeChange("currentCheckout")}
+              >
+                Current checkout
+              </button>
+              <button
+                type="button"
+                className={`log-view__scope-btn ${props.logScope === "allRefs" ? "log-view__scope-btn--active" : ""}`}
+                onClick={() => props.onLogScopeChange("allRefs")}
+              >
+                All refs
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/*
@@ -202,11 +225,12 @@ export function CentrePanel(props: CentrePanelProps) {
           commits={props.commits}
           loadMore={props.loadMore}
           hasMore={props.hasMore}
+          logLoading={props.logLoading}
+          logError={props.logError}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
-           onLogScopeChange={props.onLogScopeChange}
-           detachedHead={props.detachedHead}
-           shallow={props.shallow}
+          detachedHead={props.detachedHead}
+          shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}
           onSelectCommit={props.onSelectCommit}
           onCreateTagAtCommit={props.onCreateTagAtCommit}
