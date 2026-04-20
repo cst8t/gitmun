@@ -1164,6 +1164,114 @@ impl CliGitHandler {
         Ok(stdout)
     }
 
+    fn run_git_bytes_with_stdin(
+        args: &[&str],
+        current_dir: &Path,
+        stdin_data: &[u8],
+    ) -> GitResult<Vec<u8>> {
+        let mut command = crate::git_command();
+        Self::configure_command(&mut command);
+        command
+            .args(args)
+            .current_dir(current_dir)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command.spawn()?;
+
+        if let Some(mut stdin) = child.stdin.take() {
+            stdin
+                .write_all(stdin_data)
+                .map_err(|e| GitError::IoError(e.to_string()))?;
+        }
+
+        let output = child.wait_with_output()?;
+
+        if !output.status.success() {
+            let stderr =
+                Self::append_auth_help(String::from_utf8_lossy(&output.stderr).trim().to_string());
+            let joined = format!("git {}", args.join(" "));
+            return Err(GitError::CommandFailed {
+                command: joined,
+                stderr,
+            });
+        }
+
+        Ok(output.stdout)
+    }
+
+    fn detect_commit_signature_headers(
+        repo_path: &Path,
+        hashes: &[String],
+    ) -> GitResult<HashMap<String, String>> {
+        if hashes.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let mut stdin_data = hashes.join("\n").into_bytes();
+        stdin_data.push(b'\n');
+        let output = Self::run_git_bytes_with_stdin(&["cat-file", "--batch"], repo_path, &stdin_data)?;
+
+        let mut signatures = HashMap::new();
+        let mut cursor = 0usize;
+        while cursor < output.len() {
+            let header_end = output[cursor..]
+                .iter()
+                .position(|b| *b == b'\n')
+                .map(|offset| cursor + offset)
+                .ok_or_else(|| GitError::IoError("Invalid git cat-file batch output".to_string()))?;
+            let header = std::str::from_utf8(&output[cursor..header_end])
+                .map_err(|e| GitError::IoError(e.to_string()))?;
+            cursor = header_end + 1;
+
+            if header.ends_with(" missing") {
+                continue;
+            }
+
+            let mut parts = header.split_whitespace();
+            let hash = parts.next().unwrap_or_default();
+            let object_type = parts.next().unwrap_or_default();
+            let size = parts
+                .next()
+                .unwrap_or_default()
+                .parse::<usize>()
+                .map_err(|e| GitError::IoError(e.to_string()))?;
+            if object_type != "commit" {
+                cursor = cursor.saturating_add(size + 1);
+                continue;
+            }
+            if cursor + size > output.len() {
+                return Err(GitError::IoError("Invalid git cat-file batch object payload".to_string()));
+            }
+
+            let payload = &output[cursor..cursor + size];
+            cursor += size;
+            if cursor < output.len() && output[cursor] == b'\n' {
+                cursor += 1;
+            }
+
+            let headers_end = payload
+                .windows(2)
+                .position(|window| window == b"\n\n")
+                .unwrap_or(payload.len());
+            let header_block = &payload[..headers_end];
+            for line in header_block.split(|b| *b == b'\n') {
+                if let Some(signature_start) = line.strip_prefix(b"gpgsig ") {
+                    let key_type = if signature_start.starts_with(b"-----BEGIN SSH SIGNATURE-----") {
+                        "ssh"
+                    } else {
+                        "gpg"
+                    };
+                    signatures.insert(hash.to_string(), key_type.to_string());
+                    break;
+                }
+            }
+        }
+
+        Ok(signatures)
+    }
+
     fn append_auth_help(stderr: String) -> String {
         let lower = stderr.to_lowercase();
 
@@ -1888,7 +1996,7 @@ impl GitOperationHandler for CliGitHandler {
             CommitDateMode::AuthorDate => "%ad",
             CommitDateMode::CommitterDate => "%cd",
         };
-        let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s%x1f%G?");
+        let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s");
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let limit = request.limit.unwrap_or(100).clamp(1, 5000).to_string();
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
@@ -1919,30 +2027,22 @@ impl GitOperationHandler for CliGitHandler {
         };
 
         let mut commits = Vec::new();
+        let mut hashes = Vec::new();
 
         for line in output.lines().filter(|line| !line.trim().is_empty()) {
-            let mut parts = line.splitn(7, '\u{1f}');
+            let mut parts = line.splitn(6, '\u{1f}');
             let hash = parts.next().unwrap_or_default().trim().to_string();
             let short_hash = parts.next().unwrap_or_default().trim().to_string();
             let author = parts.next().unwrap_or_default().trim().to_string();
             let author_email = parts.next().unwrap_or_default().trim().to_string();
             let date = parts.next().unwrap_or_default().trim().to_string();
             let message = parts.next().unwrap_or_default().trim().to_string();
-            let sig_char = parts.next().unwrap_or_default().trim();
 
             if hash.is_empty() || short_hash.is_empty() {
                 continue;
             }
 
-            // %G? values: G=good, B=bad, U=good/unknown-validity, X=good/expired,
-            // Y=good/expired-key, R=good/revoked-key, E=missing key, N=none.
-            // For unsigned commits git returns N immediately without invoking GPG.
-            let signature_status = match sig_char {
-                "G" | "U" | "X" | "Y" | "R" => SignatureStatus::Verified,
-                "B" => SignatureStatus::Bad,
-                "E" => SignatureStatus::UnknownKey,
-                _ => SignatureStatus::None,
-            };
+            hashes.push(hash.clone());
 
             commits.push(CommitHistoryItem {
                 hash,
@@ -1951,9 +2051,20 @@ impl GitOperationHandler for CliGitHandler {
                 author_email,
                 date,
                 message,
-                signature_status,
+                signature_status: SignatureStatus::None,
                 key_type: None,
             });
+        }
+
+        // Avoid eager signature verification in the history list. The UI already
+        // upgrades visible `signed` commits lazily via `verify_commits`, which
+        // keeps `All refs` responsive even when signature verification is slow.
+        let signature_headers = Self::detect_commit_signature_headers(&repo_path, &hashes).unwrap_or_default();
+        for commit in &mut commits {
+            if let Some(key_type) = signature_headers.get(&commit.hash) {
+                commit.signature_status = SignatureStatus::Signed;
+                commit.key_type = Some(key_type.clone());
+            }
         }
 
         Ok(commits)

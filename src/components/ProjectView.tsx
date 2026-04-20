@@ -218,7 +218,14 @@ export function ProjectView({
   const [identityAvatar, setIdentityAvatar] = useState<string | null>(null);
 
   const currentBranch = status?.currentBranch ?? null;
-  const { commits, loadMore, hasMore, refresh: refreshLog } = useGitLog(repoPath, logScope);
+  const {
+    commits,
+    loadMore,
+    hasMore,
+    loading: logLoading,
+    error: logError,
+    refresh: refreshLog,
+  } = useGitLog(repoPath, logScope);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -2010,6 +2017,8 @@ export function ProjectView({
                     : commits}
                   loadMore={searchQuery ? () => {} : loadMore}
                   hasMore={searchQuery ? false : hasMore}
+                  logLoading={logLoading}
+                  logError={logError}
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   onLogScopeChange={setLogScope}
