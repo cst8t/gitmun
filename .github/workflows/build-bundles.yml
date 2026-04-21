@@ -670,6 +670,105 @@ jobs:
           )
           PY
 
+  windows-msix:
+    name: Windows MSIX (native Windows packaging)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            src-tauri -> src-tauri/target
+
+      - name: Setup WinApp CLI
+        uses: microsoft/setup-WinAppCli@v0.1
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Generate icons
+        run: npm run generate:icons
+
+      - name: Resolve build version
+        shell: pwsh
+        run: |
+          $rawVersion = "${{ github.event.release.tag_name || github.ref_name }}"
+          if ([string]::IsNullOrWhiteSpace($rawVersion) -or $rawVersion.StartsWith("refs/")) {
+            $rawVersion = $env:GITHUB_REF_NAME
+          }
+          if ($rawVersion -match '^v[0-9]') {
+            $bundleVersion = $rawVersion.Substring(1)
+          } else {
+            $bundleVersion = "0.1.0"
+          }
+          $msixVersion = "$bundleVersion.0"
+          "BUNDLE_VERSION=$bundleVersion" >> $env:GITHUB_ENV
+          "MSIX_VERSION=$msixVersion" >> $env:GITHUB_ENV
+          Write-Host "Using BUNDLE_VERSION=$bundleVersion"
+          Write-Host "Using MSIX_VERSION=$msixVersion"
+
+      - name: Build frontend assets
+        run: npm run build
+
+      - name: Build Windows binary for MSIX
+        env:
+          APP_VERSION: ${{ env.BUNDLE_VERSION }}
+          GITMUN_MSIX: "1"
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+
+      - name: Stage MSIX layout
+        shell: pwsh
+        env:
+          MSIX_PUBLISHER: ${{ vars.MSIX_PUBLISHER }}
+        run: |
+          $publisher = $env:MSIX_PUBLISHER
+          if ([string]::IsNullOrWhiteSpace($publisher)) {
+            $publisher = "CN=Gitmun Dev"
+          }
+
+          $layout = "packaging/msix/layout"
+          Remove-Item $layout -Recurse -Force -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$layout/Assets" | Out-Null
+
+          Copy-Item "src-tauri/target/release/gitmun.exe" "$layout/gitmun.exe"
+          Copy-Item "src-tauri/icons/StoreLogo.png" "$layout/Assets/StoreLogo.png"
+          Copy-Item "src-tauri/icons/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
+          Copy-Item "src-tauri/icons/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
+          Copy-Item "src-tauri/icons/Square150x150Logo.png" "$layout/Assets/Square150x150Logo.png"
+          Copy-Item "src-tauri/icons/Square310x310Logo.png" "$layout/Assets/Square310x310Logo.png"
+
+          $manifest = Get-Content "packaging/msix/Package.appxmanifest" -Raw
+          $manifest = $manifest.Replace("__APP_VERSION__", $env:MSIX_VERSION)
+          $manifest = $manifest.Replace("__MSIX_PUBLISHER__", $publisher)
+          Set-Content "$layout/Package.appxmanifest" $manifest -Encoding utf8
+
+      - name: Generate development certificate
+        run: winapp cert generate --if-exists skip --manifest packaging/msix/layout/Package.appxmanifest
+
+      - name: Pack MSIX
+        run: winapp pack packaging/msix/layout --manifest packaging/msix/layout/Package.appxmanifest --cert devcert.pfx
+
+      - name: Upload MSIX artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-msix
+          path: |
+            *.msix
+            packaging/msix/layout/Package.appxmanifest
+
   macos-bundles:
     name: macOS (dmg, app updater)
     runs-on: macos-latest
