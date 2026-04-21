@@ -7,6 +7,7 @@ mod window_manager;
 use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
+use serde::Serialize;
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
 use shell::cli::ShellStartupAction;
@@ -44,6 +45,26 @@ enum GitBackend {
 }
 
 static GIT_BACKEND: OnceLock<GitBackend> = OnceLock::new();
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct WindowsGitRuntimeStatus {
+    is_msix: bool,
+    git_found: bool,
+    winget_available: bool,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub(crate) fn is_msix_build() -> bool {
+    #[cfg(target_os = "windows")]
+    {
+        option_env!("GITMUN_MSIX").is_some()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        false
+    }
+}
 
 fn git_backend() -> GitBackend {
     *GIT_BACKEND.get_or_init(detect_git_backend)
@@ -204,6 +225,84 @@ fn resolve_git_exe() -> std::ffi::OsString {
         }
     }
     "git".into()
+}
+
+#[cfg(windows)]
+fn command_succeeds(executable: &str, args: &[&str]) -> bool {
+    let mut command = std::process::Command::new(executable);
+    command.args(args);
+    configure_command(&mut command);
+    command.output().is_ok_and(|output| output.status.success())
+}
+
+#[cfg(windows)]
+fn is_git_available() -> bool {
+    let git_exe = resolve_git_exe();
+    let mut command = std::process::Command::new(git_exe);
+    command.arg("--version");
+    configure_command(&mut command);
+    command.output().is_ok_and(|output| output.status.success())
+}
+
+#[cfg(windows)]
+fn is_winget_available() -> bool {
+    command_succeeds("winget", &["--version"])
+}
+
+#[tauri::command]
+fn get_windows_git_runtime_status() -> WindowsGitRuntimeStatus {
+    #[cfg(windows)]
+    {
+        WindowsGitRuntimeStatus {
+            is_msix: is_msix_build(),
+            git_found: is_git_available(),
+            winget_available: is_winget_available(),
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        WindowsGitRuntimeStatus {
+            is_msix: false,
+            git_found: true,
+            winget_available: false,
+        }
+    }
+}
+
+#[tauri::command]
+fn install_git_with_winget() -> Result<(), String> {
+    #[cfg(windows)]
+    {
+        if !is_msix_build() {
+            return Err("Git installation via Winget is only enabled in MSIX builds.".to_string());
+        }
+        if is_git_available() {
+            return Ok(());
+        }
+        if !is_winget_available() {
+            return Err("Winget is not available on this machine.".to_string());
+        }
+
+        let status = std::process::Command::new("winget")
+            .args([
+                "install",
+                "Git.Git",
+                "--accept-source-agreements",
+                "--accept-package-agreements",
+            ])
+            .status()
+            .map_err(|error| error.to_string())?;
+
+        if status.success() {
+            Ok(())
+        } else {
+            Err(format!("Winget exited with status {status}."))
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        Err("Winget installation is only available on Windows.".to_string())
+    }
 }
 
 /// Read linuxGraphicsMode from the saved config file without starting Tauri.
@@ -571,6 +670,8 @@ pub fn run() {
             window_manager::show_window,
             window_manager::get_system_theme_hint,
             get_startup_action,
+            get_windows_git_runtime_status,
+            install_git_with_winget,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");
