@@ -1,6 +1,6 @@
 use crate::git::types::{
-    AvatarProviderMode, BackendMode, CommitDateMode, ExternalDiffTool, LinuxGraphicsMode,
-    OperationResult, Settings, ThemeMode,
+    AvatarProviderMode, BackendMode, CommitDateMode, CommitPrimaryAction, ExternalDiffTool,
+    LinuxGraphicsMode, OperationResult, Settings, ThemeMode,
 };
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
@@ -620,6 +620,16 @@ pub fn set_commit_date_mode(
 #[tauri::command]
 pub fn set_push_follow_tags(push_follow_tags: bool, state: tauri::State<'_, AppState>) -> Settings {
     state.git_service.set_push_follow_tags(push_follow_tags)
+}
+
+#[tauri::command]
+pub fn set_commit_primary_action(
+    commit_primary_action: CommitPrimaryAction,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_commit_primary_action(commit_primary_action)
 }
 
 #[tauri::command]

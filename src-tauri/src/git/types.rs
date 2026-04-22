@@ -14,6 +14,19 @@ impl Default for CommitDateMode {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub enum CommitPrimaryAction {
+    Commit,
+    CommitAndPush,
+}
+
+impl Default for CommitPrimaryAction {
+    fn default() -> Self {
+        Self::Commit
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub enum CommitLogScope {
     CurrentCheckout,
     AllRefs,
@@ -121,6 +134,8 @@ pub struct Settings {
     #[serde(default)]
     pub commit_date_mode: CommitDateMode,
     #[serde(default)]
+    pub commit_primary_action: CommitPrimaryAction,
+    #[serde(default)]
     pub push_follow_tags: bool,
     #[serde(default = "Settings::default_auto_check_for_updates_on_launch")]
     pub auto_check_for_updates_on_launch: bool,
@@ -146,6 +161,7 @@ impl Default for Settings {
             try_platform_first: true,
             default_clone_dir: String::new(),
             commit_date_mode: CommitDateMode::AuthorDate,
+            commit_primary_action: CommitPrimaryAction::Commit,
             push_follow_tags: false,
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
