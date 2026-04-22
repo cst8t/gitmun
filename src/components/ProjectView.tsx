@@ -791,8 +791,9 @@ export function ProjectView({
 
   const handlePushRejectedIntegrate = useCallback(async () => {
     setPushRejectionAnalysis(null);
+    await handleFetch();
     await startPullFlow();
-  }, [startPullFlow]);
+  }, [handleFetch, startPullFlow]);
 
   const handlePushRejectedPublish = useCallback(() => {
     setPushRejectionAnalysis(null);
