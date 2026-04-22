@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
-import type { ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
+import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
 import { getNumstat } from "../../api/commands";
 
 type StagingViewProps = {
@@ -35,7 +35,9 @@ type StagingViewProps = {
   onExternalDiff: (path: string, staged: boolean) => void;
   onStageAll: () => void;
   onUnstageAll: () => void;
-  onCommit: (message: string, amend: boolean) => void;
+  selectedCommitAction: CommitPrimaryAction;
+  onSelectCommitAction: (action: CommitPrimaryAction) => void;
+  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
@@ -137,7 +139,8 @@ export function StagingView({
   stagedFiles, unstagedFiles, unversionedFiles, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
   selectedFile, selectedSubmodulePath, onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
-  onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll, onCommit,
+  onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
+  selectedCommitAction, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
   isCommitting, lastCommitMessage,
 }: StagingViewProps) {
@@ -465,6 +468,8 @@ export function StagingView({
 
       <CommitBox
         stagedCount={stagedFiles.length}
+        selectedAction={selectedCommitAction}
+        onSelectAction={onSelectCommitAction}
         onCommit={onCommit}
         isCommitting={isCommitting}
         lastCommitMessage={lastCommitMessage}

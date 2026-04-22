@@ -376,6 +376,11 @@
   font-family: var(--font-mono);
 }
 
+.commit-box__actions {
+  position: relative;
+  display: flex;
+}
+
 .commit-box__btn {
   width: 100%;
   background: var(--accent);
@@ -390,6 +395,23 @@
   transition: all 0.2s;
 }
 
+.commit-box__btn--primary {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.commit-box__btn--toggle {
+  width: 42px;
+  flex: 0 0 42px;
+  padding: 0;
+  border-left: 1px solid rgba(12, 17, 26, 0.16);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .commit-box__btn--disabled {
   background: var(--bg-elevated);
   color: var(--text-muted);
@@ -397,8 +419,47 @@
   cursor: not-allowed;
 }
 
+.commit-box__btn--disabled.commit-box__btn--toggle {
+  border-left-color: var(--border-subtle);
+}
+
 .commit-box__btn--pulse {
   animation: commitPulse 0.6s ease;
+}
+
+.commit-box__menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 6px);
+  min-width: 180px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 4px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 20;
+}
+
+.commit-box__menu-item {
+  width: 100%;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-md);
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-family: var(--font-ui);
+  text-align: left;
+}
+
+.commit-box__menu-item:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
 }
 
 /* Log view */

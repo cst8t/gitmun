@@ -41,6 +41,7 @@ import * as api from "../api/commands";
 import type {
   CommitLogScope,
   CommitMarkers,
+  CommitPrimaryAction,
   CreateBranchRequest,
   GitIdentity,
   PullAnalysis,
@@ -195,6 +196,7 @@ export function ProjectView({
   const [divergentPullAnalysis, setDivergentPullAnalysis] = useState<PullAnalysis | null>(null);
   const [pushRejectionAnalysis, setPushRejectionAnalysis] = useState<PushRejectionAnalysis | null>(null);
   const [upstreamDialogMode, setUpstreamDialogMode] = useState<UpstreamDialogMode | null>(null);
+  const [commitPrimaryAction, setCommitPrimaryActionState] = useState<CommitPrimaryAction>("commit");
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -333,12 +335,14 @@ export function ProjectView({
     api.getSettings()
       .then((settings) => {
         if (!cancelled) {
+          setCommitPrimaryActionState(settings.commitPrimaryAction ?? "commit");
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
         }
       })
       .catch(() => {
         if (!cancelled) {
+          setCommitPrimaryActionState("commit");
           setPushFollowTags(false);
           setWrapDiffLines(false);
         }
@@ -530,29 +534,58 @@ export function ProjectView({
     } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Unstage all failed: ${String(e)}`, "unknown"); }
   }, [repoPath, refreshStatus, showToast]);
 
-  const handleCommit = useCallback(async (message: string, amend: boolean) => {
-    if (!repoPath) return;
+  const handleSelectCommitAction = useCallback(async (action: CommitPrimaryAction) => {
+    if (action === commitPrimaryAction) {
+      return;
+    }
+
+    const previousAction = commitPrimaryAction;
+    setCommitPrimaryActionState(action);
+    try {
+      const settings = await api.setCommitPrimaryAction(action);
+      setCommitPrimaryActionState(settings.commitPrimaryAction ?? action);
+    } catch (e) {
+      setCommitPrimaryActionState(previousAction);
+      showToast(String(e), "error");
+      appendResultLog("error", `Save commit action failed: ${String(e)}`, "unknown");
+    }
+  }, [commitPrimaryAction, showToast]);
+
+  const runCommitRequest = useCallback(async (message: string, amend: boolean) => {
+    if (!repoPath) return false;
     if (rebaseInProgress) {
       showToast("Use Continue Rebase to proceed while rebasing", "error");
-      return;
+      return false;
     }
     if (cherryPickInProgress) {
       showToast("Use Continue Cherry-pick to proceed while cherry-picking", "error");
-      return;
+      return false;
     }
     if (revertInProgress) {
       showToast("Use Continue Revert to proceed while reverting", "error");
-      return;
+      return false;
     }
-    setIsCommitting(true);
     try {
       const result = await api.commitChanges(repoPath, message, amend);
       showToast(amend ? "Amended commit" : "Commit created");
       appendResultLog("success", amend ? "Amended latest commit" : "Created commit", result.backendUsed);
       await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Commit failed: ${String(e)}`, "unknown"); }
-    finally { setIsCommitting(false); }
+      return true;
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", `Commit failed: ${String(e)}`, "unknown");
+      return false;
+    }
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast]);
+
+  const handleCommit = useCallback(async (message: string, amend: boolean) => {
+    setIsCommitting(true);
+    try {
+      await runCommitRequest(message, amend);
+    } finally {
+      setIsCommitting(false);
+    }
+  }, [runCommitRequest]);
 
   const handleFetch = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -694,6 +727,19 @@ export function ProjectView({
       pushFollowTags,
     }, "Push complete", "Push failed");
   }, [remoteActionState, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags]);
+
+  const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
+    setIsCommitting(true);
+    try {
+      const committed = await runCommitRequest(message, amend);
+      if (!committed) {
+        return;
+      }
+      await handlePush();
+    } finally {
+      setIsCommitting(false);
+    }
+  }, [handlePush, runCommitRequest]);
 
   const handleUpstreamDialogConfirm = useCallback(async (selection: { remote: string; remoteBranch: string }) => {
     if (!repoPath || !currentBranchInfo || !upstreamDialogMode) {
@@ -2052,7 +2098,14 @@ export function ProjectView({
                   onExternalDiff={handleExternalDiff}
                   onStageAll={handleStageAll}
                   onUnstageAll={handleUnstageAll}
-                  onCommit={handleCommit}
+                  selectedCommitAction={commitPrimaryAction}
+                  onSelectCommitAction={handleSelectCommitAction}
+                  onCommit={(message, amend, action) => {
+                    if (action === "commitAndPush") {
+                      return handleCommitAndPush(message, amend);
+                    }
+                    return handleCommit(message, amend);
+                  }}
                   onMergeAbort={handleMergeAbort}
                   onRebaseContinue={handleRebaseContinue}
                   onRebaseAbort={handleRebaseAbort}

@@ -5,7 +5,15 @@ import { MergeBanner } from "./MergeBanner";
 import { RebaseBanner } from "./RebaseBanner";
 import { CherryPickBanner } from "./CherryPickBanner";
 import { RevertBanner } from "./RevertBanner";
-import type { CommitHistoryItem, CommitLogScope, CommitMarkers, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
+import type {
+  CommitHistoryItem,
+  CommitLogScope,
+  CommitMarkers,
+  CommitPrimaryAction,
+  ConflictFileItem,
+  FileStatusItem,
+  SubmoduleStatus,
+} from "../../types";
 import "./CentrePanel.css";
 
 export type CentreTab = "changes" | "log";
@@ -65,7 +73,9 @@ type CentrePanelProps = {
   onExternalDiff: (path: string, staged: boolean) => void;
   onStageAll: () => void;
   onUnstageAll: () => void;
-  onCommit: (message: string, amend: boolean) => void;
+  selectedCommitAction: CommitPrimaryAction;
+  onSelectCommitAction: (action: CommitPrimaryAction) => void;
+  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   onMergeAbort: () => void;
   onRebaseContinue: () => void;
   onRebaseAbort: () => void;
@@ -92,7 +102,7 @@ export function CentrePanel(props: CentrePanelProps) {
     const message = props.mergeMessage?.split("\n").find(l => !l.startsWith("#"))?.trim()
       || props.mergeMessage?.trim()
       || "";
-    props.onCommit(message, false);
+    props.onCommit(message, false, props.selectedCommitAction);
   };
 
   return (
@@ -210,6 +220,8 @@ export function CentrePanel(props: CentrePanelProps) {
           onExternalDiff={props.onExternalDiff}
           onStageAll={props.onStageAll}
           onUnstageAll={props.onUnstageAll}
+          selectedCommitAction={props.selectedCommitAction}
+          onSelectCommitAction={props.onSelectCommitAction}
           onCommit={props.onCommit}
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
