@@ -4,6 +4,7 @@ export type ExternalDiffTool = "Other" | "Meld" | "Kompare" | "WinMerge" | "VsCo
 export type AvatarProviderMode = "Off" | "Libravatar";
 export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
+export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 
 export type Settings = {
@@ -18,6 +19,7 @@ export type Settings = {
     tryPlatformFirst: boolean;
     defaultCloneDir: string;
     commitDateMode: CommitDateMode;
+    commitPrimaryAction: CommitPrimaryAction;
     pushFollowTags: boolean;
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;

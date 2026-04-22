@@ -8,15 +8,16 @@ use super::gix_handler::GixGitHandler;
 use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
     CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
-    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers, CommitRequest,
-    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
-    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExternalDiffRequest, FetchRequest,
-    FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, MergeRequest,
-    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
+    CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest,
+    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
+    DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
+    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
+    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
+    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
+    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
     SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
@@ -241,6 +242,15 @@ impl GitService {
     pub fn set_push_follow_tags(&self, push_follow_tags: bool) -> Settings {
         self.update_settings(|settings| {
             settings.push_follow_tags = push_follow_tags;
+        })
+    }
+
+    pub fn set_commit_primary_action(
+        &self,
+        commit_primary_action: CommitPrimaryAction,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            settings.commit_primary_action = commit_primary_action;
         })
     }
 

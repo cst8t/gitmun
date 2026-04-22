@@ -482,6 +482,7 @@ pub fn run() {
             commands::settings::set_default_clone_dir,
             commands::settings::set_commit_date_mode,
             commands::settings::set_push_follow_tags,
+            commands::settings::set_commit_primary_action,
             commands::settings::set_auto_check_for_updates_on_launch,
             commands::settings::set_auto_install_updates,
             commands::settings::set_update_endpoint,

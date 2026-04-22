@@ -6,6 +6,7 @@ import type {
     CommitHistoryItem,
     CommitLogScope,
     CommitMarkers,
+    CommitPrimaryAction,
     CommitVerification,
     CommitRequest,
     CreateBranchRequest,
@@ -384,6 +385,10 @@ export function setDefaultCloneDir(defaultCloneDir: string): Promise<Settings> {
 
 export function setPushFollowTags(pushFollowTags: boolean): Promise<Settings> {
     return invoke<Settings>("set_push_follow_tags", {pushFollowTags});
+}
+
+export function setCommitPrimaryAction(commitPrimaryAction: CommitPrimaryAction): Promise<Settings> {
+    return invoke<Settings>("set_commit_primary_action", {commitPrimaryAction});
 }
 
 export function setAutoCheckForUpdatesOnLaunch(autoCheckForUpdatesOnLaunch: boolean): Promise<Settings> {
