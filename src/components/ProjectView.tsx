@@ -49,6 +49,7 @@ import type {
   PushRequest,
   PushRejectionAnalysis,
   RemoteInfo,
+  StashEntry,
 } from "../types";
 import type { ResultLogEntry } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
@@ -87,6 +88,13 @@ function extractStashRef(output: string | null | undefined): string | null {
 
   const match = output.match(/stash@\{\d+}/);
   return match ? match[0] : null;
+}
+
+export function buildStashDropPrompt(stash: Pick<StashEntry, "index" | "message">): string {
+  const stashLabel = stash.message.trim()
+    ? `stash ${stash.index} - ${stash.message.trim()}`
+    : `stash ${stash.index}`;
+  return `Drop ${stashLabel}? This cannot be undone.`;
 }
 
 export type ProjectViewProps = {
@@ -851,15 +859,15 @@ export function ProjectView({
     finally { setStashBusy(false); }
   }, [repoPath, stashBusy, refreshStatus, refreshStashes, showToast]);
 
-  const handleStashDrop = useCallback(async (stashIndex: number) => {
+  const handleStashDrop = useCallback(async (stash: StashEntry) => {
     if (!repoPath || stashBusy) return;
-    const confirmed = await ask(`Drop stash@{${stashIndex}}? This cannot be undone.`, {
+    const confirmed = await ask(buildStashDropPrompt(stash), {
       title: "Drop Stash", kind: "warning", okLabel: "Drop", cancelLabel: "Cancel",
     });
     if (!confirmed) return;
     setStashBusy(true);
     try {
-      const result = await api.stashDrop(repoPath, stashIndex);
+      const result = await api.stashDrop(repoPath, stash.index);
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshStashes();

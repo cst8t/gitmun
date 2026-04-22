@@ -37,7 +37,7 @@ type SidebarProps = {
   onRemoveRemote: (remoteName: string) => void;
   onStashApply: (stashIndex: number) => void;
   onStashPop: (stashIndex: number) => void;
-  onStashDrop: (stashIndex: number) => void;
+  onStashDrop: (stash: StashEntry) => void;
   stashBusy?: boolean;
 };
 
@@ -188,7 +188,7 @@ export function Sidebar({
                         className="sidebar__stash-btn sidebar__stash-btn--danger"
                         title="Drop (delete without applying)"
                         disabled={stashBusy}
-                        onClick={() => onStashDrop(s.index)}
+                        onClick={() => onStashDrop(s)}
                       >
                         Drop
                       </button>
