@@ -9,6 +9,8 @@ use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
 use tauri::{Manager, ipc::Channel};
+#[cfg(windows)]
+use tauri_utils::{config::BundleType, platform};
 use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
@@ -62,16 +64,38 @@ fn current_update_endpoint(state: &tauri::State<'_, AppState>) -> String {
     }
 }
 
+fn current_updater_target() -> Option<String> {
+    let default_target = tauri_plugin_updater::target()?;
+
+    #[cfg(windows)]
+    {
+        return Some(match platform::bundle_type() {
+            Some(BundleType::Nsis) => format!("{default_target}-nsis"),
+            Some(BundleType::Msi) => format!("{default_target}-msi"),
+            _ => default_target,
+        });
+    }
+
+    #[cfg(not(windows))]
+    {
+        Some(default_target)
+    }
+}
+
 async fn check_update_from_endpoint(
     app: &tauri::AppHandle,
     update_endpoint: &str,
 ) -> Result<Option<Update>, String> {
     let endpoint = parse_update_endpoint(update_endpoint)?;
-    let updater = app
+    let mut updater = app
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|error| error.to_string())?
-        .timeout(UPDATE_TIMEOUT)
+        .timeout(UPDATE_TIMEOUT);
+    if let Some(target) = current_updater_target() {
+        updater = updater.target(target);
+    }
+    let updater = updater
         .build()
         .map_err(|error| error.to_string())?;
 
