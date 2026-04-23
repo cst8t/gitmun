@@ -393,6 +393,64 @@ jobs:
           npm run tauri bundle -- --config
           "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true,\"targets\":\"msi\"}}"
 
+      - name: Normalise Windows MSI artefact names
+        shell: bash
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import pathlib
+          import re
+
+          bundle_dir = pathlib.Path("src-tauri/target/release/bundle/msi")
+          locale_suffix = re.compile(r"_[A-Za-z]{2}(?:[-_][A-Za-z]{2})?$")
+
+          def normalise_name(path: pathlib.Path) -> pathlib.Path:
+              if path.suffix == ".sig" and path.name.endswith(".msi.sig"):
+                  stem = path.name[:-8]
+                  suffix = ".msi.sig"
+              elif path.suffix == ".msi":
+                  stem = path.stem
+                  suffix = ".msi"
+              else:
+                  return path
+
+              normalised = locale_suffix.sub("", stem)
+              return path.with_name(f"{normalised}{suffix}")
+
+          renames = []
+          targets = {}
+          has_conflict = False
+          for path in sorted(bundle_dir.glob("*")):
+              target = normalise_name(path)
+              if target == path:
+                  continue
+              renames.append((path, target))
+              targets.setdefault(target.name, []).append(path.name)
+
+          for target_name, source_names in sorted(targets.items()):
+              if len(source_names) > 1:
+                  has_conflict = True
+                  joined_sources = ", ".join(source_names)
+                  print(
+                      f"Skipping MSI artefact normalisation because {joined_sources} "
+                      f"would all map to {target_name}."
+                  )
+
+          if has_conflict:
+              raise SystemExit(0)
+
+          renamed_any = False
+          for path, target in renames:
+              if target.exists():
+                  raise SystemExit(f"Refusing to overwrite existing artefact: {target}")
+              path.rename(target)
+              renamed_any = True
+              print(f"Renamed {path.name} -> {target.name}")
+
+          if not renamed_any:
+              print("No locale-qualified MSI artefacts needed renaming.")
+          PY
+
       - name: Upload Windows release assets
         if: ${{ github.event_name == 'release' }}
         shell: bash
