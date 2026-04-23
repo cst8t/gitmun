@@ -510,11 +510,20 @@ pub fn set_global_diff_tool(
             "Cleared diff.tool from global git config".to_string()
         }
         ExternalDiffTool::Meld => {
-            if maybe_set_tool_paths("meld", tool_path.as_deref())? {
+            #[cfg(windows)]
+            {
+                if maybe_set_tool_paths("meld", tool_path.as_deref())? {
+                    git_config_global_set("diff.tool", "meld")?;
+                    "Set git global diff.tool=meld (with detected tool path)".to_string()
+                } else {
+                    return Err(windows_tool_path_message("Meld"));
+                }
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = tool_path;
                 git_config_global_set("diff.tool", "meld")?;
-                "Set git global diff.tool=meld (with detected tool path)".to_string()
-            } else {
-                return Err(windows_tool_path_message("Meld"));
+                "Set git global diff.tool=meld".to_string()
             }
         }
         ExternalDiffTool::Kompare => {
