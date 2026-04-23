@@ -50,6 +50,10 @@
     "windows": {
       "nsis": {
         "installerHooks": "./windows/hooks.nsh"
+      },
+      "wix": {
+        "fragmentPaths": ["./windows/git-launch-condition.wxs"],
+        "upgradeCode": "cfd38d6f-06d8-500b-8162-2815a511ebaf"
       }
     }
   },

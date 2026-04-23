@@ -75,7 +75,7 @@ export function useUpdateFlow() {
       const updaterSupported = await api.isUpdaterEnabled();
       if (!updaterSupported) {
         if (!silentIfNoUpdate) {
-          setStatusMessage("Updates are managed by this platform package channel.");
+          setStatusMessage("Updates are managed by this installation channel.");
         }
         return null;
       }

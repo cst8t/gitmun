@@ -56,7 +56,7 @@ export function AboutWindow() {
           {checking ? "Checking..." : "Check for updates"}
         </button>
       ) : updaterSupported === false ? (
-        <div className="about__status">Updates are managed by this platform package channel.</div>
+        <div className="about__status">Updates are managed by this installation channel.</div>
       ) : null}
       <button
         className="about__attributions-btn"
