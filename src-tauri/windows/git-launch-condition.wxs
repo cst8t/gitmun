@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <Property Id="ALLOW_MISSING_GIT" Secure="yes" />
+
+    <Property Id="GIT_INSTALL_PATH_MACHINE">
+      <RegistrySearch
+        Id="GitInstallPathMachine"
+        Root="HKLM"
+        Key="SOFTWARE\GitForWindows"
+        Name="InstallPath"
+        Type="raw"
+      />
+    </Property>
+
+    <Property Id="GIT_INSTALL_PATH_MACHINE_X86">
+      <RegistrySearch
+        Id="GitInstallPathMachineX86"
+        Root="HKLM"
+        Key="SOFTWARE\WOW6432Node\GitForWindows"
+        Name="InstallPath"
+        Type="raw"
+      />
+    </Property>
+
+    <Property Id="GIT_INSTALL_PATH_USER">
+      <RegistrySearch
+        Id="GitInstallPathUser"
+        Root="HKCU"
+        Key="SOFTWARE\GitForWindows"
+        Name="InstallPath"
+        Type="raw"
+      />
+    </Property>
+
+    <Property Id="GIT_PROGRAMFILES64_CMD">
+      <DirectorySearch Id="GitProgramFiles64CmdDir" Path="[ProgramFiles64Folder]Git\cmd">
+        <FileSearch Id="GitProgramFiles64CmdExe" Name="git.exe" />
+      </DirectorySearch>
+    </Property>
+
+    <Property Id="GIT_PROGRAMFILES64_BIN">
+      <DirectorySearch Id="GitProgramFiles64BinDir" Path="[ProgramFiles64Folder]Git\bin">
+        <FileSearch Id="GitProgramFiles64BinExe" Name="git.exe" />
+      </DirectorySearch>
+    </Property>
+
+    <Property Id="GIT_PROGRAMFILES32_CMD">
+      <DirectorySearch Id="GitProgramFiles32CmdDir" Path="[ProgramFilesFolder]Git\cmd">
+        <FileSearch Id="GitProgramFiles32CmdExe" Name="git.exe" />
+      </DirectorySearch>
+    </Property>
+
+    <Property Id="GIT_PROGRAMFILES32_BIN">
+      <DirectorySearch Id="GitProgramFiles32BinDir" Path="[ProgramFilesFolder]Git\bin">
+        <FileSearch Id="GitProgramFiles32BinExe" Name="git.exe" />
+      </DirectorySearch>
+    </Property>
+
+    <Condition Message="Gitmun requires Git to function. Install Git for Windows before running the MSI, or re-run the installer in passive or quiet mode if Git is managed separately. You can also set ALLOW_MISSING_GIT=1 to bypass this check.">
+      Installed OR GIT_INSTALL_PATH_MACHINE OR GIT_INSTALL_PATH_MACHINE_X86 OR GIT_INSTALL_PATH_USER OR GIT_PROGRAMFILES64_CMD OR GIT_PROGRAMFILES64_BIN OR GIT_PROGRAMFILES32_CMD OR GIT_PROGRAMFILES32_BIN OR UILevel &lt; 5 OR ALLOW_MISSING_GIT = "1"
+    </Condition>
+  </Fragment>
+</Wix>

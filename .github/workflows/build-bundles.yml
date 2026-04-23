@@ -310,9 +310,9 @@ jobs:
               "$upload_url"
           done
 
-  windows-nsis-cross:
-    name: Windows NSIS (cross-compiled on Linux)
-    runs-on: ubuntu-22.04
+  windows-bundles:
+    name: Windows (NSIS, MSI)
+    runs-on: windows-latest
 
     steps:
       - name: Checkout
@@ -326,34 +326,12 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: x86_64-pc-windows-msvc
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: |
             src-tauri -> src-tauri/target
-
-      - name: Cache xwin (MSVC CRT / Windows SDK)
-        uses: actions/cache@v4
-        with:
-          path: /home/runner/.cache/xwin
-          key: xwin-v2-x86_64
-
-      - name: Install cross-build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            nsis \
-            llvm \
-            lld \
-            clang
-
-      - name: Install cargo-xwin
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-xwin
 
       - name: Install frontend dependencies
         run: npm ci
@@ -367,9 +345,11 @@ jobs:
           tool: cargo-about
 
       - name: Generate attribution file
+        shell: bash
         run: bash ./scripts/generate-attributions.sh
 
       - name: Resolve build version
+        shell: bash
         run: |
           RAW_VERSION="${{ github.event.release.tag_name || github.ref_name }}"
           if [[ -z "$RAW_VERSION" || "$RAW_VERSION" == refs/* ]]; then
@@ -383,34 +363,254 @@ jobs:
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
-      - name: Build Windows NSIS installer and updater metadata
-        uses: tauri-apps/tauri-action@v0.6.2
+      - name: Build Windows app without bundling
+        shell: bash
         env:
-          GITHUB_TOKEN: ${{ github.token }}
           APP_VERSION: ${{ env.BUNDLE_VERSION }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          XWIN_CACHE_DIR: /home/runner/.cache/xwin
-          XWIN_ARCH: x86_64
-        with:
-          releaseId: ${{ github.event_name == 'release' && github.event.release.id || '' }}
-          tagName: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-          projectPath: ./
-          tauriScript: npm run tauri
-          includeUpdaterJson: true
-          updaterJsonPreferNsis: true
-          args: >-
-            --runner cargo-xwin
-            --target x86_64-pc-windows-msvc
-            --config '{"version":"${{ env.BUNDLE_VERSION }}","bundle":{"active":true,"targets":"nsis"}}'
+        run: >-
+          npm run tauri build -- --no-bundle
+          --config "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true}}"
 
-      - name: Upload Windows artifacts
+      - name: Bundle Windows NSIS installer
+        shell: bash
+        env:
+          APP_VERSION: ${{ env.BUNDLE_VERSION }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: >-
+          npm run tauri bundle -- --config
+          "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true,\"targets\":\"nsis\"}}"
+
+      - name: Bundle Windows MSI installer
+        shell: bash
+        env:
+          APP_VERSION: ${{ env.BUNDLE_VERSION }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: >-
+          npm run tauri bundle -- --config
+          "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true,\"targets\":\"msi\"}}"
+
+      - name: Upload Windows release assets
+        if: ${{ github.event_name == 'release' }}
+        shell: bash
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["TOKEN"]
+          release_id = os.environ["RELEASE_ID"]
+          repository = os.environ["REPOSITORY"]
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, url: str, *, data: bytes | None = None, extra_headers: dict[str, str] | None = None):
+              req = urllib.request.Request(url, data=data, method=method)
+              for key, value in headers.items():
+                  req.add_header(key, value)
+              for key, value in (extra_headers or {}).items():
+                  req.add_header(key, value)
+              with urllib.request.urlopen(req) as response:
+                  return response.read()
+
+          assets_url = f"https://api.github.com/repos/{repository}/releases/{release_id}/assets?per_page=100"
+          existing_assets = {
+              asset["name"]: asset["url"]
+              for asset in json.loads(request("GET", assets_url).decode())
+          }
+
+          files = []
+          for pattern in (
+              "src-tauri/target/release/bundle/nsis/*.exe",
+              "src-tauri/target/release/bundle/nsis/*.sig",
+              "src-tauri/target/release/bundle/msi/*.msi",
+              "src-tauri/target/release/bundle/msi/*.sig",
+          ):
+              files.extend(pathlib.Path().glob(pattern))
+
+          if not files:
+              raise SystemExit("No Windows bundle assets found to upload.")
+
+          for path in files:
+              name = path.name
+              if name in existing_assets:
+                  request("DELETE", existing_assets[name])
+              upload_url = (
+                  f"https://uploads.github.com/repos/{repository}/releases/{release_id}/assets"
+                  f"?name={urllib.parse.quote(name)}"
+              )
+              request(
+                  "POST",
+                  upload_url,
+                  data=path.read_bytes(),
+                  extra_headers={"Content-Type": "application/octet-stream"},
+              )
+          PY
+
+      - name: Upload Windows workflow artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: windows-nsis
+          name: windows-bundles
           path: |
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe
-            src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/nsis/*.exe
+            src-tauri/target/release/bundle/nsis/*.sig
+            src-tauri/target/release/bundle/msi/*.msi
+            src-tauri/target/release/bundle/msi/*.sig
+
+  update-updater-json:
+    name: Patch updater JSON
+    if: ${{ github.event_name == 'release' }}
+    needs:
+      - linux-bundles
+      - windows-bundles
+      - macos-bundles
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Add Windows installer targets to latest.json
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["GITHUB_TOKEN"]
+          api_base = os.environ["GITHUB_API_URL"].rstrip("/")
+          release_id = os.environ["RELEASE_ID"]
+          repository = os.environ["REPOSITORY"]
+
+          default_headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, url: str, *, data: bytes | None = None, extra_headers: dict[str, str] | None = None):
+              req = urllib.request.Request(url, data=data, method=method)
+              for key, value in default_headers.items():
+                  req.add_header(key, value)
+              for key, value in (extra_headers or {}).items():
+                  req.add_header(key, value)
+              with urllib.request.urlopen(req) as response:
+                  return response.read()
+
+          assets_url = f"{api_base}/repos/{repository}/releases/{release_id}/assets?per_page=100"
+          assets = json.loads(request("GET", assets_url).decode())
+
+          latest_asset = next((asset for asset in assets if asset["name"] == "latest.json"), None)
+          if latest_asset is None:
+              print("latest.json release asset was not found", file=sys.stderr)
+              sys.exit(1)
+
+          nsis_asset = next(
+              (
+                  asset
+                  for asset in assets
+                  if asset["name"].lower().endswith("-setup.exe")
+              ),
+              None,
+          )
+          if nsis_asset is None:
+              print("NSIS release asset was not found", file=sys.stderr)
+              sys.exit(1)
+
+          nsis_sig_asset = next(
+              (
+                  asset
+                  for asset in assets
+                  if asset["name"].lower().endswith("-setup.exe.sig")
+              ),
+              None,
+          )
+          if nsis_sig_asset is None:
+              print("NSIS signature release asset was not found", file=sys.stderr)
+              sys.exit(1)
+
+          msi_asset = next(
+              (asset for asset in assets if asset["name"].lower().endswith(".msi")),
+              None,
+          )
+          if msi_asset is None:
+              print("MSI release asset was not found", file=sys.stderr)
+              sys.exit(1)
+
+          msi_sig_asset = next(
+              (asset for asset in assets if asset["name"].lower().endswith(".msi.sig")),
+              None,
+          )
+          if msi_sig_asset is None:
+              print("MSI signature release asset was not found", file=sys.stderr)
+              sys.exit(1)
+
+          latest_json = json.loads(
+              request(
+                  "GET",
+                  latest_asset["url"],
+                  extra_headers={"Accept": "application/octet-stream"},
+              ).decode()
+          )
+          nsis_signature = request(
+              "GET",
+              nsis_sig_asset["url"],
+              extra_headers={"Accept": "application/octet-stream"},
+          ).decode().strip()
+          msi_signature = request(
+              "GET",
+              msi_sig_asset["url"],
+              extra_headers={"Accept": "application/octet-stream"},
+          ).decode().strip()
+
+          platforms = latest_json.setdefault("platforms", {})
+          platforms["windows-x86_64"] = {
+              "signature": nsis_signature,
+              "url": nsis_asset["browser_download_url"],
+          }
+          platforms["windows-x86_64-nsis"] = {
+              "signature": nsis_signature,
+              "url": nsis_asset["browser_download_url"],
+          }
+          platforms["windows-x86_64-msi"] = {
+              "signature": msi_signature,
+              "url": msi_asset["browser_download_url"],
+          }
+
+          payload = (json.dumps(latest_json, indent=2) + "\n").encode()
+          request("DELETE", latest_asset["url"])
+
+          upload_url = (
+              f"https://uploads.github.com/repos/{repository}/releases/{release_id}/assets"
+              f"?name={urllib.parse.quote('latest.json')}"
+          )
+          request(
+              "POST",
+              upload_url,
+              data=payload,
+              extra_headers={"Content-Type": "application/json"},
+          )
+          PY
 
   macos-bundles:
     name: macOS (dmg, app updater)
@@ -495,7 +695,8 @@ jobs:
     needs:
       - linux-bundles
       - flatpak-bundle
-      - windows-nsis-cross
+      - windows-bundles
+      - update-updater-json
       - macos-bundles
     runs-on: ubuntu-22.04
 
