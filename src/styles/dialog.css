@@ -61,6 +61,14 @@
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 
+select.dialog__input {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] select.dialog__input {
+  color-scheme: light;
+}
+
 .dialog__input:focus,
 .dialog__textarea:focus {
   outline: none;
