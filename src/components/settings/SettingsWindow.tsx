@@ -85,6 +85,7 @@ export function SettingsWindow() {
     const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
     const [externalDiffTool, setExternalDiffTool] = useState<ExternalDiffTool>("Other");
     const [globalDefaultBranch, setGlobalDefaultBranch] = useState<string>("");
+    const [globalFileMode, setGlobalFileMode] = useState(true);
     const [allowedDiffTools, setAllowedDiffTools] = useState<ExternalDiffTool[]>(["Other", "Meld"]);
     const [defaultCloneDir, setDefaultCloneDir] = useState<string>("");
     const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
@@ -132,6 +133,9 @@ export function SettingsWindow() {
                 setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
                 const defaultBranch = await invoke<string | null>("get_global_default_branch");
                 setGlobalDefaultBranch(defaultBranch ?? "");
+
+                const fileMode = await invoke<boolean | null>("get_global_file_mode");
+                setGlobalFileMode(fileMode ?? true);
 
                 const settings = await invoke<Settings>("get_settings");
                 setBackendMode(settings.backendMode);
@@ -210,6 +214,7 @@ export function SettingsWindow() {
                     : null,
             );
             await invoke("set_global_default_branch", {defaultBranch: globalDefaultBranch});
+            await invoke("set_global_file_mode", {fileMode: globalFileMode});
             await invoke("set_commit_date_mode", {commitDateMode});
             await invoke("set_push_follow_tags", {pushFollowTags});
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
@@ -244,6 +249,7 @@ export function SettingsWindow() {
         defaultCloneDir,
         externalDiffTool,
         globalDefaultBranch,
+        globalFileMode,
         commitDateMode,
         pushFollowTags,
         autoCheckForUpdatesOnLaunch,
@@ -643,6 +649,21 @@ export function SettingsWindow() {
                                     onChange={e => setGlobalDefaultBranch(e.target.value)}
                                     placeholder="Leave blank to use Git's default"
                                 />
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">File mode tracking (`core.fileMode`)</label>
+                                <label className="settings-window__switch-row">
+                                    <span className="settings-window__switch">
+                                        <input
+                                            type="checkbox"
+                                            checked={globalFileMode}
+                                            onChange={e => setGlobalFileMode(e.target.checked)}
+                                        />
+                                        <span className="settings-window__switch-track"/>
+                                    </span>
+                                    <span className="settings-window__switch-label">Track file permissions</span>
+                                </label>
                             </div>
                         </div>
                     </div>
