@@ -323,6 +323,14 @@ pub fn get_global_default_branch() -> Result<Option<String>, String> {
     git_config_global_get("init.defaultBranch")
 }
 
+#[tauri::command]
+pub fn get_global_file_mode() -> Result<Option<bool>, String> {
+    match git_config_global_get("core.fileMode")? {
+        Some(v) => Ok(Some(v.to_lowercase() == "true")),
+        None => Ok(None),
+    }
+}
+
 fn diff_tool_key(tool: &ExternalDiffTool) -> Option<&'static str> {
     match tool {
         ExternalDiffTool::Meld => Some("meld"),
@@ -608,6 +616,18 @@ pub fn set_global_default_branch(default_branch: String) -> Result<OperationResu
 
     Ok(OperationResult {
         message,
+        output: None,
+        repo_path: None,
+        backend_used: "git-cli".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn set_global_file_mode(file_mode: bool) -> Result<OperationResult, String> {
+    let value = if file_mode { "true" } else { "false" };
+    git_config_global_set("core.fileMode", value)?;
+    Ok(OperationResult {
+        message: format!("Set git global core.fileMode={value}"),
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
