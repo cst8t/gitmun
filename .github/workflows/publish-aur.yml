@@ -1,10 +1,10 @@
-name: Publish AUR
+name: Publish to package managers
 
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: "GitHub release tag to publish to AUR. Leave empty to use the latest release."
+        description: "GitHub release tag to publish. Leave empty to use the latest release."
         required: false
         type: string
 
@@ -143,3 +143,70 @@ jobs:
           pkgver="$(sed -n 's/^pkgver=//p' PKGBUILD)"
           git commit -m "Update to ${pkgver}"
           git push origin HEAD:master
+
+  winget:
+    name: Update WinGet manifest
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Resolve release tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INPUT_RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+
+          if [[ -n "${INPUT_RELEASE_TAG}" ]]; then
+            RELEASE_TAG="${INPUT_RELEASE_TAG}"
+          else
+            RELEASE_TAG="$(gh release view --json tagName --jq '.tagName')"
+          fi
+
+          if [[ -z "${RELEASE_TAG}" ]]; then
+            echo "Could not resolve a release tag." >&2
+            exit 1
+          fi
+
+          PACKAGE_VERSION="${RELEASE_TAG#v}"
+          RELEASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${RELEASE_TAG}"
+
+          echo "RELEASE_TAG=${RELEASE_TAG}" >> "${GITHUB_ENV}"
+          echo "PACKAGE_VERSION=${PACKAGE_VERSION}" >> "${GITHUB_ENV}"
+          echo "NSIS_URL=${RELEASE_URL}/Gitmun_${PACKAGE_VERSION}_x64-setup.exe" >> "${GITHUB_ENV}"
+          echo "MSI_URL=${RELEASE_URL}/Gitmun_${PACKAGE_VERSION}_x64.msi" >> "${GITHUB_ENV}"
+          echo "Updating WinGet manifest for ${PACKAGE_VERSION}"
+
+      - name: Check WinGet token
+        env:
+          WINGET_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${WINGET_TOKEN}" ]]; then
+            echo "Missing WINGET_TOKEN secret." >&2
+            exit 1
+          fi
+
+      - name: Sync WinGet fork
+        uses: michidk/run-komac@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        with:
+          custom-fork-owner: ${{ github.repository_owner }}
+          args: sync
+
+      - name: Submit WinGet update
+        uses: michidk/run-komac@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        with:
+          custom-fork-owner: ${{ github.repository_owner }}
+          custom-tool: Gitmun package manager workflow
+          custom-tool-url: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/publish-aur.yml
+          args: >-
+            update cst8t.gitmun
+            --version ${PACKAGE_VERSION}
+            --urls ${NSIS_URL} ${MSI_URL}
+            --release-notes-url ${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}
+            --submit
