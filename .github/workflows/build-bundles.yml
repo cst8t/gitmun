@@ -736,7 +736,7 @@ jobs:
         run: |
           $publisher = $env:MSIX_PUBLISHER
           if ([string]::IsNullOrWhiteSpace($publisher)) {
-            $publisher = "CN=Gitmun Dev"
+            $publisher = "CN=B450DE9A-E656-447D-9443-B325D0101D73"
           }
 
           $layout = "packaging/msix/layout"
