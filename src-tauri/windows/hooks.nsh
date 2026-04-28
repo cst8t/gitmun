@@ -4,6 +4,12 @@
 ; Git is not bundled - it is fetched from the official Git for Windows releases.
 
 !macro NSIS_HOOK_PREINSTALL
+  ; Allow skipping the git check entirely via /SkipGitCheck command-line switch
+  ${GetOptions} $CMDLINE "/SkipGitCheck" $R9
+  ${IfNot} ${Errors}
+    Goto git_done
+  ${EndIf}
+
   StrCpy $R0 "0"  ; R0 = 1 once git is confirmed present
 
   ; Check HKLM registry (system-wide Git for Windows install)
