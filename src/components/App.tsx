@@ -1,4 +1,5 @@
 import React, {useState, useCallback, useEffect, useRef} from "react";
+import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
 import {Toast} from "./Toast";
@@ -139,6 +140,7 @@ export function App() {
     } = useUpdateFlow();
 
     const [repoPath, setRepoPath] = useState<string | null>(null);
+    const [ready, setReady] = useState(false);
     const [recentRepos, setRecentRepos] = useState<string[]>(() => {
         try {
             return JSON.parse(localStorage.getItem("gitmun.recentRepos") ?? "[]");
@@ -430,9 +432,13 @@ export function App() {
 
     useEffect(() => {
         const stored = localStorage.getItem(REPO_STORAGE_KEY);
-        if (!stored) return;
+        if (!stored) {
+            setReady(true);
+            return;
+        }
         api.validateRepoPath(stored).then(() => {
             setRepoPath(stored);
+            setReady(true);
         }).catch(() => {
             localStorage.removeItem(REPO_STORAGE_KEY);
             setRecentRepos(prev => {
@@ -440,9 +446,16 @@ export function App() {
                 localStorage.setItem("gitmun.recentRepos", JSON.stringify(next));
                 return next;
             });
+            setReady(true);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    useEffect(() => {
+        if (ready) {
+            invoke("show_window", {label: "main"}).catch(() => {});
+        }
+    }, [ready]);
 
     useEffect(() => {
         if (repoPath) {
