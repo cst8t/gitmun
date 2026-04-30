@@ -760,6 +760,67 @@ jobs:
       - name: Pack MSIX
         run: winapp pack packaging/msix/layout --manifest packaging/msix/layout/Package.appxmanifest --cert devcert.pfx
 
+      - name: Upload MSIX release asset
+        if: ${{ github.event_name == 'release' }}
+        shell: bash
+        env:
+          TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          python <<'PY'
+          import json
+          import os
+          import pathlib
+          import urllib.parse
+          import urllib.request
+
+          token = os.environ["TOKEN"]
+          release_id = os.environ["RELEASE_ID"]
+          repository = os.environ["REPOSITORY"]
+
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+          }
+
+          def request(method: str, url: str, *, data: bytes | None = None, extra_headers: dict[str, str] | None = None):
+              req = urllib.request.Request(url, data=data, method=method)
+              for key, value in headers.items():
+                  req.add_header(key, value)
+              for key, value in (extra_headers or {}).items():
+                  req.add_header(key, value)
+              with urllib.request.urlopen(req) as response:
+                  return response.read()
+
+          assets_url = f"https://api.github.com/repos/{repository}/releases/{release_id}/assets?per_page=100"
+          existing_assets = {
+              asset["name"]: asset["url"]
+              for asset in json.loads(request("GET", assets_url).decode())
+          }
+
+          files = sorted(pathlib.Path().glob("*.msix"))
+          if not files:
+              raise SystemExit("No MSIX release asset found to upload.")
+
+          for path in files:
+              name = path.name
+              if name in existing_assets:
+                  request("DELETE", existing_assets[name])
+              upload_url = (
+                  f"https://uploads.github.com/repos/{repository}/releases/{release_id}/assets"
+                  f"?name={urllib.parse.quote(name)}"
+              )
+              request(
+                  "POST",
+                  upload_url,
+                  data=path.read_bytes(),
+                  extra_headers={"Content-Type": "application/octet-stream"},
+              )
+          PY
+
       - name: Upload MSIX artifact
         uses: actions/upload-artifact@v7
         with:
