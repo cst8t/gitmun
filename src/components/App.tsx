@@ -2,6 +2,7 @@ import React, {useState, useCallback, useEffect, useRef} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
+import {open as openExternal} from "@tauri-apps/plugin-shell";
 import {Toast} from "./Toast";
 import {ProjectView} from "./ProjectView";
 import {UpdateDialog} from "./update/UpdateDialog";
@@ -159,6 +160,7 @@ export function App() {
     });
     const [draggingPane, setDraggingPane] = useState<"left" | "right" | null>(null);
     const appBodyRef = useRef<HTMLDivElement | null>(null);
+    const msixGitPromptedRef = useRef(false);
     const paneLayoutRef = useRef<{ left: number; right: number }>({
         left: DEFAULT_LEFT_PANE_WIDTH,
         right: DEFAULT_RIGHT_PANE_WIDTH,
@@ -319,6 +321,79 @@ export function App() {
             if (action) handleShellAction(action);
         }).catch(() => {});
     }, [handleShellAction]);
+
+    useEffect(() => {
+        if (platform !== "windows" || msixGitPromptedRef.current) {
+            return;
+        }
+
+        let cancelled = false;
+
+        (async () => {
+            try {
+                const status = await api.getWindowsGitRuntimeStatus();
+                if (
+                    cancelled
+                    || msixGitPromptedRef.current
+                    || !status.isMsix
+                    || status.gitFound
+                ) {
+                    return;
+                }
+
+                msixGitPromptedRef.current = true;
+
+                const installViaWinget = status.wingetAvailable
+                    ? await ask(
+                        "Gitmun could not find Git for Windows. This MSIX build needs Git installed separately. Install it with Winget now?",
+                        {
+                            title: "Git for Windows required",
+                            kind: "info",
+                            okLabel: "Install via Winget",
+                            cancelLabel: "More options",
+                        },
+                    )
+                    : false;
+
+                if (cancelled) {
+                    return;
+                }
+
+                if (installViaWinget) {
+                    showToast("Starting Git for Windows installation...", "info");
+                    try {
+                        await api.installGitWithWinget();
+                        showToast("Git for Windows installed. Reopen Gitmun to pick it up.", "success");
+                        return;
+                    } catch (error) {
+                        showToast(`Git install failed: ${String(error)}`, "error");
+                    }
+                }
+
+                const openManualDownload = await ask(
+                    status.wingetAvailable
+                        ? "Open the Git for Windows download page instead?"
+                        : "Winget is unavailable on this machine. Open the Git for Windows download page instead?",
+                    {
+                        title: "Git for Windows required",
+                        kind: "info",
+                        okLabel: "Open download page",
+                        cancelLabel: "Not now",
+                    },
+                );
+
+                if (!cancelled && openManualDownload) {
+                    await openExternal("https://git-scm.com/download/win");
+                    showToast("Install Git for Windows, then reopen Gitmun.", "info");
+                }
+            } catch {
+            }
+        })();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [platform, showToast]);
 
     useEffect(() => {
         let cancelled = false;
