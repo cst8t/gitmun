@@ -501,6 +501,12 @@ export type ShellStartupAction = {
     path: string;
 };
 
+export type WindowsGitRuntimeStatus = {
+    isMsix: boolean;
+    gitFound: boolean;
+    wingetAvailable: boolean;
+};
+
 export type RepositorySelectedPayload = {
     repoPath: string;
 };

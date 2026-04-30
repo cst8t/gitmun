@@ -249,6 +249,10 @@ pub fn is_updater_enabled() -> bool {
     if std::path::Path::new("/usr/share/gitmun/system-managed").exists() {
         return false;
     }
+    #[cfg(target_os = "windows")]
+    if crate::is_msix_build() {
+        return false;
+    }
     true
 }
 

@@ -56,6 +56,7 @@ import type {
     PruneRemoteRequest,
     StashEntry,
     ShellStartupAction,
+    WindowsGitRuntimeStatus,
 } from "../types";
 
 export function getRepoStatus(repoPath: string): Promise<RepoStatus> {
@@ -547,4 +548,12 @@ export function openResultLogWindow(): Promise<void> {
 
 export function getStartupAction(): Promise<ShellStartupAction | null> {
     return invoke<ShellStartupAction | null>("get_startup_action");
+}
+
+export function getWindowsGitRuntimeStatus(): Promise<WindowsGitRuntimeStatus> {
+    return invoke<WindowsGitRuntimeStatus>("get_windows_git_runtime_status");
+}
+
+export function installGitWithWinget(): Promise<void> {
+    return invoke<void>("install_git_with_winget");
 }

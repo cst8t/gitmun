@@ -1,10 +1,16 @@
 fn main() {
+    println!("cargo:rerun-if-env-changed=GITMUN_MSIX");
+
     let build_version = std::env::var("APP_VERSION")
         .ok()
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
 
     println!("cargo:rustc-env=GITMUN_BUILD_VERSION={build_version}");
+
+    if std::env::var_os("GITMUN_MSIX").is_some() {
+        println!("cargo:rustc-env=GITMUN_MSIX=1");
+    }
 
     let commit_hash = std::env::var("GITHUB_SHA")
         .ok()
