@@ -748,7 +748,6 @@ jobs:
           Copy-Item "src-tauri/icons/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
           Copy-Item "src-tauri/icons/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
           Copy-Item "src-tauri/icons/Square150x150Logo.png" "$layout/Assets/Square150x150Logo.png"
-          Copy-Item "src-tauri/icons/Square310x310Logo.png" "$layout/Assets/Square310x310Logo.png"
 
           $manifest = Get-Content "packaging/msix/Package.appxmanifest" -Raw
           $manifest = $manifest.Replace("__APP_VERSION__", $env:MSIX_VERSION)
