@@ -10,7 +10,9 @@ Gitmun is a crossplatform desktop Git client built with Tauri (Rust + React/Type
 | --- | --- | --- |
 | Releases | Cross-platform | https://github.com/cst8t/gitmun/releases |
 | AUR | Arch Linux | https://aur.archlinux.org/packages/gitmun-bin |
-| Winget | Windows | Coming Soon |
+| Flathub (Flatpak) | Linux | Coming Soon |
+| Winget | Windows | ```winget install -e --id cst8t.gitmun``` |
+| Microsoft Store | Windows | Coming Soon |
 
 ## What it does
 
