@@ -546,6 +546,12 @@ pub fn run() {
                         &settings.theme_mode,
                     );
                     let _ = main_window.set_background_color(Some(background_colour));
+
+                    #[cfg(target_os = "windows")]
+                    if crate::is_msix_build() {
+                        let _ = main_window.show();
+                        let _ = main_window.set_focus();
+                    }
                 }
                 state.avatar_service.set_mode(settings.avatar_provider);
                 state
