@@ -724,10 +724,13 @@ jobs:
         run: npm run build
 
       - name: Build Windows binary for MSIX
+        shell: bash
         env:
           APP_VERSION: ${{ env.BUNDLE_VERSION }}
           GITMUN_MSIX: "1"
-        run: cargo build --release --manifest-path src-tauri/Cargo.toml
+        run: >-
+          npm run tauri build -- --no-bundle
+          --config "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true}}"
 
       - name: Stage MSIX layout
         shell: pwsh
