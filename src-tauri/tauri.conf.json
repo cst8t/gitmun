@@ -53,7 +53,7 @@
       },
       "wix": {
         "fragmentPaths": ["./windows/git-launch-condition.wxs"],
-        "language": "en-GB",
+        "language": "en-US",
         "upgradeCode": "cfd38d6f-06d8-500b-8162-2815a511ebaf"
       }
     }
