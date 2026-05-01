@@ -196,7 +196,7 @@ jobs:
           custom-fork-owner: ${{ github.repository_owner }}
           args: sync
 
-      - name: Submit WinGet update
+      - name: Generate WinGet manifests
         uses: michidk/run-komac@v2
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
@@ -209,4 +209,20 @@ jobs:
             --version ${PACKAGE_VERSION}
             --urls ${NSIS_URL} ${MSI_URL}
             --release-notes-url ${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}
-            --submit
+            --dry-run
+            --output ./winget-manifests
+
+      - name: Remove InstallerLocale from manifests
+        run: |
+          set -euo pipefail
+          find ./winget-manifests -name '*.yaml' -exec sed -i '/^[[:space:]]*InstallerLocale:/d' {} +
+
+      - name: Submit WinGet update
+        uses: michidk/run-komac@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        with:
+          custom-fork-owner: ${{ github.repository_owner }}
+          args: >-
+            submit ./winget-manifests
+            --yes
