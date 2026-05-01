@@ -10,6 +10,8 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
 import { ask } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { Titlebar } from "./Titlebar";
 import { Sidebar } from "./sidebar/Sidebar";
 import { CentrePanel, type CentreTab } from "./centre/CentrePanel";
@@ -90,11 +92,19 @@ function extractStashRef(output: string | null | undefined): string | null {
   return match ? match[0] : null;
 }
 
-export function buildStashDropPrompt(stash: Pick<StashEntry, "index" | "message">): string {
-  const stashLabel = stash.message.trim()
-    ? `stash ${stash.index} - ${stash.message.trim()}`
-    : `stash ${stash.index}`;
-  return `Drop ${stashLabel}? This cannot be undone.`;
+function getFileName(path: string): string {
+  return path.split("/").pop() ?? path;
+}
+
+export function buildStashDropPrompt(
+  stash: Pick<StashEntry, "index" | "message">,
+  t: TFunction<"projectView">,
+): string {
+  const trimmedMessage = stash.message.trim();
+  const stashLabel = trimmedMessage
+    ? t("ask.dropStash.stashLabelWithMessage", { index: stash.index, message: trimmedMessage })
+    : t("ask.dropStash.stashLabel", { index: stash.index });
+  return t("ask.dropStash.message", { stashLabel });
 }
 
 export type ProjectViewProps = {
@@ -153,6 +163,7 @@ export function ProjectView({
   isNative,
   winRadius,
 }: ProjectViewProps) {
+  const { t } = useTranslation("projectView");
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
     : 0;
@@ -436,42 +447,42 @@ export function ProjectView({
     if (!repoPath) return;
     try {
       const result = await api.stageFiles(repoPath, [path]);
-      showToast(`Staged ${path.split("/").pop()}`);
-      appendResultLog("success", `Staged ${path}`, result.backendUsed);
+      showToast(t("toast.stagedFiles", { count: 1, file: getFileName(path) }));
+      appendResultLog("success", t("log.stagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stage failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleStageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
     try {
       const result = await api.stageFiles(repoPath, paths);
-      showToast(paths.length === 1 ? `Staged ${paths[0].split("/").pop()}` : `Staged ${paths.length} files`);
-      appendResultLog("success", paths.length === 1 ? `Staged ${paths[0]}` : `Staged ${paths.length} files`, result.backendUsed);
+      showToast(t("toast.stagedFiles", { count: paths.length, file: getFileName(paths[0]) }));
+      appendResultLog("success", t("log.stagedFiles", { count: paths.length, path: paths[0] }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stage failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleUnstageFile = useCallback(async (path: string) => {
     if (!repoPath) return;
     try {
       const result = await api.unstageFile(repoPath, path);
-      showToast(`Unstaged ${path.split("/").pop()}`, "info");
-      appendResultLog("info", `Unstaged ${path}`, result.backendUsed);
+      showToast(t("toast.unstagedFiles", { count: 1, file: getFileName(path) }), "info");
+      appendResultLog("info", t("log.unstagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Unstage failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleUnstageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
     try {
       const results = await Promise.all(paths.map(path => api.unstageFile(repoPath, path)));
-      showToast(paths.length === 1 ? `Unstaged ${paths[0].split("/").pop()}` : `Unstaged ${paths.length} files`, "info");
+      showToast(t("toast.unstagedFiles", { count: paths.length, file: getFileName(paths[0]) }), "info");
       const backendUsed = results[0]?.backendUsed ?? "unknown";
-      appendResultLog("info", paths.length === 1 ? `Unstaged ${paths[0]}` : `Unstaged ${paths.length} files`, backendUsed);
+      appendResultLog("info", t("log.unstagedFiles", { count: paths.length, path: paths[0] }), backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Unstage failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const doRevertFiles = useCallback(async (paths: string[]) => {
     if (!repoPath) return;
@@ -482,15 +493,15 @@ export function ProjectView({
         backendUsed = result.backendUsed;
       }
       if (paths.length === 1) {
-        showToast(`Reverted ${paths[0].split("/").pop()}`, "error");
-        appendResultLog("info", `Reverted changes in ${paths[0]}`, backendUsed);
+        showToast(t("toast.revertedFiles", { count: 1, file: getFileName(paths[0]) }), "error");
+        appendResultLog("info", t("log.revertedFiles", { count: 1, path: paths[0] }), backendUsed);
       } else {
-        showToast(`Reverted ${paths.length} files`, "error");
-        appendResultLog("info", `Reverted changes in ${paths.length} files`, backendUsed);
+        showToast(t("toast.revertedFiles", { count: paths.length }), "error");
+        appendResultLog("info", t("log.revertedFiles", { count: paths.length }), backendUsed);
       }
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Revert failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.revertFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleDiscardFile = useCallback((path: string) => {
     if (confirmRevert) { setRevertPendingPaths([path]); } else { void doRevertFiles([path]); }
@@ -526,21 +537,21 @@ export function ProjectView({
     if (!repoPath) return;
     try {
       const result = await api.stageAll(repoPath);
-      showToast("Staged all files");
-      appendResultLog("success", "Staged all files", result.backendUsed);
+      showToast(t("toast.stagedAll"));
+      appendResultLog("success", t("log.stagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stage all failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleUnstageAll = useCallback(async () => {
     if (!repoPath) return;
     try {
       const result = await api.unstageAll(repoPath);
-      showToast("Unstaged all files", "info");
-      appendResultLog("info", "Unstaged all files", result.backendUsed);
+      showToast(t("toast.unstagedAll"), "info");
+      appendResultLog("info", t("log.unstagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Unstage all failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleSelectCommitAction = useCallback(async (action: CommitPrimaryAction) => {
     if (action === commitPrimaryAction) {
@@ -555,36 +566,36 @@ export function ProjectView({
     } catch (e) {
       setCommitPrimaryActionState(previousAction);
       showToast(String(e), "error");
-      appendResultLog("error", `Save commit action failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.saveCommitActionFailed", { message: String(e) }), "unknown");
     }
-  }, [commitPrimaryAction, showToast]);
+  }, [commitPrimaryAction, showToast, t]);
 
   const runCommitRequest = useCallback(async (message: string, amend: boolean) => {
     if (!repoPath) return false;
     if (rebaseInProgress) {
-      showToast("Use Continue Rebase to proceed while rebasing", "error");
+      showToast(t("toast.commitBlockedByRebase"), "error");
       return false;
     }
     if (cherryPickInProgress) {
-      showToast("Use Continue Cherry-pick to proceed while cherry-picking", "error");
+      showToast(t("toast.commitBlockedByCherryPick"), "error");
       return false;
     }
     if (revertInProgress) {
-      showToast("Use Continue Revert to proceed while reverting", "error");
+      showToast(t("toast.commitBlockedByRevert"), "error");
       return false;
     }
     try {
       const result = await api.commitChanges(repoPath, message, amend);
-      showToast(amend ? "Amended commit" : "Commit created");
-      appendResultLog("success", amend ? "Amended latest commit" : "Created commit", result.backendUsed);
+      showToast(amend ? t("toast.amendedCommit") : t("toast.commitCreated"));
+      appendResultLog("success", amend ? t("toast.amendedLatestCommit") : t("toast.createdCommit"), result.backendUsed);
       await refreshAll();
       return true;
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Commit failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.commitFailed", { message: String(e) }), "unknown");
       return false;
     }
-  }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast]);
+  }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
 
   const handleCommit = useCallback(async (message: string, amend: boolean) => {
     setIsCommitting(true);
@@ -600,12 +611,12 @@ export function ProjectView({
     setRemoteOp("fetch");
     try {
       const result = await api.fetchRemote(repoPath);
-      showToast("Fetch complete");
-      appendResultLog("success", "Fetch complete", result.backendUsed);
+      showToast(t("toast.fetchComplete"));
+      appendResultLog("success", t("toast.fetchComplete"), result.backendUsed);
       await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Fetch failed: ${String(e)}`, "unknown"); }
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.fetchFailed", { message: String(e) }), "unknown"); }
     finally { setRemoteOp(null); }
-  }, [repoPath, remoteOp, refreshAll, showToast]);
+  }, [repoPath, remoteOp, refreshAll, showToast, t]);
 
   const runPullWithStrategy = useCallback(async (strategy: PullStrategy) => {
     if (!repoPath || remoteOp) return;
@@ -617,16 +628,16 @@ export function ProjectView({
         showToast(result.message, "info");
         appendResultLog("info", result.message, result.backendUsed);
       } else if (strategy === "ff-only") {
-        showToast("Pull complete");
+        showToast(t("toast.pullComplete"));
         appendResultLog("success", result.message, result.backendUsed);
       } else {
-        showToast("Integration complete. Push your branch to update the remote.");
+        showToast(t("toast.integrationComplete"));
         appendResultLog("success", result.message, result.backendUsed);
       }
       await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Pull failed: ${String(e)}`, "unknown"); }
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.pullFailed", { message: String(e) }), "unknown"); }
     finally { setRemoteOp(null); }
-  }, [repoPath, remoteOp, refreshAll, showToast]);
+  }, [repoPath, remoteOp, refreshAll, showToast, t]);
 
   const startPullFlow = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -635,7 +646,7 @@ export function ProjectView({
       setPushRejectionAnalysis(null);
       switch (analysis.state) {
         case "up_to_date":
-          showToast("Already up to date", "info");
+          showToast(t("toast.alreadyUpToDate"), "info");
           appendResultLog("info", analysis.message, "unknown");
           return;
         case "behind_only":
@@ -658,9 +669,9 @@ export function ProjectView({
       }
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Pull analysis failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.pullAnalysisFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remoteOp, runPullWithStrategy, showToast]);
+  }, [repoPath, remoteOp, runPullWithStrategy, showToast, t]);
 
   const handlePull = useCallback(async () => {
     await startPullFlow();
@@ -704,11 +715,11 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `${failurePrefix}: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.pushFailed", { prefix: failurePrefix, message: String(e) }), "unknown");
     } finally {
       setRemoteOp(null);
     }
-  }, [handlePushFailure, refreshAll, remoteOp, repoPath, showToast]);
+  }, [handlePushFailure, refreshAll, remoteOp, repoPath, showToast, t]);
 
   const handlePush = useCallback(async () => {
     if (!repoPath || remoteOp) {
@@ -726,15 +737,15 @@ export function ProjectView({
       return;
     }
     if (remoteActionState.kind === "detached") {
-      showToast(remoteActionState.title ?? "Push is unavailable while HEAD is detached.", "error");
+      showToast(remoteActionState.title ?? t("toast.pushDetached"), "error");
       return;
     }
 
     await runPushRequest({
       repoPath,
       pushFollowTags,
-    }, "Push complete", "Push failed");
-  }, [remoteActionState, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags]);
+    }, t("toast.pushComplete"), t("toast.pushFailed"));
+  }, [remoteActionState, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     setIsCommitting(true);
@@ -764,7 +775,7 @@ export function ProjectView({
         remoteBranch: selection.remoteBranch,
         setUpstream: true,
         pushFollowTags,
-      }, "Branch published", "Publish failed");
+      }, t("toast.branchPublished"), t("toast.publishFailed"));
       return;
     }
 
@@ -775,14 +786,16 @@ export function ProjectView({
         remote: selection.remote,
         remoteBranch: selection.remoteBranch,
       });
-      showToast(mode === "repair" ? "Upstream repaired" : "Upstream changed");
+      showToast(mode === "repair" ? t("toast.upstreamRepaired") : t("toast.upstreamChanged"));
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `${mode === "repair" ? "Repair upstream failed" : "Change upstream failed"}: ${String(e)}`, "unknown");
+      appendResultLog("error", mode === "repair"
+        ? t("log.repairUpstreamFailed", { message: String(e) })
+        : t("log.changeUpstreamFailed", { message: String(e) }), "unknown");
     }
-  }, [currentBranchInfo, pushFollowTags, refreshAll, repoPath, runPushRequest, showToast, upstreamDialogMode]);
+  }, [currentBranchInfo, pushFollowTags, refreshAll, repoPath, runPushRequest, showToast, t, upstreamDialogMode]);
 
   const handlePushRejectedFetch = useCallback(async () => {
     setPushRejectionAnalysis(null);
@@ -808,11 +821,11 @@ export function ProjectView({
   const handleStash = useCallback(() => {
     if (!repoPath) return;
     if (!hasWorkingTreeChanges) {
-      showToast("No local changes to stash", "info");
+      showToast(t("toast.noLocalChangesToStash"), "info");
       return;
     }
     setShowStashDialog(true);
-  }, [repoPath, hasWorkingTreeChanges, showToast]);
+  }, [repoPath, hasWorkingTreeChanges, showToast, t]);
 
   const handleStashConfirm = useCallback(async (opts: {
     message: string | null;
@@ -826,15 +839,15 @@ export function ProjectView({
       const output = result.output?.trim();
       const noChanges = output ? /no local changes to save/i.test(output) : false;
       if (noChanges) {
-        showToast("No local changes to stash", "info");
+        showToast(t("toast.noLocalChangesToStash"), "info");
         appendResultLog("info", output ?? result.message, result.backendUsed);
       } else {
-        showToast("Changes stashed", "success");
+        showToast(t("toast.changesStashed"), "success");
         appendResultLog("success", output || result.message, result.backendUsed);
       }
       await Promise.all([refreshStatus(), refreshStashes()]);
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stash failed: ${String(e)}`, "unknown"); }
-  }, [repoPath, refreshStatus, refreshStashes, showToast]);
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashFailed", { message: String(e) }), "unknown"); }
+  }, [repoPath, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashApply = useCallback(async (stashIndex: number) => {
     if (!repoPath || stashBusy) return;
@@ -844,9 +857,9 @@ export function ProjectView({
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stash apply failed: ${String(e)}`, "unknown"); }
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashApplyFailed", { message: String(e) }), "unknown"); }
     finally { setStashBusy(false); }
-  }, [repoPath, stashBusy, refreshStatus, showToast]);
+  }, [repoPath, stashBusy, refreshStatus, showToast, t]);
 
   const handleStashPop = useCallback(async (stashIndex: number) => {
     if (!repoPath || stashBusy) return;
@@ -856,14 +869,14 @@ export function ProjectView({
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await Promise.all([refreshStatus(), refreshStashes()]);
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stash pop failed: ${String(e)}`, "unknown"); }
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashPopFailed", { message: String(e) }), "unknown"); }
     finally { setStashBusy(false); }
-  }, [repoPath, stashBusy, refreshStatus, refreshStashes, showToast]);
+  }, [repoPath, stashBusy, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashDrop = useCallback(async (stash: StashEntry) => {
     if (!repoPath || stashBusy) return;
-    const confirmed = await ask(buildStashDropPrompt(stash), {
-      title: "Drop Stash", kind: "warning", okLabel: "Drop", cancelLabel: "Cancel",
+    const confirmed = await ask(buildStashDropPrompt(stash, t), {
+      title: t("ask.dropStash.title"), kind: "warning", okLabel: t("actions.drop"), cancelLabel: t("actions.cancel"),
     });
     if (!confirmed) return;
     setStashBusy(true);
@@ -872,9 +885,9 @@ export function ProjectView({
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshStashes();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", `Stash drop failed: ${String(e)}`, "unknown"); }
+    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashDropFailed", { message: String(e) }), "unknown"); }
     finally { setStashBusy(false); }
-  }, [repoPath, stashBusy, refreshStashes, showToast]);
+  }, [repoPath, stashBusy, refreshStashes, showToast, t]);
 
   const handleHunkAction = useCallback(async (hunkIndex: number) => {
     if (!repoPath || !selectedFile || hunkActionBusy) return;
@@ -882,32 +895,32 @@ export function ProjectView({
     try {
       if (selectedFileStaged) {
         await api.unstageHunk(repoPath, selectedFile, hunkIndex);
-        showToast("Unstaged hunk");
+        showToast(t("toast.unstagedHunk"));
       } else {
         await api.stageHunk(repoPath, selectedFile, hunkIndex);
-        showToast("Staged hunk");
+        showToast(t("toast.stagedHunk"));
       }
       await refreshStatus();
       setDiffRefreshKey(prev => prev + 1);
     } catch (e) { showToast(String(e), "error"); }
     finally { setHunkActionBusy(false); }
-  }, [repoPath, selectedFile, selectedFileStaged, hunkActionBusy, refreshStatus, showToast]);
+  }, [repoPath, selectedFile, selectedFileStaged, hunkActionBusy, refreshStatus, showToast, t]);
 
   const handleOpenCommitFileDiff = useCallback(async (filePath: string) => {
     if (!repoPath || !selectedCommitHash) return;
     try {
       const result = await api.openExternalDiff(repoPath, selectedCommitHash, filePath);
-      showToast(result.message || `Opened diff for ${filePath.split("/").pop()}`);
+      showToast(result.message || t("toast.openedDiffFor", { file: getFileName(filePath) }));
     } catch (e) { showToast(String(e), "error"); }
-  }, [repoPath, selectedCommitHash, showToast]);
+  }, [repoPath, selectedCommitHash, showToast, t]);
 
   const handleCompareCurrentFile = useCallback(async () => {
     if (!repoPath || !selectedFile) return;
     try {
       const result = await api.openWorkingTreeDiff(repoPath, selectedFile, selectedFileStaged);
-      showToast(result.message || `Opened diff for ${selectedFile.split("/").pop()}`);
+      showToast(result.message || t("toast.openedDiffFor", { file: getFileName(selectedFile) }));
     } catch (e) { showToast(String(e), "error"); }
-  }, [repoPath, selectedFile, selectedFileStaged, showToast]);
+  }, [repoPath, selectedFile, selectedFileStaged, showToast, t]);
 
   const stashBeforeBranchSwitch = useCallback(async (targetRef: string): Promise<{ proceed: boolean; stashedRef: string | null }> => {
     if (!repoPath || !hasWorkingTreeChanges) {
@@ -915,12 +928,12 @@ export function ProjectView({
     }
 
     const confirmed = await ask(
-      `You have uncommitted changes. Stash and switch to "${targetRef}"?`,
+      t("ask.stashBeforeSwitch.message", { target: targetRef }),
       {
-        title: "Switch Branch",
+        title: t("ask.stashBeforeSwitch.title"),
         kind: "warning",
-        okLabel: "Stash and Switch",
-        cancelLabel: "Cancel",
+        okLabel: t("actions.stashAndSwitch"),
+        cancelLabel: t("actions.cancel"),
       },
     );
 
@@ -937,29 +950,29 @@ export function ProjectView({
       if (noChanges) {
         appendResultLog("info", stashOutput ?? stashResult.message, stashResult.backendUsed);
       } else {
-        appendResultLog("success", stashOutput || "Stashed changes before branch switch", stashResult.backendUsed);
+        appendResultLog("success", stashOutput || t("log.branchSwitchStash"), stashResult.backendUsed);
       }
 
       return { proceed: true, stashedRef };
     } catch (e) {
-      showToast("Stash failed. Branch was not switched.", "error");
-      appendResultLog("error", `Stash before switch failed: ${String(e)}`, "unknown");
+      showToast(t("toast.stashFailedBranchNotSwitched"), "error");
+      appendResultLog("error", t("log.stashBeforeSwitchFailed", { message: String(e) }), "unknown");
       return { proceed: false, stashedRef: null };
     }
-  }, [repoPath, hasWorkingTreeChanges, showToast]);
+  }, [repoPath, hasWorkingTreeChanges, showToast, t]);
 
   const handleSwitchBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
     if (cherryPickInProgress) {
-      showToast("Cannot switch branch while a cherry-pick is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringCherryPick"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("Cannot switch branch while a rebase is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringRebase"), "error");
       return;
     }
     if (mergeInProgress) {
-      showToast("Cannot switch branch while a merge is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringMerge"), "error");
       return;
     }
 
@@ -975,7 +988,7 @@ export function ProjectView({
     try {
       const result = await api.switchBranch(repoPath, branchName);
       if (stashedRef) {
-        showToast(`${result.message} (saved changes as ${stashedRef})`, "success");
+        showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
         showToast(result.message, "success");
       }
@@ -983,20 +996,20 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       if (stashedRef) {
-        const recoveryMessage = `Switch failed after stashing ${stashedRef}. Recover with git stash apply ${stashedRef}.`;
+        const recoveryMessage = t("toast.switchFailedAfterStash", { stashRef: stashedRef });
         showToast(recoveryMessage, "error");
-        appendResultLog("error", `${recoveryMessage} Original error: ${String(e)}`, "unknown");
+        appendResultLog("error", t("log.switchFailedAfterStash", { recoveryMessage, message: String(e) }), "unknown");
       } else if (hasWorkingTreeChanges) {
-        const recoveryMessage = "Switch failed after stashing changes. Recover with git stash pop or inspect git stash list.";
+        const recoveryMessage = t("toast.switchFailedAfterGenericStash");
         showToast(recoveryMessage, "error");
-        appendResultLog("error", `${recoveryMessage} Original error: ${String(e)}`, "unknown");
+        appendResultLog("error", t("log.switchFailedAfterStash", { recoveryMessage, message: String(e) }), "unknown");
       } else {
         showToast(String(e), "error");
-        appendResultLog("error", `Switch branch failed: ${String(e)}`, "unknown");
+        appendResultLog("error", t("log.switchBranchFailed", { message: String(e) }), "unknown");
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
 
   const handleCreateBranch = useCallback(async (request: CreateBranchRequest) => {
     if (!repoPath) return;
@@ -1007,9 +1020,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Create branch failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.createBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleOpenPublishDialog = useCallback(() => {
     setPushRejectionAnalysis(null);
@@ -1028,8 +1041,8 @@ export function ProjectView({
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
-    const confirmed = await ask(`Delete branch "${branchName}"? This cannot be undone.`, {
-      title: "Delete Branch", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+    const confirmed = await ask(t("ask.deleteBranch.message", { branch: branchName }), {
+      title: t("ask.deleteBranch.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
     });
     if (!confirmed) return;
     try {
@@ -1039,9 +1052,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Delete branch failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.deleteBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleBeginRenameBranch = useCallback((branchName: string) => {
     setRenamePendingBranch(branchName);
@@ -1059,15 +1072,15 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Rename branch failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.renameBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, renamePendingBranch, refreshAll, showToast]);
+  }, [repoPath, renamePendingBranch, refreshAll, showToast, t]);
 
   const handleForceDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
     const confirmed = await ask(
-      `Force delete branch "${branchName}"? This will delete it even if it has unmerged changes or is checked out in a worktree.`,
-      { title: "Force Delete Branch", kind: "warning", okLabel: "Force Delete", cancelLabel: "Cancel" },
+      t("ask.forceDeleteBranch.message", { branch: branchName }),
+      { title: t("ask.forceDeleteBranch.title"), kind: "warning", okLabel: t("actions.forceDelete"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
     try {
@@ -1077,14 +1090,14 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Force delete branch failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.forceDeleteBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleDeleteTag = useCallback(async (tagName: string) => {
     if (!repoPath) return;
-    const confirmed = await ask(`Delete tag "${tagName}"? This cannot be undone.`, {
-      title: "Delete Tag", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+    const confirmed = await ask(t("ask.deleteTag.message", { tag: tagName }), {
+      title: t("ask.deleteTag.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
     });
     if (!confirmed) return;
     try {
@@ -1094,9 +1107,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Delete tag failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.deleteTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleCreateTag = useCallback(async (tagName: string, message: string | null) => {
     if (!repoPath) return;
@@ -1109,30 +1122,30 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Create tag failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.createTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, createTagTarget, refreshAll, showToast]);
+  }, [repoPath, createTagTarget, refreshAll, showToast, t]);
 
   const handlePushTag = useCallback(async (tagName: string) => {
     if (!repoPath) return;
     const remote = remotes[0]?.name;
-    if (!remote) { showToast("No remotes configured", "error"); return; }
+    if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
     try {
       const result = await api.pushTag({ repoPath, remote, tagName });
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Push tag failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.pushTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, showToast]);
+  }, [repoPath, remotes, showToast, t]);
 
   const handleDeleteRemoteTag = useCallback(async (tagName: string) => {
     if (!repoPath) return;
     const remote = remotes[0]?.name;
-    if (!remote) { showToast("No remotes configured", "error"); return; }
-    const confirmed = await ask(`Delete tag "${tagName}" from remote "${remote}"? This cannot be undone.`, {
-      title: "Delete Remote Tag", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+    if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
+    const confirmed = await ask(t("ask.deleteRemoteTag.message", { tag: tagName, remote }), {
+      title: t("ask.deleteRemoteTag.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
     });
     if (!confirmed) return;
     try {
@@ -1142,9 +1155,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Delete remote tag failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.deleteRemoteTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, refreshAll, showToast]);
+  }, [repoPath, remotes, refreshAll, showToast, t]);
 
   const handleCreateBranchFromTag = useCallback((tagName: string) => {
     setCreateBranchFromTagName(tagName);
@@ -1158,25 +1171,25 @@ export function ProjectView({
   const handleCherryPickAtCommit = useCallback(async (commitHash: string) => {
     if (!repoPath) return;
     if (mergeInProgress) {
-      showToast("Cannot start cherry-pick while a merge is in progress", "error");
+      showToast(t("toast.cannotCherryPickDuringMerge"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("Cannot start cherry-pick while a rebase is in progress", "error");
+      showToast(t("toast.cannotCherryPickDuringRebase"), "error");
       return;
     }
     if (cherryPickInProgress) {
-      showToast("A cherry-pick is already in progress", "error");
+      showToast(t("toast.cherryPickAlreadyInProgress"), "error");
       return;
     }
     if (hasWorkingTreeChanges) {
-      showToast("Commit or stash changes before cherry-picking", "error");
+      showToast(t("toast.cherryPickBlockedByChanges"), "error");
       return;
     }
 
     const confirmed = await ask(
-      `Cherry-pick commit "${commitHash.slice(0, 12)}" onto "${currentBranch ?? "current branch"}"?`,
-      { title: "Cherry-pick Commit", kind: "warning", okLabel: "Cherry-pick", cancelLabel: "Cancel" },
+      t("ask.cherryPickCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      { title: t("ask.cherryPickCommit.title"), kind: "warning", okLabel: t("actions.cherryPick"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1184,7 +1197,7 @@ export function ProjectView({
     try {
       const result = await api.cherryPickStart({ repoPath, commitHash });
       if (result.hasConflicts) {
-        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.cherryPickConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1194,16 +1207,16 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Cherry-pick failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.cherryPickFailed", { message: String(e) }), "unknown");
     } finally {
       setIsCherryPickActionRunning(false);
     }
-  }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast]);
+  }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast, t]);
 
   const handleDeleteRemoteBranch = useCallback(async (remote: string, branch: string) => {
     if (!repoPath) return;
-    const confirmed = await ask(`Delete remote branch "${remote}/${branch}"? This cannot be undone.`, {
-      title: "Delete Remote Branch", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel",
+    const confirmed = await ask(t("ask.deleteRemoteBranch.message", { remote, branch }), {
+      title: t("ask.deleteRemoteBranch.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
     });
     if (!confirmed) return;
     try {
@@ -1213,28 +1226,28 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Delete remote branch failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.deleteRemoteBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleCheckoutRemoteBranch = useCallback(async (remoteBranchName: string) => {
     if (!repoPath) return;
     if (cherryPickInProgress) {
-      showToast("Cannot switch branch while a cherry-pick is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringCherryPick"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("Cannot switch branch while a rebase is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringRebase"), "error");
       return;
     }
     if (mergeInProgress) {
-      showToast("Cannot switch branch while a merge is in progress", "error");
+      showToast(t("toast.cannotSwitchDuringMerge"), "error");
       return;
     }
 
     const localBranchName = deriveLocalBranchName(remoteBranchName);
     if (!localBranchName) {
-      showToast(`Cannot checkout remote reference "${remoteBranchName}"`, "error");
+      showToast(t("toast.cannotCheckoutRemoteRef", { remoteBranch: remoteBranchName }), "error");
       return;
     }
 
@@ -1259,7 +1272,7 @@ export function ProjectView({
         matchTrackingBranch: true,
       });
       if (stashedRef) {
-        showToast(`${result.message} (saved changes as ${stashedRef})`, "success");
+        showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
         showToast(result.message, "success");
       }
@@ -1267,16 +1280,16 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       if (stashedRef) {
-        const recoveryMessage = `Checkout failed after stashing ${stashedRef}. Recover with git stash apply ${stashedRef}.`;
+        const recoveryMessage = t("toast.checkoutFailedAfterStash", { stashRef: stashedRef });
         showToast(recoveryMessage, "error");
-        appendResultLog("error", `${recoveryMessage} Original error: ${String(e)}`, "unknown");
+        appendResultLog("error", t("log.switchFailedAfterStash", { recoveryMessage, message: String(e) }), "unknown");
       } else {
         showToast(String(e), "error");
-        appendResultLog("error", `Checkout remote branch failed: ${String(e)}`, "unknown");
+        appendResultLog("error", t("log.checkoutFailed", { message: String(e) }), "unknown");
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
 
   const handleAddRemote = useCallback(async (name: string, url: string) => {
     if (!repoPath) return;
@@ -1288,15 +1301,15 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Add remote failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.addRemoteFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleRemoveRemote = useCallback(async (remoteName: string) => {
     if (!repoPath) return;
     const confirmed = await ask(
-      `Remove remote "${remoteName}"? This will also delete all remote-tracking branches for this remote.`,
-      { title: "Remove Remote", kind: "warning", okLabel: "Remove", cancelLabel: "Cancel" },
+      t("ask.removeRemote.message", { remote: remoteName }),
+      { title: t("ask.removeRemote.title"), kind: "warning", okLabel: t("actions.remove"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
     try {
@@ -1306,9 +1319,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Remove remote failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.removeRemoteFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleEditRemoteConfirm = useCallback(async (newName: string, newUrl: string) => {
     if (!repoPath || !editingRemote) return;
@@ -1326,33 +1339,33 @@ export function ProjectView({
         const result = await api.setRemoteUrl({ repoPath, name: effectiveName, url: newUrl });
         appendResultLog("success", result.message, result.backendUsed);
       }
-      showToast("Remote updated", "success");
+      showToast(t("toast.remoteUpdated"), "success");
       await refreshAll();
     } catch (e) {
-      const prefix = renamedTo
-        ? `Remote renamed to "${renamedTo}" but URL update failed: `
-        : "Edit remote failed: ";
-      showToast(`${prefix}${String(e)}`, "error");
-      appendResultLog("error", `Edit remote failed: ${String(e)}`, "unknown");
+      const failureMessage = renamedTo
+        ? t("log.remoteRenamedUrlFailed", { remote: renamedTo, message: String(e) })
+        : t("log.editRemoteFailed", { message: String(e) });
+      showToast(failureMessage, "error");
+      appendResultLog("error", failureMessage, "unknown");
       await refreshAll();
     }
-  }, [repoPath, editingRemote, refreshAll, showToast]);
+  }, [repoPath, editingRemote, refreshAll, showToast, t]);
 
   const handleFetchSingleRemote = useCallback(async (remoteName: string) => {
     if (!repoPath || remoteOp) return;
     setRemoteOp("fetch");
     try {
       const result = await api.fetchRemote(repoPath, remoteName);
-      showToast(`Fetched from ${remoteName}`, "success");
+      showToast(t("toast.fetchedFrom", { remote: remoteName }), "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Fetch ${remoteName} failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.fetchRemoteFailed", { remote: remoteName, message: String(e) }), "unknown");
     } finally {
       setRemoteOp(null);
     }
-  }, [repoPath, remoteOp, refreshAll, showToast]);
+  }, [repoPath, remoteOp, refreshAll, showToast, t]);
 
   const handlePruneRemote = useCallback(async (remoteName: string) => {
     if (!repoPath) return;
@@ -1363,17 +1376,17 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Prune remote failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.pruneRemoteFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleExternalDiff = useCallback(async (path: string, staged: boolean) => {
     if (!repoPath) return;
     try {
       const result = await api.openWorkingTreeDiff(repoPath, path, staged);
-      showToast(result.message || `Opened diff for ${path.split("/").pop()}`);
+      showToast(result.message || t("toast.openedDiffFor", { file: getFileName(path) }));
     } catch (e) { showToast(String(e), "error"); }
-  }, [repoPath, showToast]);
+  }, [repoPath, showToast, t]);
 
   const runSubmoduleAction = useCallback(async (
     path: string,
@@ -1388,29 +1401,29 @@ export function ProjectView({
       await refreshStatus();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `${label} submodule failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.submoduleFailed", { action: label, message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshStatus, showToast]);
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleSubmoduleInit = useCallback((path: string) => {
-    void runSubmoduleAction(path, "Initialise", api.submoduleInit);
-  }, [runSubmoduleAction]);
+    void runSubmoduleAction(path, t("submoduleActions.initialise"), api.submoduleInit);
+  }, [runSubmoduleAction, t]);
 
   const handleSubmoduleUpdate = useCallback((path: string) => {
-    void runSubmoduleAction(path, "Update", api.submoduleUpdate);
-  }, [runSubmoduleAction]);
+    void runSubmoduleAction(path, t("submoduleActions.update"), api.submoduleUpdate);
+  }, [runSubmoduleAction, t]);
 
   const handleSubmoduleSync = useCallback((path: string) => {
-    void runSubmoduleAction(path, "Sync", api.submoduleSync);
-  }, [runSubmoduleAction]);
+    void runSubmoduleAction(path, t("submoduleActions.sync"), api.submoduleSync);
+  }, [runSubmoduleAction, t]);
 
   const handleSubmoduleFetch = useCallback((path: string) => {
-    void runSubmoduleAction(path, "Fetch", api.submoduleFetch);
-  }, [runSubmoduleAction]);
+    void runSubmoduleAction(path, t("submoduleActions.fetch"), api.submoduleFetch);
+  }, [runSubmoduleAction, t]);
 
   const handleSubmodulePull = useCallback((path: string) => {
-    void runSubmoduleAction(path, "Pull", api.submodulePull);
-  }, [runSubmoduleAction]);
+    void runSubmoduleAction(path, t("submoduleActions.pull"), api.submodulePull);
+  }, [runSubmoduleAction, t]);
 
   const handleSubmoduleOpen = useCallback((path: string) => {
     if (!repoPath) return;
@@ -1423,46 +1436,46 @@ export function ProjectView({
   const handleMergeBranch = useCallback((branchName: string) => {
     if (!repoPath) return;
     if (cherryPickInProgress) {
-      showToast("Cannot merge while a cherry-pick is in progress", "error");
+      showToast(t("toast.cannotMergeDuringCherryPick"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("Cannot merge while a rebase is in progress", "error");
+      showToast(t("toast.cannotMergeDuringRebase"), "error");
       return;
     }
     if (stagedFiles.length > 0 || unstagedFiles.length > 0 || unversionedFiles.length > 0) {
-      showToast("Commit or stash changes before merging", "error");
+      showToast(t("toast.mergeBlockedByChanges"), "error");
       return;
     }
     setMergePendingBranch(branchName);
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, stagedFiles, unstagedFiles, unversionedFiles, showToast]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, stagedFiles, unstagedFiles, unversionedFiles, showToast, t]);
 
   const handleRebaseBranch = useCallback(async (ontoBranch: string) => {
     if (!repoPath) return;
     if (cherryPickInProgress) {
-      showToast("Cannot start rebase while a cherry-pick is in progress", "error");
+      showToast(t("toast.cannotRebaseDuringCherryPick"), "error");
       return;
     }
     if (mergeInProgress) {
-      showToast("Cannot start rebase while a merge is in progress", "error");
+      showToast(t("toast.cannotRebaseDuringMerge"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("A rebase is already in progress", "error");
+      showToast(t("toast.rebaseAlreadyInProgress"), "error");
       return;
     }
     if (!currentBranch || currentBranch === ontoBranch) {
-      showToast("Choose a different branch to rebase onto", "error");
+      showToast(t("toast.chooseDifferentRebaseBranch"), "error");
       return;
     }
     if (hasWorkingTreeChanges) {
-      showToast("Commit or stash changes before rebasing", "error");
+      showToast(t("toast.rebaseBlockedByChanges"), "error");
       return;
     }
 
     const confirmed = await ask(
-      `Rebase "${currentBranch}" onto "${ontoBranch}"?`,
-      { title: "Start Rebase", kind: "warning", okLabel: "Rebase", cancelLabel: "Cancel" },
+      t("ask.startRebase.message", { branch: currentBranch, onto: ontoBranch }),
+      { title: t("ask.startRebase.title"), kind: "warning", okLabel: t("actions.rebase"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1470,7 +1483,7 @@ export function ProjectView({
     try {
       const result = await api.rebaseStart({ repoPath, onto: ontoBranch });
       if (result.hasConflicts) {
-        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.rebaseConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1480,11 +1493,11 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Rebase failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.rebaseFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, cherryPickInProgress, mergeInProgress, rebaseInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, showToast]);
+  }, [repoPath, cherryPickInProgress, mergeInProgress, rebaseInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, showToast, t]);
 
   const handleRebaseContinue = useCallback(async () => {
     if (!repoPath || !rebaseInProgress) return;
@@ -1492,7 +1505,7 @@ export function ProjectView({
     try {
       const result = await api.rebaseContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Rebase conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.rebaseConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1502,17 +1515,17 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Rebase continue failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.rebaseContinueFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, rebaseInProgress, refreshAll, showToast]);
+  }, [repoPath, rebaseInProgress, refreshAll, showToast, t]);
 
   const handleRebaseAbort = useCallback(async () => {
     if (!repoPath || !rebaseInProgress) return;
     const confirmed = await ask(
-      "Abort the current rebase? All rebase progress will be discarded.",
-      { title: "Abort Rebase", kind: "warning", okLabel: "Abort", cancelLabel: "Cancel" },
+      t("ask.abortRebase.message"),
+      { title: t("ask.abortRebase.title"), kind: "warning", okLabel: t("actions.abort"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1524,11 +1537,11 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Rebase abort failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.rebaseAbortFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, rebaseInProgress, refreshAll, showToast]);
+  }, [repoPath, rebaseInProgress, refreshAll, showToast, t]);
 
   const handleCherryPickContinue = useCallback(async () => {
     if (!repoPath || !cherryPickInProgress) return;
@@ -1536,7 +1549,7 @@ export function ProjectView({
     try {
       const result = await api.cherryPickContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Cherry-pick conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.cherryPickConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1546,17 +1559,17 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Cherry-pick continue failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.cherryPickContinueFailed", { message: String(e) }), "unknown");
     } finally {
       setIsCherryPickActionRunning(false);
     }
-  }, [repoPath, cherryPickInProgress, refreshAll, showToast]);
+  }, [repoPath, cherryPickInProgress, refreshAll, showToast, t]);
 
   const handleCherryPickAbort = useCallback(async () => {
     if (!repoPath || !cherryPickInProgress) return;
     const confirmed = await ask(
-      "Abort the current cherry-pick? All cherry-pick progress will be discarded.",
-      { title: "Abort Cherry-pick", kind: "warning", okLabel: "Abort", cancelLabel: "Cancel" },
+      t("ask.abortCherryPick.message"),
+      { title: t("ask.abortCherryPick.title"), kind: "warning", okLabel: t("actions.abort"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1568,38 +1581,38 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Cherry-pick abort failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.cherryPickAbortFailed", { message: String(e) }), "unknown");
     } finally {
       setIsCherryPickActionRunning(false);
     }
-  }, [repoPath, cherryPickInProgress, refreshAll, showToast]);
+  }, [repoPath, cherryPickInProgress, refreshAll, showToast, t]);
 
   const handleRevertAtCommit = useCallback(async (commitHash: string) => {
     if (!repoPath) return;
     if (mergeInProgress) {
-      showToast("Cannot start revert while a merge is in progress", "error");
+      showToast(t("toast.cannotRevertDuringMerge"), "error");
       return;
     }
     if (rebaseInProgress) {
-      showToast("Cannot start revert while a rebase is in progress", "error");
+      showToast(t("toast.cannotRevertDuringRebase"), "error");
       return;
     }
     if (cherryPickInProgress) {
-      showToast("Cannot start revert while a cherry-pick is in progress", "error");
+      showToast(t("toast.cannotRevertDuringCherryPick"), "error");
       return;
     }
     if (revertInProgress) {
-      showToast("A revert is already in progress", "error");
+      showToast(t("toast.revertAlreadyInProgress"), "error");
       return;
     }
     if (hasWorkingTreeChanges) {
-      showToast("Commit or stash changes before reverting", "error");
+      showToast(t("toast.revertBlockedByChanges"), "error");
       return;
     }
 
     const confirmed = await ask(
-      `Revert commit "${commitHash.slice(0, 12)}" on "${currentBranch ?? "current branch"}"?`,
-      { title: "Revert Commit", kind: "warning", okLabel: "Revert", cancelLabel: "Cancel" },
+      t("ask.revertCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      { title: t("ask.revertCommit.title"), kind: "warning", okLabel: t("actions.revert"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1607,7 +1620,7 @@ export function ProjectView({
     try {
       const result = await api.revertCommitStart(repoPath, commitHash);
       if (result.hasConflicts) {
-        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.revertConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1617,11 +1630,11 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Revert failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.revertFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRevertActionRunning(false);
     }
-  }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, revertInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast]);
+  }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, revertInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast, t]);
 
   const handleRevertContinue = useCallback(async () => {
     if (!repoPath || !revertInProgress) return;
@@ -1629,7 +1642,7 @@ export function ProjectView({
     try {
       const result = await api.revertContinue(repoPath);
       if (result.hasConflicts) {
-        showToast(`Revert conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.revertConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
         setCentreTab("changes");
       } else {
@@ -1639,17 +1652,17 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Revert continue failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.revertContinueFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRevertActionRunning(false);
     }
-  }, [repoPath, revertInProgress, refreshAll, showToast]);
+  }, [repoPath, revertInProgress, refreshAll, showToast, t]);
 
   const handleRevertAbort = useCallback(async () => {
     if (!repoPath || !revertInProgress) return;
     const confirmed = await ask(
-      "Abort the current revert? All revert progress will be discarded.",
-      { title: "Abort Revert", kind: "warning", okLabel: "Abort", cancelLabel: "Cancel" },
+      t("ask.abortRevert.message"),
+      { title: t("ask.abortRevert.title"), kind: "warning", okLabel: t("actions.abort"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
 
@@ -1661,21 +1674,21 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Revert abort failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.revertAbortFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRevertActionRunning(false);
     }
-  }, [repoPath, revertInProgress, refreshAll, showToast]);
+  }, [repoPath, revertInProgress, refreshAll, showToast, t]);
 
   const handleResetToCommit = useCallback(async (commitHash: string, mode: "soft" | "mixed") => {
     if (!repoPath) return;
-    const modeLabel = mode === "soft" ? "Soft" : "Mixed";
+    const modeLabel = mode === "soft" ? t("ask.resetToCommit.softMode") : t("ask.resetToCommit.mixedMode");
     const modeDesc = mode === "soft"
-      ? "HEAD will move to this commit; staged changes will be preserved."
-      : "HEAD will move to this commit; staged changes will be unstaged.";
+      ? t("ask.resetToCommit.softDescription")
+      : t("ask.resetToCommit.mixedDescription");
     const confirmed = await ask(
-      `${modeLabel} reset to "${commitHash.slice(0, 12)}"?\n\n${modeDesc}`,
-      { title: `${modeLabel} Reset`, kind: "warning", okLabel: "Reset", cancelLabel: "Cancel" },
+      t("ask.resetToCommit.message", { mode: modeLabel, commit: commitHash.slice(0, 12), description: modeDesc }),
+      { title: t("ask.resetToCommit.title", { mode: modeLabel }), kind: "warning", okLabel: t("actions.reset"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
     try {
@@ -1685,9 +1698,9 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Reset failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.resetFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleMergeConfirm = useCallback(async (strategy: MergeStrategy) => {
     if (!repoPath || !mergePendingBranch) return;
@@ -1699,7 +1712,7 @@ export function ProjectView({
       };
       const result = await api.mergeBranch(repoPath, mergePendingBranch, options);
       if (result.hasConflicts) {
-        showToast(`Merge conflicts in ${result.conflictedFiles.length} file(s) - resolve in the Changes tab`, "error");
+        showToast(t("toast.mergeConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
       } else {
         showToast(result.message, "success");
@@ -1709,15 +1722,15 @@ export function ProjectView({
       setCentreTab("changes");
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Merge failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.mergeFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, mergePendingBranch, refreshAll, showToast]);
+  }, [repoPath, mergePendingBranch, refreshAll, showToast, t]);
 
   const handleMergeAbort = useCallback(async () => {
     if (!repoPath) return;
     const confirmed = await ask(
-      "Abort the current merge? All merge changes will be discarded.",
-      { title: "Abort Merge", kind: "warning", okLabel: "Abort", cancelLabel: "Cancel" },
+      t("ask.abortMerge.message"),
+      { title: t("ask.abortMerge.title"), kind: "warning", okLabel: t("actions.abort"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
     try {
@@ -1727,35 +1740,35 @@ export function ProjectView({
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Merge abort failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.mergeAbortFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast]);
+  }, [repoPath, refreshAll, showToast, t]);
 
   const handleConflictAcceptTheirs = useCallback(async (path: string) => {
     if (!repoPath) return;
     try {
       const result = await api.conflictAcceptTheirs(repoPath, path);
-      showToast(`Accepted theirs for ${path.split("/").pop()}`);
-      appendResultLog("success", `Accepted theirs for ${path}`, result.backendUsed);
+      showToast(t("toast.acceptedTheirs", { file: getFileName(path) }));
+      appendResultLog("success", t("log.acceptedTheirs", { path }), result.backendUsed);
       await refreshStatus();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Accept theirs failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.acceptTheirsFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshStatus, showToast]);
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleConflictAcceptOurs = useCallback(async (path: string) => {
     if (!repoPath) return;
     try {
       const result = await api.conflictAcceptOurs(repoPath, path);
-      showToast(`Accepted ours for ${path.split("/").pop()}`);
-      appendResultLog("success", `Accepted ours for ${path}`, result.backendUsed);
+      showToast(t("toast.acceptedOurs", { file: getFileName(path) }));
+      appendResultLog("success", t("log.acceptedOurs", { path }), result.backendUsed);
       await refreshStatus();
     } catch (e) {
       showToast(String(e), "error");
-      appendResultLog("error", `Accept ours failed: ${String(e)}`, "unknown");
+      appendResultLog("error", t("log.acceptOursFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshStatus, showToast]);
+  }, [repoPath, refreshStatus, showToast, t]);
 
   const handleOpenMergeTool = useCallback(async (path: string) => {
     if (!repoPath) return;
@@ -1766,7 +1779,9 @@ export function ProjectView({
     }
   }, [repoPath, showToast]);
 
-  const compareCurrentFileLabel = repoDiffToolName ? `Compare in ${repoDiffToolName}` : "Compare in difftool";
+  const compareCurrentFileLabel = repoDiffToolName
+    ? t("labels.compareInTool", { tool: repoDiffToolName })
+    : t("labels.compareInDiffTool");
 
   useEffect(() => {
     const isMac = platform === "macos";
@@ -1831,7 +1846,7 @@ export function ProjectView({
       {mergePendingBranch && (
         <MergeDialog
           sourceBranch={mergePendingBranch}
-          targetBranch={currentBranch ?? "current branch"}
+          targetBranch={currentBranch ?? t("labels.currentBranch")}
           onConfirm={handleMergeConfirm}
           onCancel={() => setMergePendingBranch(null)}
         />
@@ -2016,8 +2031,8 @@ export function ProjectView({
                         onSetDraggingPane(null);
                         onSetLeftPaneCollapsed(true);
                       }}
-                      title="Hide sidebar"
-                      aria-label="Hide sidebar"
+                      title={t("labels.hideSidebar")}
+                      aria-label={t("labels.hideSidebar")}
                     >
                       &lt;
                     </button>
@@ -2027,7 +2042,7 @@ export function ProjectView({
                     className={`app__splitter ${draggingPane === "left" ? "app__splitter--active" : ""}`}
                     onMouseDown={() => onSetDraggingPane("left")}
                     role="separator"
-                    aria-label="Resize left panel"
+                    aria-label={t("labels.resizeLeftPanel")}
                   />
                 </>
               )}
@@ -2037,8 +2052,8 @@ export function ProjectView({
                   className="app__left-pane-toggle"
                   type="button"
                   onClick={() => onSetLeftPaneCollapsed(false)}
-                  title="Show sidebar"
-                  aria-label="Show sidebar"
+                  title={t("labels.showSidebar")}
+                  aria-label={t("labels.showSidebar")}
                 >
                   &gt;
                 </button>
@@ -2137,7 +2152,7 @@ export function ProjectView({
                 className={`app__splitter ${draggingPane === "right" ? "app__splitter--active" : ""}`}
                 onMouseDown={() => onSetDraggingPane("right")}
                 role="separator"
-                aria-label="Resize right panel"
+                aria-label={t("labels.resizeRightPanel")}
               />
 
               <div className="app__pane app__pane--right" style={{ width: effectiveRightPaneWidth }}>
@@ -2168,20 +2183,20 @@ export function ProjectView({
                 <div className="app__empty-icon">
                   <GitIcon size={20} />
                 </div>
-                <h1 className="app__empty-title">No repository open</h1>
-                <p className="app__empty-subtitle">Clone a project, initialise a new repository, or open an existing one.</p>
+                <h1 className="app__empty-title">{t("emptyState.title")}</h1>
+                <p className="app__empty-subtitle">{t("emptyState.subtitle")}</p>
                 <div className="app__empty-actions">
                   <button className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
                     <GitIcon size={14} />
-                    <span>Clone repository</span>
+                    <span>{t("emptyState.clone")}</span>
                   </button>
                   <button className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
                     <GitIcon size={14} />
-                    <span>Initialise repository</span>
+                    <span>{t("emptyState.init")}</span>
                   </button>
                   <button className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
                     <FolderIcon size={14} />
-                    <span>Open existing</span>
+                    <span>{t("emptyState.openExisting")}</span>
                   </button>
                 </div>
               </div>

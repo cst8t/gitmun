@@ -5,6 +5,7 @@ import "../styles/tokens.css";
 import "../styles/animations.css";
 import "../styles/global.css";
 import "../styles/dialog.css";
+import "../i18n";
 
 document.addEventListener("contextmenu", (e) => {
   if (!(e.target as Element)?.closest?.("[data-allow-native-context-menu='true']")) {
