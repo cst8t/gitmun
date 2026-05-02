@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -9,6 +9,7 @@ import type { OperationResult, Settings, ThemeMode } from "../../types";
 import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
 import { getCloneRepoUrlError } from "../../utils/gitInputValidation";
+import { takePendingCloneDestination } from "../../api/commands";
 import "./CloneWindow.css";
 
 const CLONE_BASE_KEY = "gitmun.cloneBaseDir";
@@ -80,9 +81,8 @@ export function CloneWindow() {
         document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
         // Initialise destination: pending shell destination > last-used dir > settings default > OS default.
-        const pendingDestination = localStorage.getItem("gitmun.pendingCloneDestination");
+        const pendingDestination = await takePendingCloneDestination();
         if (pendingDestination) {
-          localStorage.removeItem("gitmun.pendingCloneDestination");
           baseDirRef.current = pendingDestination;
           setDestination(pendingDestination);
           isAutoRef.current = false;
@@ -105,6 +105,25 @@ export function CloneWindow() {
       }
     })();
   }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    (async () => {
+      const fn = await listen<string>("clone-destination-updated", (event) => {
+        const path = event.payload;
+        if (!path) return;
+        baseDirRef.current = path;
+        setDestination(path);
+        isAutoRef.current = false;
+      });
+      if (cancelled) fn(); else unlisten = fn;
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -209,7 +228,7 @@ export function CloneWindow() {
 
       const outputDetails = result.output ? ` (${result.output})` : "";
       setStatus(`${result.message}${outputDetails}`);
-      appendResultLog("success", result.message, result.backendUsed);
+      appendResultLog("success", result.message, result.backendUsed, result.repoPath ?? destination);
       await getCurrentWindow().close();
     } catch (e) {
       const msg = String(e);
@@ -218,7 +237,7 @@ export function CloneWindow() {
       } else {
         const message = t("log.cloneFailed", { message: msg });
         setStatus(message);
-        appendResultLog("error", message, "unknown");
+        appendResultLog("error", message, "unknown", destination);
       }
     } finally {
       setCloning(false);

@@ -187,6 +187,11 @@
 .result-log__console-backend--gix-cli-fallback { color: var(--yellow); }
 .result-log__console-backend--unknown { color: var(--text-muted); }
 
+.result-log__console-repo {
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
 .result-log__dot {
   width: 8px;
   height: 8px;
@@ -226,6 +231,15 @@
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   padding: 1px 6px;
+}
+
+.result-log__repo {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 .result-log__backend--gix {

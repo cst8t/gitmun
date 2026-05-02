@@ -6,6 +6,7 @@ export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
+export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
 
 export type Settings = {
     backendMode: BackendMode;
@@ -25,6 +26,7 @@ export type Settings = {
     autoInstallUpdates: boolean;
     updateEndpoint: string;
     linuxGraphicsMode: LinuxGraphicsMode;
+    repoOpenBehaviour: RepoOpenBehaviour;
 };
 
 export type AvailableUpdate = {

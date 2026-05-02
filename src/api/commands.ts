@@ -38,6 +38,7 @@ import type {
     RemoteInfo,
     RepoRequest,
     RepoStatus,
+    RepoOpenBehaviour,
     SetBranchUpstreamRequest,
     Settings,
     StageFilesRequest,
@@ -404,6 +405,10 @@ export function setUpdateEndpoint(updateEndpoint: string): Promise<Settings> {
     return invoke<Settings>("set_update_endpoint", {updateEndpoint});
 }
 
+export function setRepoOpenBehaviour(repoOpenBehaviour: RepoOpenBehaviour): Promise<Settings> {
+    return invoke<Settings>("set_repo_open_behaviour", {repoOpenBehaviour});
+}
+
 export function getConfigFilePath(): Promise<string | null> {
     return invoke<string | null>("get_config_file_path");
 }
@@ -499,15 +504,7 @@ export function openSettingsWindow(): Promise<void> {
 }
 
 export function openCloneWindow(): Promise<void> {
-    return invoke("open_sub_window", {
-        label: "clone-repository",
-        path: "clone.html",
-        title: "Clone Repository",
-        width: 520,
-        height: 460,
-        resizable: false,
-        showImmediately: false,
-    });
+    return invoke("open_clone_window", {destination: null});
 }
 
 export function openAboutWindow(): Promise<void> {
@@ -548,6 +545,18 @@ export function openResultLogWindow(): Promise<void> {
 
 export function getStartupAction(): Promise<ShellStartupAction | null> {
     return invoke<ShellStartupAction | null>("get_startup_action");
+}
+
+export function openRepoInNewWindow(path: string): Promise<void> {
+    return invoke("open_repo_in_new_window", {path});
+}
+
+export function openCloneWindowWithDestination(destination?: string): Promise<void> {
+    return invoke("open_clone_window", {destination: destination ?? null});
+}
+
+export function takePendingCloneDestination(): Promise<string | null> {
+    return invoke<string | null>("take_pending_clone_destination");
 }
 
 export function getWindowsGitRuntimeStatus(): Promise<WindowsGitRuntimeStatus> {
