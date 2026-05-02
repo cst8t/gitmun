@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import type { ConflictFileItem } from "../../types";
 
 type MergeBannerProps = {
@@ -20,24 +21,24 @@ export function MergeBanner({
   onCommitMerge,
   isCommitting,
 }: MergeBannerProps) {
+  const { t } = useTranslation("centre");
   const resolved = conflictedFiles.length === 0;
 
   const branchLabel = mergeHeadBranch
     ? `'${mergeHeadBranch}'`
-    : "branch";
-  const targetLabel = currentBranch ? ` into ${currentBranch}` : "";
+    : t("banners.unknownBranch");
 
   return (
     <div className={`merge-banner${resolved ? " merge-banner--resolved" : ""}`}>
       <div className="merge-banner__text">
         {resolved ? (
-          <span>All conflicts resolved - ready to commit merge</span>
+          <span>{t("banners.merge.ready")}</span>
         ) : (
           <>
-            <span>Merging {branchLabel}{targetLabel}</span>
+            <span>{t("banners.merge.status", {source: branchLabel, target: currentBranch ?? t("banners.unknownBranch")})}</span>
             {conflictedFiles.length > 0 && (
               <span className="merge-banner__count">
-                {" · "}{conflictedFiles.length} conflict{conflictedFiles.length !== 1 ? "s" : ""} remaining
+                {t("banners.conflictsRemaining", {count: conflictedFiles.length})}
               </span>
             )}
           </>
@@ -45,14 +46,14 @@ export function MergeBanner({
       </div>
       <div className="merge-banner__actions">
         <button className="merge-banner__btn merge-banner__btn--abort" onClick={onMergeAbort}>
-          Abort Merge
+          {t("banners.merge.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
           disabled={!resolved || stagedCount === 0 || isCommitting}
           onClick={onCommitMerge}
         >
-          {isCommitting ? "Committing..." : "Commit Merge"}
+          {isCommitting ? t("commitBox.committing") : t("banners.merge.commit")}
         </button>
       </div>
     </div>

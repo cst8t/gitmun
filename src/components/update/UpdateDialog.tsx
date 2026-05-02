@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import type { UpdateDialogState } from "../../hooks/useUpdateFlow";
 import "./UpdateDialog.css";
 
@@ -32,6 +33,7 @@ export function UpdateDialog({
   onUpdateNow,
   onDontShowAgainChange,
 }: Props) {
+  const { t } = useTranslation("update");
   const { open, update, phase, errorMessage, dontShowAgain, downloadedBytes, contentLength } = dialog;
 
   React.useEffect(() => {
@@ -59,19 +61,19 @@ export function UpdateDialog({
   const isBusy = phase === "downloading" || phase === "installing";
   const isSuccess = phase === "success";
 
-  let title = `Update ${update.version} is available`;
-  let body = "A newer Gitmun release is ready to download.";
+  let title = t("labels.promptTitle", { version: update.version });
+  let body = t("labels.promptBody");
   if (phase === "downloading") {
-    title = `Downloading update ${update.version}`;
+    title = t("labels.downloadingTitle", { version: update.version });
     body = hasKnownLength
-      ? `${formatBytes(downloadedBytes)} of ${formatBytes(contentLength)} downloaded`
-      : `${formatBytes(downloadedBytes)} downloaded`;
+      ? t("labels.downloadedOf", { downloaded: formatBytes(downloadedBytes), total: formatBytes(contentLength) })
+      : t("labels.downloaded", { bytes: formatBytes(downloadedBytes) });
   } else if (phase === "installing") {
-    title = `Installing update ${update.version}`;
-    body = "Download complete. Gitmun is applying the update now.";
+    title = t("labels.installingTitle", { version: update.version });
+    body = t("labels.installingBody");
   } else if (isSuccess) {
-    title = `Update ${update.version} installed`;
-    body = "Restart Gitmun to finish applying the update.";
+    title = t("labels.installedTitle", { version: update.version });
+    body = t("labels.installedBody");
   }
 
   return (
@@ -82,7 +84,11 @@ export function UpdateDialog({
         <div className="update-dialog__body">{body}</div>
         {(update.body || update.date) && phase === "prompt" && (
           <div className="update-dialog__meta">
-            {update.date && <div className="update-dialog__date">Published {new Date(update.date * 1000).toLocaleString()}</div>}
+            {update.date && (
+              <div className="update-dialog__date">
+                {t("labels.published", { date: new Date(update.date * 1000).toLocaleString() })}
+              </div>
+            )}
             {update.body && <pre className="update-dialog__notes">{update.body}</pre>}
           </div>
         )}
@@ -98,7 +104,7 @@ export function UpdateDialog({
               />
             </div>
             <div className="update-dialog__progress-label">
-              {phase === "installing" ? "Installing..." : percent == null ? "Downloading..." : `${percent}%`}
+              {phase === "installing" ? t("labels.installing") : percent == null ? t("labels.downloading") : `${percent}%`}
             </div>
           </div>
         )}
@@ -109,26 +115,26 @@ export function UpdateDialog({
               checked={dontShowAgain}
               onChange={(event) => onDontShowAgainChange(event.target.checked)}
             />
-            Don&apos;t show this update again
+            {t("labels.dontShowAgain")}
           </label>
         )}
         <div className="update-dialog__actions">
           {phase === "prompt" && (
             <>
               <button className="update-dialog__btn update-dialog__btn--secondary" onClick={onClose}>
-                Close
+                {t("actions.close")}
               </button>
               <button className="update-dialog__btn update-dialog__btn--secondary" onClick={onRemindLater}>
-                Remind me later
+                {t("actions.later")}
               </button>
               <button className="update-dialog__btn update-dialog__btn--primary" onClick={onUpdateNow}>
-                Update now
+                {t("actions.updateNow")}
               </button>
             </>
           )}
           {isSuccess && (
             <button className="update-dialog__btn update-dialog__btn--primary" onClick={onClose}>
-              Close
+              {t("actions.close")}
             </button>
           )}
         </div>

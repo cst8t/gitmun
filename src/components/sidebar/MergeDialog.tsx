@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import "./MergeDialog.css";
 
 export type MergeStrategy = "default" | "no-ff" | "ff-only";
@@ -10,26 +11,14 @@ type MergeDialogProps = {
   onCancel: () => void;
 };
 
-const STRATEGIES: { value: MergeStrategy; label: string; description: string }[] = [
-  {
-    value: "default",
-    label: "Default",
-    description: "Fast-forward if possible, otherwise create a merge commit",
-  },
-  {
-    value: "no-ff",
-    label: "No Fast-Forward",
-    description: "Always create a merge commit, even if fast-forward is possible",
-  },
-  {
-    value: "ff-only",
-    label: "Fast-Forward Only",
-    description: "Refuse to merge if a fast-forward is not possible",
-  },
-];
-
 export function MergeDialog({ sourceBranch, targetBranch, onConfirm, onCancel }: MergeDialogProps) {
+  const { t } = useTranslation("sidebar");
   const [strategy, setStrategy] = useState<MergeStrategy>("default");
+  const strategies: { value: MergeStrategy; label: string; description: string }[] = [
+    { value: "default", label: t("mergeDialog.default"), description: t("mergeDialog.defaultDescription") },
+    { value: "no-ff", label: t("mergeDialog.noFastForward"), description: t("mergeDialog.noFastForwardDescription") },
+    { value: "ff-only", label: t("mergeDialog.fastForwardOnly"), description: t("mergeDialog.fastForwardOnlyDescription") },
+  ];
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -44,15 +33,17 @@ export function MergeDialog({ sourceBranch, targetBranch, onConfirm, onCancel }:
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog merge-dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Merge Branch</div>
+        <div className="dialog__title">{t("mergeDialog.title")}</div>
         <div className="merge-dialog__subtitle">
-          Merge <span className="merge-dialog__branch">{sourceBranch}</span> into{" "}
+          {t("mergeDialog.merge")}{" "}
+          <span className="merge-dialog__branch">{sourceBranch}</span>
+          {" "}{t("mergeDialog.into")}{" "}
           <span className="merge-dialog__branch">{targetBranch}</span>
         </div>
 
-        <div className="merge-dialog__section-label">Strategy</div>
+        <div className="merge-dialog__section-label">{t("mergeDialog.strategy")}</div>
         <div className="merge-dialog__strategies">
-          {STRATEGIES.map(s => (
+          {strategies.map(s => (
             <label
               key={s.value}
               className={`merge-dialog__strategy ${strategy === s.value ? "merge-dialog__strategy--selected" : ""}`}
@@ -74,10 +65,10 @@ export function MergeDialog({ sourceBranch, targetBranch, onConfirm, onCancel }:
 
         <div className="dialog__actions">
           <button className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-            Cancel
+            {t("actions.cancel", {ns: "common"})}
           </button>
           <button className="dialog__btn dialog__btn--confirm" onClick={() => onConfirm(strategy)}>
-            Merge
+            {t("mergeDialog.merge")}
           </button>
         </div>
       </div>

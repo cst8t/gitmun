@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import "./RenameBranchDialog.css";
 import { getBranchNameError } from "../../utils/branchValidation";
 
@@ -15,6 +16,7 @@ export function RenameBranchDialog({
   onConfirm,
   onCancel,
 }: RenameBranchDialogProps) {
+  const { t } = useTranslation("sidebar");
   const [name, setName] = useState(currentName);
   const [nameError, setNameError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -49,7 +51,7 @@ export function RenameBranchDialog({
     }
 
     if (trimmed !== currentName && existingBranchNames.includes(trimmed)) {
-      setNameError("A branch with this name already exists");
+      setNameError("validation.branchExists");
       return;
     }
 
@@ -71,10 +73,10 @@ export function RenameBranchDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Rename Branch</div>
+        <div className="dialog__title">{t("renameBranch.title")}</div>
         <form onSubmit={handleSubmit}>
           <div className="dialog__field">
-            <label className="dialog__label">Branch name</label>
+            <label className="dialog__label">{t("renameBranch.branchName")}</label>
             <input
               ref={inputRef}
               type="text"
@@ -82,18 +84,18 @@ export function RenameBranchDialog({
               value={name}
               onChange={e => setName(e.target.value)}
             />
-            {nameError && <div className="dialog__error">{nameError}</div>}
+            {nameError && <div className="dialog__error">{t(nameError, {ns: "git", defaultValue: t(nameError)})}</div>}
           </div>
           <div className="dialog__actions">
             <button type="button" className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-              Cancel
+              {t("actions.cancel", {ns: "common"})}
             </button>
             <button
               type="submit"
               className={`dialog__btn dialog__btn--confirm${!canSubmit ? " dialog__btn--disabled" : ""}`}
               disabled={!canSubmit}
             >
-              Rename
+              {t("renameBranch.rename")}
             </button>
           </div>
         </form>

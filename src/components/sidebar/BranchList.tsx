@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BranchIcon } from "../icons";
 import { CreateBranchDialog } from "./CreateBranchDialog";
 import { ContextMenu } from "../shared/ContextMenu";
@@ -36,6 +37,7 @@ export function BranchList({
   onRepairUpstream,
   onChangeUpstream,
 }: BranchListProps) {
+  const { t } = useTranslation("sidebar");
   const [hoveredBranch, setHoveredBranch] = useState<string | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; branch: string } | null>(null);
@@ -59,10 +61,10 @@ export function BranchList({
         <button
           className="sidebar__create-branch-btn"
           onClick={() => setShowCreateDialog(true)}
-          title="Create new branch"
+          title={t("branchList.createBranch")}
         >
           <BranchIcon size={14} />
-          Create Branch
+          {t("branchList.create")}
         </button>
 
         {branches.filter(b => !b.isRemote).map(b => (
@@ -77,7 +79,7 @@ export function BranchList({
             <div className="sidebar__branch-text">
               <span className="sidebar__branch-name">{b.name}</span>
               {b.isCurrent && currentBranchStatus && (
-                <span className="sidebar__branch-status">{currentBranchStatus}</span>
+                <span className="sidebar__branch-status">{t(currentBranchStatus, {ns: "git", upstream: currentBranch?.upstream})}</span>
               )}
             </div>
             {(b.behind > 0 || b.ahead > 0) && (
@@ -89,10 +91,10 @@ export function BranchList({
             {!b.isCurrent && hoveredBranch === b.name && (
               <button
                 className="sidebar__branch-checkout"
-                title={`Switch to ${b.name}`}
+                title={t("branchList.switchTo", {branch: b.name})}
                 onClick={e => { e.stopPropagation(); onSwitchBranch(b.name); }}
               >
-                Switch
+                {t("branchList.switch")}
               </button>
             )}
           </div>
@@ -108,36 +110,36 @@ export function BranchList({
             onClose={() => setContextMenu(null)}
             items={[
               ...(isCurrentBranch && currentBranch?.upstreamStatus === "none" ? [{
-                label: "Publish Branch...",
+                label: t("branchList.publish"),
                 onClick: onPublishBranch,
               }] : []),
               ...(isCurrentBranch && currentBranch?.upstreamStatus === "missing" ? [{
-                label: "Repair Upstream...",
+                label: t("branchList.repairUpstream"),
                 onClick: onRepairUpstream,
               }] : []),
               ...(isCurrentBranch && currentBranch?.upstreamStatus === "tracked" ? [{
-                label: "Change Upstream...",
+                label: t("branchList.changeUpstream"),
                 onClick: onChangeUpstream,
               }] : []),
               {
-                label: `Rename "${contextMenu.branch}"`,
+                label: t("branchList.rename", {branch: contextMenu.branch}),
                 onClick: () => onRenameBranch(contextMenu.branch),
               },
               ...(!isCurrentBranch ? [{
-                label: `Merge "${contextMenu.branch}" into ${currentBranch?.name ?? "current"}`,
+                label: t("branchList.mergeInto", {branch: contextMenu.branch, target: currentBranch?.name ?? t("branches.current", {ns: "git"})}),
                 onClick: () => onMergeBranch(contextMenu.branch),
               }] : []),
               ...(!isCurrentBranch ? [{
-                label: `Rebase ${currentBranch?.name ?? "current"} onto "${contextMenu.branch}"`,
+                label: t("branchList.rebaseOnto", {branch: currentBranch?.name ?? t("branches.current", {ns: "git"}), onto: contextMenu.branch}),
                 onClick: () => onRebaseBranch(contextMenu.branch),
               }] : []),
               ...(!isCurrentBranch ? [{
-                label: `Delete "${contextMenu.branch}"`,
+                label: t("branchList.delete", {branch: contextMenu.branch}),
                 danger: true,
                 onClick: () => onDeleteBranch(contextMenu.branch),
               }] : []),
               ...(!isCurrentBranch ? [{
-                label: `Force Delete "${contextMenu.branch}"`,
+                label: t("branchList.forceDelete", {branch: contextMenu.branch}),
                 danger: true,
                 onClick: () => onForceDeleteBranch(contextMenu.branch),
               }] : []),

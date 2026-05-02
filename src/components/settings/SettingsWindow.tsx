@@ -4,6 +4,7 @@ import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {open} from "@tauri-apps/plugin-dialog";
 import {platform} from "@tauri-apps/plugin-os";
+import {useTranslation} from "react-i18next";
 import type {
     AvatarProviderMode,
     BackendMode,
@@ -39,19 +40,6 @@ function supportedDiffTools(os: string): ExternalDiffTool[] {
     return tools;
 }
 
-function diffToolLabel(tool: ExternalDiffTool): string {
-    switch (tool) {
-        case "Other":
-            return "None / Other";
-        case "VsCode":
-            return "VS Code";
-        case "VsCodium":
-            return "VS Codium";
-        default:
-            return tool;
-    }
-}
-
 function requiresWindowsDiffToolPath(tool: ExternalDiffTool): boolean {
     return tool === "Meld" || tool === "WinMerge";
 }
@@ -77,6 +65,7 @@ function safePlatform(): string {
 }
 
 export function SettingsWindow() {
+    const {t} = useTranslation("settings");
     const useNativeWindowBar = true;
     const [backendMode, setBackendMode] = useState<BackendMode>("Default");
     const [themeMode, setThemeMode] = useState<ThemeMode>("System");
@@ -102,9 +91,21 @@ export function SettingsWindow() {
     const [configFilePath, setConfigFilePath] = useState<string>("");
     const [buildVersion, setBuildVersion] = useState<string>("");
     const [externalDiffToolPath, setExternalDiffToolPath] = useState("");
-    const [status, setStatus] = useState("Ready.");
+    const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
+    const labelDiffTool = useCallback((tool: ExternalDiffTool): string => {
+        switch (tool) {
+            case "Other":
+                return t("options.diffToolNone");
+            case "VsCode":
+                return t("options.vsCode");
+            case "VsCodium":
+                return t("options.vsCodium");
+            default:
+                return tool;
+        }
+    }, [t]);
 
     useEffect(() => {
         (async () => {
@@ -161,12 +162,12 @@ export function SettingsWindow() {
 
                 const version = await invoke<string>("get_build_version");
                 setBuildVersion(version);
-                setStatus("Loaded settings (including global Git config).");
+                setStatus(t("status.loaded"));
             } catch (e) {
-                setStatus(`Failed to load settings: ${e}`);
+                setStatus(t("status.loadFailed", {message: String(e)}));
             }
         })();
-    }, []);
+    }, [t]);
 
     useEffect(() => {
         if (!isWindows || !requiresWindowsDiffToolPath(externalDiffTool)) {
@@ -182,7 +183,7 @@ export function SettingsWindow() {
             } catch (e) {
                 if (!cancelled) {
                     setExternalDiffToolPath("");
-                    setStatus(`Failed to load diff tool path: ${e}`);
+                    setStatus(t("status.diffToolPathFailed", {message: String(e)}));
                 }
             }
         })();
@@ -190,7 +191,7 @@ export function SettingsWindow() {
         return () => {
             cancelled = true;
         };
-    }, [externalDiffTool, isWindows]);
+    }, [externalDiffTool, isWindows, t]);
 
     useEffect(() => {
         const handler = (e: KeyboardEvent) => {
@@ -237,9 +238,9 @@ export function SettingsWindow() {
             }
 
             await emit("settings-updated", settings);
-            setStatus(`Saved settings. ${diffToolResult.message}`);
+            setStatus(t("status.saved", {message: diffToolResult.message}));
         } catch (e) {
-            setStatus(`Save failed: ${e}`);
+            setStatus(t("status.saveFailed", {message: String(e)}));
         } finally {
             setSaving(false);
         }
@@ -264,16 +265,17 @@ export function SettingsWindow() {
         linuxGraphicsMode,
         repoOpenBehaviour,
         externalDiffToolPath,
+        t,
     ]);
 
     const handleOpenResultLog = useCallback(async () => {
         try {
             await openResultLogWindow();
-            setStatus("Opened result log window.");
+            setStatus(t("status.openedResultLog"));
         } catch (e) {
-            setStatus(`Failed to open result log: ${e}`);
+            setStatus(t("status.openResultLogFailed", {message: String(e)}));
         }
-    }, []);
+    }, [t]);
 
     const handleResetLayout = useCallback(async () => {
         try {
@@ -282,40 +284,40 @@ export function SettingsWindow() {
                 rightPaneWidth: DEFAULT_RIGHT_PANE_WIDTH,
             });
             await emit("settings-updated", settings);
-            setStatus("Reset panel layout to defaults.");
+            setStatus(t("status.resetLayout"));
         } catch (e) {
-            setStatus(`Failed to reset layout: ${e}`);
+            setStatus(t("status.resetLayoutFailed", {message: String(e)}));
         }
-    }, []);
+    }, [t]);
 
     const handleBrowseCloneDir = useCallback(async () => {
         try {
             const selected = await open({
                 directory: true,
                 multiple: false,
-                title: "Select default clone destination",
+                title: t("picker.cloneDestination"),
                 defaultPath: defaultCloneDir || undefined,
             });
             if (typeof selected === "string") setDefaultCloneDir(selected);
         } catch (e) {
-            setStatus(`Browse failed: ${e}`);
+            setStatus(t("picker.cloneDestinationFailed", {message: String(e)}));
         }
-    }, [defaultCloneDir]);
+    }, [defaultCloneDir, t]);
 
     const handleBrowseDiffToolPath = useCallback(async () => {
         try {
             const selected = await open({
                 directory: false,
                 multiple: false,
-                title: `Select ${diffToolLabel(externalDiffTool)} executable`,
+                title: t("picker.diffToolExecutable", {tool: labelDiffTool(externalDiffTool)}),
                 defaultPath: externalDiffToolPath || undefined,
-                filters: [{name: "Windows executables", extensions: ["exe"]}],
+                filters: [{name: t("picker.windowsExecutables"), extensions: ["exe"]}],
             });
             if (typeof selected === "string") setExternalDiffToolPath(selected);
         } catch (e) {
-            setStatus(`Browse failed: ${e}`);
+            setStatus(t("picker.cloneDestinationFailed", {message: String(e)}));
         }
-    }, [externalDiffTool, externalDiffToolPath]);
+    }, [externalDiffTool, externalDiffToolPath, labelDiffTool, t]);
 
     const handleClose = useCallback(() => {
         getCurrentWindow().close();
@@ -325,7 +327,7 @@ export function SettingsWindow() {
         <div className="settings-window">
             {!useNativeWindowBar && (
                 <div className="settings-window__header">
-                    <span className="settings-window__title">Settings</span>
+                    <span className="settings-window__title">{t("labels.settings")}</span>
                     <button className="settings-window__close" onClick={handleClose}>
                         <CloseIcon/>
                     </button>
@@ -336,15 +338,15 @@ export function SettingsWindow() {
 
                 {/* Left column: Application */}
                 <div className="settings-window__column">
-                    <div className="settings-window__section-title">Application</div>
+                    <div className="settings-window__section-title">{t("labels.application")}</div>
                     {configFilePath && (
                         <div className="settings-window__section-note">
-                            Config file: <code>{configFilePath}</code>
+                            {t("labels.configFile")}<code>{configFilePath}</code>
                         </div>
                     )}
                     {buildVersion && (
                         <div className="settings-window__section-note">
-                            Build version: <code>{buildVersion}</code>
+                            {t("labels.buildVersion")}<code>{buildVersion}</code>
                         </div>
                     )}
 
@@ -367,7 +369,7 @@ export function SettingsWindow() {
 
                     {updaterSupported ? (
                         <div className="settings-window__row">
-                            <label className="settings-window__label">Updates</label>
+                            <label className="settings-window__label">{t("labels.updates")}</label>
                             <div className="settings-window__sub-section">
                                 <label className="settings-window__switch-row">
                   <span className="settings-window__switch">
@@ -378,14 +380,14 @@ export function SettingsWindow() {
                     />
                     <span className="settings-window__switch-track"/>
                   </span>
-                                    <span className="settings-window__switch-label">Automatically check for updates on launch</span>
+                                    <span className="settings-window__switch-label">{t("switches.autoCheckUpdates")}</span>
                                 </label>
                                 <div className="settings-window__section-note">
-                                    Use About to check manually. Automatic checks only show the updater prompt on launch when this is enabled.
+                                    {t("notes.autoUpdates")}
                                 </div>
 
                                 <div className="settings-window__row">
-                                    <label className="settings-window__label">Update feed URL</label>
+                                    <label className="settings-window__label">{t("labels.updateFeedUrl")}</label>
                                     <div className="settings-window__sub-section">
                                         <input
                                             className="settings-window__input"
@@ -397,9 +399,7 @@ export function SettingsWindow() {
                                             autoCorrect="off"
                                         />
                                         <div className="settings-window__section-note">
-                                            Advanced setting. Gitmun checks this <code>latest.json</code> URL for
-                                            updates.
-                                            Do not change this unless you know what you&apos;re doing.
+                                            {t("notes.updateEndpoint")}
                                         </div>
                                     </div>
                                 </div>
@@ -407,59 +407,58 @@ export function SettingsWindow() {
                         </div>
                     ) : (
                         <div className="settings-window__row">
-                            <label className="settings-window__label">Updates</label>
+                            <label className="settings-window__label">{t("labels.updates")}</label>
                             <div className="settings-window__section-note">
-                                Updates are managed by this platform package channel.
+                                {t("notes.updatesManaged")}
                             </div>
                         </div>
                     )}
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Git backend mode</label>
+                        <label className="settings-window__label">{t("labels.gitBackendMode")}</label>
                         <select
                             className="settings-window__select"
                             value={backendMode}
                             onChange={e => setBackendMode(e.target.value as BackendMode)}
                         >
-                            <option value="Default">Default (gix-assisted)</option>
-                            <option value="GitCliOnly">Git CLI only</option>
+                            <option value="Default">{t("options.backendDefault")}</option>
+                            <option value="GitCliOnly">{t("options.backendGitCli")}</option>
                         </select>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Theme</label>
+                        <label className="settings-window__label">{t("labels.theme")}</label>
                         <select
                             className="settings-window__select"
                             value={themeMode}
                             onChange={e => setThemeMode(e.target.value as ThemeMode)}
                         >
-                            <option value="System">System</option>
-                            <option value="Light">Light</option>
-                            <option value="Dark">Dark</option>
+                            <option value="System">{t("options.themeSystem")}</option>
+                            <option value="Light">{t("options.themeLight")}</option>
+                            <option value="Dark">{t("options.themeDark")}</option>
                         </select>
                     </div>
 
                     {isLinux && (
                         <div className="settings-window__row">
-                            <label className="settings-window__label">Graphics mode</label>
+                            <label className="settings-window__label">{t("labels.graphicsMode")}</label>
                             <select
                                 className="settings-window__select"
                                 value={linuxGraphicsMode}
                                 onChange={e => setLinuxGraphicsMode(e.target.value as LinuxGraphicsMode)}
                             >
-                                <option value="Auto">Compatibility (default)</option>
-                                <option value="Safe">Maximum compatibility</option>
-                                <option value="Native">Native (hardware acceleration)</option>
+                                <option value="Auto">{t("options.graphicsAuto")}</option>
+                                <option value="Safe">{t("options.graphicsSafe")}</option>
+                                <option value="Native">{t("options.graphicsNative")}</option>
                             </select>
                             <div className="settings-window__section-note">
-                                Takes effect on next launch. Use "Maximum compatibility" if you see rendering crashes or
-                                a blank window.
+                                {t("notes.linuxGraphics")}
                             </div>
                         </div>
                     )}
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Diff panel</label>
+                        <label className="settings-window__label">{t("labels.diffPanel")}</label>
                         <label className="settings-window__switch-row">
               <span className="settings-window__switch">
                 <input
@@ -469,16 +468,16 @@ export function SettingsWindow() {
                 />
                 <span className="settings-window__switch-track"/>
               </span>
-                            <span className="settings-window__switch-label">Wrap long lines in diff view</span>
+                            <span className="settings-window__switch-label">{t("switches.wrapDiffLines")}</span>
                         </label>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Result log</label>
+                        <label className="settings-window__label">{t("labels.resultLog")}</label>
                         <div className="settings-window__sub-section">
                             <button className="settings-window__btn settings-window__btn--secondary"
                                     onClick={handleOpenResultLog}>
-                                Open result log window
+                                {t("actions.openResultLog")}
                             </button>
                             <label className="settings-window__switch-row">
                 <span className="settings-window__switch">
@@ -489,30 +488,30 @@ export function SettingsWindow() {
                   />
                   <span className="settings-window__switch-track"/>
                 </span>
-                                <span className="settings-window__switch-label">Open at launch</span>
+                                <span className="settings-window__switch-label">{t("labels.openAtLaunch")}</span>
                             </label>
                         </div>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Layout</label>
+                        <label className="settings-window__label">{t("labels.layout")}</label>
                         <div className="settings-window__inline-controls">
                             <button className="settings-window__btn settings-window__btn--secondary"
                                     onClick={handleResetLayout}>
-                                Reset panel layout
+                                {t("actions.resetLayout")}
                             </button>
                         </div>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Default clone destination</label>
+                        <label className="settings-window__label">{t("labels.cloneDestination")}</label>
                         <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
                             <input
                                 className="settings-window__input"
                                 type="text"
                                 value={defaultCloneDir}
                                 onChange={e => setDefaultCloneDir(e.target.value)}
-                                placeholder="Leave blank to use ~/GitmunProjects"
+                                placeholder={t("placeholders.defaultCloneDestination")}
                             />
                             <button
                                 className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
@@ -523,15 +522,15 @@ export function SettingsWindow() {
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Avatars</label>
+                        <label className="settings-window__label">{t("labels.avatars")}</label>
                         <div className="settings-window__sub-section">
                             <select
                                 className="settings-window__select"
                                 value={avatarProvider}
                                 onChange={e => setAvatarProvider(e.target.value as AvatarProviderMode)}
                             >
-                                <option value="Libravatar">Libravatar (default)</option>
-                                <option value="Off">Disabled</option>
+                                <option value="Libravatar">{t("options.avatarLibravatar")}</option>
+                                <option value="Off">{t("options.avatarDisabled")}</option>
                             </select>
                             <label
                                 className="settings-window__switch-row"
@@ -551,34 +550,34 @@ export function SettingsWindow() {
                   <span className="settings-window__switch-track"/>
                 </span>
                                 <span className="settings-window__switch-label">
-                  Try platform-specific avatars first (e.g. GitHub for github.com remotes)
+                  {t("switches.platformAvatars")}
                 </span>
                             </label>
                         </div>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Commit log date</label>
+                        <label className="settings-window__label">{t("labels.commitLogDate")}</label>
                         <select
                             className="settings-window__select"
                             value={commitDateMode}
                             onChange={e => setCommitDateMode(e.target.value as CommitDateMode)}
                         >
-                            <option value="AuthorDate">Author date (default)</option>
-                            <option value="CommitterDate">Committer date (GitHub-style)</option>
+                            <option value="AuthorDate">{t("options.commitDateAuthor")}</option>
+                            <option value="CommitterDate">{t("options.commitDateCommitter")}</option>
                         </select>
                     </div>
                 </div>
 
                 {/* Right column: Git */}
                 <div className="settings-window__column">
-                    <div className="settings-window__section-title">Git</div>
+                    <div className="settings-window__section-title">{t("labels.git")}</div>
                     <div className="settings-window__section-note">
-                        These options control Git behaviour in Gitmun.
+                        {t("notes.gitOptions")}
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Push behaviour</label>
+                        <label className="settings-window__label">{t("labels.pushBehaviour")}</label>
                         <label className="settings-window__switch-row">
               <span className="settings-window__switch">
                 <input
@@ -588,47 +587,42 @@ export function SettingsWindow() {
                 />
                 <span className="settings-window__switch-track"/>
               </span>
-                            <span className="settings-window__switch-label">Include annotated tags when pushing (`--follow-tags`)</span>
+                            <span className="settings-window__switch-label">{t("switches.followTags")}</span>
                         </label>
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">Global Git configuration</label>
+                        <label className="settings-window__label">{t("labels.globalGitConfiguration")}</label>
                         <div className="settings-window__sub-section">
                             <div className="settings-window__section-note">
-                                These options update your global Git configuration (equivalent to `git config --global
-                                ...`).
+                                {t("notes.gitConfiguration")}
                             </div>
 
                             <div className="settings-window__row">
-                                <label className="settings-window__label">External difftool (`diff.tool`)</label>
+                                <label className="settings-window__label">{t("labels.diffTool")}</label>
                                 <select
                                     className="settings-window__select"
                                     value={externalDiffTool}
                                     onChange={e => setExternalDiffTool(e.target.value as ExternalDiffTool)}
                                 >
                                     {allowedDiffTools.map(tool => (
-                                        <option key={tool} value={tool}>{diffToolLabel(tool)}</option>
+                                        <option key={tool} value={tool}>{labelDiffTool(tool)}</option>
                                     ))}
                                 </select>
                                 {externalDiffTool === "Other" && (
                                     <div className="settings-window__warning">
-                                        No known difftool is configured. Compare actions may not work unless you have
-                                        configured one manually in your git config.
-                                        {suggestedTools.length > 0 && ` You can set one here (e.g. ${suggestedTools.map(diffToolLabel).join(", ")}).`}
+                                        {t("notes.diffToolNotConfigured")}
+                                        {suggestedTools.length > 0 && t("notes.diffToolSuggestion", {tools: suggestedTools.map(labelDiffTool).join(", ")})}
                                     </div>
                                 )}
                                 {(externalDiffTool === "VsCode" || externalDiffTool === "VsCodium") && (
                                     <div className="settings-window__note">
-                                        {diffToolLabel(externalDiffTool)}'s merge editor writes the result file when
-                                        closed, so conflicts will be marked as resolved even if you close without
-                                        explicitly accepting a side. Use the Accept buttons inside the editor to choose
-                                        which version to keep.
+                                        {t("notes.vscodeMergeEditor", {tool: labelDiffTool(externalDiffTool)})}
                                     </div>
                                 )}
                                 {isWindows && requiresWindowsDiffToolPath(externalDiffTool) && (
                                     <div className="settings-window__row">
-                                        <label className="settings-window__label">Diff tool executable</label>
+                                        <label className="settings-window__label">{t("labels.diffToolExecutable")}</label>
                                         <div className="settings-window__inline-controls"
                                              style={{gap: "6px", flexWrap: "nowrap"}}>
                                             <input
@@ -636,7 +630,7 @@ export function SettingsWindow() {
                                                 type="text"
                                                 value={externalDiffToolPath}
                                                 onChange={e => setExternalDiffToolPath(e.target.value)}
-                                                placeholder={`Auto-detect ${diffToolLabel(externalDiffTool)} or choose its .exe`}
+                                                placeholder={t("placeholders.diffToolPath", {tool: labelDiffTool(externalDiffTool)})}
                                                 spellCheck={false}
                                                 autoCapitalize="off"
                                                 autoCorrect="off"
@@ -648,13 +642,11 @@ export function SettingsWindow() {
                                             </button>
                                         </div>
                                         <div className="settings-window__section-note">
-                                            Gitmun searches PATH first, then common Windows install folders. If that
-                                            fails, choose the executable manually.
+                                            {t("notes.toolPathSearch")}
                                         </div>
                                         {!externalDiffToolPath && (
                                             <div className="settings-window__warning">
-                                                {diffToolLabel(externalDiffTool)} could not be found automatically.
-                                                Saving will fail until you choose its executable.
+                                                {t("notes.toolPathMissing", {tool: labelDiffTool(externalDiffTool)})}
                                             </div>
                                         )}
                                     </div>
@@ -662,19 +654,18 @@ export function SettingsWindow() {
                             </div>
 
                             <div className="settings-window__row">
-                                <label className="settings-window__label">Default branch name
-                                    (`init.defaultBranch`)</label>
+                                <label className="settings-window__label">{t("labels.defaultBranch")}</label>
                                 <input
                                     className="settings-window__input"
                                     type="text"
                                     value={globalDefaultBranch}
                                     onChange={e => setGlobalDefaultBranch(e.target.value)}
-                                    placeholder="Leave blank to use Git's default"
+                                    placeholder={t("placeholders.defaultBranch")}
                                 />
                             </div>
 
                             <div className="settings-window__row">
-                                <label className="settings-window__label">File mode tracking (`core.fileMode`)</label>
+                                <label className="settings-window__label">{t("labels.fileMode")}</label>
                                 <label className="settings-window__switch-row">
                                     <span className="settings-window__switch">
                                         <input
@@ -684,7 +675,7 @@ export function SettingsWindow() {
                                         />
                                         <span className="settings-window__switch-track"/>
                                     </span>
-                                    <span className="settings-window__switch-label">Track file permissions</span>
+                                    <span className="settings-window__switch-label">{t("switches.trackFilePermissions")}</span>
                                 </label>
                             </div>
                         </div>
@@ -697,10 +688,10 @@ export function SettingsWindow() {
                 <div className="settings-window__actions">
                     <button className="settings-window__btn settings-window__btn--primary" onClick={handleSave}
                             disabled={saving}>
-                        {saving ? "Saving..." : "Save"}
+                        {saving ? t("actions.saving") : t("actions.save")}
                     </button>
                     <button className="settings-window__btn settings-window__btn--secondary" onClick={handleClose}>
-                        Close
+                        {t("actions.close")}
                     </button>
                 </div>
                 <span className="settings-window__status">{status}</span>

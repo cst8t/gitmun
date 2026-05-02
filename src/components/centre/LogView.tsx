@@ -1,6 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
+import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
 import type { CommitHistoryItem, CommitLogScope, CommitMarkers, SignatureStatus } from "../../types";
 import { verifyCommits } from "../../api/commands";
@@ -17,15 +18,15 @@ function hashColour(name: string): string {
   return colours[Math.abs(h) % colours.length];
 }
 
-function relativeTime(dateStr: string): string {
+function relativeTime(dateStr: string, t: (key: string, options?: Record<string, unknown>) => string): string {
   try {
     const date = new Date(dateStr);
     const now = Date.now();
     const diff = Math.floor((now - date.getTime()) / 1000);
-    if (diff < 60) return "just now";
-    if (diff < 3600) return `${Math.floor(diff / 60)} min ago`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} hr ago`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)} day${Math.floor(diff / 86400) > 1 ? "s" : ""} ago`;
+    if (diff < 60) return t("log.justNow");
+    if (diff < 3600) return t("log.timeMinutesAgo", { count: Math.floor(diff / 60) });
+    if (diff < 86400) return t("log.timeHoursAgo", { count: Math.floor(diff / 3600) });
+    if (diff < 604800) return t("log.timeDaysAgo", { count: Math.floor(diff / 86400) });
     return date.toLocaleDateString();
   } catch {
     return dateStr;
@@ -56,6 +57,7 @@ function ShieldIcon({ status }: { status: SignatureStatus }) {
 }
 
 function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: () => void }) {
+  const { t } = useTranslation("centre");
   const ref = useRef<HTMLDivElement>(null);
   const { rect, status, signer, fingerprint, keyType, date } = data;
 
@@ -91,40 +93,40 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
   }, [onClose]);
 
   const heading =
-    status === "verified" ? "This commit was signed with a verified signature." :
-    status === "bad"      ? "This commit has a bad signature." :
-    status === "unknownKey" ? "This commit is signed, but the key is not in your keyring." :
-                            "This commit is signed but could not be verified locally.";
+    status === "verified" ? t("log.signedVerified") :
+    status === "bad"      ? t("log.signedBad") :
+    status === "unknownKey" ? t("log.signedUnknownKey") :
+                            t("log.signedUnverified");
 
   const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
 
   return (
     <div ref={ref} className={`sig-popover sig-popover--${mod}`} role="dialog" aria-modal="false">
-      <button className="sig-popover__close" onClick={onClose} aria-label="Close">✕</button>
+      <button className="sig-popover__close" onClick={onClose} aria-label={t("log.close")}>✕</button>
       <div className="sig-popover__header">
         <ShieldIcon status={status} />
         <span>{heading}</span>
       </div>
       {signer && (
         <div className="sig-popover__row">
-          <span className="sig-popover__label">Signer</span>
+          <span className="sig-popover__label">{t("log.signer")}</span>
           <span className="sig-popover__value">{signer}</span>
         </div>
       )}
       {keyType && (
         <div className="sig-popover__row">
-          <span className="sig-popover__label">Key type</span>
+          <span className="sig-popover__label">{t("log.keyType")}</span>
           <span className="sig-popover__value">{keyType.toUpperCase()}</span>
         </div>
       )}
       {fingerprint && (
         <div className="sig-popover__row">
-          <span className="sig-popover__label">Fingerprint</span>
+          <span className="sig-popover__label">{t("log.fingerprint")}</span>
           <span className="sig-popover__value sig-popover__value--mono">{formatFingerprint(fingerprint)}</span>
         </div>
       )}
       <div className="sig-popover__row">
-        <span className="sig-popover__label">Date</span>
+        <span className="sig-popover__label">{t("log.date")}</span>
         <span className="sig-popover__value">{new Date(date).toLocaleString()}</span>
       </div>
     </div>
@@ -132,8 +134,9 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
 }
 
 function SignatureBadge({ status, onOpen }: { status: SignatureStatus; onOpen: (rect: DOMRect) => void }) {
+  const { t } = useTranslation("centre");
   if (status === "none") return null;
-  const label = status === "verified" ? "Verified" : status === "bad" ? "Bad signature" : "Signed";
+  const label = status === "verified" ? t("log.verified") : status === "bad" ? t("log.badSignature") : t("log.signed");
   const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
   return (
     <button
@@ -175,6 +178,7 @@ const CommitRow = React.memo(function CommitRow({
   onContextMenu,
   onBadgeClick,
 }: CommitRowProps) {
+  const { t } = useTranslation("centre");
   const colour = hashColour(c.author);
   const initials = getInitials(c.author);
   const handleClick = useCallback(() => onSelectCommit(c.hash), [onSelectCommit, c.hash]);
@@ -216,7 +220,7 @@ const CommitRow = React.memo(function CommitRow({
             onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
           />
           <span className="log-view__author">{c.author}</span>
-          <span className="log-view__time">{relativeTime(c.date)}</span>
+          <span className="log-view__time">{relativeTime(c.date, t)}</span>
         </div>
       </div>
     </div>
@@ -265,6 +269,7 @@ export function LogView({
   onRevertAtCommit,
   onResetToCommit,
 }: LogViewProps) {
+  const { t } = useTranslation("centre");
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const [commitMenu, setCommitMenu] = useState<{ x: number; y: number; hash: string } | null>(null);
   // Resolved verification results for commits that came in as "signed" (gix fast path).
@@ -433,13 +438,13 @@ export function LogView({
     commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
   );
   const historyNotice = logScope === "allRefs"
-    ? "Showing one combined timeline from all local branches, remote branches, tags, and the current checkout. Branch-only commits may appear further down the list."
+    ? t("log.historyAllRefs")
     : detachedHead && shallow
-      ? "This checkout is detached and shallow, so current checkout history may stop at the pinned commit."
+      ? t("log.historyDetachedShallow")
       : detachedHead
-        ? "This checkout is detached. Current checkout history only follows the pinned HEAD commit."
+        ? t("log.historyDetached")
         : shallow
-          ? "This checkout is shallow, so current checkout history may be incomplete."
+          ? t("log.historyShallow")
           : null;
 
   const handleCloseSigPopover = useCallback(() => setSigPopover(null), []);
@@ -449,7 +454,7 @@ export function LogView({
       {historyNotice && <div className="log-view__notice">{historyNotice}</div>}
       {showUpstreamNotice && (
         <div className="log-view__notice">
-          Upstream tip {commitMarkers.upstreamRef} is outside this local history view.
+          {t("log.upstreamOutside", { ref: commitMarkers.upstreamRef })}
         </div>
       )}
       <Virtuoso
@@ -489,14 +494,14 @@ export function LogView({
         components={{
           EmptyPlaceholder: () => {
             if (logError) {
-              return <div className="log-view__empty">Could not load commit history: {logError}</div>;
+              return <div className="log-view__empty">{t("log.loadFailed", { message: logError })}</div>;
             }
             if (logLoading) {
-              return <div className="log-view__empty">Loading commit history...</div>;
+              return <div className="log-view__empty">{t("log.loading")}</div>;
             }
             return (
               <div className="log-view__empty">
-                {logScope === "allRefs" ? "No commits were returned for any refs." : "No commits yet"}
+                {logScope === "allRefs" ? t("log.noCommitsAllRefs") : t("log.noCommits")}
               </div>
             );
           },
@@ -510,19 +515,19 @@ export function LogView({
           onClose={() => setCommitMenu(null)}
           items={[
             ...(onCherryPickAtCommit ? [{
-              label: "Cherry-pick Commit",
+              label: t("log.cherryPickCommit"),
               onClick: () => onCherryPickAtCommit(commitMenu.hash),
             }] : []),
             ...(onRevertAtCommit ? [{
-              label: "Revert Commit…",
+              label: t("log.revertCommit"),
               onClick: () => onRevertAtCommit(commitMenu.hash),
             }] : []),
             ...(onResetToCommit ? [
-              { label: "Soft Reset to Here", onClick: () => onResetToCommit(commitMenu.hash, "soft") },
-              { label: "Mixed Reset to Here", onClick: () => onResetToCommit(commitMenu.hash, "mixed") },
+              { label: t("log.softReset"), onClick: () => onResetToCommit(commitMenu.hash, "soft") },
+              { label: t("log.mixedReset"), onClick: () => onResetToCommit(commitMenu.hash, "mixed") },
             ] : []),
             ...(onCreateTagAtCommit ? [{
-              label: "Create Tag Here…",
+              label: t("log.createTagHere"),
               onClick: () => onCreateTagAtCommit(commitMenu.hash),
             }] : []),
           ]}

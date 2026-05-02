@@ -5,6 +5,7 @@ import { SettingsWindow } from "../components/settings/SettingsWindow";
 import "../styles/tokens.css";
 import "../styles/animations.css";
 import "../styles/global.css";
+import "../i18n";
 
 window.addEventListener("error", (event) => {
   const details = `[settings-window:error] ${event.message}\n${event.filename}:${event.lineno}:${event.colno}`;

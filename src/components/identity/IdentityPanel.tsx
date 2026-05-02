@@ -1,4 +1,5 @@
 import React, { useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   UserIcon, FolderIcon, GlobeIcon, SwapIcon, ShieldIcon,
   CloseIcon, EditIcon,
@@ -33,6 +34,7 @@ export function IdentityPanel({
   onSaveGlobalIdentity,
   onScopeChange,
 }: IdentityPanelProps) {
+  const { t } = useTranslation("identity");
   const [tab, setTab] = useState<IdentityTab>("local");
   const [editMode, setEditMode] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<GitIdentity>>({});
@@ -128,14 +130,14 @@ export function IdentityPanel({
         {/* Header */}
         <div className="identity-panel__header">
           <div className="identity-panel__title">
-            <UserIcon /><span>Git Identity</span>
+            <UserIcon /><span>{t("labels.gitIdentity")}</span>
           </div>
           <div className="identity-panel__header-actions">
             <button
               className={`identity-panel__edit-btn ${editMode ? "identity-panel__edit-btn--active" : ""}`}
               onClick={() => setEditMode(!editMode)}
             >
-              <EditIcon />{editMode ? "Editing" : "Edit"}
+              <EditIcon />{editMode ? t("labels.editing") : t("labels.edit")}
             </button>
             <button className="identity-panel__close-btn" onClick={onClose}><CloseIcon /></button>
           </div>
@@ -144,10 +146,10 @@ export function IdentityPanel({
         {/* Tabs */}
         <div className="identity-panel__tabs">
           {([
-            { key: "local" as const, label: "Repository", icon: <FolderIcon /> },
-            { key: "global" as const, label: "Global", icon: <GlobeIcon /> },
+            { key: "local" as const, label: t("labels.repository"), icon: <FolderIcon /> },
+            { key: "global" as const, label: t("labels.global"), icon: <GlobeIcon /> },
             ...(PROFILES_ENABLED
-              ? ([{ key: "profiles" as const, label: "Profiles", icon: <SwapIcon /> }] as const)
+              ? ([{ key: "profiles" as const, label: t("labels.profiles"), icon: <SwapIcon /> }] as const)
               : ([] as const)),
           ]).map(t => (
             <button key={t.key}
@@ -165,23 +167,23 @@ export function IdentityPanel({
               <div className={`identity-detail__scope ${tab === "local" ? "identity-detail__scope--local" : "identity-detail__scope--global"}`}>
                 {tab === "local" ? <FolderIcon /> : <GlobeIcon />}
                 <span>{scopeLabel}</span>
-                {tab === "local" && <span className="identity-detail__override-badge">override</span>}
+                {tab === "local" && <span className="identity-detail__override-badge">{t("labels.override")}</span>}
               </div>
 
               {!identity && (
-                <div className="identity-detail__hint">Loading identity...</div>
+                <div className="identity-detail__hint">{t("labels.loading")}</div>
               )}
 
               {!editMode ? (
                 <>
                   <div className="identity-detail__field">
-                    <div className="identity-detail__label">user.name</div>
-                    <div className="identity-detail__value">{displayIdentity.name ?? "Not set"}</div>
+                    <div className="identity-detail__label">{t("labels.userName")}</div>
+                    <div className="identity-detail__value">{displayIdentity.name ?? t("common:generic.none")}</div>
                   </div>
 
                   <div className="identity-detail__field">
-                    <div className="identity-detail__label">user.email</div>
-                    <div className="identity-detail__email">{displayIdentity.email ?? "Not set"}</div>
+                    <div className="identity-detail__label">{t("labels.userEmail")}</div>
+                    <div className="identity-detail__email">{displayIdentity.email ?? t("common:generic.none")}</div>
                   </div>
 
                   <div className="identity-detail__divider" />
@@ -189,26 +191,26 @@ export function IdentityPanel({
                   <div className="identity-detail__signing">
                     <div className="identity-detail__signing-header">
                       <ShieldIcon />
-                      <span className="identity-detail__signing-label">Commit Signing</span>
+                      <span className="identity-detail__signing-label">{t("labels.commitSigning")}</span>
                       <span className={`identity-detail__signing-badge ${displayIdentity.commitSigningEnabled ? "identity-detail__signing-badge--enabled" : ""}`}>
-                        {displayIdentity.commitSigningEnabled ? "enabled" : "disabled"}
+                        {displayIdentity.commitSigningEnabled ? t("labels.enabled") : t("labels.disabled")}
                       </span>
                     </div>
                     {displayIdentity.signingKey && (
                       <div className="identity-detail__signing-info">
                         <div className="identity-detail__signing-row">
-                          <span>Format</span>
+                          <span>{t("labels.format")}</span>
                           <span className={`identity-detail__format-pill ${displayIdentity.signingFormat === "ssh" ? "identity-detail__format-pill--ssh" : ""}`}>
                             {displayIdentity.signingFormat === "ssh" ? "SSH" : "GPG"}
                           </span>
                         </div>
                         <div className="identity-detail__signing-row">
-                          <span>{displayIdentity.signingFormat === "ssh" ? "Key" : "Key ID"}</span>
+                          <span>{displayIdentity.signingFormat === "ssh" ? t("labels.key") : t("labels.keyId")}</span>
                           <span className="identity-detail__key-value">{displayIdentity.signingKey}</span>
                         </div>
                         {displayIdentity.sshKeyPath && (
                           <div className="identity-detail__signing-row">
-                            <span>File</span>
+                            <span>{t("labels.file")}</span>
                             <span className="identity-detail__key-value">{displayIdentity.sshKeyPath}</span>
                           </div>
                         )}
@@ -220,7 +222,7 @@ export function IdentityPanel({
               ) : (
                 <form className="identity-detail__edit-form">
                   <div className="identity-detail__field">
-                    <label className="identity-detail__label">user.name</label>
+                    <label className="identity-detail__label">{t("labels.userName")}</label>
                     <input
                       type="text"
                       className="identity-detail__input"
@@ -233,7 +235,7 @@ export function IdentityPanel({
                   </div>
 
                   <div className="identity-detail__field">
-                    <label className="identity-detail__label">user.email</label>
+                    <label className="identity-detail__label">{t("labels.userEmail")}</label>
                     <input
                       type="email"
                       className="identity-detail__input"
@@ -248,7 +250,7 @@ export function IdentityPanel({
                   <div className="identity-detail__divider" />
 
                   <div className="identity-detail__field">
-                    <label className="identity-detail__label">Signing Configuration</label>
+                    <label className="identity-detail__label">{t("labels.signingConfiguration")}</label>
                     <div className="identity-detail__signing-form">
                       <label className="identity-detail__toggle-row">
                         <span className="identity-detail__form-label">commit.gpgsign</span>
@@ -264,7 +266,7 @@ export function IdentityPanel({
                       </label>
 
                       <div className="identity-detail__form-group">
-                        <label className="identity-detail__form-label">user.signingkey</label>
+                        <label className="identity-detail__form-label">{t("labels.signingKey")}</label>
                         <input
                           type="text"
                           className="identity-detail__input"
@@ -279,12 +281,12 @@ export function IdentityPanel({
                             })
                           }
                           disabled={isSaving}
-                          placeholder="GPG key ID or SSH key"
+                          placeholder={t("placeholders.signingKey")}
                         />
                       </div>
 
                       <div className="identity-detail__form-group">
-                        <label className="identity-detail__form-label">gpg.format</label>
+                        <label className="identity-detail__form-label">{t("labels.format")}</label>
                         <input
                           type="text"
                           className="identity-detail__input"
@@ -299,12 +301,12 @@ export function IdentityPanel({
                             })
                           }
                           disabled={isSaving}
-                          placeholder="gpg or ssh"
+                          placeholder={t("placeholders.format")}
                         />
                       </div>
 
                       <div className="identity-detail__form-group">
-                        <label className="identity-detail__form-label">gpg.ssh.allowedSignersFile</label>
+                        <label className="identity-detail__form-label">{t("labels.allowedSignersFile")}</label>
                         <input
                           type="text"
                           className="identity-detail__input"
@@ -319,7 +321,7 @@ export function IdentityPanel({
                             })
                           }
                           disabled={isSaving}
-                          placeholder="Path to allowed signers file"
+                          placeholder={t("placeholders.allowedSignersFile")}
                         />
                       </div>
                     </div>
@@ -332,7 +334,7 @@ export function IdentityPanel({
                       onClick={() => setEditMode(false)}
                       disabled={isSaving}
                     >
-                      Cancel
+                      {t("actions.cancel")}
                     </button>
                     <button
                       type="button"
@@ -340,7 +342,7 @@ export function IdentityPanel({
                       onClick={handleSaveIdentity}
                       disabled={isSaving}
                     >
-                      {isSaving ? "Saving..." : "Save"}
+                      {isSaving ? t("actions.saving") : t("actions.save")}
                     </button>
                   </div>
                 </form>
@@ -351,10 +353,10 @@ export function IdentityPanel({
           {PROFILES_ENABLED && tab === "profiles" && (
             <div className="identity-profiles">
               <div className="identity-profiles__desc">
-                Switch between saved identity profiles for different contexts.
+                {t("profiles.description")}
               </div>
               <div className="identity-profiles__placeholder">
-                Identity profiles coming soon
+                {t("profiles.comingSoon")}
               </div>
             </div>
           )}

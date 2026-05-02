@@ -1,4 +1,5 @@
 import React, {useState, useCallback, useEffect, useRef} from "react";
+import {useTranslation} from "react-i18next";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
@@ -71,6 +72,10 @@ function isLikelyNotRepoError(error: unknown): boolean {
     return /not a git repository/i.test(String(error));
 }
 
+function repoNameFromPath(path: string): string {
+    return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+}
+
 function clampPaneLayout(totalWidth: number, desiredLeft: number, desiredRight: number): {
     left: number;
     right: number
@@ -127,6 +132,7 @@ function clampPaneLayout(totalWidth: number, desiredLeft: number, desiredRight: 
 }
 
 export function App() {
+    const {t} = useTranslation("app");
     const platform = usePlatform();
     const {toast, showToast} = useToast();
     const {
@@ -243,7 +249,7 @@ export function App() {
                 setConfirmRevert(settings.confirmRevert ?? true);
                 if (settings.showResultLog) {
                     api.openResultLogWindow().catch(e => {
-                        appendResultLog("error", `Result log window failed to open: ${String(e)}`, "unknown");
+                        appendResultLog("error", t("log.resultLogWindowFailed", {message: String(e)}), "unknown");
                     });
                 }
 
@@ -257,7 +263,7 @@ export function App() {
         return () => {
             cancelled = true;
         };
-    }, [checkForUpdatesOnLaunch]);
+    }, [checkForUpdatesOnLaunch, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -269,8 +275,8 @@ export function App() {
                 api.validateRepoPath(path).then(() => {
                     setRepoPath(path);
                     pushRecentRepo(path);
-                    showToast(`Opened ${path.split("/").pop()}`);
-                    appendResultLog("info", `Opened repository ${path}`, "unknown", path);
+                    showToast(t("toast.opened", {name: repoNameFromPath(path)}));
+                    appendResultLog("info", t("log.openedRepository", {path}), "unknown", path);
                 }).catch((e: unknown) => showToast(String(e), "error"));
             });
             if (cancelled) fn(); else unlisten = fn;
@@ -279,27 +285,27 @@ export function App() {
             cancelled = true;
             unlisten?.();
         };
-    }, [pushRecentRepo, showToast]);
+    }, [pushRecentRepo, showToast, t]);
 
     const handleShellAction = useCallback((action: ShellStartupAction) => {
         if (action.action === "openRepo") {
             api.validateRepoPath(action.path).then(() => {
                 setRepoPath(action.path);
                 pushRecentRepo(action.path);
-                showToast(`Opened ${action.path.split("/").pop()}`);
-                appendResultLog("info", `Opened repository ${action.path} from shell`, "unknown", action.path);
+                showToast(t("toast.opened", {name: repoNameFromPath(action.path)}));
+                appendResultLog("info", t("log.openedRepositoryFromShell", {path: action.path}), "unknown", action.path);
             }).catch(async (e: unknown) => {
                 if (isLikelyNotRepoError(e)) {
                     const confirmed = await ask(
-                        `"${action.path.split("/").pop()}" is not a Git repository yet. Initialise a new repository here?`,
-                        {title: "Initialise Repository", kind: "info", okLabel: "Initialise", cancelLabel: "Cancel"},
+                        t("ask.initialiseRepository.message", {name: repoNameFromPath(action.path)}),
+                        {title: t("ask.initialiseRepository.title"), kind: "info", okLabel: t("actions.initialise", {ns: "common"}), cancelLabel: t("actions.cancel", {ns: "common"})},
                     );
                     if (confirmed) {
                         const result = await api.initRepo(action.path);
                         await api.validateRepoPath(action.path);
                         setRepoPath(action.path);
                         pushRecentRepo(action.path);
-                        showToast("Repository initialised", "success");
+                        showToast(t("toast.repositoryInitialised"), "success");
                         appendResultLog("success", result.message, result.backendUsed, action.path);
                     }
                 } else {
@@ -309,10 +315,10 @@ export function App() {
         } else if (action.action === "cloneHere") {
             api.openCloneWindowWithDestination(action.path).catch(e => {
                 showToast(String(e), "error");
-                appendResultLog("error", `Clone window failed to open: ${String(e)}`, "unknown");
+                appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
             });
         }
-    }, [pushRecentRepo, showToast]);
+    }, [pushRecentRepo, showToast, t]);
 
     useEffect(() => {
         api.getStartupAction().then((action) => {
@@ -343,12 +349,12 @@ export function App() {
 
                 const installViaWinget = status.wingetAvailable
                     ? await ask(
-                        "Gitmun could not find Git for Windows. This MSIX build needs Git installed separately. Install it with Winget now?",
+                        t("ask.windowsGitRequired.installMessage"),
                         {
-                            title: "Git for Windows required",
+                            title: t("ask.windowsGitRequired.title"),
                             kind: "info",
-                            okLabel: "Install via Winget",
-                            cancelLabel: "More options",
+                            okLabel: t("ask.windowsGitRequired.winget"),
+                            cancelLabel: t("actions.moreOptions", {ns: "common"}),
                         },
                     )
                     : false;
@@ -358,31 +364,31 @@ export function App() {
                 }
 
                 if (installViaWinget) {
-                    showToast("Starting Git for Windows installation...", "info");
+                    showToast(t("toast.startingGitInstall"), "info");
                     try {
                         await api.installGitWithWinget();
-                        showToast("Git for Windows installed. Reopen Gitmun to pick it up.", "success");
+                        showToast(t("toast.gitInstalled"), "success");
                         return;
                     } catch (error) {
-                        showToast(`Git install failed: ${String(error)}`, "error");
+                        showToast(t("toast.gitInstallFailed", {message: String(error)}), "error");
                     }
                 }
 
                 const openManualDownload = await ask(
                     status.wingetAvailable
-                        ? "Open the Git for Windows download page instead?"
-                        : "Winget is unavailable on this machine. Open the Git for Windows download page instead?",
+                        ? t("ask.windowsGitRequired.downloadMessage")
+                        : t("ask.windowsGitRequired.noWingetMessage"),
                     {
-                        title: "Git for Windows required",
+                        title: t("ask.windowsGitRequired.title"),
                         kind: "info",
-                        okLabel: "Open download page",
-                        cancelLabel: "Not now",
+                        okLabel: t("ask.windowsGitRequired.openDownloadPage"),
+                        cancelLabel: t("actions.notNow", {ns: "common"}),
                     },
                 );
 
                 if (!cancelled && openManualDownload) {
                     await openExternal("https://git-scm.com/download/win");
-                    showToast("Install Git for Windows, then reopen Gitmun.", "info");
+                    showToast(t("toast.installGitThenReopen"), "info");
                 }
             } catch {
             }
@@ -391,7 +397,7 @@ export function App() {
         return () => {
             cancelled = true;
         };
-    }, [platform, showToast]);
+    }, [platform, showToast, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -433,8 +439,8 @@ export function App() {
                 paneLayoutRef.current = nextLayout;
                 if (totalWidth > 0) savePaneRatios(totalWidth, nextLayout.left, nextLayout.right);
                 setSettingsRevision(r => r + 1);
-                showToast("Settings updated");
-                appendResultLog("info", "Settings updated", "unknown");
+                showToast(t("toast.settingsUpdated"));
+                appendResultLog("info", t("log.settingsUpdated"), "unknown");
             });
             if (cancelled) fn(); else unlisten = fn;
         })();
@@ -442,7 +448,7 @@ export function App() {
             cancelled = true;
             unlisten?.();
         };
-    }, [showToast]);
+    }, [showToast, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -566,16 +572,16 @@ export function App() {
     const handleSettingsClick = useCallback(() => {
         api.openSettingsWindow().catch(e => {
             showToast(String(e), "error");
-            appendResultLog("error", `Settings window failed to open: ${String(e)}`, "unknown");
+            appendResultLog("error", t("log.settingsWindowFailed", {message: String(e)}), "unknown");
         });
-    }, [showToast]);
+    }, [showToast, t]);
 
     const handleCloneClick = useCallback(() => {
         api.openCloneWindow().catch(e => {
             showToast(String(e), "error");
-            appendResultLog("error", `Clone window failed to open: ${String(e)}`, "unknown");
+            appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
         });
-    }, [showToast]);
+    }, [showToast, t]);
 
     const maybeInitialiseRepo = useCallback(async (path: string, error: unknown): Promise<boolean> => {
         if (!isLikelyNotRepoError(error)) {
@@ -583,8 +589,8 @@ export function App() {
         }
 
         const confirmed = await ask(
-            `"${path.split("/").pop()}" is not a Git repository yet. Initialise a new repository here?`,
-            {title: "Initialise Repository", kind: "info", okLabel: "Initialise", cancelLabel: "Cancel"},
+            t("ask.initialiseRepository.message", {name: repoNameFromPath(path)}),
+            {title: t("ask.initialiseRepository.title"), kind: "info", okLabel: t("actions.initialise", {ns: "common"}), cancelLabel: t("actions.cancel", {ns: "common"})},
         );
         if (!confirmed) {
             return true;
@@ -594,10 +600,10 @@ export function App() {
         await api.validateRepoPath(path);
         setRepoPath(path);
         pushRecentRepo(path);
-        showToast("Repository initialised", "success");
+        showToast(t("toast.repositoryInitialised"), "success");
         appendResultLog("success", result.message, result.backendUsed, path);
         return true;
-    }, [pushRecentRepo, showToast]);
+    }, [pushRecentRepo, showToast, t]);
 
     const shouldOpenRepoInNewWindow = useCallback(async (path: string): Promise<boolean> => {
         let behaviour: RepoOpenBehaviour = "Ask";
@@ -637,7 +643,7 @@ export function App() {
 
     const handleInitRepoClick = useCallback(async () => {
         try {
-            const selected = await open({directory: true, multiple: false, title: "Initialise repository in folder"});
+            const selected = await open({directory: true, multiple: false, title: t("picker.initialiseRepository")});
             if (typeof selected !== "string") {
                 return;
             }
@@ -649,17 +655,17 @@ export function App() {
                 setRepoPath(selected);
                 pushRecentRepo(selected);
             }
-            showToast("Repository initialised", "success");
+            showToast(t("toast.repositoryInitialised"), "success");
             appendResultLog("success", result.message, result.backendUsed, selected);
         } catch (e) {
             showToast(String(e), "error");
         }
-    }, [pushRecentRepo, shouldOpenRepoInNewWindow, showToast]);
+    }, [pushRecentRepo, shouldOpenRepoInNewWindow, showToast, t]);
 
     const handleOpenExistingClick = useCallback(async () => {
         let selected: string | null = null;
         try {
-            const picked = await open({directory: true, multiple: false, title: "Open existing repository"});
+            const picked = await open({directory: true, multiple: false, title: t("picker.openExistingRepository")});
             if (typeof picked !== "string") {
                 return;
             }
@@ -669,7 +675,7 @@ export function App() {
             if (selected && await maybeInitialiseRepo(selected, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitialiseRepo, openRepoPath, showToast]);
+    }, [maybeInitialiseRepo, openRepoPath, showToast, t]);
 
     const handleRepoSelect = useCallback(async (path: string) => {
         await openRepoPath(path);

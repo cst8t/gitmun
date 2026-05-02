@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
 import { FileIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
@@ -49,6 +50,7 @@ type CommitDetailsPopoverProps = {
 };
 
 function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDetailsPopoverProps) {
+  const { t } = useTranslation("diffPanel");
   const ref = React.useRef<HTMLDivElement>(null);
   const popoverWidth = 360;
   const gap = 6;
@@ -94,25 +96,25 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
 
   return (
     <div ref={ref} className="commit-details-popover" role="dialog" aria-modal="false">
-      <button className="commit-details-popover__close" onClick={onClose} aria-label="Close">✕</button>
+      <button className="commit-details-popover__close" onClick={onClose} aria-label={t("commitDetails.close")}>✕</button>
 
       <div className="commit-details-popover__section">
-        <span className="commit-details-popover__label">Hash</span>
+        <span className="commit-details-popover__label">{t("commitDetails.hash")}</span>
         <div className="commit-details-popover__hash-row">
           <span className="commit-details-popover__value commit-details-popover__value--mono">{data.hash}</span>
-          <button className="commit-details-popover__copy-btn" onClick={copyHash} title="Copy full hash">⎘</button>
+          <button className="commit-details-popover__copy-btn" onClick={copyHash} title={t("commitDetails.copyFullHash")}>⎘</button>
         </div>
       </div>
 
       <div className="commit-details-popover__section">
-        <span className="commit-details-popover__label">Author</span>
+        <span className="commit-details-popover__label">{t("commitDetails.author")}</span>
         <span className="commit-details-popover__value">{data.author} &lt;{data.authorEmail}&gt;</span>
         <span className="commit-details-popover__value commit-details-popover__value--muted">{formatDate(data.authorDate)}</span>
       </div>
 
       {!sameCommitter && (
         <div className="commit-details-popover__section">
-          <span className="commit-details-popover__label">Committer</span>
+          <span className="commit-details-popover__label">{t("commitDetails.committer")}</span>
           <span className="commit-details-popover__value">{data.committer} &lt;{data.committerEmail}&gt;</span>
           <span className="commit-details-popover__value commit-details-popover__value--muted">{formatDate(data.committerDate)}</span>
         </div>
@@ -120,7 +122,7 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
 
       {data.parentHashes.length > 0 && (
         <div className="commit-details-popover__section">
-          <span className="commit-details-popover__label">Parents</span>
+          <span className="commit-details-popover__label">{t("commitDetails.parents")}</span>
           <div className="commit-details-popover__chips">
             {data.parentHashes.map(h => (
               <button
@@ -138,7 +140,7 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
 
       {data.tags.length > 0 && (
         <div className="commit-details-popover__section">
-          <span className="commit-details-popover__label">Tags</span>
+          <span className="commit-details-popover__label">{t("commitDetails.tags")}</span>
           <div className="commit-details-popover__chips">
             {data.tags.map(tag => (
               <span key={tag} className="commit-details-popover__chip commit-details-popover__chip--tag">{tag}</span>
@@ -177,16 +179,6 @@ type DiffPanelProps = {
   onHunkAction: (hunkIndex: number) => void;
 };
 
-const SUBMODULE_STATE_TEXT: Record<SubmoduleStatus["state"], string> = {
-  clean: "Clean",
-  uninitialised: "Uninitialised",
-  missing: "Missing",
-  dirty: "Dirty",
-  outOfSync: "Out of sync",
-  conflict: "Conflict",
-  syncRequired: "Sync required",
-};
-
 function compactHash(hash: string | null): string {
   return hash ? hash.slice(0, 12) : "None";
 }
@@ -210,6 +202,7 @@ export function DiffPanel({
   wrapLines,
   onHunkAction,
 }: DiffPanelProps) {
+  const { t } = useTranslation("diffPanel");
   const [viewType, setViewType] = React.useState<ViewType>("unified");
   const [selectedCommitFile, setSelectedCommitFile] = React.useState<string | null>(null);
   const [detailsPopover, setDetailsPopover] = React.useState<{ rect: DOMRect; data: CommitDetails } | null>(null);
@@ -238,11 +231,11 @@ export function DiffPanel({
     switch (currentDiff.lineEnding) {
       case "lf": return "LF";
       case "crlf": return "CRLF";
-      case "mixed": return "Mixed EOL";
-      default: return "Unknown EOL";
+      case "mixed": return t("eol.mixed");
+      default: return t("eol.unknown");
     }
   })() : null;
-  const statusFileName = fileName ?? selectedFile ?? "File";
+  const statusFileName = fileName ?? selectedFile ?? t("generic.file", {ns: "common", defaultValue: "File"});
   const showLoadedMetadata = !loading && !!currentDiff;
   const statusBarMeta = showLoadedMetadata
     ? `${language} · ${statusFileName} · ${lineEndingLabel}`
@@ -325,8 +318,8 @@ export function DiffPanel({
         <FileIcon />
         <span className="diff-panel__filename">
           {mode === "log"
-            ? (selectedCommitHash ? `Commit ${selectedCommitHash.slice(0, 8)}` : "Commit files")
-            : (selectedSubmodule ? `Submodule ${selectedSubmodule.path}` : (selectedFile ?? "Click a file to show changes"))}
+            ? (selectedCommitHash ? t("header.commit", {hash: selectedCommitHash.slice(0, 8)}) : t("header.commitFiles"))
+            : (selectedSubmodule ? t("header.submodule", {path: selectedSubmodule.path}) : (selectedFile ?? t("header.clickFile")))}
         </span>
         {mode === "changes" && hasSelectedFile && currentDiff && (
           <span className="diff-panel__stats">
@@ -338,7 +331,7 @@ export function DiffPanel({
         {mode === "log" && selectedCommitHash && repoPath && (
           <button
             className="diff-panel__details-btn"
-            title="Commit details"
+            title={t("commitDetails.commitDetails")}
             disabled={detailsLoading}
             onClick={async (e) => {
               const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -362,7 +355,7 @@ export function DiffPanel({
               className="diff-panel__view-btn"
               onClick={onCompareCurrentFile}
               disabled={!selectedFile}
-              title={selectedFile ? compareCurrentFileLabel : "Select a file first"}
+              title={selectedFile ? compareCurrentFileLabel : t("toolbar.selectFileFirst")}
             >
               {compareCurrentFileLabel}
             </button>
@@ -370,13 +363,13 @@ export function DiffPanel({
               className={`diff-panel__view-btn ${viewType === "unified" ? "diff-panel__view-btn--active" : ""}`}
               onClick={() => setViewType("unified")}
             >
-              Inline
+              {t("toolbar.inline")}
             </button>
             <button
               className={`diff-panel__view-btn ${viewType === "split" ? "diff-panel__view-btn--active" : ""}`}
               onClick={() => setViewType("split")}
             >
-              Split
+              {t("toolbar.split")}
             </button>
           </div>
         )}
@@ -386,7 +379,7 @@ export function DiffPanel({
       <div className="diff-panel__body">
         {mode === "log" ? (
           commitFilesLoading ? (
-            <div className="diff-panel__placeholder">Loading commit files...</div>
+            <div className="diff-panel__placeholder">{t("placeholders.loadingCommitFiles")}</div>
           ) : commitFiles.length > 0 ? (
             <div className="diff-panel__commit-files">
               {commitFiles.map((file) => (
@@ -395,7 +388,7 @@ export function DiffPanel({
                   className={`diff-panel__commit-file-row ${selectedCommitFile === file.path ? "diff-panel__commit-file-row--selected" : ""}`}
                   onClick={() => setSelectedCommitFile(file.path)}
                   onDoubleClick={() => onOpenCommitFileDiff(file.path)}
-                  title="Double-click to open diff"
+                  title={t("toolbar.openDiff", {defaultValue: "Double-click to open diff"})}
                 >
                   <span className={`diff-panel__commit-file-status diff-panel__commit-file-status--${file.status.toLowerCase()}`}>
                     {statusLetter(file.status)}
@@ -405,14 +398,14 @@ export function DiffPanel({
               ))}
             </div>
           ) : (
-            <div className="diff-panel__placeholder">Select a commit to view changed files</div>
+            <div className="diff-panel__placeholder">{t("placeholders.selectCommit")}</div>
           )
         ) : (
           hasSelectedSubmodule && selectedSubmodule ? (
             <div className="diff-panel__submodule-details">
               <div className="diff-panel__submodule-card">
                 <span className={`diff-panel__submodule-state diff-panel__submodule-state--${selectedSubmodule.state}`}>
-                  {SUBMODULE_STATE_TEXT[selectedSubmodule.state]}
+                  {t(`submoduleState.${selectedSubmodule.state}`, {ns: "git"})}
                 </span>
                 <h2>{selectedSubmodule.path}</h2>
                 <p>
@@ -420,37 +413,37 @@ export function DiffPanel({
                 </p>
                 <dl>
                   <div>
-                    <dt>Configured URL</dt>
-                    <dd>{selectedSubmodule.configuredUrl ?? "None"}</dd>
+                    <dt>{t("submodule.configuredUrl")}</dt>
+                    <dd>{selectedSubmodule.configuredUrl ?? t("generic.none", {ns: "common"})}</dd>
                   </div>
                   <div>
-                    <dt>Local URL</dt>
-                    <dd>{selectedSubmodule.localUrl ?? "None"}</dd>
+                    <dt>{t("submodule.localUrl")}</dt>
+                    <dd>{selectedSubmodule.localUrl ?? t("generic.none", {ns: "common"})}</dd>
                   </div>
                   <div>
-                    <dt>Configured branch</dt>
-                    <dd>{selectedSubmodule.branch ?? "None"}</dd>
+                    <dt>{t("submodule.configuredBranch")}</dt>
+                    <dd>{selectedSubmodule.branch ?? t("generic.none", {ns: "common"})}</dd>
                   </div>
                   <div>
-                    <dt>Current branch</dt>
-                    <dd>{selectedSubmodule.currentBranch ?? "Detached or unavailable"}</dd>
+                    <dt>{t("submodule.currentBranch")}</dt>
+                    <dd>{selectedSubmodule.currentBranch ?? t("submodule.detachedOrUnavailable")}</dd>
                   </div>
                   <div>
-                    <dt>Expected commit</dt>
-                    <dd>{compactHash(selectedSubmodule.expectedCommit)}</dd>
+                    <dt>{t("submodule.expectedCommit")}</dt>
+                    <dd>{selectedSubmodule.expectedCommit ? compactHash(selectedSubmodule.expectedCommit) : t("generic.none", {ns: "common"})}</dd>
                   </div>
                   <div>
-                    <dt>Checked-out commit</dt>
-                    <dd>{compactHash(selectedSubmodule.checkedOutCommit)}</dd>
+                    <dt>{t("submodule.checkedOutCommit")}</dt>
+                    <dd>{selectedSubmodule.checkedOutCommit ? compactHash(selectedSubmodule.checkedOutCommit) : t("generic.none", {ns: "common"})}</dd>
                   </div>
                 </dl>
               </div>
             </div>
           ) : loading ? (
-            <div className="diff-panel__placeholder">Loading diff...</div>
+            <div className="diff-panel__placeholder">{t("placeholders.loadingDiff")}</div>
           ) : currentDiff ? (
             currentDiff.isBinary ? (
-              <div className="diff-panel__placeholder">Binary file changed</div>
+              <div className="diff-panel__placeholder">{t("placeholders.binaryChanged")}</div>
             ) : renderedHunks.length > 0 ? (
               <div className={`diff-panel__react-diff ${wrapLines ? "diff-panel__react-diff--wrap" : ""}`}>
                 <Diff
@@ -470,7 +463,7 @@ export function DiffPanel({
                               disabled={hunkActionBusy}
                             >
                               <StageHunkIcon />
-                              {hunkAction === "unstage" ? "Unstage hunk" : "Stage hunk"}
+                              {hunkAction === "unstage" ? t("toolbar.unstageHunk") : t("toolbar.stageHunk")}
                             </button>
                           </span>
                         )}
@@ -481,10 +474,10 @@ export function DiffPanel({
                 </Diff>
               </div>
             ) : (
-              <div className="diff-panel__placeholder">Empty file - no changes to display</div>
+              <div className="diff-panel__placeholder">{t("placeholders.emptyFile")}</div>
             )
           ) : (
-            <div className="diff-panel__placeholder">Click a file to show changes</div>
+            <div className="diff-panel__placeholder">{t("placeholders.clickFile")}</div>
           )
         )}
       </div>
@@ -493,7 +486,7 @@ export function DiffPanel({
       {mode === "changes" && (selectedFile || selectedSubmodule) && (
         <div className="diff-panel__statusbar">
           <span className="diff-panel__meta">
-            {selectedSubmodule ? "Submodule boundary" : statusBarMeta}
+            {selectedSubmodule ? t("submodule.statusBoundary") : statusBarMeta}
           </span>
         </div>
       )}

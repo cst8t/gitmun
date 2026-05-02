@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getRemoteNameError } from "../../utils/gitInputValidation";
 
 type EditRemoteDialogProps = {
@@ -16,6 +17,7 @@ export function EditRemoteDialog({
   onConfirm,
   onCancel,
 }: EditRemoteDialogProps) {
+  const { t } = useTranslation("sidebar");
   const [name, setName] = useState(currentName);
   const [url, setUrl] = useState(currentUrl);
   const [nameError, setNameError] = useState<string | null>(null);
@@ -45,7 +47,7 @@ export function EditRemoteDialog({
       return;
     }
     if (trimmed !== currentName && existingRemoteNames.includes(trimmed)) {
-      setNameError("A remote with this name already exists");
+      setNameError("validation.remoteExists");
       return;
     }
     setNameError(null);
@@ -64,10 +66,10 @@ export function EditRemoteDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Edit Remote</div>
+        <div className="dialog__title">{t("editRemote.title")}</div>
         <form onSubmit={handleSubmit}>
           <div className="dialog__field">
-            <label className="dialog__label">Name</label>
+            <label className="dialog__label">{t("editRemote.name")}</label>
             <input
               ref={nameInputRef}
               type="text"
@@ -75,10 +77,10 @@ export function EditRemoteDialog({
               value={name}
               onChange={e => setName(e.target.value)}
             />
-            {nameError && <div className="dialog__error">{nameError}</div>}
+            {nameError && <div className="dialog__error">{t(nameError, {ns: "git", defaultValue: t(nameError) })}</div>}
           </div>
           <div className="dialog__field">
-            <label className="dialog__label">URL</label>
+            <label className="dialog__label">{t("editRemote.url")}</label>
             <input
               type="text"
               className="dialog__input"
@@ -88,14 +90,14 @@ export function EditRemoteDialog({
           </div>
           <div className="dialog__actions">
             <button type="button" className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-              Cancel
+              {t("actions.cancel", {ns: "common"})}
             </button>
             <button
               type="submit"
               className={`dialog__btn dialog__btn--confirm${!canSubmit ? " dialog__btn--disabled" : ""}`}
               disabled={!canSubmit}
             >
-              Save
+              {t("actions.save", {ns: "common"})}
             </button>
           </div>
         </form>

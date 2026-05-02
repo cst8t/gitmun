@@ -1,0 +1,38 @@
+{
+  "labels": {
+    "allowedSignersFile": "gpg.ssh.allowedSignersFile",
+    "commitSigning": "Commit Signing",
+    "disabled": "disabled",
+    "edit": "Edit",
+    "editing": "Editing",
+    "enabled": "enabled",
+    "file": "File",
+    "format": "Format",
+    "gitIdentity": "Git Identity",
+    "global": "Global",
+    "loading": "Loading identity...",
+    "override": "override",
+    "profiles": "Profiles",
+    "repository": "Repository",
+    "signingConfiguration": "Signing Configuration",
+    "signingKey": "user.signingkey",
+    "key": "Key",
+    "keyId": "Key ID",
+    "userEmail": "user.email",
+    "userName": "user.name"
+  },
+  "placeholders": {
+    "allowedSignersFile": "Path to allowed signers file",
+    "format": "gpg or ssh",
+    "signingKey": "GPG key ID or SSH key"
+  },
+  "actions": {
+    "cancel": "Cancel",
+    "save": "Save",
+    "saving": "Saving..."
+  },
+  "profiles": {
+    "description": "Switch between saved identity profiles for different contexts.",
+    "comingSoon": "Identity profiles coming soon"
+  }
+}
