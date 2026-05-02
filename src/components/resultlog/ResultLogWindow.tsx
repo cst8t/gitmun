@@ -18,6 +18,11 @@ async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
   }
 }
 
+function repoLabel(repoPath?: string | null): string | null {
+  if (!repoPath) return null;
+  return repoPath.split(/[\\/]/).filter(Boolean).pop() ?? repoPath;
+}
+
 export function ResultLogWindow() {
   const [entries, setEntries] = useState<ResultLogEntry[]>(() => getResultLogEntries());
   const [filter, setFilter] = useState<"all" | "success" | "error" | "info">("all");
@@ -117,6 +122,7 @@ export function ResultLogWindow() {
                 >
                   [{entry.backend}]
                 </span>
+                {entry.repoPath && <span className="result-log__console-repo">[{repoLabel(entry.repoPath)}]</span>}
                 <span className="result-log__console-message"> {entry.message}</span>
               </div>
             ))}
@@ -128,6 +134,7 @@ export function ResultLogWindow() {
               <div className="result-log__message">{entry.message}</div>
               <div className="result-log__meta">
                 <span className="result-log__time">{new Date(entry.ts).toLocaleString()}</span>
+                {entry.repoPath && <span className="result-log__repo" title={entry.repoPath}>{repoLabel(entry.repoPath)}</span>}
                 <span
                   className={`result-log__backend result-log__backend--${
                     entry.backend === "gix+cli-fallback" ? "gix-cli-fallback" : entry.backend
