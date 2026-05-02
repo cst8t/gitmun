@@ -10,6 +10,7 @@ import type {
     CommitDateMode,
     ExternalDiffTool,
     LinuxGraphicsMode,
+    RepoOpenBehaviour,
     Settings,
     ThemeMode
 } from "../../types";
@@ -94,6 +95,7 @@ export function SettingsWindow() {
     const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
     const [updateEndpoint, setUpdateEndpointState] = useState(DEFAULT_UPDATE_ENDPOINT);
     const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
+    const [repoOpenBehaviour, setRepoOpenBehaviour] = useState<RepoOpenBehaviour>("Ask");
     const [isLinux, setIsLinux] = useState(false);
     const [isWindows, setIsWindows] = useState(false);
     const [updaterSupported, setUpdaterSupported] = useState(false);
@@ -151,6 +153,7 @@ export function SettingsWindow() {
                 setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
                 setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
                 setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
+                setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
                 const cfgPath = await invoke<string | null>("get_config_file_path");
@@ -221,6 +224,7 @@ export function SettingsWindow() {
             await invoke("set_auto_install_updates", {autoInstallUpdates});
             await setUpdateEndpoint(updateEndpoint);
             if (isLinux) await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
+            await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
@@ -258,6 +262,7 @@ export function SettingsWindow() {
         isLinux,
         isWindows,
         linuxGraphicsMode,
+        repoOpenBehaviour,
         externalDiffToolPath,
     ]);
 
@@ -342,6 +347,23 @@ export function SettingsWindow() {
                             Build version: <code>{buildVersion}</code>
                         </div>
                     )}
+
+                    <div className="settings-window__row">
+                        <label className="settings-window__label">Open repositories</label>
+                        <select
+                            className="settings-window__select"
+                            value={repoOpenBehaviour}
+                            onChange={e => setRepoOpenBehaviour(e.target.value as RepoOpenBehaviour)}
+                        >
+                            <option value="Ask">Ask each time (default)</option>
+                            <option value="ExistingWindow">Reuse this window</option>
+                            <option value="NewWindow">Always open a new window</option>
+                        </select>
+                        <div className="settings-window__section-note">
+                            Controls in-app repository opens, including recent repositories. Shell and file manager
+                            launches always open a new window.
+                        </div>
+                    </div>
 
                     {updaterSupported ? (
                         <div className="settings-window__row">
