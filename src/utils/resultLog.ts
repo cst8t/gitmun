@@ -6,10 +6,16 @@ export type ResultLogEntry = {
   level: ResultLogLevel;
   message: string;
   backend: "gix" | "git-cli" | "gix+cli-fallback" | "unknown";
+  repoPath?: string | null;
 };
 
 export const RESULT_LOG_STORAGE_KEY = "gitmun.resultLogEntries";
 const RESULT_LOG_LIMIT = 500;
+let currentRepoPath: string | null = null;
+
+export function setResultLogRepoPath(repoPath: string | null) {
+  currentRepoPath = repoPath;
+}
 
 export function getResultLogEntries(): ResultLogEntry[] {
   try {
@@ -27,6 +33,7 @@ export function getResultLogEntries(): ResultLogEntry[] {
         backend: entry.backend === "gix" || entry.backend === "git-cli" || entry.backend === "gix+cli-fallback"
           ? entry.backend
           : "unknown",
+        repoPath: entry.repoPath ?? null,
       }));
   } catch {
     return [];
@@ -37,6 +44,7 @@ export function appendResultLog(
   level: ResultLogLevel,
   message: string,
   backend: ResultLogEntry["backend"] = "unknown",
+  repoPath?: string | null,
 ) {
   const entry: ResultLogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -44,6 +52,7 @@ export function appendResultLog(
     level,
     message,
     backend,
+    repoPath: repoPath ?? currentRepoPath,
   };
 
   const next = [entry, ...getResultLogEntries()].slice(0, RESULT_LOG_LIMIT);

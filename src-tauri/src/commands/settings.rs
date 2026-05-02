@@ -1,6 +1,6 @@
 use crate::git::types::{
     AvatarProviderMode, BackendMode, CommitDateMode, CommitPrimaryAction, ExternalDiffTool,
-    LinuxGraphicsMode, OperationResult, Settings, ThemeMode,
+    LinuxGraphicsMode, OperationResult, RepoOpenBehaviour, Settings, ThemeMode,
 };
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
@@ -9,9 +9,9 @@ use serde::Serialize;
 use std::path::Path;
 use std::time::Duration;
 use tauri::{Manager, ipc::Channel};
+use tauri_plugin_updater::{Update, UpdaterExt};
 #[cfg(windows)]
 use tauri_utils::{config::BundleType, platform};
-use tauri_plugin_updater::{Update, UpdaterExt};
 use url::Url;
 
 const GITHUB_UPDATE_ENDPOINT: &str =
@@ -95,9 +95,7 @@ async fn check_update_from_endpoint(
     if let Some(target) = current_updater_target() {
         updater = updater.target(target);
     }
-    let updater = updater
-        .build()
-        .map_err(|error| error.to_string())?;
+    let updater = updater.build().map_err(|error| error.to_string())?;
 
     updater.check().await.map_err(|error| error.to_string())
 }
@@ -200,6 +198,7 @@ pub fn set_theme_mode(
     for (_, window) in app.webview_windows() {
         let _ = window.set_background_color(Some(background_colour));
     }
+    crate::instance_coordinator::broadcast_settings_updated();
     settings
 }
 
@@ -335,6 +334,7 @@ pub fn get_global_file_mode() -> Result<Option<bool>, String> {
     }
 }
 
+#[cfg(windows)]
 fn diff_tool_key(tool: &ExternalDiffTool) -> Option<&'static str> {
     match tool {
         ExternalDiffTool::Meld => Some("meld"),
@@ -724,4 +724,16 @@ pub fn set_linux_graphics_mode(
     state: tauri::State<'_, AppState>,
 ) -> Settings {
     state.git_service.set_linux_graphics_mode(mode)
+}
+
+#[tauri::command]
+pub fn set_repo_open_behaviour(
+    repo_open_behaviour: RepoOpenBehaviour,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    let settings = state
+        .git_service
+        .set_repo_open_behaviour(repo_open_behaviour);
+    crate::instance_coordinator::broadcast_settings_updated();
+    settings
 }

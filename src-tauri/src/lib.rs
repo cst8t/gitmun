@@ -1,6 +1,7 @@
 mod avatar;
 pub mod commands;
 pub mod git;
+mod instance_coordinator;
 pub mod shell;
 mod window_manager;
 
@@ -8,9 +9,9 @@ use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use serde::Serialize;
+use shell::cli::ShellStartupAction;
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
-use shell::cli::ShellStartupAction;
 
 pub struct AppState {
     pub git_service: GitService,
@@ -22,6 +23,8 @@ pub struct CloneCancelFlag(pub Arc<AtomicBool>);
 struct FsWatcherState(Mutex<Option<RecommendedWatcher>>);
 
 struct StartupState(Mutex<Option<ShellStartupAction>>);
+
+pub(crate) struct PendingCloneDestination(Mutex<Option<String>>);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -496,6 +499,74 @@ fn get_startup_action(state: tauri::State<'_, StartupState>) -> Option<ShellStar
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
+#[tauri::command]
+fn take_pending_clone_destination(
+    state: tauri::State<'_, PendingCloneDestination>,
+) -> Option<String> {
+    state.0.lock().ok().and_then(|mut g| g.take())
+}
+
+#[tauri::command]
+fn open_repo_in_new_window(path: String) -> Result<(), String> {
+    instance_coordinator::spawn_new_instance_open_repo(&path)
+}
+
+#[tauri::command]
+async fn open_clone_window(
+    destination: Option<String>,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    pending: tauri::State<'_, PendingCloneDestination>,
+) -> Result<(), String> {
+    if let Some(existing) = app.get_webview_window("clone-repository") {
+        if let Some(path) = destination {
+            let mut guard = pending
+                .0
+                .lock()
+                .map_err(|_| "Internal clone destination state error".to_string())?;
+            *guard = Some(path.clone());
+            let _ = app.emit("clone-destination-updated", path);
+        }
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(());
+    }
+
+    if let Some(owner) = instance_coordinator::find_sub_window_owner("clone-repository") {
+        if instance_coordinator::send_command(
+            owner.port,
+            &instance_coordinator::CoordinatorCommand::OpenCloneWindow {
+                destination: destination.clone(),
+            },
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
+    if let Some(path) = destination {
+        let mut guard = pending
+            .0
+            .lock()
+            .map_err(|_| "Internal clone destination state error".to_string())?;
+        *guard = Some(path);
+    }
+
+    window_manager::open_sub_window(
+        app,
+        "clone-repository".to_string(),
+        "Clone Repository".to_string(),
+        "clone.html".to_string(),
+        520.0,
+        460.0,
+        false,
+        false,
+        state,
+    )
+    .await
+}
+
 pub fn run() {
     #[cfg(target_os = "linux")]
     sanitize_linux_xdg_env();
@@ -506,14 +577,6 @@ pub fn run() {
     let startup_action = shell::cli::parse_shell_action(&std::env::args().collect::<Vec<String>>());
 
     let builder = tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
-            if let Some(action) = shell::cli::parse_shell_action(&args) {
-                let _ = app.emit("shell-action", action);
-            }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.set_focus();
-            }
-        }))
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_os::init())
@@ -527,6 +590,7 @@ pub fn run() {
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
+        .manage(PendingCloneDestination(Mutex::new(None)))
         .setup(|app| {
             #[cfg(desktop)]
             app.handle()
@@ -559,7 +623,22 @@ pub fn run() {
                     .set_try_platform_first(settings.try_platform_first);
             }
 
+            instance_coordinator::init(&app.handle())?;
+
             Ok(())
+        })
+        .on_window_event(|window, event| {
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Focused(true) = event {
+                    instance_coordinator::notify_focused();
+                }
+                if let tauri::WindowEvent::Destroyed = event {
+                    instance_coordinator::deregister();
+                }
+            }
+            if let tauri::WindowEvent::Destroyed = event {
+                instance_coordinator::unregister_sub_window(window.label().as_ref());
+            }
         });
 
     builder
@@ -594,6 +673,7 @@ pub fn run() {
             commands::settings::set_auto_install_updates,
             commands::settings::set_update_endpoint,
             commands::settings::set_linux_graphics_mode,
+            commands::settings::set_repo_open_behaviour,
             commands::history::get_commit_history,
             commands::history::verify_commits,
             commands::history::merge_branch,
@@ -676,6 +756,9 @@ pub fn run() {
             window_manager::show_window,
             window_manager::get_system_theme_hint,
             get_startup_action,
+            open_clone_window,
+            open_repo_in_new_window,
+            take_pending_clone_destination,
             get_windows_git_runtime_status,
             install_git_with_winget,
         ])
