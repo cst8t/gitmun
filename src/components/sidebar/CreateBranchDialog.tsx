@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import "./CreateBranchDialog.css";
 import type { BranchInfo, CreateBranchRequest, TagInfo } from "../../types";
 import { getBranchNameError } from "../../utils/branchValidation";
@@ -26,6 +27,7 @@ export function CreateBranchDialog({
   onConfirm,
   onCancel
 }: CreateBranchDialogProps) {
+  const { t } = useTranslation("sidebar");
   const [branchName, setBranchName] = React.useState("");
   const [revisionType, setRevisionType] = React.useState<RevisionType>(initialRevisionType ?? "local-branch");
   const [selectedRevision, setSelectedRevision] = React.useState(initialRevision ?? currentBranch?.name ?? "");
@@ -112,7 +114,7 @@ export function CreateBranchDialog({
     }
 
     if (branches.some(b => b.name === trimmedName)) {
-      setError("A branch with this name already exists");
+      setError("validation.branchExists");
       return;
     }
   }, [branchName, branches]);
@@ -146,6 +148,11 @@ export function CreateBranchDialog({
   };
 
   const filteredRevisions = getFilteredRevisions();
+  const revisionTypeLabel = revisionType === "local-branch"
+    ? t("createBranch.revisionBranches")
+    : revisionType === "remote-branch"
+      ? t("createBranch.revisionRemoteBranches")
+      : t("createBranch.revisionTags");
 
   const canCreate = branchName.trim() && !error && selectedRevision;
 
@@ -174,29 +181,29 @@ export function CreateBranchDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="create-branch-dialog" role="dialog" aria-modal="true">
-        <div className="create-branch-dialog__title">Create New Branch</div>
+        <div className="create-branch-dialog__title">{t("createBranch.title")}</div>
         
         <form onSubmit={handleSubmit}>
           {/* Branch Name */}
           <div className="create-branch-dialog__field">
-            <label className="create-branch-dialog__label">Branch name</label>
+            <label className="create-branch-dialog__label">{t("createBranch.branchName")}</label>
             <input
               type="text"
               className={`create-branch-dialog__name-input${matchTrackingBranch ? " create-branch-dialog__name-input--readonly" : ""}`}
               value={branchName}
               onChange={(e) => { if (!matchTrackingBranch) setBranchName(e.target.value); }}
               onKeyDown={handleKeyDown}
-              placeholder="new-branch"
+              placeholder={t("createBranch.branchNamePlaceholder")}
               readOnly={matchTrackingBranch}
             />
             {error && (
-              <div className="create-branch-dialog__error">{error}</div>
+              <div className="create-branch-dialog__error">{t(error, {ns: "git", defaultValue: t(error)})}</div>
             )}
           </div>
 
           {/* Starting Revision */}
           <div className="create-branch-dialog__revision-section">
-            <label className="create-branch-dialog__label">Starting Revision</label>
+            <label className="create-branch-dialog__label">{t("createBranch.revision")}</label>
             
             {/* Revision Type Tabs */}
             <div className="create-branch-dialog__revision-types">
@@ -205,21 +212,21 @@ export function CreateBranchDialog({
                 className={`create-branch-dialog__revision-type ${revisionType === "local-branch" ? "create-branch-dialog__revision-type--active" : ""}`}
                 onClick={() => setRevisionType("local-branch")}
               >
-                Local Branch
+                {t("createBranch.localBranch")}
               </button>
               <button
                 type="button"
                 className={`create-branch-dialog__revision-type ${revisionType === "remote-branch" ? "create-branch-dialog__revision-type--active" : ""}`}
                 onClick={() => setRevisionType("remote-branch")}
               >
-                Remote Branch
+                {t("createBranch.remoteBranch")}
               </button>
               <button
                 type="button"
                 className={`create-branch-dialog__revision-type ${revisionType === "tag" ? "create-branch-dialog__revision-type--active" : ""}`}
                 onClick={() => setRevisionType("tag")}
               >
-                Tag
+                {t("createBranch.fromTag")}
               </button>
             </div>
 
@@ -230,7 +237,7 @@ export function CreateBranchDialog({
                 className="create-branch-dialog__filter"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder={`Filter ${revisionType === "local-branch" ? "branches" : revisionType === "remote-branch" ? "remote branches" : "tags"}...`}
+                placeholder={t("createBranch.filter", {type: revisionTypeLabel})}
               />
             </div>
 
@@ -238,7 +245,7 @@ export function CreateBranchDialog({
             <div className="create-branch-dialog__revision-list">
               {filteredRevisions.length === 0 ? (
                 <div className="create-branch-dialog__revision-item create-branch-dialog__revision-item--empty">
-                  No {revisionType === "local-branch" ? "branches" : revisionType === "remote-branch" ? "remote branches" : "tags"} found
+                  {t("createBranch.noRevisions", {type: revisionTypeLabel})}
                 </div>
               ) : (
                 filteredRevisions.map((item) => {
@@ -268,7 +275,7 @@ export function CreateBranchDialog({
                 checked={checkoutAfterCreation}
                 onChange={(e) => setCheckoutAfterCreation(e.target.checked)}
               />
-              Checkout new branch
+              {t("createBranch.checkoutAfterCreation")}
             </label>
             
             {revisionType === "remote-branch" && (
@@ -278,7 +285,7 @@ export function CreateBranchDialog({
                   checked={trackRemote}
                   onChange={(e) => { setTrackRemote(e.target.checked); if (!e.target.checked) setMatchTrackingBranch(false); }}
                 />
-                Set up tracking relationship
+                {t("createBranch.setTracking")}
               </label>
             )}
 
@@ -290,7 +297,7 @@ export function CreateBranchDialog({
                   disabled={!trackRemote}
                   onChange={(e) => setMatchTrackingBranch(e.target.checked)}
                 />
-                Match tracking branch name
+                {t("createBranch.matchTrackingBranch")}
               </label>
             )}
           </div>
@@ -302,14 +309,14 @@ export function CreateBranchDialog({
               className="create-branch-dialog__btn create-branch-dialog__btn--cancel" 
               onClick={onCancel}
             >
-              Cancel
+              {t("actions.cancel", {ns: "common"})}
             </button>
             <button 
               type="submit"
               className={`create-branch-dialog__btn create-branch-dialog__btn--create ${!canCreate ? 'create-branch-dialog__btn--disabled' : ''}`}
               disabled={!canCreate}
             >
-              Create Branch
+              {t("createBranch.create")}
             </button>
           </div>
         </form>

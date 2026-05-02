@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { BranchList } from "./BranchList";
 import { RemoteSection } from "./RemoteSection";
 import { ContextMenu } from "../shared/ContextMenu";
@@ -74,18 +75,19 @@ export function Sidebar({
   onStashDrop,
   stashBusy,
 }: SidebarProps) {
+  const { t } = useTranslation("sidebar");
   const [tab, setTab] = useState<SidebarTab>("branches");
   const [tagMenu, setTagMenu] = useState<{ x: number; y: number; name: string } | null>(null);
 
   return (
     <div className="sidebar">
       <div className="sidebar__tabs">
-        {(["branches", "tags", "remotes", "stashes"] as const).map(t => (
-          <button key={t}
-            className={`sidebar__tab ${tab === t ? "sidebar__tab--active" : ""}`}
-            onClick={() => setTab(t)}
-            title={t.charAt(0).toUpperCase() + t.slice(1)}>
-            {t}
+        {(["branches", "tags", "remotes", "stashes"] as const).map(tabName => (
+          <button key={tabName}
+            className={`sidebar__tab ${tab === tabName ? "sidebar__tab--active" : ""}`}
+            onClick={() => setTab(tabName)}
+            title={t(`sections.${tabName}`)}>
+            {t(`sections.${tabName}`)}
           </button>
         ))}
       </div>
@@ -111,7 +113,7 @@ export function Sidebar({
         {tab === "tags" && (
           <div className="sidebar__list">
             <button className="sidebar__create-tag-btn" onClick={onCreateTag}>
-              + Create Tag
+              + {t("createTag.title")}
             </button>
             {tags.length > 0
               ? tags.map(t => (
@@ -124,14 +126,14 @@ export function Sidebar({
                     <span className="sidebar__item-hash">{t.hash}</span>
                   </div>
                 ))
-              : <div className="sidebar__empty">No tags</div>
+              : <div className="sidebar__empty">{t("sidebar.noTags")}</div>
             }
           </div>
         )}
         {tab === "remotes" && (
           <div className="sidebar__list">
             <button className="sidebar__add-remote-btn" onClick={onAddRemote}>
-              + Add Remote
+              + {t("addRemote.title")}
             </button>
             {remotes.length > 0
               ? remotes.map(r => {
@@ -154,7 +156,7 @@ export function Sidebar({
                     />
                   );
                 })
-              : <div className="sidebar__empty">No remotes configured</div>
+              : <div className="sidebar__empty">{t("sidebar.noRemotes")}</div>
             }
           </div>
         )}
@@ -170,15 +172,15 @@ export function Sidebar({
                     <div className="sidebar__stash-actions">
                       <button
                         className="sidebar__stash-btn"
-                        title="Apply (keep stash)"
+                        title={t("sidebar.applyKeep")}
                         disabled={stashBusy}
                         onClick={() => onStashApply(s.index)}
                       >
-                        Apply
+                        {t("actions.apply", {ns: "common"})}
                       </button>
                       <button
                         className="sidebar__stash-btn"
-                        title="Pop (apply and remove)"
+                        title={t("sidebar.popRemove")}
                         disabled={stashBusy}
                         onClick={() => onStashPop(s.index)}
                       >
@@ -186,16 +188,16 @@ export function Sidebar({
                       </button>
                       <button
                         className="sidebar__stash-btn sidebar__stash-btn--danger"
-                        title="Drop (delete without applying)"
+                        title={t("sidebar.dropDelete")}
                         disabled={stashBusy}
                         onClick={() => onStashDrop(s)}
                       >
-                        Drop
+                        {t("actions.drop", {ns: "common"})}
                       </button>
                     </div>
                   </div>
                 ))
-              : <div className="sidebar__empty">No stashes</div>
+              : <div className="sidebar__empty">{t("sidebar.noStashes")}</div>
             }
           </div>
         )}
@@ -208,19 +210,19 @@ export function Sidebar({
           onClose={() => setTagMenu(null)}
           items={[
             {
-              label: "Push Tag",
+              label: t("sidebar.pushTag"),
               onClick: () => onPushTag(tagMenu.name),
             },
             {
-              label: "Delete from Remote",
+              label: t("sidebar.deleteTagRemote"),
               onClick: () => onDeleteRemoteTag(tagMenu.name),
             },
             {
-              label: "Create Branch from Tag…",
+              label: t("sidebar.tagCreateBranch"),
               onClick: () => onCreateBranchFromTag(tagMenu.name),
             },
             {
-              label: `Delete "${tagMenu.name}"`,
+              label: t("sidebar.deleteTag", {tag: tagMenu.name}),
               danger: true,
               onClick: () => onDeleteTag(tagMenu.name),
             },

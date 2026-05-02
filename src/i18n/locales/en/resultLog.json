@@ -1,0 +1,16 @@
+{
+  "actions": {
+    "clear": "Clear"
+  },
+  "filters": {
+    "all": "All",
+    "error": "Error",
+    "info": "Info",
+    "success": "Success"
+  },
+  "labels": {
+    "consoleView": "Console view",
+    "empty": "No matching results.",
+    "title": "Result Log"
+  }
+}

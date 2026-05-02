@@ -24,15 +24,15 @@ export function getRemoteNameError(name: string): string | null {
   }
 
   if (trimmed.startsWith("-")) {
-    return "Remote name cannot start with '-'";
+    return "validation.remoteStartsWithDash";
   }
 
   if (/\s/.test(trimmed)) {
-    return "Remote name cannot contain spaces";
+    return "validation.remoteSpaces";
   }
 
   if (hasControlCharacters(trimmed) || hasInvalidRefPattern(trimmed)) {
-    return "Invalid remote name format";
+    return "validation.remoteInvalid";
   }
 
   return null;
@@ -46,15 +46,15 @@ export function getTagNameError(tagName: string): string | null {
   }
 
   if (trimmed.startsWith("-")) {
-    return "Tag name cannot start with '-'";
+    return "validation.tagStartsWithDash";
   }
 
   if (/\s/.test(trimmed)) {
-    return "Tag name cannot contain spaces";
+    return "validation.tagSpaces";
   }
 
   if (hasControlCharacters(trimmed) || hasInvalidRefPattern(trimmed)) {
-    return "Invalid tag name format";
+    return "validation.tagInvalid";
   }
 
   return null;
@@ -68,11 +68,11 @@ export function getCloneRepoUrlError(repoUrl: string): string | null {
   }
 
   if (trimmed.startsWith("-")) {
-    return "Repository URL cannot start with '-'";
+    return "validation.repoUrlStartsWithDash";
   }
 
   if (hasControlCharacters(trimmed)) {
-    return "Repository URL contains invalid characters";
+    return "validation.repoUrlInvalidCharacters";
   }
 
   return null;

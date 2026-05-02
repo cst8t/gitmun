@@ -1,0 +1,99 @@
+{
+  "actions": {
+    "close": "Close",
+    "openResultLog": "Open result log window",
+    "resetLayout": "Reset panel layout",
+    "save": "Save",
+    "saving": "Saving..."
+  },
+  "labels": {
+    "application": "Application",
+    "avatars": "Avatars",
+    "buildVersion": "Build version: ",
+    "cloneDestination": "Default clone destination",
+    "commitLogDate": "Commit log date",
+    "configFile": "Config file: ",
+    "defaultBranch": "Default branch name (`init.defaultBranch`)",
+    "diffPanel": "Diff panel",
+    "diffTool": "External difftool (`diff.tool`)",
+    "diffToolExecutable": "Diff tool executable",
+    "fileMode": "File mode tracking (`core.fileMode`)",
+    "git": "Git",
+    "gitBackendMode": "Git backend mode",
+    "globalGitConfiguration": "Global Git configuration",
+    "graphicsMode": "Graphics mode",
+    "layout": "Layout",
+    "openAtLaunch": "Open at launch",
+    "openRepositories": "Open repositories",
+    "pushBehaviour": "Push behaviour",
+    "resultLog": "Result log",
+    "settings": "Settings",
+    "theme": "Theme",
+    "updateFeedUrl": "Update feed URL",
+    "updates": "Updates"
+  },
+  "notes": {
+    "autoUpdates": "Use About to check manually. Automatic checks only show the updater prompt on launch when this is enabled.",
+    "diffToolNotConfigured": "No known difftool is configured. Compare actions may not work unless you have configured one manually in your git config.",
+    "diffToolSuggestion": " You can set one here (e.g. {{tools}}).",
+    "gitConfiguration": "These options update your global Git configuration (equivalent to `git config --global ...`).",
+    "gitOptions": "These options control Git behaviour in Gitmun.",
+    "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
+    "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches always open a new window.",
+    "toolPathMissing": "{{tool}} could not be found automatically. Saving will fail until you choose its executable.",
+    "toolPathSearch": "Gitmun searches PATH first, then common Windows install folders. If that fails, choose the executable manually.",
+    "updateEndpoint": "Advanced setting. Gitmun checks this latest.json URL for updates. Do not change this unless you know what you're doing.",
+    "updatesManaged": "Updates are managed by this platform package channel.",
+    "vscodeMergeEditor": "{{tool}}'s merge editor writes the result file when closed, so conflicts will be marked as resolved even if you close without explicitly accepting a side. Use the Accept buttons inside the editor to choose which version to keep."
+  },
+  "options": {
+    "avatarDisabled": "Disabled",
+    "avatarLibravatar": "Libravatar (default)",
+    "backendDefault": "Default (gix-assisted)",
+    "backendGitCli": "Git CLI only",
+    "commitDateAuthor": "Author date (default)",
+    "commitDateCommitter": "Committer date (GitHub-style)",
+    "diffToolNone": "None / Other",
+    "graphicsAuto": "Compatibility (default)",
+    "graphicsNative": "Native (hardware acceleration)",
+    "graphicsSafe": "Maximum compatibility",
+    "repoOpenAsk": "Ask each time (default)",
+    "repoOpenExisting": "Reuse this window",
+    "repoOpenNew": "Always open a new window",
+    "themeDark": "Dark",
+    "themeLight": "Light",
+    "themeSystem": "System",
+    "vsCode": "VS Code",
+    "vsCodium": "VS Codium"
+  },
+  "placeholders": {
+    "defaultBranch": "Leave blank to use Git's default",
+    "defaultCloneDestination": "Leave blank to use ~/GitmunProjects",
+    "diffToolPath": "Auto-detect {{tool}} or choose its .exe"
+  },
+  "picker": {
+    "cloneDestination": "Select default clone destination",
+    "cloneDestinationFailed": "Browse failed: {{message}}",
+    "diffToolExecutable": "Select {{tool}} executable",
+    "windowsExecutables": "Windows executables"
+  },
+  "status": {
+    "diffToolPathFailed": "Failed to load diff tool path: {{message}}",
+    "loadFailed": "Failed to load settings: {{message}}",
+    "loaded": "Loaded settings (including global Git config).",
+    "openResultLogFailed": "Failed to open result log: {{message}}",
+    "openedResultLog": "Opened result log window.",
+    "ready": "Ready.",
+    "resetLayoutFailed": "Failed to reset layout: {{message}}",
+    "resetLayout": "Reset panel layout to defaults.",
+    "saveFailed": "Save failed: {{message}}",
+    "saved": "Saved settings. {{message}}"
+  },
+  "switches": {
+    "autoCheckUpdates": "Automatically check for updates on launch",
+    "followTags": "Include annotated tags when pushing (`--follow-tags`)",
+    "platformAvatars": "Try platform-specific avatars first (e.g. GitHub for github.com remotes)",
+    "trackFilePermissions": "Track file permissions",
+    "wrapDiffLines": "Wrap long lines in diff view"
+  }
+}

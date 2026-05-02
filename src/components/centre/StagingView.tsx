@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
@@ -95,6 +96,7 @@ function SubmoduleRow({
   onPull,
   onOpen,
 }: SubmoduleRowProps) {
+  const { t } = useTranslation("centre");
   const canInit = !submodule.initialised || submodule.state === "missing" || submodule.state === "uninitialised";
   const canUpdate = submodule.initialised && submodule.state !== "missing";
   const canSync = submodule.syncRequired;
@@ -110,25 +112,25 @@ function SubmoduleRow({
     >
       <div className="submodule-row__main">
         <span className={`submodule-row__state submodule-row__state--${submodule.state}`}>
-          {SUBMODULE_STATE_LABELS[submodule.state]}
+          {t(`submoduleState.${submodule.state}`, {ns: "git"})}
         </span>
         <span className="submodule-row__path">{submodule.path}</span>
         <span className="submodule-row__meta">
-          {submodule.currentBranch ?? submodule.branch ?? "detached or uninitialised"}
+          {submodule.currentBranch ?? submodule.branch ?? t("staging.detachedOrUninitialised")}
         </span>
       </div>
       <div className="submodule-row__details">
-        <span>expected {shortHash(submodule.expectedCommit)}</span>
-        <span>checked out {shortHash(submodule.checkedOutCommit)}</span>
+        <span>{t("staging.expected", {hash: shortHash(submodule.expectedCommit)})}</span>
+        <span>{t("staging.checkedOut", {hash: shortHash(submodule.checkedOutCommit)})}</span>
         {submodule.configuredUrl && <span title={submodule.configuredUrl}>{submodule.configuredUrl}</span>}
       </div>
       <div className="submodule-row__actions" onClick={e => e.stopPropagation()}>
-        {canInit && <button onClick={onInit}>Init</button>}
-        {canUpdate && <button onClick={onUpdate}>Update</button>}
-        {canSync && <button onClick={onSync}>Sync URL</button>}
-        {canFetch && <button onClick={onFetch}>Fetch</button>}
-        {canPull && <button onClick={onPull}>Pull</button>}
-        {canOpen && <button onClick={onOpen}>Open</button>}
+        {canInit && <button onClick={onInit}>{t("actions.init", {ns: "common"})}</button>}
+        {canUpdate && <button onClick={onUpdate}>{t("actions.update", {ns: "common"})}</button>}
+        {canSync && <button onClick={onSync}>{t("staging.syncUrl")}</button>}
+        {canFetch && <button onClick={onFetch}>{t("actions.fetch", {ns: "common"})}</button>}
+        {canPull && <button onClick={onPull}>{t("actions.pull", {ns: "common"})}</button>}
+        {canOpen && <button onClick={onOpen}>{t("actions.open", {ns: "common"})}</button>}
       </div>
     </div>
   );
@@ -144,6 +146,7 @@ export function StagingView({
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
   isCommitting, lastCommitMessage,
 }: StagingViewProps) {
+  const { t } = useTranslation("centre");
   const [selectedUnstaged, setSelectedUnstaged] = useState<Record<string, boolean>>({});
   const [selectedStaged, setSelectedStaged] = useState<Record<string, boolean>>({});
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
@@ -294,7 +297,7 @@ export function StagingView({
           <div className="staging__section">
             <div className="staging__section-header">
               <span className="staging__section-label">
-                Submodules {"\u00B7"} {submodules.length}
+                {t("staging.submodules")} {"\u00B7"} {submodules.length}
               </span>
             </div>
             {submodules.map(submodule => (
@@ -320,7 +323,7 @@ export function StagingView({
           <div className="staging__section">
             <div className="staging__section-header">
               <span className="staging__section-label staging__section-label--conflict">
-                Conflicts {"\u00B7"} {conflictedFiles.length} file{conflictedFiles.length !== 1 ? "s" : ""}
+                {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
               </span>
             </div>
             {conflictedFiles.map(f => (
@@ -336,31 +339,31 @@ export function StagingView({
                   <div className="staging__conflict-actions" onClick={e => e.stopPropagation()}>
                     <button
                       className="staging__conflict-btn staging__conflict-btn--open"
-                      title="Open in merge tool"
+                      title={t("staging.openInMergeTool")}
                       onClick={() => onOpenMergeTool(f.path)}
                     >
-                      Open
+                      {t("actions.open", {ns: "common"})}
                     </button>
                     <button
                       className="staging__conflict-btn staging__conflict-btn--ours"
-                      title="Accept ours (keep current branch version)"
+                      title={t("staging.acceptOurs")}
                       onClick={() => onConflictAcceptOurs(f.path)}
                     >
-                      Ours
+                      {t("staging.ours")}
                     </button>
                     <button
                       className="staging__conflict-btn staging__conflict-btn--theirs"
-                      title="Accept theirs (use incoming branch version)"
+                      title={t("staging.acceptTheirs")}
                       onClick={() => onConflictAcceptTheirs(f.path)}
                     >
-                      Theirs
+                      {t("staging.theirs")}
                     </button>
                     <button
                       className="staging__conflict-btn staging__conflict-btn--resolve"
-                      title="Mark as resolved (stage file as-is)"
+                      title={t("staging.markResolved")}
                       onClick={() => onStageFile(f.path)}
                     >
-                      Resolve
+                      {t("staging.resolve")}
                     </button>
                   </div>
                 </div>
@@ -373,7 +376,7 @@ export function StagingView({
         <div className="staging__section">
           <div className="staging__section-header">
             <span className="staging__section-label">
-              Staged {"\u00B7"} {stagedFiles.length} file{stagedFiles.length !== 1 ? "s" : ""}
+              {t("staging.staged")} {"\u00B7"} {t("fileCount", {ns: "common", count: stagedFiles.length})}
             </span>
             {stagedFiles.length > 0 && (
               <div className="staging__section-actions">
@@ -382,16 +385,16 @@ export function StagingView({
                   onClick={handleUnstageSelected}
                   disabled={selectedStagedPaths.length === 0}
                 >
-                  Unstage Selected
+                  {t("staging.unstageSelected")}
                 </button>
                 <button className="staging__section-action staging__section-action--muted" onClick={onUnstageAll}>
-                  Unstage All
+                  {t("staging.unstageAll")}
                 </button>
               </div>
             )}
           </div>
           {mergedStaged.length === 0 ? (
-            <div className="staging__empty">No staged changes {"\u2014"} stage files to commit</div>
+            <div className="staging__empty">{t("staging.noStagedChanges")}</div>
           ) : (
             mergedStaged.map(f => (
               <div key={f.path} className="staging__row-anim">
@@ -414,7 +417,7 @@ export function StagingView({
         <div className="staging__section">
           <div className="staging__section-header">
             <span className="staging__section-label">
-              Unstaged {"\u00B7"} {allUnstaged.length} file{allUnstaged.length !== 1 ? "s" : ""}
+              {t("staging.unstaged")} {"\u00B7"} {t("fileCount", {ns: "common", count: allUnstaged.length})}
             </span>
             {allUnstaged.length > 0 && (
               <div className="staging__section-actions">
@@ -423,29 +426,29 @@ export function StagingView({
                   onClick={() => onDiscardFiles(selectedUnstagedPaths)}
                   disabled={selectedUnstagedPaths.length === 0}
                 >
-                  Revert Selected
+                  {t("staging.revertSelected")}
                 </button>
                 <button
                   className="staging__section-action staging__section-action--danger"
                   onClick={() => onDiscardAll(allUnstaged.map(f => f.path))}
                 >
-                  Revert All
+                  {t("staging.revertAll")}
                 </button>
                 <button
                   className="staging__section-action staging__section-action--accent"
                   onClick={handleStageSelected}
                   disabled={selectedUnstagedPaths.length === 0}
                 >
-                  Stage Selected
+                  {t("staging.stageSelected")}
                 </button>
                 <button className="staging__section-action staging__section-action--accent" onClick={onStageAll}>
-                  Stage All
+                  {t("staging.stageAll")}
                 </button>
               </div>
             )}
           </div>
           {allUnstaged.length === 0 ? (
-            <div className="staging__empty">Working tree clean</div>
+            <div className="staging__empty">{t("staging.workingTreeClean")}</div>
           ) : (
             allUnstaged.map(f => (
               <div key={f.path} className="staging__row-anim">

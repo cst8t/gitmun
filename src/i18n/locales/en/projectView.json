@@ -1,0 +1,245 @@
+{
+  "actions": {
+    "abort": "Abort",
+    "cancel": "Cancel",
+    "cherryPick": "Cherry-pick",
+    "delete": "Delete",
+    "drop": "Drop",
+    "forceDelete": "Force Delete",
+    "rebase": "Rebase",
+    "remove": "Remove",
+    "revert": "Revert",
+    "reset": "Reset",
+    "stashAndSwitch": "Stash and Switch"
+  },
+  "ask": {
+    "abortCherryPick": {
+      "message": "Abort the current cherry-pick? All cherry-pick progress will be discarded.",
+      "title": "Abort Cherry-pick"
+    },
+    "abortMerge": {
+      "message": "Abort the current merge? All merge changes will be discarded.",
+      "title": "Abort Merge"
+    },
+    "abortRebase": {
+      "message": "Abort the current rebase? All rebase progress will be discarded.",
+      "title": "Abort Rebase"
+    },
+    "abortRevert": {
+      "message": "Abort the current revert? All revert progress will be discarded.",
+      "title": "Abort Revert"
+    },
+    "cherryPickCommit": {
+      "message": "Cherry-pick commit \"{{commit}}\" onto \"{{branch}}\"?",
+      "title": "Cherry-pick Commit"
+    },
+    "deleteBranch": {
+      "message": "Delete branch \"{{branch}}\"? This cannot be undone.",
+      "title": "Delete Branch"
+    },
+    "deleteRemoteBranch": {
+      "message": "Delete remote branch \"{{remote}}/{{branch}}\"? This cannot be undone.",
+      "title": "Delete Remote Branch"
+    },
+    "deleteRemoteTag": {
+      "message": "Delete tag \"{{tag}}\" from remote \"{{remote}}\"? This cannot be undone.",
+      "title": "Delete Remote Tag"
+    },
+    "deleteTag": {
+      "message": "Delete tag \"{{tag}}\"? This cannot be undone.",
+      "title": "Delete Tag"
+    },
+    "dropStash": {
+      "message": "Drop {{stashLabel}}? This cannot be undone.",
+      "stashLabel": "stash {{index}}",
+      "stashLabelWithMessage": "stash {{index}} - {{message}}",
+      "title": "Drop Stash"
+    },
+    "forceDeleteBranch": {
+      "message": "Force delete branch \"{{branch}}\"? This will delete it even if it has unmerged changes or is checked out in a worktree.",
+      "title": "Force Delete Branch"
+    },
+    "removeRemote": {
+      "message": "Remove remote \"{{remote}}\"? This will also delete all remote-tracking branches for this remote.",
+      "title": "Remove Remote"
+    },
+    "revertCommit": {
+      "message": "Revert commit \"{{commit}}\" on \"{{branch}}\"?",
+      "title": "Revert Commit"
+    },
+    "resetToCommit": {
+      "message": "{{mode}} reset to \"{{commit}}\"?\n\n{{description}}",
+      "mixedDescription": "HEAD will move to this commit; staged changes will be unstaged.",
+      "mixedMode": "Mixed",
+      "softDescription": "HEAD will move to this commit; staged changes will be preserved.",
+      "softMode": "Soft",
+      "title": "{{mode}} Reset"
+    },
+    "startRebase": {
+      "message": "Rebase \"{{branch}}\" onto \"{{onto}}\"?",
+      "title": "Start Rebase"
+    },
+    "stashBeforeSwitch": {
+      "message": "You have uncommitted changes. Stash and switch to \"{{target}}\"?",
+      "title": "Switch Branch"
+    }
+  },
+  "emptyState": {
+    "clone": "Clone repository",
+    "init": "Initialise repository",
+    "openExisting": "Open existing",
+    "subtitle": "Clone a project, initialise a new repository, or open an existing one.",
+    "title": "No repository open"
+  },
+  "labels": {
+    "compareInDiffTool": "Compare in difftool",
+    "compareInTool": "Compare in {{tool}}",
+    "currentBranch": "current branch",
+    "hideSidebar": "Hide sidebar",
+    "resizeLeftPanel": "Resize left panel",
+    "resizeRightPanel": "Resize right panel",
+    "showSidebar": "Show sidebar"
+  },
+  "log": {
+    "acceptOursFailed": "Accept ours failed: {{message}}",
+    "acceptTheirsFailed": "Accept theirs failed: {{message}}",
+    "acceptedOurs": "Accepted ours for {{path}}",
+    "acceptedTheirs": "Accepted theirs for {{path}}",
+    "addRemoteFailed": "Add remote failed: {{message}}",
+    "branchSwitchStash": "Stashed changes before branch switch",
+    "changeUpstreamFailed": "Change upstream failed: {{message}}",
+    "checkoutFailed": "Checkout remote branch failed: {{message}}",
+    "cherryPickAbortFailed": "Cherry-pick abort failed: {{message}}",
+    "cherryPickContinueFailed": "Cherry-pick continue failed: {{message}}",
+    "cherryPickFailed": "Cherry-pick failed: {{message}}",
+    "commitFailed": "Commit failed: {{message}}",
+    "createBranchFailed": "Create branch failed: {{message}}",
+    "createTagFailed": "Create tag failed: {{message}}",
+    "deleteBranchFailed": "Delete branch failed: {{message}}",
+    "deleteRemoteBranchFailed": "Delete remote branch failed: {{message}}",
+    "deleteRemoteTagFailed": "Delete remote tag failed: {{message}}",
+    "deleteTagFailed": "Delete tag failed: {{message}}",
+    "editRemoteFailed": "Edit remote failed: {{message}}",
+    "fetchFailed": "Fetch failed: {{message}}",
+    "fetchRemoteFailed": "Fetch {{remote}} failed: {{message}}",
+    "forceDeleteBranchFailed": "Force delete branch failed: {{message}}",
+    "mergeAbortFailed": "Merge abort failed: {{message}}",
+    "mergeFailed": "Merge failed: {{message}}",
+    "pruneRemoteFailed": "Prune remote failed: {{message}}",
+    "pullAnalysisFailed": "Pull analysis failed: {{message}}",
+    "pullFailed": "Pull failed: {{message}}",
+    "pushFailed": "{{prefix}}: {{message}}",
+    "pushTagFailed": "Push tag failed: {{message}}",
+    "rebaseAbortFailed": "Rebase abort failed: {{message}}",
+    "rebaseContinueFailed": "Rebase continue failed: {{message}}",
+    "rebaseFailed": "Rebase failed: {{message}}",
+    "remoteRenamedUrlFailed": "Remote renamed to \"{{remote}}\" but URL update failed: {{message}}",
+    "removeRemoteFailed": "Remove remote failed: {{message}}",
+    "renameBranchFailed": "Rename branch failed: {{message}}",
+    "repairUpstreamFailed": "Repair upstream failed: {{message}}",
+    "resetFailed": "Reset failed: {{message}}",
+    "revertAbortFailed": "Revert abort failed: {{message}}",
+    "revertContinueFailed": "Revert continue failed: {{message}}",
+    "revertFailed": "Revert failed: {{message}}",
+    "revertedFiles_one": "Reverted changes in {{path}}",
+    "revertedFiles_other": "Reverted changes in {{count}} files",
+    "saveCommitActionFailed": "Save commit action failed: {{message}}",
+    "stageAllFailed": "Stage all failed: {{message}}",
+    "stageFailed": "Stage failed: {{message}}",
+    "stagedAll": "Staged all files",
+    "stagedFiles_one": "Staged {{path}}",
+    "stagedFiles_other": "Staged {{count}} files",
+    "stashApplyFailed": "Stash apply failed: {{message}}",
+    "stashBeforeSwitchFailed": "Stash before switch failed: {{message}}",
+    "stashDropFailed": "Stash drop failed: {{message}}",
+    "stashFailed": "Stash failed: {{message}}",
+    "stashPopFailed": "Stash pop failed: {{message}}",
+    "submoduleFailed": "{{action}} submodule failed: {{message}}",
+    "switchBranchFailed": "Switch branch failed: {{message}}",
+    "switchFailedAfterStash": "{{recoveryMessage}} Original error: {{message}}",
+    "unstageAllFailed": "Unstage all failed: {{message}}",
+    "unstageFailed": "Unstage failed: {{message}}",
+    "unstagedAll": "Unstaged all files",
+    "unstagedFiles_one": "Unstaged {{path}}",
+    "unstagedFiles_other": "Unstaged {{count}} files"
+  },
+  "submoduleActions": {
+    "fetch": "Fetch",
+    "initialise": "Initialise",
+    "pull": "Pull",
+    "sync": "Sync",
+    "update": "Update"
+  },
+  "toast": {
+    "acceptedOurs": "Accepted ours for {{file}}",
+    "acceptedTheirs": "Accepted theirs for {{file}}",
+    "alreadyUpToDate": "Already up to date",
+    "amendedCommit": "Amended commit",
+    "amendedLatestCommit": "Amended latest commit",
+    "branchPublished": "Branch published",
+    "cannotCheckoutRemoteRef": "Cannot checkout remote reference \"{{remoteBranch}}\"",
+    "cannotCherryPickDuringMerge": "Cannot start cherry-pick while a merge is in progress",
+    "cannotCherryPickDuringRebase": "Cannot start cherry-pick while a rebase is in progress",
+    "cannotMergeDuringCherryPick": "Cannot merge while a cherry-pick is in progress",
+    "cannotMergeDuringRebase": "Cannot merge while a rebase is in progress",
+    "cannotRebaseDuringCherryPick": "Cannot start rebase while a cherry-pick is in progress",
+    "cannotRebaseDuringMerge": "Cannot start rebase while a merge is in progress",
+    "cannotRevertDuringCherryPick": "Cannot start revert while a cherry-pick is in progress",
+    "cannotRevertDuringMerge": "Cannot start revert while a merge is in progress",
+    "cannotRevertDuringRebase": "Cannot start revert while a rebase is in progress",
+    "cannotSwitchDuringCherryPick": "Cannot switch branch while a cherry-pick is in progress",
+    "cannotSwitchDuringMerge": "Cannot switch branch while a merge is in progress",
+    "cannotSwitchDuringRebase": "Cannot switch branch while a rebase is in progress",
+    "changesStashed": "Changes stashed",
+    "checkoutFailedAfterStash": "Checkout failed after stashing {{stashRef}}. Recover with git stash apply {{stashRef}}.",
+    "cherryPickAlreadyInProgress": "A cherry-pick is already in progress",
+    "cherryPickBlockedByChanges": "Commit or stash changes before cherry-picking",
+    "cherryPickConflicts_one": "Cherry-pick conflict in {{count}} file - resolve in the Changes tab",
+    "cherryPickConflicts_other": "Cherry-pick conflicts in {{count}} files - resolve in the Changes tab",
+    "chooseDifferentRebaseBranch": "Choose a different branch to rebase onto",
+    "commitBlockedByCherryPick": "Use Continue Cherry-pick to proceed while cherry-picking",
+    "commitBlockedByRebase": "Use Continue Rebase to proceed while rebasing",
+    "commitBlockedByRevert": "Use Continue Revert to proceed while reverting",
+    "commitCreated": "Commit created",
+    "createdCommit": "Created commit",
+    "fetchComplete": "Fetch complete",
+    "fetchedFrom": "Fetched from {{remote}}",
+    "integrationComplete": "Integration complete. Push your branch to update the remote.",
+    "mergeConflicts_one": "Merge conflict in {{count}} file - resolve in the Changes tab",
+    "mergeConflicts_other": "Merge conflicts in {{count}} files - resolve in the Changes tab",
+    "mergeBlockedByChanges": "Commit or stash changes before merging",
+    "noLocalChangesToStash": "No local changes to stash",
+    "noRemotesConfigured": "No remotes configured",
+    "openedDiffFor": "Opened diff for {{file}}",
+    "pullComplete": "Pull complete",
+    "pushComplete": "Push complete",
+    "pushDetached": "Push is unavailable while HEAD is detached.",
+    "pushFailed": "Push failed",
+    "publishFailed": "Publish failed",
+    "rebaseAlreadyInProgress": "A rebase is already in progress",
+    "rebaseBlockedByChanges": "Commit or stash changes before rebasing",
+    "rebaseConflicts_one": "Rebase conflict in {{count}} file - resolve in the Changes tab",
+    "rebaseConflicts_other": "Rebase conflicts in {{count}} files - resolve in the Changes tab",
+    "remoteUpdated": "Remote updated",
+    "revertAlreadyInProgress": "A revert is already in progress",
+    "revertBlockedByChanges": "Commit or stash changes before reverting",
+    "revertConflicts_one": "Revert conflict in {{count}} file - resolve in the Changes tab",
+    "revertConflicts_other": "Revert conflicts in {{count}} files - resolve in the Changes tab",
+    "revertedFiles_one": "Reverted {{file}}",
+    "revertedFiles_other": "Reverted {{count}} files",
+    "stagedAll": "Staged all files",
+    "stagedFiles_one": "Staged {{file}}",
+    "stagedFiles_other": "Staged {{count}} files",
+    "stagedHunk": "Staged hunk",
+    "stashFailedBranchNotSwitched": "Stash failed. Branch was not switched.",
+    "switchFailedAfterGenericStash": "Switch failed after stashing changes. Recover with git stash pop or inspect git stash list.",
+    "switchFailedAfterStash": "Switch failed after stashing {{stashRef}}. Recover with git stash apply {{stashRef}}.",
+    "switchedWithStash": "{{message}} (saved changes as {{stashRef}})",
+    "unstagedAll": "Unstaged all files",
+    "unstagedFiles_one": "Unstaged {{file}}",
+    "unstagedFiles_other": "Unstaged {{count}} files",
+    "unstagedHunk": "Unstaged hunk",
+    "upstreamChanged": "Upstream changed",
+    "upstreamRepaired": "Upstream repaired"
+  }
+}

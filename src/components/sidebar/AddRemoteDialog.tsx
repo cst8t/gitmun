@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { getRemoteNameError } from "../../utils/gitInputValidation";
 
 type AddRemoteDialogProps = {
@@ -8,6 +9,7 @@ type AddRemoteDialogProps = {
 };
 
 export function AddRemoteDialog({ existingRemoteNames, onConfirm, onCancel }: AddRemoteDialogProps) {
+  const { t } = useTranslation("sidebar");
   const [name, setName] = useState("");
   const [url, setUrl] = useState("");
   const [nameError, setNameError] = useState<string | null>(null);
@@ -37,7 +39,7 @@ export function AddRemoteDialog({ existingRemoteNames, onConfirm, onCancel }: Ad
       return;
     }
     if (existingRemoteNames.includes(trimmed)) {
-      setNameError("A remote with this name already exists");
+      setNameError("validation.remoteExists");
       return;
     }
     setNameError(null);
@@ -55,40 +57,40 @@ export function AddRemoteDialog({ existingRemoteNames, onConfirm, onCancel }: Ad
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Add Remote</div>
+        <div className="dialog__title">{t("addRemote.title")}</div>
         <form onSubmit={handleSubmit}>
           <div className="dialog__field">
-            <label className="dialog__label">Name</label>
+            <label className="dialog__label">{t("addRemote.name")}</label>
             <input
               ref={nameInputRef}
               type="text"
               className="dialog__input"
               value={name}
               onChange={e => setName(e.target.value)}
-              placeholder="origin"
+              placeholder={t("addRemote.namePlaceholder")}
             />
-            {nameError && <div className="dialog__error">{nameError}</div>}
+            {nameError && <div className="dialog__error">{t(nameError, {ns: "git", defaultValue: t(nameError) })}</div>}
           </div>
           <div className="dialog__field">
-            <label className="dialog__label">URL</label>
+            <label className="dialog__label">{t("addRemote.url")}</label>
             <input
               type="text"
               className="dialog__input"
               value={url}
               onChange={e => setUrl(e.target.value)}
-              placeholder="https://example.com/user/repo.git"
+              placeholder={t("addRemote.urlPlaceholder")}
             />
           </div>
           <div className="dialog__actions">
             <button type="button" className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-              Cancel
+              {t("actions.cancel", {ns: "common"})}
             </button>
             <button
               type="submit"
               className={`dialog__btn dialog__btn--confirm${!canSubmit ? " dialog__btn--disabled" : ""}`}
               disabled={!canSubmit}
             >
-              Add Remote
+              {t("addRemote.title")}
             </button>
           </div>
         </form>

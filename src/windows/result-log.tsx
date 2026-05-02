@@ -5,6 +5,7 @@ import { ResultLogWindow } from "../components/resultlog/ResultLogWindow";
 import "../styles/tokens.css";
 import "../styles/animations.css";
 import "../styles/global.css";
+import "../i18n";
 
 window.addEventListener("error", (event) => {
   const details = `[result-log-window:error] ${event.message}\n${event.filename}:${event.lineno}:${event.colno}`;

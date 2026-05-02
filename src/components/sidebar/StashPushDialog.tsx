@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { FileStatusItem } from "../../types";
 import "./StashPushDialog.css";
 
@@ -23,6 +24,7 @@ export function StashPushDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  const { t } = useTranslation("sidebar");
   const [message, setMessage] = useState("");
   const [includeUntracked, setIncludeUntracked] = useState(false);
   const [checkedPaths, setCheckedPaths] = useState<Set<string>>(() => {
@@ -101,11 +103,11 @@ export function StashPushDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog stash-push-dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Stash Changes</div>
+        <div className="dialog__title">{t("stashPush.title")}</div>
         <form onSubmit={handleSubmit}>
           <div className="dialog__field">
             <label className="dialog__label">
-              Message <span className="dialog__label-hint">(optional)</span>
+              {t("stashPush.message")} <span className="dialog__label-hint">{t("stashPush.messageHint")}</span>
             </label>
             <input
               ref={messageRef}
@@ -113,7 +115,7 @@ export function StashPushDialog({
               className="dialog__input"
               value={message}
               onChange={e => setMessage(e.target.value)}
-              placeholder="WIP: "
+              placeholder={t("stashPush.messagePlaceholder")}
             />
           </div>
 
@@ -123,13 +125,13 @@ export function StashPushDialog({
               checked={includeUntracked}
               onChange={e => setIncludeUntracked(e.target.checked)}
             />
-            <span>Include untracked files</span>
+            <span>{t("stashPush.includeUntracked")}</span>
           </label>
 
           <div className="stash-push-dialog__files">
             {stagedFiles.length > 0 && (
               <FileGroup
-                label="Staged Changes"
+                label={t("stashPush.stagedChanges")}
                 files={stagedFiles.map(f => ({ path: f.path, badge: f.status }))}
                 checkedPaths={checkedPaths}
                 onToggle={togglePath}
@@ -137,7 +139,7 @@ export function StashPushDialog({
             )}
             {unstagedFiles.length > 0 && (
               <FileGroup
-                label="Unstaged Changes"
+                label={t("stashPush.unstagedChanges")}
                 files={unstagedFiles.map(f => ({ path: f.path, badge: f.status }))}
                 checkedPaths={checkedPaths}
                 onToggle={togglePath}
@@ -145,7 +147,7 @@ export function StashPushDialog({
             )}
             {includeUntracked && unversionedFiles.length > 0 && (
               <FileGroup
-                label="Untracked Files"
+                label={t("stashPush.untrackedFiles")}
                 files={unversionedFiles.map(p => ({ path: p, badge: "?" }))}
                 checkedPaths={checkedPaths}
                 onToggle={togglePath}
@@ -155,14 +157,14 @@ export function StashPushDialog({
 
           <div className="dialog__actions">
             <button type="button" className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-              Cancel
+              {t("stashPush.cancel")}
             </button>
             <button
               type="submit"
               className={`dialog__btn dialog__btn--confirm${!canSubmit ? " dialog__btn--disabled" : ""}`}
               disabled={!canSubmit}
             >
-              Stash Changes
+              {t("stashPush.stash")}
             </button>
           </div>
         </form>

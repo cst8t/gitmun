@@ -4,9 +4,7 @@ export type RemoteActionKind = "push" | "publish" | "repair-upstream" | "detache
 
 export type RemoteActionState = {
   kind: RemoteActionKind;
-  label: string;
   disabled: boolean;
-  title?: string;
 };
 
 export function isDetachedBranchName(branchName: string | null | undefined): boolean {
@@ -34,18 +32,18 @@ export function getUpstreamStatusLabel(
   currentBranchInfo: BranchInfo | null | undefined,
 ): string | null {
   if (isDetachedBranchName(currentBranch)) {
-    return "Detached HEAD";
+    return "branches.detachedHead";
   }
   if (!currentBranchInfo || currentBranchInfo.isRemote) {
     return null;
   }
   if (currentBranchInfo.upstreamStatus === "none") {
-    return "No upstream";
+    return "branches.noUpstream";
   }
   if (currentBranchInfo.upstreamStatus === "missing") {
-    return "Upstream missing";
+    return "branches.upstreamMissing";
   }
-  return currentBranchInfo.upstream ? `Tracking ${currentBranchInfo.upstream}` : "Tracking remote";
+  return currentBranchInfo.upstream ? "branches.tracking" : "branches.trackingRemote";
 }
 
 export function getRemoteActionState(
@@ -55,36 +53,29 @@ export function getRemoteActionState(
   if (isDetachedBranchName(currentBranch)) {
     return {
       kind: "detached",
-      label: "Push",
       disabled: true,
-      title: "Push is unavailable while HEAD is detached.",
     };
   }
   if (!currentBranchInfo || currentBranchInfo.isRemote) {
     return {
       kind: "push",
-      label: "Push",
       disabled: false,
     };
   }
   if (currentBranchInfo.upstreamStatus === "none") {
     return {
       kind: "publish",
-      label: "Publish",
       disabled: false,
     };
   }
   if (currentBranchInfo.upstreamStatus === "missing") {
     return {
       kind: "repair-upstream",
-      label: "Repair Upstream",
       disabled: false,
-      title: "The configured upstream branch is missing. Repair it before pushing.",
     };
   }
   return {
     kind: "push",
-    label: "Push",
     disabled: false,
   };
 }
