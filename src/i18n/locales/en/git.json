@@ -1,0 +1,38 @@
+{
+  "branches": {
+    "current": "current",
+    "detachedHead": "Detached HEAD",
+    "noUpstream": "No upstream",
+    "tracking": "Tracking {{upstream}}",
+    "trackingRemote": "Tracking remote",
+    "upstreamMissing": "Upstream missing"
+  },
+  "remoteAction": {
+    "push": "Push",
+    "publish": "Publish",
+    "repairUpstream": "Repair Upstream",
+    "detachedTitle": "Push is unavailable while HEAD is detached.",
+    "repairUpstreamTitle": "The configured upstream branch is missing. Repair it before pushing."
+  },
+  "submoduleState": {
+    "clean": "Clean",
+    "uninitialised": "Uninitialised",
+    "missing": "Missing",
+    "dirty": "Dirty",
+    "outOfSync": "Out of sync",
+    "conflict": "Conflict",
+    "syncRequired": "Sync required"
+  },
+  "validation": {
+    "branchHead": "Branch name cannot be HEAD",
+    "branchInvalid": "Invalid branch name format",
+    "remoteInvalid": "Invalid remote name format",
+    "remoteSpaces": "Remote name cannot contain spaces",
+    "remoteStartsWithDash": "Remote name cannot start with '-'",
+    "repoUrlInvalidCharacters": "Repository URL contains invalid characters",
+    "repoUrlStartsWithDash": "Repository URL cannot start with '-'",
+    "tagInvalid": "Invalid tag name format",
+    "tagSpaces": "Tag name cannot contain spaces",
+    "tagStartsWithDash": "Tag name cannot start with '-'"
+  }
+}

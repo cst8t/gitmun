@@ -1,0 +1,33 @@
+{
+  "actions": {
+    "apply": "Apply",
+    "cancel": "Cancel",
+    "clear": "Clear",
+    "clone": "Clone",
+    "close": "Close",
+    "delete": "Delete",
+    "drop": "Drop",
+    "fetch": "Fetch",
+    "init": "Init",
+    "initialise": "Initialise",
+    "moreOptions": "More options",
+    "new": "New",
+    "notNow": "Not now",
+    "open": "Open",
+    "pull": "Pull",
+    "push": "Push",
+    "remove": "Remove",
+    "save": "Save",
+    "sync": "Sync",
+    "update": "Update",
+    "working": "Working..."
+  },
+  "generic": {
+    "file": "File",
+    "none": "None",
+    "unknown": "Unknown",
+    "loading": "Loading..."
+  },
+  "fileCount_one": "{{count}} file",
+  "fileCount_other": "{{count}} files"
+}

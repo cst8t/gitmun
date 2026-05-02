@@ -4,6 +4,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { Titlebar } from "./Titlebar";
 import type { BranchInfo } from "../types";
+import "../i18n";
 
 function makeBranch(overrides: Partial<BranchInfo> = {}): BranchInfo {
   return {

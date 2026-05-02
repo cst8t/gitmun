@@ -1,0 +1,60 @@
+{
+  "commitDetails": {
+    "author": "Author",
+    "close": "Close",
+    "commitDetails": "Commit details",
+    "committer": "Committer",
+    "copyFullHash": "Copy full hash",
+    "date": "Date",
+    "hash": "Hash",
+    "parents": "Parents",
+    "tags": "Tags"
+  },
+  "eol": {
+    "mixed": "Mixed EOL",
+    "unknown": "Unknown EOL"
+  },
+  "header": {
+    "clickFile": "Click a file to show changes",
+    "commit": "Commit {{hash}}",
+    "commitFiles": "Commit files",
+    "submodule": "Submodule {{path}}"
+  },
+  "placeholders": {
+    "binaryChanged": "Binary file changed",
+    "clickFile": "Click a file to show changes",
+    "emptyFile": "Empty file - no changes to display",
+    "loadingCommitFiles": "Loading commit files...",
+    "loadingDiff": "Loading diff...",
+    "selectCommit": "Select a commit to view changed files"
+  },
+  "submodule": {
+    "checkedOutCommit": "Checked-out commit",
+    "configuredBranch": "Configured branch",
+    "configuredUrl": "Configured URL",
+    "currentBranch": "Current branch",
+    "description": "This path is a separate Git repository. Gitmun shows it here as a submodule boundary, not as a normal parent-repo file diff.",
+    "detachedOrUnavailable": "Detached or unavailable",
+    "expectedCommit": "Expected commit",
+    "localUrl": "Local URL",
+    "statusBoundary": "Submodule boundary"
+  },
+  "toolbar": {
+    "inline": "Inline",
+    "openDiff": "Double-click to open diff",
+    "selectFileFirst": "Select a file first",
+    "split": "Split",
+    "stageHunk": "Stage hunk",
+    "unstageHunk": "Unstage hunk"
+  },
+  "warning": {
+    "bodyPrefix": "Gitmun doesn't yet include a built-in merge editor. For the best experience - particularly when resolving merge conflicts - we recommend configuring an external diff tool such as ",
+    "bodySuffix": ". Without one, conflicted files will need to be edited manually.",
+    "dontShowAgain": "Don't show this again",
+    "gotIt": "Got it",
+    "openSettings": "Open Settings",
+    "or": ", or ",
+    "separator": ", ",
+    "title": "No diff tool configured"
+  }
+}

@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { UpstreamDialog } from "./UpstreamDialog";
 import type { BranchInfo, RemoteInfo } from "../../types";
+import "../../i18n";
 
 const remotes: RemoteInfo[] = [
   { name: "origin", url: "git@example.com:repo.git" },

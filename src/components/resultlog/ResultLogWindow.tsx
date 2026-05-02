@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { useTranslation } from "react-i18next";
 import type { Settings, ThemeMode } from "../../types";
 import { clearResultLog, getResultLogEntries, type ResultLogEntry } from "../../utils/resultLog";
 import "./ResultLogWindow.css";
@@ -19,6 +20,7 @@ async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
 }
 
 export function ResultLogWindow() {
+  const { t } = useTranslation("resultLog");
   const [entries, setEntries] = useState<ResultLogEntry[]>(() => getResultLogEntries());
   const [filter, setFilter] = useState<"all" | "success" | "error" | "info">("all");
   const [consoleMode, setConsoleMode] = useState(false);
@@ -59,10 +61,10 @@ export function ResultLogWindow() {
   return (
     <div className="result-log">
       <div className="result-log__header">
-        <div className="result-log__title">Result Log</div>
+        <div className="result-log__title">{t("labels.title")}</div>
         <div className="result-log__header-right">
           <label className="result-log__switch-row">
-            <span className="result-log__switch-label">Console view</span>
+            <span className="result-log__switch-label">{t("labels.consoleView")}</span>
             <span className="result-log__switch">
               <input
                 type="checkbox"
@@ -77,33 +79,33 @@ export function ResultLogWindow() {
               className={`result-log__filter ${filter === "all" ? "result-log__filter--active" : ""}`}
               onClick={() => setFilter("all")}
             >
-              All
+              {t("filters.all")}
             </button>
             <button
               className={`result-log__filter ${filter === "success" ? "result-log__filter--active" : ""}`}
               onClick={() => setFilter("success")}
             >
-              Success
+              {t("filters.success")}
             </button>
             <button
               className={`result-log__filter ${filter === "error" ? "result-log__filter--active" : ""}`}
               onClick={() => setFilter("error")}
             >
-              Error
+              {t("filters.error")}
             </button>
             <button
               className={`result-log__filter ${filter === "info" ? "result-log__filter--active" : ""}`}
               onClick={() => setFilter("info")}
             >
-              Info
+              {t("filters.info")}
             </button>
           </div>
-          <button className="result-log__clear" onClick={handleClear} disabled={entries.length === 0}>Clear</button>
+          <button className="result-log__clear" onClick={handleClear} disabled={entries.length === 0}>{t("actions.clear")}</button>
         </div>
       </div>
       <div className={`result-log__list ${consoleMode ? "result-log__list--console" : ""}`}>
         {empty ? (
-          <div className="result-log__empty">No matching results.</div>
+          <div className="result-log__empty">{t("labels.empty")}</div>
         ) : consoleMode ? (
           <div className="result-log__console">
             {filteredEntries.map(entry => (

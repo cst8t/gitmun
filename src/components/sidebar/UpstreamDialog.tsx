@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useTranslation } from "react-i18next";
 import type { BranchInfo, RemoteInfo } from "../../types";
 import { splitUpstreamRef } from "../../utils/remoteActionState";
 import "./UpstreamDialog.css";
@@ -15,12 +16,6 @@ type UpstreamDialogProps = {
   onCancel: () => void;
 };
 
-const MODE_LABELS: Record<UpstreamDialogMode, string> = {
-  publish: "Publish Branch",
-  repair: "Repair Upstream",
-  change: "Change Upstream",
-};
-
 export function UpstreamDialog({
   mode,
   branchName,
@@ -30,6 +25,8 @@ export function UpstreamDialog({
   onConfirm,
   onCancel,
 }: UpstreamDialogProps) {
+  const { t } = useTranslation("sidebar");
+  const modeLabel = t(`upstream.${mode}`);
   const remoteInputId = React.useId();
   const remoteBranchInputId = React.useId();
   const initialSelection = splitUpstreamRef(initialUpstream);
@@ -85,21 +82,21 @@ export function UpstreamDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog upstream-dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">{MODE_LABELS[mode]}</div>
+        <div className="dialog__title">{modeLabel}</div>
         <form onSubmit={handleSubmit}>
           <div className="upstream-dialog__summary">
             <div className="upstream-dialog__summary-row">
-              <span>Local branch</span>
+              <span>{t("upstream.localBranch")}</span>
               <strong>{branchName}</strong>
             </div>
             <div className="upstream-dialog__summary-row">
-              <span>Will track</span>
-              <strong>{trimmedRemote && trimmedRemoteBranch ? `${trimmedRemote}/${trimmedRemoteBranch}` : "Choose a remote branch"}</strong>
+              <span>{t("upstream.willTrack")}</span>
+              <strong>{trimmedRemote && trimmedRemoteBranch ? `${trimmedRemote}/${trimmedRemoteBranch}` : t("upstream.chooseBranch")}</strong>
             </div>
           </div>
 
           <div className="dialog__field">
-            <label className="dialog__label" htmlFor={remoteInputId}>Remote</label>
+            <label className="dialog__label" htmlFor={remoteInputId}>{t("upstream.remote")}</label>
             <select
               id={remoteInputId}
               className="dialog__input"
@@ -107,7 +104,7 @@ export function UpstreamDialog({
               onChange={event => setRemote(event.target.value)}
               disabled={!hasRemotes}
             >
-              <option value="">{hasRemotes ? "Choose a remote..." : "No remotes configured"}</option>
+              <option value="">{hasRemotes ? t("upstream.chooseRemote") : t("upstream.noRemotes")}</option>
               {remotes.map(item => (
                 <option key={item.name} value={item.name}>{item.name}</option>
               ))}
@@ -115,7 +112,7 @@ export function UpstreamDialog({
           </div>
 
           <div className="dialog__field">
-            <label className="dialog__label" htmlFor={remoteBranchInputId}>Remote branch</label>
+            <label className="dialog__label" htmlFor={remoteBranchInputId}>{t("upstream.remoteBranch")}</label>
             <input
               id={remoteBranchInputId}
               className="dialog__input"
@@ -127,7 +124,7 @@ export function UpstreamDialog({
 
           {knownRemoteBranches.length > 0 && (
             <div className="upstream-dialog__branches">
-              <div className="dialog__label">Known branches on {remote}</div>
+              <div className="dialog__label">{t("upstream.knownBranches", { remote })}</div>
               <div className="upstream-dialog__branch-list">
                 {knownRemoteBranches.map(branch => (
                   <button
@@ -144,19 +141,19 @@ export function UpstreamDialog({
           )}
 
           {!hasRemotes && (
-            <div className="dialog__error">Add a remote before using this flow.</div>
+            <div className="dialog__error">{t("upstream.addRemoteFirst")}</div>
           )}
 
           <div className="dialog__actions">
             <button type="button" className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-              Cancel
+              {t("common:actions.cancel")}
             </button>
             <button
               type="submit"
               className={`dialog__btn dialog__btn--confirm${canConfirm ? "" : " dialog__btn--disabled"}`}
               disabled={!canConfirm}
             >
-              {MODE_LABELS[mode]}
+              {modeLabel}
             </button>
           </div>
         </form>

@@ -4,6 +4,7 @@ import { emit } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useTranslation } from "react-i18next";
 import type { OperationResult, Settings, ThemeMode } from "../../types";
 import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
@@ -33,13 +34,6 @@ function safePlatform(): string {
   }
 }
 
-function getPlaceholder(): string {
-  const os = safePlatform();
-  if (os === "windows") return "C:\\Users\\username\\GitmunProjects\\repo";
-  if (os === "macos") return "/Users/username/GitmunProjects/repo";
-  return "/home/username/GitmunProjects/repo";
-}
-
 function parseRepoName(url: string): string {
   const s = url.trim().replace(/\.git$/, "").replace(":", "/");
   const parts = s.split("/").filter(Boolean);
@@ -52,10 +46,11 @@ function getBaseDir(path: string): string {
 }
 
 export function CloneWindow() {
+  const { t } = useTranslation("clone");
   const useNativeWindowBar = true;
   const [repoUrl, setRepoUrl] = useState("");
   const [destination, setDestination] = useState("");
-  const [status, setStatus] = useState("Ready.");
+  const [status, setStatus] = useState(() => t("log.ready"));
   const [cloning, setCloning] = useState(false);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [repoUrlError, setRepoUrlError] = useState<string | null>(null);
@@ -67,6 +62,12 @@ export function CloneWindow() {
   // baseDirRef: the explicit base directory; auto-fill always appends the repo name to this
   // rather than stripping the last segment of whatever is currently in the destination field.
   const baseDirRef = useRef("");
+  const os = safePlatform();
+  const destinationPlaceholder = os === "windows"
+    ? t("placeholders.destinationWindows")
+    : os === "macos"
+      ? t("placeholders.destinationMac")
+      : t("placeholders.destinationLinux");
 
   useEffect(() => {
     (async () => {
@@ -100,10 +101,10 @@ export function CloneWindow() {
           }
         }
       } catch (e) {
-        setStatus(`Failed to load settings: ${e}`);
+        setStatus(t("log.loadFailed", { message: String(e) }));
       }
     })();
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -153,7 +154,7 @@ export function CloneWindow() {
       const selected = await open({
         directory: true,
         multiple: false,
-        title: "Select clone destination folder",
+        title: t("picker.destination"),
         defaultPath: destination ? getBaseDir(destination) : undefined,
       });
       if (typeof selected === "string") {
@@ -164,25 +165,25 @@ export function CloneWindow() {
         setDestination(newDest);
         isAutoRef.current = true;
         localStorage.setItem(CLONE_BASE_KEY, selected);
-        setStatus(`Destination set to ${selected}`);
+        setStatus(t("log.destinationSet", { path: selected }));
       }
     } catch (e) {
-      setStatus(`Browse failed: ${e}`);
+      setStatus(t("log.browseFailed", { message: String(e) }));
     }
-  }, [destination, repoUrl]);
+  }, [destination, repoUrl, t]);
 
   const handleClone = useCallback(async () => {
     if (!repoUrl.trim()) {
-      setStatus("Please enter a repository URL.");
+      setStatus(t("log.repoUrlRequired"));
       return;
     }
     const inputError = getCloneRepoUrlError(repoUrl);
     if (inputError) {
-      setStatus(inputError);
+      setStatus(t(inputError, { ns: "git", defaultValue: inputError }));
       return;
     }
     setCloning(true);
-    setStatus("Cloning…");
+    setStatus(t("log.cloning"));
     setProgressLines([]);
 
     const onProgress = new Channel<string>();
@@ -213,15 +214,16 @@ export function CloneWindow() {
     } catch (e) {
       const msg = String(e);
       if (msg.includes("cancelled")) {
-        setStatus("Clone cancelled.");
+        setStatus(t("log.cloneCancelled"));
       } else {
-        setStatus(`Clone failed: ${msg}`);
-        appendResultLog("error", `Clone failed: ${msg}`, "unknown");
+        const message = t("log.cloneFailed", { message: msg });
+        setStatus(message);
+        appendResultLog("error", message, "unknown");
       }
     } finally {
       setCloning(false);
     }
-  }, [repoUrl, destination]);
+  }, [repoUrl, destination, t]);
 
   const handleCancel = useCallback(async () => {
     await invoke("cancel_clone");
@@ -239,7 +241,7 @@ export function CloneWindow() {
     <div className="clone-window">
       {!useNativeWindowBar && (
         <div className="clone-window__header">
-          <span className="clone-window__title">Clone Repository</span>
+          <span className="clone-window__title">{t("labels.title")}</span>
           <button className="clone-window__close" onClick={handleClose}>
             <CloseIcon />
           </button>
@@ -248,27 +250,27 @@ export function CloneWindow() {
 
       <div className="clone-window__body">
         <div className="clone-window__row">
-          <label className="clone-window__label">Repository URL or SSH path</label>
+          <label className="clone-window__label">{t("labels.repositoryUrl")}</label>
           <input
             className="clone-window__input"
             type="text"
             value={repoUrl}
             onChange={e => handleRepoUrlChange(e.target.value)}
-            placeholder="https://example.com/user/repo.git or git@example.com:user/repo.git"
+            placeholder={t("placeholders.url")}
             disabled={cloning}
           />
-          {repoUrlError && <div className="clone-window__error">{repoUrlError}</div>}
+          {repoUrlError && <div className="clone-window__error">{t(repoUrlError, { ns: "git", defaultValue: repoUrlError })}</div>}
         </div>
 
         <div className="clone-window__row">
-          <label className="clone-window__label">Destination folder</label>
+          <label className="clone-window__label">{t("labels.destination")}</label>
           <div className="clone-window__inline-field">
             <input
               className="clone-window__input"
               type="text"
               value={destination}
               onChange={e => handleDestinationChange(e.target.value)}
-              placeholder={getPlaceholder()}
+              placeholder={destinationPlaceholder}
               disabled={cloning}
             />
             <button className="clone-window__browse-btn" onClick={handleBrowse} disabled={cloning}>
@@ -279,9 +281,9 @@ export function CloneWindow() {
 
         <div className="clone-window__progress" ref={progressRef}>
           {!cloning && progressLines.length === 0
-            ? <span className="clone-window__progress-idle">Clone output will appear here…</span>
+            ? <span className="clone-window__progress-idle">{t("placeholders.output")}</span>
             : progressLines.length === 0
-              ? <span className="clone-window__progress-waiting">Connecting…</span>
+              ? <span className="clone-window__progress-waiting">{t("progress.connecting")}</span>
               : progressLines.map((line, i) => (
                   <div key={i} className="clone-window__progress-line">{line}</div>
                 ))
@@ -297,15 +299,15 @@ export function CloneWindow() {
             disabled={!canClone}
           >
             {cloning && <span className="clone-window__spinner" />}
-            {cloning ? "Cloning…" : "Clone"}
+            {cloning ? t("actions.cloning") : t("actions.clone")}
           </button>
           {cloning ? (
             <button className="clone-window__btn clone-window__btn--danger" onClick={handleCancel}>
-              Cancel
+              {t("actions.cancel")}
             </button>
           ) : (
             <button className="clone-window__btn clone-window__btn--secondary" onClick={handleClose}>
-              Close
+              {t("actions.close")}
             </button>
           )}
         </div>

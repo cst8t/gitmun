@@ -1,0 +1,135 @@
+{
+  "addRemote": {
+    "name": "Name",
+    "namePlaceholder": "origin",
+    "title": "Add Remote",
+    "url": "URL",
+    "urlPlaceholder": "https://example.com/user/repo.git"
+  },
+  "branchList": {
+    "changeUpstream": "Change Upstream...",
+    "create": "Create Branch",
+    "createBranch": "Create new branch",
+    "delete": "Delete \"{{branch}}\"",
+    "forceDelete": "Force Delete \"{{branch}}\"",
+    "mergeInto": "Merge \"{{branch}}\" into {{target}}",
+    "publish": "Publish Branch...",
+    "rebaseOnto": "Rebase {{branch}} onto \"{{onto}}\"",
+    "rename": "Rename \"{{branch}}\"",
+    "repairUpstream": "Repair Upstream...",
+    "switch": "Switch",
+    "switchTo": "Switch to {{branch}}"
+  },
+  "createBranch": {
+    "branchName": "Branch name",
+    "branchNamePlaceholder": "new-branch",
+    "checkoutAfterCreation": "Check out branch after creation",
+    "create": "Create Branch",
+    "filter": "Filter {{type}}...",
+    "fromBranch": "Branch",
+    "fromCommit": "Commit",
+    "fromTag": "Tag",
+    "localBranch": "Local Branch",
+    "matchTrackingBranch": "Match tracking branch name",
+    "noRevisions": "No {{type}} found",
+    "remoteBranch": "Remote Branch",
+    "revision": "Starting Revision",
+    "revisionBranches": "branches",
+    "revisionRemoteBranches": "remote branches",
+    "revisionTags": "tags",
+    "setTracking": "Set up tracking relationship",
+    "title": "Create New Branch",
+    "trackRemote": "Track remote branch"
+  },
+  "createTag": {
+    "message": "Message",
+    "messageHint": "(optional - leave blank for lightweight tag)",
+    "messagePlaceholder": "Release v1.0.0",
+    "tagName": "Tag name",
+    "tagNamePlaceholder": "v1.0.0",
+    "tagging": "Tagging:",
+    "title": "Create Tag"
+  },
+  "editRemote": {
+    "name": "Name",
+    "title": "Edit Remote",
+    "url": "URL"
+  },
+  "mergeDialog": {
+    "default": "Default",
+    "defaultDescription": "Fast-forward if possible, otherwise create a merge commit",
+    "fastForwardOnly": "Fast-Forward Only",
+    "fastForwardOnlyDescription": "Refuse to merge if a fast-forward is not possible",
+    "into": "into",
+    "merge": "Merge",
+    "noFastForward": "No Fast-Forward",
+    "noFastForwardDescription": "Always create a merge commit, even if fast-forward is possible",
+    "strategy": "Strategy",
+    "title": "Merge Branch"
+  },
+  "remoteSection": {
+    "checkout": "Checkout \"{{branch}}\"",
+    "delete": "Delete \"{{branch}}\"",
+    "editRemote": "Edit Remote...",
+    "fetch": "Fetch \"{{remote}}\"",
+    "merge": "Merge \"{{branch}}\" into current",
+    "noBranches": "No branches fetched",
+    "prune": "Prune \"{{remote}}\"",
+    "remove": "Remove \"{{remote}}\"",
+    "upstream": "upstream"
+  },
+  "renameBranch": {
+    "branchName": "Branch name",
+    "rename": "Rename",
+    "title": "Rename Branch"
+  },
+  "sections": {
+    "branches": "Branches",
+    "remotes": "Remotes",
+    "stashes": "Stashes",
+    "tags": "Tags"
+  },
+  "sidebar": {
+    "applyKeep": "Apply (keep stash)",
+    "deleteTag": "Delete \"{{tag}}\"",
+    "deleteTagRemote": "Delete from Remote",
+    "dropDelete": "Drop (delete without applying)",
+    "noRemotes": "No remotes configured",
+    "noStashes": "No stashes",
+    "noTags": "No tags",
+    "popRemove": "Pop (apply and remove)",
+    "pushTag": "Push Tag",
+    "tagCreateBranch": "Create Branch from Tag..."
+  },
+  "stashPush": {
+    "cancel": "Cancel",
+    "includeUntracked": "Include untracked files",
+    "message": "Message",
+    "messageHint": "(optional)",
+    "messagePlaceholder": "WIP: ",
+    "stash": "Stash Changes",
+    "stagedChanges": "Staged Changes",
+    "title": "Stash Changes",
+    "unstagedChanges": "Unstaged Changes",
+    "untrackedFiles": "Untracked Files"
+  },
+  "upstream": {
+    "addRemoteFirst": "Add a remote before using this flow.",
+    "change": "Change Upstream",
+    "chooseBranch": "Choose a remote branch",
+    "chooseRemote": "Choose a remote...",
+    "knownBranches": "Known branches on {{remote}}",
+    "localBranch": "Local branch",
+    "noRemotes": "No remotes configured",
+    "publish": "Publish Branch",
+    "repair": "Repair Upstream",
+    "remote": "Remote",
+    "remoteBranch": "Remote branch",
+    "willTrack": "Will track"
+  },
+  "validation": {
+    "branchExists": "A branch with this name already exists",
+    "remoteExists": "A remote with this name already exists",
+    "tagExists": "A tag with this name already exists"
+  }
+}
