@@ -11,11 +11,10 @@ import {useToast} from "../hooks/useToast";
 import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {AvailableUpdate, Settings, ShellStartupAction, ThemeMode} from "../types";
-import {appendResultLog} from "../utils/resultLog";
+import type {AvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction, ThemeMode} from "../types";
+import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
 import "./App.css";
 
-const REPO_STORAGE_KEY = "gitmun.activeRepoPath";
 const BACKEND_MODE_KEY = "gitmun.backendMode";
 const SHOW_RESULT_LOG_KEY = "gitmun.showResultLog";
 const THEME_MODE_KEY = "gitmun.themeMode";
@@ -277,7 +276,7 @@ export function App() {
                     setRepoPath(path);
                     pushRecentRepo(path);
                     showToast(t("toast.opened", {name: repoNameFromPath(path)}));
-                    appendResultLog("info", t("log.openedRepository", {path}), "unknown");
+                    appendResultLog("info", t("log.openedRepository", {path}), "unknown", path);
                 }).catch((e: unknown) => showToast(String(e), "error"));
             });
             if (cancelled) fn(); else unlisten = fn;
@@ -294,7 +293,7 @@ export function App() {
                 setRepoPath(action.path);
                 pushRecentRepo(action.path);
                 showToast(t("toast.opened", {name: repoNameFromPath(action.path)}));
-                appendResultLog("info", t("log.openedRepositoryFromShell", {path: action.path}), "unknown");
+                appendResultLog("info", t("log.openedRepositoryFromShell", {path: action.path}), "unknown", action.path);
             }).catch(async (e: unknown) => {
                 if (isLikelyNotRepoError(e)) {
                     const confirmed = await ask(
@@ -307,15 +306,14 @@ export function App() {
                         setRepoPath(action.path);
                         pushRecentRepo(action.path);
                         showToast(t("toast.repositoryInitialised"), "success");
-                        appendResultLog("success", result.message, result.backendUsed);
+                        appendResultLog("success", result.message, result.backendUsed, action.path);
                     }
                 } else {
                     showToast(String(e), "error");
                 }
             });
         } else if (action.action === "cloneHere") {
-            localStorage.setItem("gitmun.pendingCloneDestination", action.path);
-            api.openCloneWindow().catch(e => {
+            api.openCloneWindowWithDestination(action.path).catch(e => {
                 showToast(String(e), "error");
                 appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
             });
@@ -405,8 +403,10 @@ export function App() {
         let cancelled = false;
         let unlisten: (() => void) | null = null;
         (async () => {
-            const fn = await listen<ShellStartupAction>("shell-action", (event) => {
-                handleShellAction(event.payload);
+            const fn = await listen<string>("instance-open-repo", (event) => {
+                const path = event.payload;
+                if (!path) return;
+                handleShellAction({action: "openRepo", path});
             });
             if (cancelled) fn(); else unlisten = fn;
         })();
@@ -449,6 +449,38 @@ export function App() {
             unlisten?.();
         };
     }, [showToast, t]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let unlisten: (() => void) | null = null;
+        (async () => {
+            const fn = await listen("instance-settings-updated", async () => {
+                const settings = await api.getSettings();
+                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
+                localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
+                localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
+                const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
+                const desiredLeft = isValidPaneWidth(settings.leftPaneWidth)
+                    ? settings.leftPaneWidth : paneLayoutRef.current.left;
+                const desiredRight = isValidPaneWidth(settings.rightPaneWidth)
+                    ? settings.rightPaneWidth : paneLayoutRef.current.right;
+                const nextLayout = totalWidth > 0
+                    ? clampPaneLayout(totalWidth, desiredLeft, desiredRight)
+                    : {left: desiredLeft, right: desiredRight};
+                setLeftPaneWidth(nextLayout.left);
+                setRightPaneWidth(nextLayout.right);
+                paneLayoutRef.current = nextLayout;
+                if (totalWidth > 0) savePaneRatios(totalWidth, nextLayout.left, nextLayout.right);
+                setSettingsRevision(r => r + 1);
+            });
+            if (cancelled) fn(); else unlisten = fn;
+        })();
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
+    }, []);
 
     useEffect(() => {
         let cancelled = false;
@@ -512,24 +544,8 @@ export function App() {
     }, [draggingPane, leftPaneCollapsed]);
 
     useEffect(() => {
-        const stored = localStorage.getItem(REPO_STORAGE_KEY);
-        if (!stored) {
-            setReady(true);
-            return;
-        }
-        api.validateRepoPath(stored).then(() => {
-            setRepoPath(stored);
-            setReady(true);
-        }).catch(() => {
-            localStorage.removeItem(REPO_STORAGE_KEY);
-            setRecentRepos(prev => {
-                const next = prev.filter(p => p !== stored);
-                localStorage.setItem("gitmun.recentRepos", JSON.stringify(next));
-                return next;
-            });
-            setReady(true);
-        });
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        // Plain launches start empty; shell actions handle explicit opens.
+        setReady(true);
     }, []);
 
     useEffect(() => {
@@ -539,8 +555,8 @@ export function App() {
     }, [ready]);
 
     useEffect(() => {
+        setResultLogRepoPath(repoPath);
         if (repoPath) {
-            localStorage.setItem(REPO_STORAGE_KEY, repoPath);
             const repoName = repoPath.split(/[\\/]/).filter(Boolean).pop() ?? repoPath;
             api.setMainWindowTitle(`${repoName} - ${repoPath}`).catch(() => {
             });
@@ -585,9 +601,45 @@ export function App() {
         setRepoPath(path);
         pushRecentRepo(path);
         showToast(t("toast.repositoryInitialised"), "success");
-        appendResultLog("success", result.message, result.backendUsed);
+        appendResultLog("success", result.message, result.backendUsed, path);
         return true;
     }, [pushRecentRepo, showToast, t]);
+
+    const shouldOpenRepoInNewWindow = useCallback(async (path: string): Promise<boolean> => {
+        let behaviour: RepoOpenBehaviour = "Ask";
+        try {
+            behaviour = (await api.getSettings()).repoOpenBehaviour ?? "Ask";
+        } catch {
+            behaviour = "Ask";
+        }
+
+        if (behaviour === "NewWindow") {
+            return true;
+        }
+        if (behaviour === "ExistingWindow") {
+            return false;
+        }
+
+        return ask(
+            `Open "${path.split(/[\\/]/).filter(Boolean).pop() ?? path}" in a new Gitmun window?`,
+            {title: "Open Repository", kind: "info", okLabel: "New Window", cancelLabel: "This Window"},
+        );
+    }, []);
+
+    const openRepoPath = useCallback(async (path: string) => {
+        try {
+            await api.validateRepoPath(path);
+            if (await shouldOpenRepoInNewWindow(path)) {
+                await api.openRepoInNewWindow(path);
+                return;
+            }
+            setRepoPath(path);
+            pushRecentRepo(path);
+        } catch (e) {
+            if (await maybeInitialiseRepo(path, e)) return;
+            showToast(String(e), "error");
+        }
+    }, [maybeInitialiseRepo, pushRecentRepo, shouldOpenRepoInNewWindow, showToast]);
 
     const handleInitRepoClick = useCallback(async () => {
         try {
@@ -597,14 +649,18 @@ export function App() {
             }
             const result = await api.initRepo(selected);
             await api.validateRepoPath(selected);
-            setRepoPath(selected);
-            pushRecentRepo(selected);
+            if (await shouldOpenRepoInNewWindow(selected)) {
+                await api.openRepoInNewWindow(selected);
+            } else {
+                setRepoPath(selected);
+                pushRecentRepo(selected);
+            }
             showToast(t("toast.repositoryInitialised"), "success");
-            appendResultLog("success", result.message, result.backendUsed);
+            appendResultLog("success", result.message, result.backendUsed, selected);
         } catch (e) {
             showToast(String(e), "error");
         }
-    }, [pushRecentRepo, showToast, t]);
+    }, [pushRecentRepo, shouldOpenRepoInNewWindow, showToast, t]);
 
     const handleOpenExistingClick = useCallback(async () => {
         let selected: string | null = null;
@@ -614,25 +670,16 @@ export function App() {
                 return;
             }
             selected = picked;
-            await api.validateRepoPath(selected);
-            setRepoPath(selected);
-            pushRecentRepo(selected);
+            await openRepoPath(selected);
         } catch (e) {
             if (selected && await maybeInitialiseRepo(selected, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitialiseRepo, pushRecentRepo, showToast, t]);
+    }, [maybeInitialiseRepo, openRepoPath, showToast, t]);
 
     const handleRepoSelect = useCallback(async (path: string) => {
-        try {
-            await api.validateRepoPath(path);
-            setRepoPath(path);
-            pushRecentRepo(path);
-        } catch (e) {
-            if (await maybeInitialiseRepo(path, e)) return;
-            showToast(String(e), "error");
-        }
-    }, [maybeInitialiseRepo, pushRecentRepo, showToast]);
+        await openRepoPath(path);
+    }, [openRepoPath]);
 
     const isNative = true;
     const winRadius = 0;

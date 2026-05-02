@@ -1404,6 +1404,7 @@ impl CliGitHandler {
         if value.is_empty() { None } else { Some(value) }
     }
 
+    #[cfg(windows)]
     fn get_git_config_value(repo_path: &Path, key: &str) -> Option<String> {
         let mut command = crate::git_command();
         Self::configure_command(&mut command);

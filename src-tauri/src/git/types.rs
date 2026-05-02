@@ -110,6 +110,19 @@ impl Default for LinuxGraphicsMode {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RepoOpenBehaviour {
+    Ask,
+    ExistingWindow,
+    NewWindow,
+}
+
+impl Default for RepoOpenBehaviour {
+    fn default() -> Self {
+        Self::Ask
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Settings {
@@ -145,6 +158,8 @@ pub struct Settings {
     pub update_endpoint: String,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
+    #[serde(default)]
+    pub repo_open_behaviour: RepoOpenBehaviour,
 }
 
 impl Default for Settings {
@@ -167,6 +182,7 @@ impl Default for Settings {
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
             linux_graphics_mode: LinuxGraphicsMode::Auto,
+            repo_open_behaviour: RepoOpenBehaviour::Ask,
         }
     }
 }
