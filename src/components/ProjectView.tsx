@@ -269,6 +269,16 @@ export function ProjectView({
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+  const remoteActionLabel = remoteActionState.kind === "publish"
+    ? t("remoteAction.publish", { ns: "git" })
+    : remoteActionState.kind === "repair-upstream"
+      ? t("remoteAction.repairUpstream", { ns: "git" })
+      : t("remoteAction.push", { ns: "git" });
+  const remoteActionTitle = remoteActionState.kind === "detached"
+    ? t("remoteAction.detachedTitle", { ns: "git" })
+    : remoteActionState.kind === "repair-upstream"
+      ? t("remoteAction.repairUpstreamTitle", { ns: "git" })
+      : undefined;
 
   useEffect(() => {
     setLogScope("currentCheckout");
@@ -737,7 +747,7 @@ export function ProjectView({
       return;
     }
     if (remoteActionState.kind === "detached") {
-      showToast(remoteActionState.title ?? t("toast.pushDetached"), "error");
+      showToast(remoteActionTitle ?? t("toast.pushDetached"), "error");
       return;
     }
 
@@ -745,7 +755,7 @@ export function ProjectView({
       repoPath,
       pushFollowTags,
     }, t("toast.pushComplete"), t("toast.pushFailed"));
-  }, [remoteActionState, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
+  }, [remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     setIsCommitting(true);
@@ -1975,9 +1985,9 @@ export function ProjectView({
           onFetch={handleFetch}
           onPull={handlePull}
           onPush={handlePush}
-          pushLabel={remoteActionState.label}
+          pushLabel={remoteActionLabel}
           pushDisabled={remoteActionState.disabled}
-          pushTitle={remoteActionState.title}
+          pushTitle={remoteActionTitle}
           onStash={handleStash}
           remoteOp={remoteOp}
           identityOpen={identityOpen}

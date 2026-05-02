@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { ContextMenu } from "../shared/ContextMenu";
 import type { BranchInfo, RemoteInfo } from "../../types";
 import "./RemoteSection.css";
@@ -28,6 +29,7 @@ export function RemoteSection({
   onEditRemote,
   onRemoveRemote,
 }: RemoteSectionProps) {
+  const { t } = useTranslation("sidebar");
   const [collapsed, setCollapsed] = useState(false);
   const [branchMenu, setBranchMenu] = useState<{ x: number; y: number; branch: string } | null>(null);
   const [remoteMenu, setRemoteMenu] = useState<{ x: number; y: number } | null>(null);
@@ -68,7 +70,7 @@ export function RemoteSection({
       {!collapsed && (
         <div className="remote-section__branches">
           {branches.length === 0 ? (
-            <div className="remote-section__empty">No branches fetched</div>
+            <div className="remote-section__empty">{t("remoteSection.noBranches")}</div>
           ) : (
             branches.map(b => {
               const shortName = stripRemotePrefix(b.name);
@@ -80,7 +82,7 @@ export function RemoteSection({
                   onContextMenu={e => handleBranchContextMenu(e, shortName)}
                 >
                   <span className="remote-section__branch-name">{shortName}</span>
-                  {isUpstream && <span className="remote-section__upstream-badge">upstream</span>}
+                  {isUpstream && <span className="remote-section__upstream-badge">{t("remoteSection.upstream")}</span>}
                 </div>
               );
             })
@@ -95,15 +97,15 @@ export function RemoteSection({
           onClose={() => setBranchMenu(null)}
           items={[
             {
-              label: `Checkout "${getFullRemoteBranchName(branchMenu.branch)}"`,
+              label: t("remoteSection.checkout", {branch: getFullRemoteBranchName(branchMenu.branch)}),
               onClick: () => onCheckoutRemoteBranch(getFullRemoteBranchName(branchMenu.branch)),
             },
             {
-              label: `Merge "${getFullRemoteBranchName(branchMenu.branch)}" into current`,
+              label: t("remoteSection.merge", {branch: getFullRemoteBranchName(branchMenu.branch)}),
               onClick: () => onMergeRemoteBranch(getFullRemoteBranchName(branchMenu.branch)),
             },
             {
-              label: `Delete "${remote.name}/${branchMenu.branch}"`,
+              label: t("remoteSection.delete", {branch: `${remote.name}/${branchMenu.branch}`}),
               danger: true,
               onClick: () => onDeleteRemoteBranch(remote.name, branchMenu.branch),
             },
@@ -118,19 +120,19 @@ export function RemoteSection({
           onClose={() => setRemoteMenu(null)}
           items={[
             {
-              label: `Fetch "${remote.name}"`,
+              label: t("remoteSection.fetch", {remote: remote.name}),
               onClick: () => onFetchRemote(remote.name),
             },
             {
-              label: `Prune "${remote.name}"`,
+              label: t("remoteSection.prune", {remote: remote.name}),
               onClick: () => onPruneRemote(remote.name),
             },
             {
-              label: "Edit Remote…",
+              label: t("remoteSection.editRemote"),
               onClick: () => onEditRemote(remote),
             },
             {
-              label: `Remove "${remote.name}"`,
+              label: t("remoteSection.remove", {remote: remote.name}),
               danger: true,
               onClick: () => onRemoveRemote(remote.name),
             },

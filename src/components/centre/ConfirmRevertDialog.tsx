@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import "./ConfirmRevertDialog.css";
 
 type ConfirmRevertDialogProps = {
@@ -8,6 +9,7 @@ type ConfirmRevertDialogProps = {
 };
 
 export function ConfirmRevertDialog({ filePaths, onConfirm, onCancel }: ConfirmRevertDialogProps) {
+  const { t } = useTranslation("centre");
   const [dontShowAgain, setDontShowAgain] = React.useState(false);
   const single = filePaths.length === 1;
   const fileName = single ? (filePaths[0].split("/").pop() ?? filePaths[0]) : null;
@@ -24,11 +26,11 @@ export function ConfirmRevertDialog({ filePaths, onConfirm, onCancel }: ConfirmR
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog confirm-revert-dialog" role="dialog" aria-modal="true">
-        <div className="confirm-revert-dialog__title">Revert changes?</div>
+        <div className="confirm-revert-dialog__title">{t("confirmRevert.title")}</div>
         <div className="confirm-revert-dialog__body">
           {single
-            ? <>All uncommitted changes to <span className="confirm-revert-dialog__filename">{fileName}</span> will be permanently lost.</>
-            : <>All uncommitted changes to these <span className="confirm-revert-dialog__filename">{filePaths.length} files</span> will be permanently lost.</>
+            ? t("confirmRevert.message", {count: 1, file: fileName})
+            : t("confirmRevert.message", {count: filePaths.length})
           }
         </div>
         {single && (
@@ -38,15 +40,15 @@ export function ConfirmRevertDialog({ filePaths, onConfirm, onCancel }: ConfirmR
               checked={dontShowAgain}
               onChange={e => setDontShowAgain(e.target.checked)}
             />
-            Don't show this again
+            {t("confirmRevert.dontAsk")}
           </label>
         )}
         <div className="dialog__actions">
           <button className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-            Cancel
+            {t("actions.cancel", {ns: "common"})}
           </button>
           <button className="dialog__btn dialog__btn--confirm" onClick={() => onConfirm(dontShowAgain)}>
-            Revert
+            {t("confirmRevert.revert")}
           </button>
         </div>
       </div>

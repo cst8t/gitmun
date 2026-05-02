@@ -1,0 +1,17 @@
+{
+  "actions": {
+    "checking": "Checking...",
+    "checkForUpdates": "Check for updates",
+    "viewAttributions": "View Attributions"
+  },
+  "links": {
+    "github": "GitHub",
+    "website": "Not setup website yet"
+  },
+  "status": {
+    "latest": "You're already running the latest version.",
+    "checkFailed": "Update check failed: {{message}}",
+    "managed": "Updates are managed by this installation channel."
+  },
+  "version": "Version {{version}}"
+}

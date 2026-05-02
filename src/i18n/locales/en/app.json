@@ -1,0 +1,43 @@
+{
+  "ask": {
+    "initialiseRepository": {
+      "message": "\"{{name}}\" is not a Git repository yet. Initialise a new repository here?",
+      "title": "Initialise Repository"
+    },
+    "openRepository": {
+      "message": "Open \"{{name}}\" in a new Gitmun window?",
+      "title": "Open Repository",
+      "newWindow": "New Window",
+      "thisWindow": "This Window"
+    },
+    "windowsGitRequired": {
+      "downloadMessage": "Open the Git for Windows download page instead?",
+      "installMessage": "Gitmun could not find Git for Windows. This MSIX build needs Git installed separately. Install it with Winget now?",
+      "noWingetMessage": "Winget is unavailable on this machine. Open the Git for Windows download page instead?",
+      "openDownloadPage": "Open download page",
+      "title": "Git for Windows required",
+      "winget": "Install via Winget"
+    }
+  },
+  "log": {
+    "cloneWindowFailed": "Clone window failed to open: {{message}}",
+    "openedRepository": "Opened repository {{path}}",
+    "openedRepositoryFromShell": "Opened repository {{path}} from shell",
+    "resultLogWindowFailed": "Result log window failed to open: {{message}}",
+    "settingsUpdated": "Settings updated",
+    "settingsWindowFailed": "Settings window failed to open: {{message}}"
+  },
+  "picker": {
+    "initialiseRepository": "Initialise repository in folder",
+    "openExistingRepository": "Open existing repository"
+  },
+  "toast": {
+    "gitInstallFailed": "Git install failed: {{message}}",
+    "gitInstalled": "Git for Windows installed. Reopen Gitmun to pick it up.",
+    "installGitThenReopen": "Install Git for Windows, then reopen Gitmun.",
+    "opened": "Opened {{name}}",
+    "repositoryInitialised": "Repository initialised",
+    "settingsUpdated": "Settings updated",
+    "startingGitInstall": "Starting Git for Windows installation..."
+  }
+}

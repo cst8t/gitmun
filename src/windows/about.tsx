@@ -5,6 +5,7 @@ import { AboutWindow } from "../components/about/AboutWindow";
 import "../styles/tokens.css";
 import "../styles/animations.css";
 import "../styles/global.css";
+import "../i18n";
 
 window.addEventListener("error", (event) => {
   const details = `[about-window:error] ${event.message}\n${event.filename}:${event.lineno}:${event.colno}`;

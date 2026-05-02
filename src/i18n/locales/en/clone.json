@@ -1,0 +1,37 @@
+{
+  "actions": {
+    "browse": "Browse",
+    "cancel": "Cancel",
+    "clone": "Clone",
+    "cloning": "Cloning...",
+    "close": "Close"
+  },
+  "labels": {
+    "destination": "Destination folder",
+    "repositoryUrl": "Repository URL or SSH path",
+    "title": "Clone Repository"
+  },
+  "log": {
+    "browseFailed": "Browse failed: {{message}}",
+    "cloneCancelled": "Clone cancelled.",
+    "cloneFailed": "Clone failed: {{message}}",
+    "cloning": "Cloning...",
+    "destinationSet": "Destination set to {{path}}",
+    "loadFailed": "Failed to load settings: {{message}}",
+    "repoUrlRequired": "Please enter a repository URL.",
+    "ready": "Ready."
+  },
+  "placeholders": {
+    "destinationLinux": "/home/username/GitmunProjects/repo",
+    "destinationMac": "/Users/username/GitmunProjects/repo",
+    "destinationWindows": "C:\\Users\\username\\GitmunProjects\\repo",
+    "output": "Clone output will appear here...",
+    "url": "https://example.com/user/repo.git or git@example.com:user/repo.git"
+  },
+  "picker": {
+    "destination": "Select clone destination folder"
+  },
+  "progress": {
+    "connecting": "Connecting..."
+  }
+}

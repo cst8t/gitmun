@@ -1,0 +1,20 @@
+{
+  "actions": {
+    "about": "About Gitmun",
+    "clone": "Clone",
+    "cloneRepository": "Clone a repository",
+    "fetch": "Fetch",
+    "initialiseRepository": "Initialise a repository",
+    "new": "New",
+    "open": "Open",
+    "openRepository": "Open a repository",
+    "openRepositoryMenu": "Open repository...",
+    "pull": "Pull",
+    "push": "Push",
+    "stash": "Stash"
+  },
+  "labels": {
+    "noRepositoryOpen": "No repository open",
+    "searchCommits": "Search commits..."
+  }
+}

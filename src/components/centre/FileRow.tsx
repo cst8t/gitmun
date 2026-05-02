@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { CheckIcon, FileIcon, StageArrowIcon, UnstageArrowIcon, DiscardIcon } from "../icons";
 import type { FileStatusItem } from "../../types";
 
@@ -35,6 +36,7 @@ export function FileRow({
   onUnstage,
   onDiscard,
 }: FileRowProps) {
+  const { t } = useTranslation("centre");
   const [hovered, setHovered] = useState(false);
   const statusKey = file.status.toLowerCase();
   const s = STATUS_MAP[statusKey] ?? STATUS_MAP.modified;
@@ -66,15 +68,15 @@ export function FileRow({
       {hovered ? (
         <div className="file-row__actions" onClick={e => e.stopPropagation()}>
           {isStaged ? (
-            <button className="file-row__action-btn file-row__action-btn--red" title="Unstage file" onClick={onUnstage}>
+            <button className="file-row__action-btn file-row__action-btn--red" title={t("staging.unstageFile")} onClick={onUnstage}>
               <UnstageArrowIcon />
             </button>
           ) : (
             <>
-              <button className="file-row__action-btn file-row__action-btn--accent" title="Stage file" onClick={onStage}>
+              <button className="file-row__action-btn file-row__action-btn--accent" title={t("staging.stageFile")} onClick={onStage}>
                 <StageArrowIcon />
               </button>
-              <button className="file-row__action-btn file-row__action-btn--red" title="Revert changes" onClick={onDiscard}>
+              <button className="file-row__action-btn file-row__action-btn--red" title={t("confirmRevert.title")} onClick={onDiscard}>
                 <DiscardIcon />
               </button>
             </>

@@ -4,6 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
+import "../../i18n";
 
 function renderCommitBox(selectedAction: CommitPrimaryAction = "commit") {
   const onCommit = vi.fn();

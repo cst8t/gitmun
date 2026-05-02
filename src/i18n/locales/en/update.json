@@ -1,0 +1,22 @@
+{
+  "actions": {
+    "close": "Close",
+    "later": "Remind me later",
+    "updateNow": "Update now"
+  },
+  "labels": {
+    "dontShowAgain": "Don't show this update again",
+    "downloaded": "{{bytes}} downloaded",
+    "downloadedOf": "{{downloaded}} of {{total}} downloaded",
+    "downloading": "Downloading...",
+    "downloadingTitle": "Downloading update {{version}}",
+    "installing": "Installing...",
+    "installingBody": "Download complete. Gitmun is applying the update now.",
+    "installingTitle": "Installing update {{version}}",
+    "installedBody": "Restart Gitmun to finish applying the update.",
+    "installedTitle": "Update {{version}} installed",
+    "published": "Published {{date}}",
+    "promptBody": "A newer Gitmun release is ready to download.",
+    "promptTitle": "Update {{version}} is available"
+  }
+}

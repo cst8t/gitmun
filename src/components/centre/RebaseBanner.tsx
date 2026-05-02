@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import type { ConflictFileItem } from "../../types";
 
 type RebaseBannerProps = {
@@ -18,8 +19,9 @@ export function RebaseBanner({
   onRebaseAbort,
   isRunning,
 }: RebaseBannerProps) {
-  const targetLabel = rebaseOnto ? `'${rebaseOnto}'` : "target";
-  const branchLabel = currentBranch ? `'${currentBranch}'` : "current branch";
+  const { t } = useTranslation("centre");
+  const targetLabel = rebaseOnto ? `'${rebaseOnto}'` : t("banners.unknownBranch");
+  const branchLabel = currentBranch ? `'${currentBranch}'` : t("banners.unknownBranch");
   const hasConflicts = conflictedFiles.length > 0;
 
   return (
@@ -27,13 +29,13 @@ export function RebaseBanner({
       <div className="merge-banner__text">
         {hasConflicts ? (
           <>
-            <span>Rebasing {branchLabel} onto {targetLabel}</span>
+            <span>{t("banners.rebase.status", {branch: branchLabel, onto: targetLabel})}</span>
             <span className="merge-banner__count">
-              {" · "}{conflictedFiles.length} conflict{conflictedFiles.length !== 1 ? "s" : ""} remaining
+              {t("banners.conflictsRemaining", {count: conflictedFiles.length})}
             </span>
           </>
         ) : (
-          <span>Rebase in progress onto {targetLabel} - continue when ready</span>
+          <span>{t("banners.rebase.ready")}</span>
         )}
       </div>
       <div className="merge-banner__actions">
@@ -42,14 +44,14 @@ export function RebaseBanner({
           onClick={onRebaseAbort}
           disabled={isRunning}
         >
-          Abort Rebase
+          {t("banners.rebase.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
           onClick={onRebaseContinue}
           disabled={hasConflicts || isRunning}
         >
-          {isRunning ? "Working..." : "Continue Rebase"}
+          {isRunning ? t("actions.working", {ns: "common"}) : t("banners.rebase.continue")}
         </button>
       </div>
     </div>

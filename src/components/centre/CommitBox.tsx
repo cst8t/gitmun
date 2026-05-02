@@ -1,4 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import type { CommitPrimaryAction } from "../../types";
 import { CheckIcon, ChevDownIcon } from "../icons";
 
@@ -20,18 +22,27 @@ function getCommitButtonLabel(
   stagedCount: number,
   amend: boolean,
   mergeInProgress?: boolean,
+  t?: TFunction<"centre">,
 ) {
+  const translate = t ?? ((key: string, options?: Record<string, unknown>) => {
+    if (key === "commitBox.amendAndPush") return `Amend and Push (${options?.count})`;
+    if (key === "commitBox.amendCommit") return `Amend (${options?.count})`;
+    if (key === "commitBox.commitMergeAndPush") return `Commit Merge and Push (${options?.count})`;
+    if (key === "commitBox.commitMerge") return `Commit Merge (${options?.count})`;
+    if (key === "commitBox.commitAndPushButton") return `Commit and Push (${options?.count})`;
+    return `Commit (${options?.count})`;
+  });
   if (amend) {
-    return action === "commitAndPush" ? `Amend and Push (${stagedCount})` : `Amend (${stagedCount})`;
+    return action === "commitAndPush" ? translate("commitBox.amendAndPush", {count: stagedCount}) : translate("commitBox.amendCommit", {count: stagedCount});
   }
   if (mergeInProgress) {
     return action === "commitAndPush"
-      ? `Commit Merge and Push (${stagedCount})`
-      : `Commit Merge (${stagedCount})`;
+      ? translate("commitBox.commitMergeAndPush", {count: stagedCount})
+      : translate("commitBox.commitMerge", {count: stagedCount});
   }
   return action === "commitAndPush"
-    ? `Commit and Push (${stagedCount})`
-    : `Commit (${stagedCount})`;
+    ? translate("commitBox.commitAndPushButton", {count: stagedCount})
+    : translate("commitBox.commitButton", {count: stagedCount});
 }
 
 export function CommitBox({
@@ -46,6 +57,7 @@ export function CommitBox({
   rebaseInProgress,
   cherryPickInProgress,
 }: CommitBoxProps) {
+  const { t } = useTranslation("centre");
   const [message, setMessage] = useState("");
   const [amend, setAmend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -100,7 +112,7 @@ export function CommitBox({
           {amend && <CheckIcon size={10} />}
         </div>
         <span className={`commit-box__amend-label ${amend ? "commit-box__amend-label--active" : ""}`}>
-          Amend last commit
+          {t("commitBox.amend")}
         </span>
       </div>
 
@@ -108,16 +120,16 @@ export function CommitBox({
         className={`commit-box__textarea ${message.trim() === "" && stagedCount > 0 ? "commit-box__textarea--warn" : ""}`}
         value={message}
         onChange={e => setMessage(e.target.value)}
-        placeholder={amend ? "Amend commit message..." : "Commit message..."}
+        placeholder={amend ? t("commitBox.amendMessage") : t("commitBox.commitMessage")}
         rows={3}
       />
 
       <div className="commit-box__hints">
         <span className={`commit-box__hint ${subjectOverflow ? "commit-box__hint--error" : ""}`}>
           {subjectOverflow
-            ? "Subject line exceeds 72 chars"
+            ? t("commitBox.subjectTooLong")
             : message.trim() === "" && stagedCount > 0
-              ? "Message required to commit"
+              ? t("commitBox.messageRequired")
               : ""}
         </span>
         <span className="commit-box__counter">{subjectLength}/72</span>
@@ -131,13 +143,13 @@ export function CommitBox({
         >
           {isCommitting
             ? selectedAction === "commitAndPush"
-              ? "Committing and Pushing..."
-              : "Committing..."
+              ? t("commitBox.committingAndPushing")
+              : t("commitBox.committing")
             : rebaseInProgress
-              ? "Rebase in progress"
+              ? t("commitBox.rebaseInProgress")
               : cherryPickInProgress
-                ? "Cherry-pick in progress"
-                : getCommitButtonLabel(selectedAction, stagedCount, amend, mergeInProgress)}
+                ? t("commitBox.cherryPickInProgress")
+                : getCommitButtonLabel(selectedAction, stagedCount, amend, mergeInProgress, t)}
         </button>
         <button
           type="button"
@@ -146,15 +158,15 @@ export function CommitBox({
           onClick={() => setMenuOpen(open => !open)}
           aria-haspopup="menu"
           aria-expanded={menuOpen}
-          aria-label="Choose commit action"
+          aria-label={t("commitBox.chooseAction")}
         >
           <ChevDownIcon size={14} />
         </button>
         {menuOpen && (
           <div className="commit-box__menu" role="menu">
             {([
-              { action: "commit" as const, label: "Commit" },
-              { action: "commitAndPush" as const, label: "Commit and Push" },
+              { action: "commit" as const, label: t("commitBox.commit") },
+              { action: "commitAndPush" as const, label: t("commitBox.commitAndPush") },
             ]).map(item => (
               <button
                 key={item.action}

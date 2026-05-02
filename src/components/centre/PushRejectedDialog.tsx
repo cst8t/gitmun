@@ -1,4 +1,5 @@
 import React, { useEffect } from "react";
+import { useTranslation } from "react-i18next";
 import type { PushRejectionAnalysis } from "../../types";
 import "./PushRejectedDialog.css";
 
@@ -19,6 +20,8 @@ export function PushRejectedDialog({
   onRepairUpstream,
   onCancel,
 }: PushRejectedDialogProps) {
+  const { t } = useTranslation("centre");
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -33,36 +36,36 @@ export function PushRejectedDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog push-rejected-dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">Push Rejected</div>
+        <div className="dialog__title">{t("pushRejected.title")}</div>
         <div className="push-rejected-dialog__body">
           <p>{analysis.message}</p>
           <div className="push-rejected-dialog__meta">
-            <span>{analysis.currentBranch ?? "Current branch"}</span>
-            <span>{analysis.upstreamBranch ?? "No upstream"}</span>
+            <span>{analysis.currentBranch ?? t("pushRejected.currentBranch")}</span>
+            <span>{analysis.upstreamBranch ?? t("pushRejected.noUpstream")}</span>
           </div>
         </div>
         <div className="dialog__actions">
           <button className="dialog__btn dialog__btn--cancel" onClick={onCancel}>
-            Cancel
+            {t("pushRejected.cancel")}
           </button>
           {analysis.suggestedNextActions.includes("fetch") && (
             <button className="dialog__btn dialog__btn--cancel" onClick={onFetch}>
-              Fetch
+              {t("pushRejected.fetch")}
             </button>
           )}
           {analysis.suggestedNextActions.includes("integrate") && (
             <button className="dialog__btn dialog__btn--confirm" onClick={onIntegrate}>
-              Integrate Changes
+              {t("pushRejected.integrate")}
             </button>
           )}
           {analysis.suggestedNextActions.includes("publish") && (
             <button className="dialog__btn dialog__btn--confirm" onClick={onPublish}>
-              Publish Branch
+              {t("pushRejected.publish")}
             </button>
           )}
           {analysis.suggestedNextActions.includes("repair-upstream") && (
             <button className="dialog__btn dialog__btn--confirm" onClick={onRepairUpstream}>
-              Repair Upstream
+              {t("pushRejected.repairUpstream")}
             </button>
           )}
         </div>

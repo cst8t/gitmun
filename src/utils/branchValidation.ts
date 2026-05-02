@@ -6,11 +6,11 @@ export function getBranchNameError(branchName: string): string | null {
   }
 
   if (trimmed === "HEAD") {
-    return "Branch name cannot be HEAD";
+    return "validation.branchHead";
   }
 
   if (trimmed.startsWith("-") || trimmed.startsWith("/") || trimmed.startsWith(".")) {
-    return "Invalid branch name format";
+    return "validation.branchInvalid";
   }
 
   if (
@@ -23,7 +23,7 @@ export function getBranchNameError(branchName: string): string | null {
     trimmed.endsWith(".lock") ||
     /[~^:?*\[\\]/.test(trimmed)
   ) {
-    return "Invalid branch name format";
+    return "validation.branchInvalid";
   }
 
   return null;

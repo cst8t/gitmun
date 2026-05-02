@@ -1,4 +1,5 @@
 import React from "react";
+import { useTranslation } from "react-i18next";
 import { StagingView } from "./StagingView";
 import { LogView } from "./LogView";
 import { MergeBanner } from "./MergeBanner";
@@ -94,6 +95,7 @@ type CentrePanelProps = {
 };
 
 export function CentrePanel(props: CentrePanelProps) {
+  const { t } = useTranslation("centre");
   const tab = props.activeTab;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
@@ -151,31 +153,31 @@ export function CentrePanel(props: CentrePanelProps) {
         <button
           className={`centre__tab ${tab === "changes" ? "centre__tab--active" : ""}`}
           onClick={() => props.onTabChange("changes")}>
-          Changes
+          {t("tabs.changes")}
           {totalChanges > 0 && <span className="centre__tab-badge">{totalChanges}</span>}
         </button>
         <button
           className={`centre__tab ${tab === "log" ? "centre__tab--active" : ""}`}
           onClick={() => props.onTabChange("log")}>
-          Log
+          {t("tabs.log")}
         </button>
         <div className="centre__tabs-spacer" />
         {tab === "log" && (
           <div className="centre__tabs-actions">
-            <div className="log-view__scope-actions" role="group" aria-label="Commit log scope">
+            <div className="log-view__scope-actions" role="group" aria-label={t("log.commitLogScope")}>
               <button
                 type="button"
                 className={`log-view__scope-btn ${props.logScope === "currentCheckout" ? "log-view__scope-btn--active" : ""}`}
                 onClick={() => props.onLogScopeChange("currentCheckout")}
               >
-                Current checkout
+                {t("log.currentCheckout")}
               </button>
               <button
                 type="button"
                 className={`log-view__scope-btn ${props.logScope === "allRefs" ? "log-view__scope-btn--active" : ""}`}
                 onClick={() => props.onLogScopeChange("allRefs")}
               >
-                All refs
+                {t("log.allRefs")}
               </button>
             </div>
           </div>
