@@ -161,6 +161,19 @@ pub async fn open_sub_window(
         return Ok(());
     }
 
+    if let Some(owner) = crate::instance_coordinator::find_sub_window_owner(&label) {
+        if crate::instance_coordinator::send_command(
+            owner.port,
+            &crate::instance_coordinator::CoordinatorCommand::FocusWindow {
+                label: label.clone(),
+            },
+        )
+        .is_ok()
+        {
+            return Ok(());
+        }
+    }
+
     let mut builder =
         tauri::WebviewWindowBuilder::new(&app, &label, tauri::WebviewUrl::App(path.clone().into()))
             .title(title)
@@ -201,6 +214,7 @@ pub async fn open_sub_window(
 
     let _window = builder.build().map_err(|e| e.to_string())?;
 
+    crate::instance_coordinator::register_sub_window(&label);
     // WebView2 on Windows can fail to navigate when the window is created
     // from the backend - the WebView2 controller initialises asynchronously
     // and the initial URL set via WebviewUrl::App may be lost. Eval calls
