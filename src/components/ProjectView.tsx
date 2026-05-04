@@ -96,6 +96,19 @@ function getFileName(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
+const BUNDLED_GIT_EXTERNAL_TOOL_ERROR = "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::";
+
+function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
+  const message = String(error);
+  const markerIndex = message.indexOf(BUNDLED_GIT_EXTERNAL_TOOL_ERROR);
+  if (markerIndex === -1) {
+    return message;
+  }
+
+  const tool = message.slice(markerIndex + BUNDLED_GIT_EXTERNAL_TOOL_ERROR.length).trim();
+  return t("toast.bundledGitExternalToolUnsupported", { tool });
+}
+
 export function buildStashDropPrompt(
   stash: Pick<StashEntry, "index" | "message">,
   t: TFunction<"projectView">,
@@ -921,7 +934,7 @@ export function ProjectView({
     try {
       const result = await api.openExternalDiff(repoPath, selectedCommitHash, filePath);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(filePath) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, selectedCommitHash, showToast, t]);
 
   const handleCompareCurrentFile = useCallback(async () => {
@@ -929,7 +942,7 @@ export function ProjectView({
     try {
       const result = await api.openWorkingTreeDiff(repoPath, selectedFile, selectedFileStaged);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(selectedFile) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, selectedFile, selectedFileStaged, showToast, t]);
 
   const stashBeforeBranchSwitch = useCallback(async (targetRef: string): Promise<{ proceed: boolean; stashedRef: string | null }> => {
@@ -1395,7 +1408,7 @@ export function ProjectView({
     try {
       const result = await api.openWorkingTreeDiff(repoPath, path, staged);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(path) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, showToast, t]);
 
   const runSubmoduleAction = useCallback(async (
@@ -1785,9 +1798,9 @@ export function ProjectView({
     try {
       await api.openMergeTool(repoPath, path);
     } catch (e) {
-      showToast(String(e), "error");
+      showToast(localiseExternalToolError(e, t), "error");
     }
-  }, [repoPath, showToast]);
+  }, [repoPath, showToast, t]);
 
   const compareCurrentFileLabel = repoDiffToolName
     ? t("labels.compareInTool", { tool: repoDiffToolName })
