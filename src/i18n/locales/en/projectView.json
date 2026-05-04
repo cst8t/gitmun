@@ -191,6 +191,7 @@
     "cannotSwitchDuringMerge": "Cannot switch branch while a merge is in progress",
     "cannotSwitchDuringRebase": "Cannot switch branch while a rebase is in progress",
     "changesStashed": "Changes stashed",
+    "bundledGitExternalToolUnsupported": "External diff or merge tool \"{{tool}}\" could not be launched with Gitmun's bundled Git runtime. This Store build includes a minimal Git runtime, so some external tool configurations are unsupported. Choose the tool executable in Settings, try a simpler tool configuration, or resolve the file manually.",
     "checkoutFailedAfterStash": "Checkout failed after stashing {{stashRef}}. Recover with git stash apply {{stashRef}}.",
     "cherryPickAlreadyInProgress": "A cherry-pick is already in progress",
     "cherryPickBlockedByChanges": "Commit or stash changes before cherry-picking",

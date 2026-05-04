@@ -167,6 +167,28 @@ impl CliGitHandler {
         }
     }
 
+    fn bundled_git_external_tool_error(tool_name: &str) -> GitError {
+        GitError::InvalidInput(format!(
+            "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::{tool_name}"
+        ))
+    }
+
+    fn map_bundled_git_external_tool_error<T>(
+        result: GitResult<T>,
+        tool_name: &str,
+    ) -> GitResult<T> {
+        if !crate::is_using_bundled_git_runtime() {
+            return result;
+        }
+
+        result.map_err(|error| match error {
+            GitError::CommandFailed { .. } | GitError::GitUnavailable | GitError::IoError(_) => {
+                Self::bundled_git_external_tool_error(tool_name)
+            }
+            other => other,
+        })
+    }
+
     /// Spawns a command asynchronously and waits for completion on a background thread.
     /// This prevents long-running GUI tools from blocking the Tauri command handler.
     fn spawn_command_and_reap(mut command: Command, command_label: String) -> GitResult<()> {
@@ -1544,7 +1566,10 @@ impl CliGitHandler {
             .arg(right_path)
             .current_dir(repo_path);
 
-        Self::spawn_command_and_reap(command, "external diff tool".to_string())
+        Self::map_bundled_git_external_tool_error(
+            Self::spawn_command_and_reap(command, "external diff tool".to_string()),
+            tool_name,
+        )
     }
 
     #[cfg(windows)]
@@ -1842,7 +1867,10 @@ impl GitOperationHandler for CliGitHandler {
             "--",
             file_path,
         ];
-        Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path))?;
+        Self::map_bundled_git_external_tool_error(
+            Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path)),
+            &tool_name,
+        )?;
 
         Ok(OperationResult {
             message: format!("Opened external diff for {file_path}"),
@@ -1874,7 +1902,10 @@ impl GitOperationHandler for CliGitHandler {
                 "--",
                 file_path,
             ];
-            Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path))?;
+            Self::map_bundled_git_external_tool_error(
+                Self::spawn_git_with_overrides(&overrides, &args, Some(&repo_path)),
+                &tool_name,
+            )?;
         } else {
             let working_tree_path = repo_path.join(file_path);
             if !working_tree_path.exists() {
@@ -1887,11 +1918,14 @@ impl GitOperationHandler for CliGitHandler {
             match Self::materialize_index_file_for_diff(&repo_path, file_path) {
                 Ok(index_copy) => {
                     let tool_name = Self::require_configured_diff_tool(&repo_path)?;
-                    Self::launch_tool_for_two_paths(
-                        &repo_path,
-                        tool_name.as_str(),
-                        &index_copy,
-                        &working_tree_path,
+                    Self::map_bundled_git_external_tool_error(
+                        Self::launch_tool_for_two_paths(
+                            &repo_path,
+                            tool_name.as_str(),
+                            &index_copy,
+                            &working_tree_path,
+                        ),
+                        &tool_name,
                     )?;
                 }
                 Err(_) => {
@@ -3998,11 +4032,14 @@ impl GitOperationHandler for CliGitHandler {
             "--",
             file_path,
         ];
-        let output = Self::run_git_with_overrides_allow_exit_codes(
-            &overrides,
-            &args,
-            Some(&repo_path),
-            &[1],
+        let output = Self::map_bundled_git_external_tool_error(
+            Self::run_git_with_overrides_allow_exit_codes(
+                &overrides,
+                &args,
+                Some(&repo_path),
+                &[1],
+            ),
+            &tool_name,
         )?;
 
         Ok(OperationResult {
