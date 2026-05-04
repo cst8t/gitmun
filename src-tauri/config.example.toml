@@ -1,0 +1,70 @@
+# Backend used for Git operations.
+# "Default" tries the preferred backend first, then falls back when needed.
+# "GitCliOnly" always uses the system Git CLI.
+backendMode = "Default"
+
+# Whether to show the result log after Git operations complete.
+showResultLog = false
+
+# UI theme mode.
+# "System" follows the operating system preference.
+# "Light" uses the light theme.
+# "Dark" uses the dark theme.
+themeMode = "System"
+
+# Whether to wrap long lines in diff views.
+wrapDiffLines = false
+
+# Width of the left pane in pixels.
+leftPaneWidth = 300
+
+# Width of the right pane in pixels.
+rightPaneWidth = 420
+
+# Whether to show a confirmation dialogue before reverting changes.
+confirmRevert = true
+
+# Avatar provider for commit authors.
+# "Off" disables author avatars.
+# "Libravatar" fetches avatars from the Libravatar service.
+avatarProvider = "Libravatar"
+
+# Whether to try the platform-specific avatar source (GitHub) before Libravatar.
+tryPlatformFirst = true
+
+# Default directory for cloning repositories. Leave empty to use the system default.
+defaultCloneDir = ""
+
+# Which date to show in the commit log.
+# "AuthorDate" shows the date the commit was authored.
+# "CommitterDate" shows the date the commit was committed.
+commitDateMode = "AuthorDate"
+
+# Primary action for the commit button.
+# "commit" commits staged changes.
+# "commitAndPush" commits and then pushes in one step.
+commitPrimaryAction = "commit"
+
+# Whether to automatically push tags when pushing commits.
+pushFollowTags = false
+
+# Whether to check for application updates on launch.
+autoCheckForUpdatesOnLaunch = true
+
+# Whether to automatically install updates when available.
+autoInstallUpdates = false
+
+# URL for checking application updates.
+updateEndpoint = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json"
+
+# Graphics mode for Linux. Takes effect on the next launch.
+# "Auto" applies workarounds only when needed (recommended for most systems).
+# "Safe" forces X11 and software rendering for compatibility.
+# "Native" applies no overrides; uses full hardware acceleration.
+linuxGraphicsMode = "Auto"
+
+# Behaviour when opening a repository.
+# "Ask" prompts for which window to use.
+# "ExistingWindow" opens the repository in the current window.
+# "NewWindow" opens the repository in a new window.
+repoOpenBehaviour = "Ask"
