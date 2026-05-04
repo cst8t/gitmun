@@ -21,6 +21,7 @@ export type Settings = {
     defaultCloneDir: string;
     commitDateMode: CommitDateMode;
     commitPrimaryAction: CommitPrimaryAction;
+    commitMessageRecommendedLength: number;
     pushFollowTags: boolean;
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;

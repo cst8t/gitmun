@@ -1,5 +1,6 @@
 mod avatar;
 pub mod commands;
+mod config_file;
 pub mod git;
 mod instance_coordinator;
 pub mod shell;
@@ -318,12 +319,60 @@ fn read_saved_linux_graphics_mode() -> Option<String> {
         .or_else(|| {
             std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".config"))
         })?;
-    let config_file = config_dir.join("com.cst8t.gitmun").join("config.json");
-    let text = std::fs::read_to_string(config_file).ok()?;
+    read_saved_linux_graphics_mode_from_config_dir(&config_dir)
+}
+
+#[cfg(target_os = "linux")]
+fn read_saved_linux_graphics_mode_from_config_dir(config_dir: &std::path::Path) -> Option<String> {
+    let app_dir = config_dir.join("com.cst8t.gitmun");
+    let toml_path = app_dir.join("config.toml");
+    if toml_path.exists() {
+        return config_file::read_linux_graphics_mode_from_toml(&toml_path);
+    }
+
+    let json_path = app_dir.join("config.json");
+    let text = std::fs::read_to_string(json_path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&text).ok()?;
     json.get("linuxGraphicsMode")
         .and_then(|v| v.as_str())
         .map(|s| s.to_ascii_lowercase())
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_config_tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    #[test]
+    fn saved_graphics_mode_ignores_json_when_toml_exists_without_mode() {
+        let dir = TempDir::new().unwrap();
+        let app_dir = dir.path().join("com.cst8t.gitmun");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::write(app_dir.join("config.toml"), "showResultLog = true\n").unwrap();
+        std::fs::write(
+            app_dir.join("config.json"),
+            r#"{"linuxGraphicsMode": "Safe"}"#,
+        )
+        .unwrap();
+
+        let mode = read_saved_linux_graphics_mode_from_config_dir(dir.path());
+        assert_eq!(mode, None);
+    }
+
+    #[test]
+    fn saved_graphics_mode_reads_json_before_toml_migration() {
+        let dir = TempDir::new().unwrap();
+        let app_dir = dir.path().join("com.cst8t.gitmun");
+        std::fs::create_dir_all(&app_dir).unwrap();
+        std::fs::write(
+            app_dir.join("config.json"),
+            r#"{"linuxGraphicsMode": "Safe"}"#,
+        )
+        .unwrap();
+
+        let mode = read_saved_linux_graphics_mode_from_config_dir(dir.path());
+        assert_eq!(mode.as_deref(), Some("safe"));
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -604,7 +653,7 @@ pub fn run() {
                 let state = app.state::<AppState>();
                 state
                     .git_service
-                    .initialise_config(config_dir.join("config.json"));
+                    .initialise_config(config_dir.join("config.toml"));
 
                 // Sync avatar service with the loaded settings
                 let settings = state.git_service.get_settings();
@@ -673,6 +722,7 @@ pub fn run() {
             commands::settings::set_commit_date_mode,
             commands::settings::set_push_follow_tags,
             commands::settings::set_commit_primary_action,
+            commands::settings::set_commit_message_recommended_length,
             commands::settings::set_auto_check_for_updates_on_launch,
             commands::settings::set_auto_install_updates,
             commands::settings::set_update_endpoint,
