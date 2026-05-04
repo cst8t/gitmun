@@ -124,7 +124,7 @@ impl Default for RepoOpenBehaviour {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub backend_mode: BackendMode,
     pub show_result_log: bool,

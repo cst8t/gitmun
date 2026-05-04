@@ -1,4 +1,3 @@
-use std::fs;
 use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
@@ -140,20 +139,21 @@ impl GitService {
     }
 
     pub fn initialise_config(&self, path: PathBuf) {
+        let json_path = path.with_extension("json");
+
         if let Ok(mut config_path) = self.config_path.write() {
             *config_path = Some(path.clone());
         }
 
-        let loaded = fs::read_to_string(&path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-            .unwrap_or_default();
+        let (loaded, should_persist) = crate::config_file::load_or_migrate(&path, &json_path);
 
         if let Ok(mut settings) = self.settings.write() {
             *settings = loaded;
         }
 
-        let _ = self.persist_settings();
+        if should_persist {
+            let _ = self.persist_settings();
+        }
     }
 
     pub fn get_config_file_path(&self) -> Option<String> {
@@ -408,17 +408,12 @@ impl GitService {
             .clone()
             .ok_or_else(|| "Config path is not initialised".to_string())?;
 
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-
         let settings = self
             .settings
             .read()
             .map_err(|_| "Failed to acquire settings lock".to_string())?
             .clone();
 
-        let json = serde_json::to_string_pretty(&settings).map_err(|e| e.to_string())?;
-        fs::write(path, json).map_err(|e| e.to_string())
+        crate::config_file::persist(&path, &settings)
     }
 }
