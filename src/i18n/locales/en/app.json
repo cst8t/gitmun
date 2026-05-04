@@ -9,14 +9,6 @@
       "title": "Open Repository",
       "newWindow": "New Window",
       "thisWindow": "This Window"
-    },
-    "windowsGitRequired": {
-      "downloadMessage": "Open the Git for Windows download page instead?",
-      "installMessage": "Gitmun could not find Git for Windows. This MSIX build needs Git installed separately. Install it with Winget now?",
-      "noWingetMessage": "Winget is unavailable on this machine. Open the Git for Windows download page instead?",
-      "openDownloadPage": "Open download page",
-      "title": "Git for Windows required",
-      "winget": "Install via Winget"
     }
   },
   "log": {
@@ -32,12 +24,8 @@
     "openExistingRepository": "Open existing repository"
   },
   "toast": {
-    "gitInstallFailed": "Git install failed: {{message}}",
-    "gitInstalled": "Git for Windows installed. Reopen Gitmun to pick it up.",
-    "installGitThenReopen": "Install Git for Windows, then reopen Gitmun.",
     "opened": "Opened {{name}}",
     "repositoryInitialised": "Repository initialised",
-    "settingsUpdated": "Settings updated",
-    "startingGitInstall": "Starting Git for Windows installation..."
+    "settingsUpdated": "Settings updated"
   }
 }

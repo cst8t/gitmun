@@ -31,6 +31,8 @@ const SHOW_RESULT_LOG_KEY = "gitmun.showResultLog";
 const THEME_MODE_KEY = "gitmun.themeMode";
 const DEFAULT_LEFT_PANE_WIDTH = 300;
 const DEFAULT_RIGHT_PANE_WIDTH = 480;
+const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
+const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
 const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
 
@@ -289,6 +291,8 @@ export function SettingsWindow() {
 
     const handleResetLayout = useCallback(async () => {
         try {
+            localStorage.removeItem(LEFT_PANE_RATIO_KEY);
+            localStorage.removeItem(RIGHT_PANE_RATIO_KEY);
             const settings = await invoke<Settings>("set_panel_layout", {
                 leftPaneWidth: DEFAULT_LEFT_PANE_WIDTH,
                 rightPaneWidth: DEFAULT_RIGHT_PANE_WIDTH,

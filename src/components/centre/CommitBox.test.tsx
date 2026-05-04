@@ -6,7 +6,7 @@ import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
 import "../../i18n";
 
-function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", commitMessageRecommendedLength = 72) {
+function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", commitMessageRecommendedLength = 72, allowCommitAndPush = true) {
   const onCommit = vi.fn();
   const onSelectAction = vi.fn();
 
@@ -15,6 +15,7 @@ function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", commitM
       stagedCount={2}
       selectedAction={selectedAction}
       commitMessageRecommendedLength={commitMessageRecommendedLength}
+      allowCommitAndPush={allowCommitAndPush}
       onSelectAction={onSelectAction}
       onCommit={onCommit}
       isCommitting={false}
@@ -39,6 +40,7 @@ describe("CommitBox", () => {
         stagedCount={2}
         selectedAction="commitAndPush"
         commitMessageRecommendedLength={72}
+        allowCommitAndPush
         onSelectAction={onSelectAction}
         onCommit={onCommit}
         isCommitting={false}
@@ -89,5 +91,23 @@ describe("CommitBox", () => {
 
     expect(screen.queryByText(/Subject line exceeds/)).not.toBeInTheDocument();
     expect(screen.queryByText("12/0")).not.toBeInTheDocument();
+  });
+
+  it("hides the action menu when commit and push is unavailable", () => {
+    renderCommitBox("commitAndPush", 72, false);
+
+    expect(screen.getByRole("button", { name: "Commit (2)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Choose commit action" })).not.toBeInTheDocument();
+  });
+
+  it("submits commit when commit and push is unavailable", () => {
+    const { onCommit } = renderCommitBox("commitAndPush", 72, false);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Ship it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
+
+    expect(onCommit).toHaveBeenCalledWith("Ship it", false, "commit");
   });
 });

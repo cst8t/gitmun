@@ -3,7 +3,6 @@ import {useTranslation} from "react-i18next";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
-import {open as openExternal} from "@tauri-apps/plugin-shell";
 import {Toast} from "./Toast";
 import {ProjectView} from "./ProjectView";
 import {UpdateDialog} from "./update/UpdateDialog";
@@ -23,8 +22,9 @@ const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
 const DEFAULT_LEFT_PANE_WIDTH = 300;
 const DEFAULT_RIGHT_PANE_WIDTH = 480;
-const DEFAULT_LEFT_PANE_RATIO = 0.22;
-const DEFAULT_RIGHT_PANE_RATIO = 0.34;
+const LEGACY_DEFAULT_RIGHT_PANE_WIDTH = 420;
+const DEFAULT_LEFT_PANE_RATIO = 0.13;
+const DEFAULT_RIGHT_PANE_RATIO = 0.54;
 const MIN_LEFT_PANE_WIDTH = 220;
 const MIN_RIGHT_PANE_WIDTH = 360;
 const MIN_CENTRE_PANE_WIDTH = 420;
@@ -66,6 +66,23 @@ function savePaneRatios(totalWidth: number, left: number, right: number): void {
     if (Number.isFinite(rightRatio) && rightRatio > 0 && rightRatio < 1) {
         localStorage.setItem(RIGHT_PANE_RATIO_KEY, rightRatio.toFixed(6));
     }
+}
+
+function areDefaultPaneWidths(left: number, right: number): boolean {
+    return left === DEFAULT_LEFT_PANE_WIDTH
+        && (right === DEFAULT_RIGHT_PANE_WIDTH || right === LEGACY_DEFAULT_RIGHT_PANE_WIDTH);
+}
+
+function desiredPaneWidth(
+    totalWidth: number,
+    savedRatio: number | null,
+    settingsWidth: number,
+    defaultRatio: number,
+    useDefaultRatio: boolean,
+): number {
+    if (totalWidth > 0 && savedRatio != null) return totalWidth * savedRatio;
+    if (totalWidth > 0 && useDefaultRatio) return totalWidth * defaultRatio;
+    return settingsWidth;
 }
 
 function isLikelyNotRepoError(error: unknown): boolean {
@@ -165,7 +182,6 @@ export function App() {
     });
     const [draggingPane, setDraggingPane] = useState<"left" | "right" | null>(null);
     const appBodyRef = useRef<HTMLDivElement | null>(null);
-    const msixGitPromptedRef = useRef(false);
     const paneLayoutRef = useRef<{ left: number; right: number }>({
         left: DEFAULT_LEFT_PANE_WIDTH,
         right: DEFAULT_RIGHT_PANE_WIDTH,
@@ -237,8 +253,22 @@ export function App() {
                     ? settings.leftPaneWidth : DEFAULT_LEFT_PANE_WIDTH;
                 const desiredRight = isValidPaneWidth(settings.rightPaneWidth)
                     ? settings.rightPaneWidth : DEFAULT_RIGHT_PANE_WIDTH;
-                const ratioLeft = totalWidth > 0 && leftRatio != null ? totalWidth * leftRatio : desiredLeft;
-                const ratioRight = totalWidth > 0 && rightRatio != null ? totalWidth * rightRatio : desiredRight;
+                const useDefaultRatios = leftRatio == null && rightRatio == null
+                    && areDefaultPaneWidths(desiredLeft, desiredRight);
+                const ratioLeft = desiredPaneWidth(
+                    totalWidth,
+                    leftRatio,
+                    desiredLeft,
+                    DEFAULT_LEFT_PANE_RATIO,
+                    useDefaultRatios,
+                );
+                const ratioRight = desiredPaneWidth(
+                    totalWidth,
+                    rightRatio,
+                    desiredRight,
+                    DEFAULT_RIGHT_PANE_RATIO,
+                    useDefaultRatios,
+                );
                 const nextLayout = totalWidth > 0
                     ? clampPaneLayout(totalWidth, ratioLeft, ratioRight)
                     : {left: desiredLeft, right: desiredRight};
@@ -325,79 +355,6 @@ export function App() {
             if (action) handleShellAction(action);
         }).catch(() => {});
     }, [handleShellAction]);
-
-    useEffect(() => {
-        if (platform !== "windows" || msixGitPromptedRef.current) {
-            return;
-        }
-
-        let cancelled = false;
-
-        (async () => {
-            try {
-                const status = await api.getWindowsGitRuntimeStatus();
-                if (
-                    cancelled
-                    || msixGitPromptedRef.current
-                    || !status.isMsix
-                    || status.gitFound
-                ) {
-                    return;
-                }
-
-                msixGitPromptedRef.current = true;
-
-                const installViaWinget = status.wingetAvailable
-                    ? await ask(
-                        t("ask.windowsGitRequired.installMessage"),
-                        {
-                            title: t("ask.windowsGitRequired.title"),
-                            kind: "info",
-                            okLabel: t("ask.windowsGitRequired.winget"),
-                            cancelLabel: t("actions.moreOptions", {ns: "common"}),
-                        },
-                    )
-                    : false;
-
-                if (cancelled) {
-                    return;
-                }
-
-                if (installViaWinget) {
-                    showToast(t("toast.startingGitInstall"), "info");
-                    try {
-                        await api.installGitWithWinget();
-                        showToast(t("toast.gitInstalled"), "success");
-                        return;
-                    } catch (error) {
-                        showToast(t("toast.gitInstallFailed", {message: String(error)}), "error");
-                    }
-                }
-
-                const openManualDownload = await ask(
-                    status.wingetAvailable
-                        ? t("ask.windowsGitRequired.downloadMessage")
-                        : t("ask.windowsGitRequired.noWingetMessage"),
-                    {
-                        title: t("ask.windowsGitRequired.title"),
-                        kind: "info",
-                        okLabel: t("ask.windowsGitRequired.openDownloadPage"),
-                        cancelLabel: t("actions.notNow", {ns: "common"}),
-                    },
-                );
-
-                if (!cancelled && openManualDownload) {
-                    await openExternal("https://git-scm.com/download/win");
-                    showToast(t("toast.installGitThenReopen"), "info");
-                }
-            } catch {
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [platform, showToast, t]);
 
     useEffect(() => {
         let cancelled = false;
@@ -629,7 +586,7 @@ export function App() {
     const openRepoPath = useCallback(async (path: string) => {
         try {
             await api.validateRepoPath(path);
-            if (await shouldOpenRepoInNewWindow(path)) {
+            if (repoPath && await shouldOpenRepoInNewWindow(path)) {
                 await api.openRepoInNewWindow(path);
                 return;
             }
@@ -639,7 +596,7 @@ export function App() {
             if (await maybeInitialiseRepo(path, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitialiseRepo, pushRecentRepo, shouldOpenRepoInNewWindow, showToast]);
+    }, [maybeInitialiseRepo, pushRecentRepo, repoPath, shouldOpenRepoInNewWindow, showToast]);
 
     const handleInitRepoClick = useCallback(async () => {
         try {
@@ -649,7 +606,7 @@ export function App() {
             }
             const result = await api.initRepo(selected);
             await api.validateRepoPath(selected);
-            if (await shouldOpenRepoInNewWindow(selected)) {
+            if (repoPath && await shouldOpenRepoInNewWindow(selected)) {
                 await api.openRepoInNewWindow(selected);
             } else {
                 setRepoPath(selected);
@@ -660,7 +617,7 @@ export function App() {
         } catch (e) {
             showToast(String(e), "error");
         }
-    }, [pushRecentRepo, shouldOpenRepoInNewWindow, showToast, t]);
+    }, [pushRecentRepo, repoPath, shouldOpenRepoInNewWindow, showToast, t]);
 
     const handleOpenExistingClick = useCallback(async () => {
         let selected: string | null = null;
