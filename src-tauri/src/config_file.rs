@@ -133,6 +133,7 @@ fn apply_settings_to_doc(doc: &mut toml_edit::DocumentMut, settings: &Settings) 
 
 /// Read the `linuxGraphicsMode` value from a TOML config file.
 /// Used before Tauri starts to apply WebKit workarounds on Linux.
+#[cfg(target_os = "linux")]
 pub fn read_linux_graphics_mode_from_toml(path: &Path) -> Option<String> {
     let text = std::fs::read_to_string(path).ok()?;
     let value: toml::Value = toml::from_str(&text).ok()?;
