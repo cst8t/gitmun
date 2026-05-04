@@ -22,8 +22,9 @@ const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
 const DEFAULT_LEFT_PANE_WIDTH = 300;
 const DEFAULT_RIGHT_PANE_WIDTH = 480;
-const DEFAULT_LEFT_PANE_RATIO = 0.22;
-const DEFAULT_RIGHT_PANE_RATIO = 0.34;
+const LEGACY_DEFAULT_RIGHT_PANE_WIDTH = 420;
+const DEFAULT_LEFT_PANE_RATIO = 0.13;
+const DEFAULT_RIGHT_PANE_RATIO = 0.54;
 const MIN_LEFT_PANE_WIDTH = 220;
 const MIN_RIGHT_PANE_WIDTH = 360;
 const MIN_CENTRE_PANE_WIDTH = 420;
@@ -65,6 +66,23 @@ function savePaneRatios(totalWidth: number, left: number, right: number): void {
     if (Number.isFinite(rightRatio) && rightRatio > 0 && rightRatio < 1) {
         localStorage.setItem(RIGHT_PANE_RATIO_KEY, rightRatio.toFixed(6));
     }
+}
+
+function areDefaultPaneWidths(left: number, right: number): boolean {
+    return left === DEFAULT_LEFT_PANE_WIDTH
+        && (right === DEFAULT_RIGHT_PANE_WIDTH || right === LEGACY_DEFAULT_RIGHT_PANE_WIDTH);
+}
+
+function desiredPaneWidth(
+    totalWidth: number,
+    savedRatio: number | null,
+    settingsWidth: number,
+    defaultRatio: number,
+    useDefaultRatio: boolean,
+): number {
+    if (totalWidth > 0 && savedRatio != null) return totalWidth * savedRatio;
+    if (totalWidth > 0 && useDefaultRatio) return totalWidth * defaultRatio;
+    return settingsWidth;
 }
 
 function isLikelyNotRepoError(error: unknown): boolean {
@@ -235,8 +253,22 @@ export function App() {
                     ? settings.leftPaneWidth : DEFAULT_LEFT_PANE_WIDTH;
                 const desiredRight = isValidPaneWidth(settings.rightPaneWidth)
                     ? settings.rightPaneWidth : DEFAULT_RIGHT_PANE_WIDTH;
-                const ratioLeft = totalWidth > 0 && leftRatio != null ? totalWidth * leftRatio : desiredLeft;
-                const ratioRight = totalWidth > 0 && rightRatio != null ? totalWidth * rightRatio : desiredRight;
+                const useDefaultRatios = leftRatio == null && rightRatio == null
+                    && areDefaultPaneWidths(desiredLeft, desiredRight);
+                const ratioLeft = desiredPaneWidth(
+                    totalWidth,
+                    leftRatio,
+                    desiredLeft,
+                    DEFAULT_LEFT_PANE_RATIO,
+                    useDefaultRatios,
+                );
+                const ratioRight = desiredPaneWidth(
+                    totalWidth,
+                    rightRatio,
+                    desiredRight,
+                    DEFAULT_RIGHT_PANE_RATIO,
+                    useDefaultRatios,
+                );
                 const nextLayout = totalWidth > 0
                     ? clampPaneLayout(totalWidth, ratioLeft, ratioRight)
                     : {left: desiredLeft, right: desiredRight};
@@ -554,7 +586,7 @@ export function App() {
     const openRepoPath = useCallback(async (path: string) => {
         try {
             await api.validateRepoPath(path);
-            if (await shouldOpenRepoInNewWindow(path)) {
+            if (repoPath && await shouldOpenRepoInNewWindow(path)) {
                 await api.openRepoInNewWindow(path);
                 return;
             }
@@ -564,7 +596,7 @@ export function App() {
             if (await maybeInitialiseRepo(path, e)) return;
             showToast(String(e), "error");
         }
-    }, [maybeInitialiseRepo, pushRecentRepo, shouldOpenRepoInNewWindow, showToast]);
+    }, [maybeInitialiseRepo, pushRecentRepo, repoPath, shouldOpenRepoInNewWindow, showToast]);
 
     const handleInitRepoClick = useCallback(async () => {
         try {
@@ -574,7 +606,7 @@ export function App() {
             }
             const result = await api.initRepo(selected);
             await api.validateRepoPath(selected);
-            if (await shouldOpenRepoInNewWindow(selected)) {
+            if (repoPath && await shouldOpenRepoInNewWindow(selected)) {
                 await api.openRepoInNewWindow(selected);
             } else {
                 setRepoPath(selected);
@@ -585,7 +617,7 @@ export function App() {
         } catch (e) {
             showToast(String(e), "error");
         }
-    }, [pushRecentRepo, shouldOpenRepoInNewWindow, showToast, t]);
+    }, [pushRecentRepo, repoPath, shouldOpenRepoInNewWindow, showToast, t]);
 
     const handleOpenExistingClick = useCallback(async () => {
         let selected: string | null = null;
