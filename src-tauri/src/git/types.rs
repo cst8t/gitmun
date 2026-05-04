@@ -124,7 +124,7 @@ impl Default for RepoOpenBehaviour {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub backend_mode: BackendMode,
     pub show_result_log: bool,
@@ -148,6 +148,7 @@ pub struct Settings {
     pub commit_date_mode: CommitDateMode,
     #[serde(default)]
     pub commit_primary_action: CommitPrimaryAction,
+    pub commit_message_recommended_length: u32,
     #[serde(default)]
     pub push_follow_tags: bool,
     #[serde(default = "Settings::default_auto_check_for_updates_on_launch")]
@@ -177,6 +178,7 @@ impl Default for Settings {
             default_clone_dir: String::new(),
             commit_date_mode: CommitDateMode::AuthorDate,
             commit_primary_action: CommitPrimaryAction::Commit,
+            commit_message_recommended_length: 72,
             push_follow_tags: false,
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,

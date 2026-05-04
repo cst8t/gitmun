@@ -6,7 +6,7 @@ import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
 import "../../i18n";
 
-function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", allowCommitAndPush = true) {
+function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", commitMessageRecommendedLength = 72, allowCommitAndPush = true) {
   const onCommit = vi.fn();
   const onSelectAction = vi.fn();
 
@@ -14,6 +14,7 @@ function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", allowCo
     <CommitBox
       stagedCount={2}
       selectedAction={selectedAction}
+      commitMessageRecommendedLength={commitMessageRecommendedLength}
       allowCommitAndPush={allowCommitAndPush}
       onSelectAction={onSelectAction}
       onCommit={onCommit}
@@ -38,6 +39,7 @@ describe("CommitBox", () => {
       <CommitBox
         stagedCount={2}
         selectedAction="commitAndPush"
+        commitMessageRecommendedLength={72}
         allowCommitAndPush
         onSelectAction={onSelectAction}
         onCommit={onCommit}
@@ -69,15 +71,37 @@ describe("CommitBox", () => {
     expect(onCommit).toHaveBeenCalledWith("Ship it", false, "commitAndPush");
   });
 
+  it("uses the configured recommended subject length", () => {
+    renderCommitBox("commit", 10);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Long subject" },
+    });
+
+    expect(screen.getByText("Subject line exceeds 10 characters")).toBeInTheDocument();
+    expect(screen.getByText("12/10")).toBeInTheDocument();
+  });
+
+  it("disables the subject length check when the recommended length is zero", () => {
+    renderCommitBox("commit", 0);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Long subject" },
+    });
+
+    expect(screen.queryByText(/Subject line exceeds/)).not.toBeInTheDocument();
+    expect(screen.queryByText("12/0")).not.toBeInTheDocument();
+  });
+
   it("hides the action menu when commit and push is unavailable", () => {
-    renderCommitBox("commitAndPush", false);
+    renderCommitBox("commitAndPush", 72, false);
 
     expect(screen.getByRole("button", { name: "Commit (2)" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Choose commit action" })).not.toBeInTheDocument();
   });
 
   it("submits commit when commit and push is unavailable", () => {
-    const { onCommit } = renderCommitBox("commitAndPush", false);
+    const { onCommit } = renderCommitBox("commitAndPush", 72, false);
 
     fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
       target: { value: "Ship it" },
