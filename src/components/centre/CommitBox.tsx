@@ -7,6 +7,7 @@ import { CheckIcon, ChevDownIcon } from "../icons";
 type CommitBoxProps = {
   stagedCount: number;
   selectedAction: CommitPrimaryAction;
+  commitMessageRecommendedLength: number;
   onSelectAction: (action: CommitPrimaryAction) => void;
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   isCommitting: boolean;
@@ -48,6 +49,7 @@ function getCommitButtonLabel(
 export function CommitBox({
   stagedCount,
   selectedAction,
+  commitMessageRecommendedLength,
   onSelectAction,
   onCommit,
   isCommitting,
@@ -87,7 +89,8 @@ export function CommitBox({
 
   const subjectLine = message.split("\n")[0] ?? "";
   const subjectLength = subjectLine.length;
-  const subjectOverflow = subjectLength > 72;
+  const hasRecommendedLength = commitMessageRecommendedLength > 0;
+  const subjectOverflow = hasRecommendedLength && subjectLength > commitMessageRecommendedLength;
   const actionDisabled =
     stagedCount === 0 || message.trim() === "" || isCommitting || rebaseInProgress || cherryPickInProgress;
 
@@ -127,12 +130,14 @@ export function CommitBox({
       <div className="commit-box__hints">
         <span className={`commit-box__hint ${subjectOverflow ? "commit-box__hint--error" : ""}`}>
           {subjectOverflow
-            ? t("commitBox.subjectTooLong")
+            ? t("commitBox.subjectTooLong", {count: commitMessageRecommendedLength})
             : message.trim() === "" && stagedCount > 0
               ? t("commitBox.messageRequired")
               : ""}
         </span>
-        <span className="commit-box__counter">{subjectLength}/72</span>
+        {hasRecommendedLength && (
+          <span className="commit-box__counter">{subjectLength}/{commitMessageRecommendedLength}</span>
+        )}
       </div>
 
       <div className="commit-box__actions" ref={menuRef}>

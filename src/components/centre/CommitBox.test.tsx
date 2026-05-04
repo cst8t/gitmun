@@ -6,7 +6,7 @@ import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
 import "../../i18n";
 
-function renderCommitBox(selectedAction: CommitPrimaryAction = "commit") {
+function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", commitMessageRecommendedLength = 72) {
   const onCommit = vi.fn();
   const onSelectAction = vi.fn();
 
@@ -14,6 +14,7 @@ function renderCommitBox(selectedAction: CommitPrimaryAction = "commit") {
     <CommitBox
       stagedCount={2}
       selectedAction={selectedAction}
+      commitMessageRecommendedLength={commitMessageRecommendedLength}
       onSelectAction={onSelectAction}
       onCommit={onCommit}
       isCommitting={false}
@@ -37,6 +38,7 @@ describe("CommitBox", () => {
       <CommitBox
         stagedCount={2}
         selectedAction="commitAndPush"
+        commitMessageRecommendedLength={72}
         onSelectAction={onSelectAction}
         onCommit={onCommit}
         isCommitting={false}
@@ -65,5 +67,27 @@ describe("CommitBox", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit and Push (2)" }));
 
     expect(onCommit).toHaveBeenCalledWith("Ship it", false, "commitAndPush");
+  });
+
+  it("uses the configured recommended subject length", () => {
+    renderCommitBox("commit", 10);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Long subject" },
+    });
+
+    expect(screen.getByText("Subject line exceeds 10 characters")).toBeInTheDocument();
+    expect(screen.getByText("12/10")).toBeInTheDocument();
+  });
+
+  it("disables the subject length check when the recommended length is zero", () => {
+    renderCommitBox("commit", 0);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Long subject" },
+    });
+
+    expect(screen.queryByText(/Subject line exceeds/)).not.toBeInTheDocument();
+    expect(screen.queryByText("12/0")).not.toBeInTheDocument();
   });
 });

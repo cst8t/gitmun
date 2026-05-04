@@ -3,7 +3,7 @@
 # "GitCliOnly" always uses the system Git CLI.
 backendMode = "Default"
 
-# Whether to show the result log after Git operations complete.
+# Whether to show the result log by default at launch
 showResultLog = false
 
 # UI theme mode.
@@ -44,6 +44,10 @@ commitDateMode = "AuthorDate"
 # "commit" commits staged changes.
 # "commitAndPush" commits and then pushes in one step.
 commitPrimaryAction = "commit"
+
+# Recommended maximum length for the first line of a commit message.
+# Set to 0 to disable the length check.
+commitMessageRecommendedLength = 72
 
 # Whether to automatically push tags when pushing commits.
 pushFollowTags = false

@@ -32,6 +32,7 @@ const THEME_MODE_KEY = "gitmun.themeMode";
 const DEFAULT_LEFT_PANE_WIDTH = 300;
 const DEFAULT_RIGHT_PANE_WIDTH = 480;
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
+const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
 
 function supportedDiffTools(os: string): ExternalDiffTool[] {
     const tools: ExternalDiffTool[] = ["Other", "Meld", "VsCode", "VsCodium"];
@@ -79,6 +80,7 @@ export function SettingsWindow() {
     const [allowedDiffTools, setAllowedDiffTools] = useState<ExternalDiffTool[]>(["Other", "Meld"]);
     const [defaultCloneDir, setDefaultCloneDir] = useState<string>("");
     const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
+    const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(String(DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
     const [pushFollowTags, setPushFollowTags] = useState(false);
     const [autoCheckForUpdatesOnLaunch, setAutoCheckForUpdatesOnLaunch] = useState(true);
     const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
@@ -149,6 +151,7 @@ export function SettingsWindow() {
                 setTryPlatformFirst(settings.tryPlatformFirst);
                 setDefaultCloneDir(settings.defaultCloneDir);
                 setCommitDateMode(settings.commitDateMode ?? "AuthorDate");
+                setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
                 setPushFollowTags(settings.pushFollowTags ?? false);
                 setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
                 setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
@@ -219,7 +222,12 @@ export function SettingsWindow() {
             );
             await invoke("set_global_default_branch", {defaultBranch: globalDefaultBranch});
             await invoke("set_global_file_mode", {fileMode: globalFileMode});
+            const parsedCommitMessageRecommendedLength = Number.parseInt(commitMessageRecommendedLength, 10);
+            const savedCommitMessageRecommendedLength = Number.isFinite(parsedCommitMessageRecommendedLength)
+                ? Math.max(0, parsedCommitMessageRecommendedLength)
+                : DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH;
             await invoke("set_commit_date_mode", {commitDateMode});
+            await invoke("set_commit_message_recommended_length", {commitMessageRecommendedLength: savedCommitMessageRecommendedLength});
             await invoke("set_push_follow_tags", {pushFollowTags});
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
             await invoke("set_auto_install_updates", {autoInstallUpdates});
@@ -227,6 +235,7 @@ export function SettingsWindow() {
             if (isLinux) await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
+            setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
             localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
@@ -256,6 +265,7 @@ export function SettingsWindow() {
         globalDefaultBranch,
         globalFileMode,
         commitDateMode,
+        commitMessageRecommendedLength,
         pushFollowTags,
         autoCheckForUpdatesOnLaunch,
         autoInstallUpdates,
@@ -567,6 +577,7 @@ export function SettingsWindow() {
                             <option value="CommitterDate">{t("options.commitDateCommitter")}</option>
                         </select>
                     </div>
+
                 </div>
 
                 {/* Right column: Git */}
@@ -589,6 +600,29 @@ export function SettingsWindow() {
               </span>
                             <span className="settings-window__switch-label">{t("switches.followTags")}</span>
                         </label>
+                    </div>
+
+                    <div className="settings-window__row">
+                        <label className="settings-window__label">{t("labels.commitMessageRecommendedLength")}</label>
+                        <input
+                            className="settings-window__input"
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={commitMessageRecommendedLength}
+                            onChange={e => {
+                                if (/^\d*$/.test(e.target.value)) {
+                                    setCommitMessageRecommendedLength(e.target.value);
+                                }
+                            }}
+                            onBlur={() => {
+                                const next = Number.parseInt(commitMessageRecommendedLength, 10);
+                                setCommitMessageRecommendedLength(String(Number.isFinite(next) ? Math.max(0, next) : DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+                            }}
+                        />
+                        <div className="settings-window__section-note">
+                            {t("notes.commitMessageRecommendedLength")}
+                        </div>
                     </div>
 
                     <div className="settings-window__row">

@@ -47,7 +47,7 @@
     "messageRequired": "Message required to commit",
     "rebaseInProgress": "Rebase in progress",
     "cherryPickInProgress": "Cherry-pick in progress",
-    "subjectTooLong": "Subject line exceeds 72 chars"
+    "subjectTooLong": "Subject line exceeds {{count}} characters"
   },
   "confirmRevert": {
     "dontAsk": "Don't ask again",

@@ -216,6 +216,7 @@ export function ProjectView({
   const [pushRejectionAnalysis, setPushRejectionAnalysis] = useState<PushRejectionAnalysis | null>(null);
   const [upstreamDialogMode, setUpstreamDialogMode] = useState<UpstreamDialogMode | null>(null);
   const [commitPrimaryAction, setCommitPrimaryActionState] = useState<CommitPrimaryAction>("commit");
+  const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(72);
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -365,6 +366,7 @@ export function ProjectView({
       .then((settings) => {
         if (!cancelled) {
           setCommitPrimaryActionState(settings.commitPrimaryAction ?? "commit");
+          setCommitMessageRecommendedLength(settings.commitMessageRecommendedLength ?? 72);
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
         }
@@ -372,6 +374,7 @@ export function ProjectView({
       .catch(() => {
         if (!cancelled) {
           setCommitPrimaryActionState("commit");
+          setCommitMessageRecommendedLength(72);
           setPushFollowTags(false);
           setWrapDiffLines(false);
         }
@@ -2133,6 +2136,7 @@ export function ProjectView({
                   onStageAll={handleStageAll}
                   onUnstageAll={handleUnstageAll}
                   selectedCommitAction={commitPrimaryAction}
+                  commitMessageRecommendedLength={commitMessageRecommendedLength}
                   onSelectCommitAction={handleSelectCommitAction}
                   onCommit={(message, amend, action) => {
                     if (action === "commitAndPush") {
