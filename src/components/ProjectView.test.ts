@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
-import { buildStashDropPrompt } from "./ProjectView";
+import { buildStashDropPrompt, getEffectiveCommitAction } from "./ProjectView";
 
 const t = i18n.getFixedT("en", "projectView");
 
@@ -13,5 +13,15 @@ describe("buildStashDropPrompt", () => {
   it("falls back to the stash index when no message is present", () => {
     expect(buildStashDropPrompt({ index: 1, message: "   " }, t))
       .toBe("Drop stash 1? This cannot be undone.");
+  });
+});
+
+describe("getEffectiveCommitAction", () => {
+  it("forces commit when commit and push is unavailable", () => {
+    expect(getEffectiveCommitAction("commitAndPush", false)).toBe("commit");
+  });
+
+  it("keeps the selected action when commit and push is available", () => {
+    expect(getEffectiveCommitAction("commitAndPush", true)).toBe("commitAndPush");
   });
 });

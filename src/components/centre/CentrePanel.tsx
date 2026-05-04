@@ -76,6 +76,7 @@ type CentrePanelProps = {
   onUnstageAll: () => void;
   selectedCommitAction: CommitPrimaryAction;
   commitMessageRecommendedLength: number;
+  allowCommitAndPush: boolean;
   onSelectCommitAction: (action: CommitPrimaryAction) => void;
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   onMergeAbort: () => void;
@@ -225,6 +226,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onUnstageAll={props.onUnstageAll}
           selectedCommitAction={props.selectedCommitAction}
           commitMessageRecommendedLength={props.commitMessageRecommendedLength}
+          allowCommitAndPush={props.allowCommitAndPush}
           onSelectCommitAction={props.onSelectCommitAction}
           onCommit={props.onCommit}
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}

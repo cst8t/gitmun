@@ -9,8 +9,11 @@ mod window_manager;
 use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use serde::Serialize;
 use shell::cli::ShellStartupAction;
+#[cfg(windows)]
+use std::path::{Path, PathBuf};
+#[cfg(windows)]
+use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
 
@@ -50,13 +53,8 @@ enum GitBackend {
 
 static GIT_BACKEND: OnceLock<GitBackend> = OnceLock::new();
 
-#[derive(Clone, Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct WindowsGitRuntimeStatus {
-    is_msix: bool,
-    git_found: bool,
-    winget_available: bool,
-}
+#[cfg(windows)]
+static BUNDLED_GIT_EXE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn is_msix_build() -> bool {
@@ -97,7 +95,19 @@ pub(crate) fn git_command() -> std::process::Command {
             cmd
         }
         GitBackend::FlatpakBundled => std::process::Command::new("/app/bin/git"),
-        GitBackend::System => std::process::Command::new(resolve_git_exe()),
+        GitBackend::System => {
+            #[cfg(windows)]
+            {
+                let git_exe = resolve_git_exe();
+                let mut command = std::process::Command::new(&git_exe);
+                configure_bundled_git_environment(&mut command, Path::new(&git_exe));
+                command
+            }
+            #[cfg(not(windows))]
+            {
+                std::process::Command::new(resolve_git_exe())
+            }
+        }
     }
 }
 
@@ -207,9 +217,6 @@ pub(crate) fn configured_git_command() -> std::process::Command {
     command
 }
 
-/// On Windows, the installer may launch Gitmun before the updated PATH (with
-/// Git's bin dir) propagates to child processes. Check known install locations
-/// as a fallback so git.exe is found even in that window.
 fn resolve_git_exe() -> std::ffi::OsString {
     #[cfg(windows)]
     {
@@ -227,86 +234,80 @@ fn resolve_git_exe() -> std::ffi::OsString {
                 }
             }
         }
+        if let Some(candidate) = bundled_git_exe() {
+            return candidate.into_os_string();
+        }
     }
     "git".into()
 }
 
 #[cfg(windows)]
-fn command_succeeds(executable: &str, args: &[&str]) -> bool {
-    let mut command = std::process::Command::new(executable);
-    command.args(args);
-    configure_command(&mut command);
-    command.output().is_ok_and(|output| output.status.success())
+fn bundled_git_exe() -> Option<PathBuf> {
+    BUNDLED_GIT_EXE
+        .get()
+        .and_then(|candidate| candidate.as_ref())
+        .filter(|candidate| candidate.exists())
+        .cloned()
 }
 
 #[cfg(windows)]
-fn is_git_available() -> bool {
-    let git_exe = resolve_git_exe();
-    let mut command = std::process::Command::new(git_exe);
-    command.arg("--version");
-    configure_command(&mut command);
-    command.output().is_ok_and(|output| output.status.success())
+pub(crate) fn is_using_bundled_git_runtime() -> bool {
+    let git_exe = PathBuf::from(resolve_git_exe());
+    bundled_git_exe().is_some_and(|bundled| git_exe == bundled)
+}
+
+#[cfg(not(windows))]
+pub(crate) fn is_using_bundled_git_runtime() -> bool {
+    false
 }
 
 #[cfg(windows)]
-fn is_winget_available() -> bool {
-    command_succeeds("winget", &["--version"])
+fn configure_bundled_git_environment(command: &mut Command, git_exe: &Path) {
+    let Some(bundled_git_exe) = bundled_git_exe() else {
+        return;
+    };
+    if git_exe != bundled_git_exe {
+        return;
+    }
+
+    let Some(root) = bundled_git_exe.parent().and_then(|path| path.parent()) else {
+        return;
+    };
+
+    let mut paths = [
+        root.join("cmd"),
+        root.join("mingw64").join("bin"),
+        root.join("usr").join("bin"),
+    ]
+    .into_iter()
+    .filter(|path| path.exists())
+    .collect::<Vec<_>>();
+
+    if let Some(path) = std::env::var_os("PATH") {
+        paths.extend(std::env::split_paths(&path));
+    }
+    if let Ok(path) = std::env::join_paths(paths) {
+        command.env("PATH", path);
+    }
 }
 
-#[tauri::command]
-fn get_windows_git_runtime_status() -> WindowsGitRuntimeStatus {
-    #[cfg(windows)]
-    {
-        WindowsGitRuntimeStatus {
-            is_msix: is_msix_build(),
-            git_found: is_git_available(),
-            winget_available: is_winget_available(),
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        WindowsGitRuntimeStatus {
-            is_msix: false,
-            git_found: true,
-            winget_available: false,
-        }
-    }
-}
+#[cfg(windows)]
+fn initialise_bundled_git_path(app: &tauri::App) {
+    let resource_git_exe = app
+        .path()
+        .resolve("mingit/cmd/git.exe", tauri::path::BaseDirectory::Resource)
+        .ok()
+        .filter(|candidate| candidate.exists());
 
-#[tauri::command]
-fn install_git_with_winget() -> Result<(), String> {
-    #[cfg(windows)]
-    {
-        if !is_msix_build() {
-            return Err("Git installation via Winget is only enabled in MSIX builds.".to_string());
-        }
-        if is_git_available() {
-            return Ok(());
-        }
-        if !is_winget_available() {
-            return Err("Winget is not available on this machine.".to_string());
-        }
+    let msix_layout_git_exe = std::env::current_exe()
+        .ok()
+        .and_then(|path| {
+            path.parent()
+                .map(|parent| parent.join("mingit").join("cmd").join("git.exe"))
+        })
+        .filter(|candidate| candidate.exists());
 
-        let status = std::process::Command::new("winget")
-            .args([
-                "install",
-                "Git.Git",
-                "--accept-source-agreements",
-                "--accept-package-agreements",
-            ])
-            .status()
-            .map_err(|error| error.to_string())?;
-
-        if status.success() {
-            Ok(())
-        } else {
-            Err(format!("Winget exited with status {status}."))
-        }
-    }
-    #[cfg(not(windows))]
-    {
-        Err("Winget installation is only available on Windows.".to_string())
-    }
+    let _ = BUNDLED_GIT_EXE.set(resource_git_exe.or(msix_layout_git_exe));
 }
 
 /// Read linuxGraphicsMode from the saved config file without starting Tauri.
@@ -641,6 +642,9 @@ pub fn run() {
         .manage(StartupState(Mutex::new(startup_action)))
         .manage(PendingCloneDestination(Mutex::new(None)))
         .setup(|app| {
+            #[cfg(windows)]
+            initialise_bundled_git_path(app);
+
             #[cfg(desktop)]
             app.handle()
                 .plugin(tauri_plugin_updater::Builder::new().build())?;
@@ -809,8 +813,6 @@ pub fn run() {
             open_clone_window,
             open_repo_in_new_window,
             take_pending_clone_destination,
-            get_windows_git_runtime_status,
-            install_git_with_winget,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

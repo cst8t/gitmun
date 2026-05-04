@@ -96,6 +96,19 @@ function getFileName(path: string): string {
   return path.split("/").pop() ?? path;
 }
 
+const BUNDLED_GIT_EXTERNAL_TOOL_ERROR = "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::";
+
+function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
+  const message = String(error);
+  const markerIndex = message.indexOf(BUNDLED_GIT_EXTERNAL_TOOL_ERROR);
+  if (markerIndex === -1) {
+    return message;
+  }
+
+  const tool = message.slice(markerIndex + BUNDLED_GIT_EXTERNAL_TOOL_ERROR.length).trim();
+  return t("toast.bundledGitExternalToolUnsupported", { tool });
+}
+
 export function buildStashDropPrompt(
   stash: Pick<StashEntry, "index" | "message">,
   t: TFunction<"projectView">,
@@ -105,6 +118,13 @@ export function buildStashDropPrompt(
     ? t("ask.dropStash.stashLabelWithMessage", { index: stash.index, message: trimmedMessage })
     : t("ask.dropStash.stashLabel", { index: stash.index });
   return t("ask.dropStash.message", { stashLabel });
+}
+
+export function getEffectiveCommitAction(
+  selectedAction: CommitPrimaryAction,
+  canCommitAndPush: boolean,
+): CommitPrimaryAction {
+  return canCommitAndPush ? selectedAction : "commit";
 }
 
 export type ProjectViewProps = {
@@ -270,6 +290,8 @@ export function ProjectView({
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+  const canCommitAndPush = currentBranchInfo?.upstreamStatus === "tracked";
+  const effectiveCommitAction = getEffectiveCommitAction(commitPrimaryAction, canCommitAndPush);
   const remoteActionLabel = remoteActionState.kind === "publish"
     ? t("remoteAction.publish", { ns: "git" })
     : remoteActionState.kind === "repair-upstream"
@@ -924,7 +946,7 @@ export function ProjectView({
     try {
       const result = await api.openExternalDiff(repoPath, selectedCommitHash, filePath);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(filePath) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, selectedCommitHash, showToast, t]);
 
   const handleCompareCurrentFile = useCallback(async () => {
@@ -932,7 +954,7 @@ export function ProjectView({
     try {
       const result = await api.openWorkingTreeDiff(repoPath, selectedFile, selectedFileStaged);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(selectedFile) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, selectedFile, selectedFileStaged, showToast, t]);
 
   const stashBeforeBranchSwitch = useCallback(async (targetRef: string): Promise<{ proceed: boolean; stashedRef: string | null }> => {
@@ -1398,7 +1420,7 @@ export function ProjectView({
     try {
       const result = await api.openWorkingTreeDiff(repoPath, path, staged);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(path) }));
-    } catch (e) { showToast(String(e), "error"); }
+    } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, showToast, t]);
 
   const runSubmoduleAction = useCallback(async (
@@ -1788,9 +1810,9 @@ export function ProjectView({
     try {
       await api.openMergeTool(repoPath, path);
     } catch (e) {
-      showToast(String(e), "error");
+      showToast(localiseExternalToolError(e, t), "error");
     }
-  }, [repoPath, showToast]);
+  }, [repoPath, showToast, t]);
 
   const compareCurrentFileLabel = repoDiffToolName
     ? t("labels.compareInTool", { tool: repoDiffToolName })
@@ -2135,8 +2157,9 @@ export function ProjectView({
                   onExternalDiff={handleExternalDiff}
                   onStageAll={handleStageAll}
                   onUnstageAll={handleUnstageAll}
-                  selectedCommitAction={commitPrimaryAction}
+                  selectedCommitAction={effectiveCommitAction}
                   commitMessageRecommendedLength={commitMessageRecommendedLength}
+                  allowCommitAndPush={canCommitAndPush}
                   onSelectCommitAction={handleSelectCommitAction}
                   onCommit={(message, amend, action) => {
                     if (action === "commitAndPush") {
