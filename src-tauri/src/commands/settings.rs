@@ -690,6 +690,16 @@ pub fn set_commit_primary_action(
 }
 
 #[tauri::command]
+pub fn set_commit_message_recommended_length(
+    commit_message_recommended_length: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_commit_message_recommended_length(commit_message_recommended_length)
+}
+
+#[tauri::command]
 pub fn set_auto_check_for_updates_on_launch(
     auto_check_for_updates_on_launch: bool,
     state: tauri::State<'_, AppState>,

@@ -138,7 +138,7 @@ mod tests {
         let toml_path = dir.path().join("config.toml");
         let json_path = dir.path().join("config.json");
 
-        let contents = "backendMode = \"GitCliOnly\"\nshowResultLog = true\nthemeMode = \"Dark\"\nleftPaneWidth = 300\nrightPaneWidth = 420\n";
+        let contents = "backendMode = \"GitCliOnly\"\nshowResultLog = true\nthemeMode = \"Dark\"\nleftPaneWidth = 300\nrightPaneWidth = 420\ncommitMessageRecommendedLength = 50\n";
         write_file(&toml_path, contents);
 
         let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
@@ -149,6 +149,7 @@ mod tests {
         );
         assert!(settings.show_result_log);
         assert_eq!(settings.theme_mode, crate::git::types::ThemeMode::Dark);
+        assert_eq!(settings.commit_message_recommended_length, 50);
     }
 
     #[test]
@@ -168,6 +169,7 @@ mod tests {
         );
         assert_eq!(settings.left_pane_width, 300);
         assert_eq!(settings.right_pane_width, 420);
+        assert_eq!(settings.commit_message_recommended_length, 72);
     }
 
     #[test]
@@ -215,6 +217,8 @@ mod tests {
         assert!(toml_text.contains("backendMode = \"GitCliOnly\""));
         assert!(toml_text.contains("# Whether to show the result log"));
         assert!(toml_text.contains("showResultLog = true"));
+        assert!(toml_text.contains("# Recommended maximum length"));
+        assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
     }
 
     #[test]
@@ -232,6 +236,7 @@ mod tests {
         let toml_text = std::fs::read_to_string(&toml_path).unwrap();
         assert!(toml_text.contains("# Backend used for Git operations"));
         assert!(toml_text.contains("backendMode = \"Default\""));
+        assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
     }
 
     #[test]
@@ -290,5 +295,10 @@ mod tests {
             "missing key gained its template comment"
         );
         assert!(updated.contains("linuxGraphicsMode = \"Auto\""));
+        assert!(
+            updated.contains("# Recommended maximum length"),
+            "missing key gained its template comment"
+        );
+        assert!(updated.contains("commitMessageRecommendedLength = 72"));
     }
 }

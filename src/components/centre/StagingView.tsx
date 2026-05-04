@@ -37,6 +37,7 @@ type StagingViewProps = {
   onStageAll: () => void;
   onUnstageAll: () => void;
   selectedCommitAction: CommitPrimaryAction;
+  commitMessageRecommendedLength: number;
   onSelectCommitAction: (action: CommitPrimaryAction) => void;
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   onConflictAcceptTheirs: (path: string) => void;
@@ -142,7 +143,7 @@ export function StagingView({
   selectedFile, selectedSubmodulePath, onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
-  selectedCommitAction, onSelectCommitAction, onCommit,
+  selectedCommitAction, commitMessageRecommendedLength, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
   isCommitting, lastCommitMessage,
 }: StagingViewProps) {
@@ -472,6 +473,7 @@ export function StagingView({
       <CommitBox
         stagedCount={stagedFiles.length}
         selectedAction={selectedCommitAction}
+        commitMessageRecommendedLength={commitMessageRecommendedLength}
         onSelectAction={onSelectCommitAction}
         onCommit={onCommit}
         isCommitting={isCommitting}

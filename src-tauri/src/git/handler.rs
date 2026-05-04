@@ -254,6 +254,15 @@ impl GitService {
         })
     }
 
+    pub fn set_commit_message_recommended_length(
+        &self,
+        commit_message_recommended_length: u32,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            settings.commit_message_recommended_length = commit_message_recommended_length;
+        })
+    }
+
     pub fn set_auto_check_for_updates_on_launch(
         &self,
         auto_check_for_updates_on_launch: bool,
