@@ -107,6 +107,13 @@ export function buildStashDropPrompt(
   return t("ask.dropStash.message", { stashLabel });
 }
 
+export function getEffectiveCommitAction(
+  selectedAction: CommitPrimaryAction,
+  canCommitAndPush: boolean,
+): CommitPrimaryAction {
+  return canCommitAndPush ? selectedAction : "commit";
+}
+
 export type ProjectViewProps = {
   /** The active repository path. Changing this key causes a full remount. */
   repoPath: string | null;
@@ -269,6 +276,8 @@ export function ProjectView({
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+  const canCommitAndPush = currentBranchInfo?.upstreamStatus === "tracked";
+  const effectiveCommitAction = getEffectiveCommitAction(commitPrimaryAction, canCommitAndPush);
   const remoteActionLabel = remoteActionState.kind === "publish"
     ? t("remoteAction.publish", { ns: "git" })
     : remoteActionState.kind === "repair-upstream"
@@ -2132,7 +2141,8 @@ export function ProjectView({
                   onExternalDiff={handleExternalDiff}
                   onStageAll={handleStageAll}
                   onUnstageAll={handleUnstageAll}
-                  selectedCommitAction={commitPrimaryAction}
+                  selectedCommitAction={effectiveCommitAction}
+                  allowCommitAndPush={canCommitAndPush}
                   onSelectCommitAction={handleSelectCommitAction}
                   onCommit={(message, amend, action) => {
                     if (action === "commitAndPush") {

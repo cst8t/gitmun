@@ -6,7 +6,7 @@ import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
 import "../../i18n";
 
-function renderCommitBox(selectedAction: CommitPrimaryAction = "commit") {
+function renderCommitBox(selectedAction: CommitPrimaryAction = "commit", allowCommitAndPush = true) {
   const onCommit = vi.fn();
   const onSelectAction = vi.fn();
 
@@ -14,6 +14,7 @@ function renderCommitBox(selectedAction: CommitPrimaryAction = "commit") {
     <CommitBox
       stagedCount={2}
       selectedAction={selectedAction}
+      allowCommitAndPush={allowCommitAndPush}
       onSelectAction={onSelectAction}
       onCommit={onCommit}
       isCommitting={false}
@@ -37,6 +38,7 @@ describe("CommitBox", () => {
       <CommitBox
         stagedCount={2}
         selectedAction="commitAndPush"
+        allowCommitAndPush
         onSelectAction={onSelectAction}
         onCommit={onCommit}
         isCommitting={false}
@@ -65,5 +67,23 @@ describe("CommitBox", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit and Push (2)" }));
 
     expect(onCommit).toHaveBeenCalledWith("Ship it", false, "commitAndPush");
+  });
+
+  it("hides the action menu when commit and push is unavailable", () => {
+    renderCommitBox("commitAndPush", false);
+
+    expect(screen.getByRole("button", { name: "Commit (2)" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Choose commit action" })).not.toBeInTheDocument();
+  });
+
+  it("submits commit when commit and push is unavailable", () => {
+    const { onCommit } = renderCommitBox("commitAndPush", false);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit message..."), {
+      target: { value: "Ship it" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
+
+    expect(onCommit).toHaveBeenCalledWith("Ship it", false, "commit");
   });
 });
