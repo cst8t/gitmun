@@ -7,6 +7,7 @@ import { CheckIcon, ChevDownIcon } from "../icons";
 type CommitBoxProps = {
   stagedCount: number;
   selectedAction: CommitPrimaryAction;
+  allowCommitAndPush: boolean;
   onSelectAction: (action: CommitPrimaryAction) => void;
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
   isCommitting: boolean;
@@ -48,6 +49,7 @@ function getCommitButtonLabel(
 export function CommitBox({
   stagedCount,
   selectedAction,
+  allowCommitAndPush,
   onSelectAction,
   onCommit,
   isCommitting,
@@ -62,6 +64,7 @@ export function CommitBox({
   const [amend, setAmend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const activeAction = allowCommitAndPush ? selectedAction : "commit";
 
   useEffect(() => {
     if (mergeInProgress && mergeMessage) {
@@ -85,6 +88,12 @@ export function CommitBox({
     return () => document.removeEventListener("mousedown", handlePointerDown);
   }, [menuOpen]);
 
+  useEffect(() => {
+    if (!allowCommitAndPush) {
+      setMenuOpen(false);
+    }
+  }, [allowCommitAndPush]);
+
   const subjectLine = message.split("\n")[0] ?? "";
   const subjectLength = subjectLine.length;
   const subjectOverflow = subjectLength > 72;
@@ -99,7 +108,7 @@ export function CommitBox({
 
   const handleCommit = () => {
     if (actionDisabled) return;
-    onCommit(message.trim(), amend, selectedAction);
+    onCommit(message.trim(), amend, activeAction);
     setMessage("");
     setAmend(false);
     setMenuOpen(false);
@@ -137,32 +146,34 @@ export function CommitBox({
 
       <div className="commit-box__actions" ref={menuRef}>
         <button
-          className={`commit-box__btn commit-box__btn--primary ${actionDisabled ? "commit-box__btn--disabled" : ""} ${isCommitting ? "commit-box__btn--pulse" : ""}`}
+          className={`commit-box__btn commit-box__btn--primary ${allowCommitAndPush ? "" : "commit-box__btn--solo"} ${actionDisabled ? "commit-box__btn--disabled" : ""} ${isCommitting ? "commit-box__btn--pulse" : ""}`}
           disabled={actionDisabled}
           onClick={handleCommit}
         >
           {isCommitting
-            ? selectedAction === "commitAndPush"
+            ? activeAction === "commitAndPush"
               ? t("commitBox.committingAndPushing")
               : t("commitBox.committing")
             : rebaseInProgress
               ? t("commitBox.rebaseInProgress")
               : cherryPickInProgress
                 ? t("commitBox.cherryPickInProgress")
-                : getCommitButtonLabel(selectedAction, stagedCount, amend, mergeInProgress, t)}
+                : getCommitButtonLabel(activeAction, stagedCount, amend, mergeInProgress, t)}
         </button>
-        <button
-          type="button"
-          className={`commit-box__btn commit-box__btn--toggle ${isCommitting ? "commit-box__btn--disabled" : ""}`}
-          disabled={isCommitting}
-          onClick={() => setMenuOpen(open => !open)}
-          aria-haspopup="menu"
-          aria-expanded={menuOpen}
-          aria-label={t("commitBox.chooseAction")}
-        >
-          <ChevDownIcon size={14} />
-        </button>
-        {menuOpen && (
+        {allowCommitAndPush && (
+          <button
+            type="button"
+            className={`commit-box__btn commit-box__btn--toggle ${isCommitting ? "commit-box__btn--disabled" : ""}`}
+            disabled={isCommitting}
+            onClick={() => setMenuOpen(open => !open)}
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            aria-label={t("commitBox.chooseAction")}
+          >
+            <ChevDownIcon size={14} />
+          </button>
+        )}
+        {allowCommitAndPush && menuOpen && (
           <div className="commit-box__menu" role="menu">
             {([
               { action: "commit" as const, label: t("commitBox.commit") },
