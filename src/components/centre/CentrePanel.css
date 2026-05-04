@@ -400,6 +400,11 @@
   border-bottom-right-radius: 0;
 }
 
+.commit-box__btn--solo {
+  border-top-right-radius: var(--radius-lg);
+  border-bottom-right-radius: var(--radius-lg);
+}
+
 .commit-box__btn--toggle {
   width: 42px;
   flex: 0 0 42px;
