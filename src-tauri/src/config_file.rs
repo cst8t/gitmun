@@ -12,7 +12,10 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
     if toml_path.exists() {
         match std::fs::read_to_string(toml_path) {
             Ok(text) => match toml::from_str::<Settings>(&text) {
-                Ok(settings) => return (settings, false),
+                Ok(settings) => {
+                    archive_migrated_json_config(json_path);
+                    return (settings, false);
+                }
                 Err(_) => {
                     // Malformed TOML - use defaults but don't overwrite the file.
                 }
@@ -29,12 +32,28 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
             .unwrap_or_default();
 
         let created = create_from_template(toml_path, &settings).is_ok();
+        if created {
+            archive_migrated_json_config(json_path);
+        }
         return (settings, !created);
     }
 
     let settings = Settings::default();
     let created = create_from_template(toml_path, &settings).is_ok();
     (settings, !created)
+}
+
+fn archive_migrated_json_config(json_path: &Path) {
+    if !json_path.exists() {
+        return;
+    }
+
+    let old_path = json_path.with_extension("json.old");
+    if old_path.exists() {
+        return;
+    }
+
+    let _ = std::fs::rename(json_path, old_path);
 }
 
 /// Create config.toml from the template with the given settings values.
@@ -219,6 +238,8 @@ mod tests {
         assert!(toml_text.contains("showResultLog = true"));
         assert!(toml_text.contains("# Recommended maximum length"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
+        assert!(!json_path.exists());
+        assert!(dir.path().join("config.json.old").exists());
     }
 
     #[test]
