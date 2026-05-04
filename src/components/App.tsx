@@ -3,7 +3,6 @@ import {useTranslation} from "react-i18next";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
-import {open as openExternal} from "@tauri-apps/plugin-shell";
 import {Toast} from "./Toast";
 import {ProjectView} from "./ProjectView";
 import {UpdateDialog} from "./update/UpdateDialog";
@@ -165,7 +164,6 @@ export function App() {
     });
     const [draggingPane, setDraggingPane] = useState<"left" | "right" | null>(null);
     const appBodyRef = useRef<HTMLDivElement | null>(null);
-    const msixGitPromptedRef = useRef(false);
     const paneLayoutRef = useRef<{ left: number; right: number }>({
         left: DEFAULT_LEFT_PANE_WIDTH,
         right: DEFAULT_RIGHT_PANE_WIDTH,
@@ -325,79 +323,6 @@ export function App() {
             if (action) handleShellAction(action);
         }).catch(() => {});
     }, [handleShellAction]);
-
-    useEffect(() => {
-        if (platform !== "windows" || msixGitPromptedRef.current) {
-            return;
-        }
-
-        let cancelled = false;
-
-        (async () => {
-            try {
-                const status = await api.getWindowsGitRuntimeStatus();
-                if (
-                    cancelled
-                    || msixGitPromptedRef.current
-                    || !status.isMsix
-                    || status.gitFound
-                ) {
-                    return;
-                }
-
-                msixGitPromptedRef.current = true;
-
-                const installViaWinget = status.wingetAvailable
-                    ? await ask(
-                        t("ask.windowsGitRequired.installMessage"),
-                        {
-                            title: t("ask.windowsGitRequired.title"),
-                            kind: "info",
-                            okLabel: t("ask.windowsGitRequired.winget"),
-                            cancelLabel: t("actions.moreOptions", {ns: "common"}),
-                        },
-                    )
-                    : false;
-
-                if (cancelled) {
-                    return;
-                }
-
-                if (installViaWinget) {
-                    showToast(t("toast.startingGitInstall"), "info");
-                    try {
-                        await api.installGitWithWinget();
-                        showToast(t("toast.gitInstalled"), "success");
-                        return;
-                    } catch (error) {
-                        showToast(t("toast.gitInstallFailed", {message: String(error)}), "error");
-                    }
-                }
-
-                const openManualDownload = await ask(
-                    status.wingetAvailable
-                        ? t("ask.windowsGitRequired.downloadMessage")
-                        : t("ask.windowsGitRequired.noWingetMessage"),
-                    {
-                        title: t("ask.windowsGitRequired.title"),
-                        kind: "info",
-                        okLabel: t("ask.windowsGitRequired.openDownloadPage"),
-                        cancelLabel: t("actions.notNow", {ns: "common"}),
-                    },
-                );
-
-                if (!cancelled && openManualDownload) {
-                    await openExternal("https://git-scm.com/download/win");
-                    showToast(t("toast.installGitThenReopen"), "info");
-                }
-            } catch {
-            }
-        })();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [platform, showToast, t]);
 
     useEffect(() => {
         let cancelled = false;

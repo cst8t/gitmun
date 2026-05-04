@@ -732,6 +732,55 @@ jobs:
           npm run tauri build -- --no-bundle
           --config "{\"version\":\"${{ env.BUNDLE_VERSION }}\",\"bundle\":{\"active\":true}}"
 
+      - name: Download MinGit for MSIX
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $release = gh release view --repo git-for-windows/git --json assets,body,tagName |
+            ConvertFrom-Json
+
+          $asset = $release.assets |
+            Where-Object { $_.name -match '^MinGit-[0-9].*-64-bit\.zip$' -and $_.name -notmatch 'busybox' } |
+            Select-Object -First 1
+
+          if ($null -eq $asset) {
+            throw "Could not find a 64-bit MinGit zip in the latest Git for Windows release."
+          }
+
+          $checksumPattern = "^$([regex]::Escape($asset.name))(?:\s+|\s*\|\s*)([0-9a-fA-F]{64})$"
+          $checksumLine = $release.body -split "`n" |
+            ForEach-Object { $_.Trim() } |
+            Where-Object { $_ -match $checksumPattern } |
+            Select-Object -First 1
+
+          if ($null -eq $checksumLine) {
+            throw "Could not find the SHA-256 for $($asset.name) in the release notes."
+          }
+
+          $expectedHash = ([regex]::Match($checksumLine, $checksumPattern).Groups[1].Value).ToLowerInvariant()
+          $archivePath = "packaging/msix/$($asset.name)"
+          $mingitPath = "packaging/msix/mingit"
+
+          Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
+          Remove-Item $mingitPath -Recurse -Force -ErrorAction SilentlyContinue
+
+          gh release download `
+            --repo git-for-windows/git `
+            --pattern $asset.name `
+            --dir "packaging/msix" `
+            --clobber
+
+          $actualHash = (Get-FileHash $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "SHA-256 mismatch for $($asset.name). Expected $expectedHash but got $actualHash."
+          }
+
+          Expand-Archive -Path $archivePath -DestinationPath $mingitPath
+          if (-not (Test-Path "$mingitPath/cmd/git.exe")) {
+            throw "Expanded MinGit archive does not contain cmd/git.exe."
+          }
+
       - name: Stage MSIX layout
         shell: pwsh
         env:
@@ -747,6 +796,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path "$layout/Assets" | Out-Null
 
           Copy-Item "src-tauri/target/release/gitmun.exe" "$layout/gitmun.exe"
+          Copy-Item "packaging/msix/mingit" "$layout/mingit" -Recurse
           Copy-Item "src-tauri/icons/StoreLogo.png" "$layout/Assets/StoreLogo.png"
           Copy-Item "src-tauri/icons/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
           Copy-Item "src-tauri/icons/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
