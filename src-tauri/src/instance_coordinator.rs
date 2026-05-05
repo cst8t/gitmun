@@ -27,9 +27,21 @@ pub struct InstanceInfo {
     pub instance_id: String,
     pub pid: u32,
     pub port: u16,
+    #[serde(default)]
+    pub last_seen: u64,
     pub last_focused: u64,
     pub started_at: u64,
     pub sub_windows: Vec<String>,
+}
+
+impl InstanceInfo {
+    fn last_seen_at(&self) -> u64 {
+        if self.last_seen == 0 {
+            self.last_focused.max(self.started_at)
+        } else {
+            self.last_seen
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -97,27 +109,15 @@ where
     F: FnOnce() -> Result<R, String>,
 {
     let lock_path = path.with_extension("lock");
-    let start = std::time::Instant::now();
-    loop {
-        match std::fs::OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&lock_path)
-        {
-            Ok(_) => break,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => {
-                if start.elapsed() > Duration::from_secs(3) {
-                    let _ = std::fs::remove_file(&lock_path);
-                    continue;
-                }
-                thread::sleep(Duration::from_millis(25));
-            }
-            Err(e) => return Err(e.to_string()),
-        }
-    }
-
+    let lock_file = std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create(true)
+        .open(&lock_path)
+        .map_err(|e| e.to_string())?;
+    lock_file.lock().map_err(|e| e.to_string())?;
     let result = f();
-    let _ = std::fs::remove_file(lock_path);
+    let _ = lock_file.unlock();
     result
 }
 
@@ -197,21 +197,14 @@ fn heartbeat_loop(handle: CoordinatorHandle) {
 
 fn register_self(handle: &CoordinatorHandle) -> Result<(), String> {
     let now = now_millis();
-    let sub_windows = {
-        let reg = read_registry(&handle.registry_path);
-        reg.instances
-            .get(&handle.instance_id)
-            .map(|info| info.sub_windows.clone())
-            .unwrap_or_default()
-    };
-
     mutate_registry(|reg| {
         let is_new = !reg.instances.contains_key(&handle.instance_id);
-        let last_focused = reg
-            .instances
-            .get(&handle.instance_id)
-            .map(|info| info.last_focused)
-            .unwrap_or(now);
+        let previous = reg.instances.get(&handle.instance_id);
+        let last_focused = previous.map(|info| info.last_focused).unwrap_or(now);
+        let started_at = previous.map(|info| info.started_at).unwrap_or(now);
+        let sub_windows = previous
+            .map(|info| info.sub_windows.clone())
+            .unwrap_or_default();
 
         reg.instances.insert(
             handle.instance_id.clone(),
@@ -219,15 +212,9 @@ fn register_self(handle: &CoordinatorHandle) -> Result<(), String> {
                 instance_id: handle.instance_id.clone(),
                 pid: std::process::id(),
                 port: handle.port,
+                last_seen: now,
                 last_focused: if is_new { now } else { last_focused },
-                started_at: if is_new {
-                    now
-                } else {
-                    reg.instances
-                        .get(&handle.instance_id)
-                        .map(|i| i.started_at)
-                        .unwrap_or(now)
-                },
+                started_at,
                 sub_windows,
             },
         );
@@ -239,7 +226,7 @@ fn prune_stale() {
     let cutoff = now_millis().saturating_sub(STALE_SECS * 1000);
     mutate_registry(|reg| {
         reg.instances
-            .retain(|_, info| info.last_focused >= cutoff || info.started_at >= cutoff);
+            .retain(|_, info| info.last_seen_at() >= cutoff || info.started_at >= cutoff);
     });
 }
 
@@ -351,6 +338,7 @@ pub fn notify_focused() {
     mutate_registry(|reg| {
         let own_id = with_handle(|h| Ok(h.instance_id.clone())).unwrap_or_default();
         if let Some(info) = reg.instances.get_mut(&own_id) {
+            info.last_seen = now_millis();
             info.last_focused = now_millis();
         }
     });
@@ -382,7 +370,7 @@ pub fn find_sub_window_owner(label: &str) -> Option<InstanceInfo> {
     let cutoff = now_millis().saturating_sub(STALE_SECS * 1000);
 
     for info in reg.instances.values() {
-        if info.sub_windows.contains(&label.to_string()) && info.last_focused >= cutoff {
+        if info.sub_windows.contains(&label.to_string()) && info.last_seen_at() >= cutoff {
             return Some(info.clone());
         }
     }
@@ -443,7 +431,7 @@ pub fn broadcast_settings_updated() {
     let reg = read_registry(&path);
 
     for (id, info) in &reg.instances {
-        if *id == own_id || info.last_focused < cutoff {
+        if *id == own_id || info.last_seen_at() < cutoff {
             continue;
         }
         let _ = send_command(info.port, &CoordinatorCommand::SettingsUpdated);
