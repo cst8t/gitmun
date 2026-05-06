@@ -72,3 +72,6 @@ linuxGraphicsMode = "Auto"
 # "ExistingWindow" opens the repository in the current window.
 # "NewWindow" opens the repository in a new window.
 repoOpenBehaviour = "Ask"
+
+# Optional Git executable path. Leave blank to use Gitmun's automatic lookup.
+gitExecutablePath = ""

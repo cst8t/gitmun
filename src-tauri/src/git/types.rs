@@ -161,6 +161,8 @@ pub struct Settings {
     pub linux_graphics_mode: LinuxGraphicsMode,
     #[serde(default)]
     pub repo_open_behaviour: RepoOpenBehaviour,
+    #[serde(default)]
+    pub git_executable_path: String,
 }
 
 impl Default for Settings {
@@ -185,6 +187,7 @@ impl Default for Settings {
             update_endpoint: Self::default_update_endpoint(),
             linux_graphics_mode: LinuxGraphicsMode::Auto,
             repo_open_behaviour: RepoOpenBehaviour::Ask,
+            git_executable_path: String::new(),
         }
     }
 }

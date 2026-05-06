@@ -110,6 +110,21 @@
   color: var(--text-muted);
 }
 
+.settings-window__path-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.settings-window__path-note span {
+  min-width: 0;
+  flex: 1;
+}
+
+.settings-window__path-note code {
+  word-break: break-all;
+}
+
 .settings-window__label {
   font-size: 11px;
   color: var(--text-secondary);

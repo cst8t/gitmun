@@ -36,6 +36,10 @@ pub async fn verify_commits(
     }
 
     tauri::async_runtime::spawn_blocking(move || -> Result<Vec<CommitVerification>, String> {
+        #[cfg(windows)]
+        let _ =
+            crate::ensure_windows_gpg_program_configured(Some(std::path::Path::new(&repo_path)))?;
+
         // Read the allowedSignersFile path directly from git config. This is
         // more reliable than detecting from stderr, since error message wording
         // can change across git versions.

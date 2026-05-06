@@ -149,6 +149,14 @@ export function getRepoDiffTool(repoPath: string): Promise<string | null> {
     return invoke<string | null>("get_repo_diff_tool", {request: {repoPath}});
 }
 
+export function getGlobalGpgProgramPath(): Promise<string | null> {
+    return invoke<string | null>("get_global_gpg_program_path");
+}
+
+export function setGlobalGpgProgram(gpgProgram: string): Promise<OperationResult> {
+    return invoke<OperationResult>("set_global_gpg_program", {gpgProgram});
+}
+
 export function stageFiles(repoPath: string, files: string[]): Promise<OperationResult> {
     return invoke<OperationResult>("stage_files", {request: {repoPath, files}});
 }
@@ -410,6 +418,10 @@ export function setRepoOpenBehaviour(repoOpenBehaviour: RepoOpenBehaviour): Prom
 
 export function getConfigFilePath(): Promise<string | null> {
     return invoke<string | null>("get_config_file_path");
+}
+
+export function getConfigFolderPath(): Promise<string | null> {
+    return invoke<string | null>("get_config_folder_path");
 }
 
 export function getBuildVersion(): Promise<string> {

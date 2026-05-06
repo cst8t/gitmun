@@ -13,7 +13,7 @@
     <DisplayName>Gitmun</DisplayName>
     <PublisherDisplayName>cst8t</PublisherDisplayName>
     <Description>A cross-platform Git client</Description>
-    <Logo>Assets\StoreLogo.png</Logo>
+    <Logo>Assets\Square300x300Logo.png</Logo>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily

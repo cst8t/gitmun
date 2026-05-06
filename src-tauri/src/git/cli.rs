@@ -1776,6 +1776,20 @@ impl GitOperationHandler for CliGitHandler {
             None => has_signing_key,
         };
         if should_sign {
+            #[cfg(windows)]
+            {
+                let signing_format = Self::run_git_allow_exit_codes(
+                    &["config", "--get", "gpg.format"],
+                    Some(&repo_path),
+                    &[1],
+                )
+                .ok()
+                .map(|value| value.trim().to_ascii_lowercase());
+                if !matches!(signing_format.as_deref(), Some("ssh")) {
+                    crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                        .map_err(GitError::InvalidInput)?;
+                }
+            }
             args.push("-S");
         }
         if request.amend == Some(true) {
@@ -2888,6 +2902,11 @@ impl GitOperationHandler for CliGitHandler {
                 &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
                 Some(&repo_path),
             )?;
+            #[cfg(windows)]
+            if commit_signing_enabled && !matches!(request.signing_format.as_deref(), Some("ssh")) {
+                crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                    .map_err(GitError::InvalidInput)?;
+            }
         } else if let Some(signing_key) = request.signing_key.as_ref() {
             let commit_gpgsign = if signing_key.trim().is_empty() {
                 "false"
@@ -2898,6 +2917,13 @@ impl GitOperationHandler for CliGitHandler {
                 &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
                 Some(&repo_path),
             )?;
+            #[cfg(windows)]
+            if !signing_key.trim().is_empty()
+                && !matches!(request.signing_format.as_deref(), Some("ssh"))
+            {
+                crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                    .map_err(GitError::InvalidInput)?;
+            }
         }
 
         Ok(OperationResult {

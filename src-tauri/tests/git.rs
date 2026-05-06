@@ -43,6 +43,16 @@ fn git_stdout(repo: &Path, args: &[&str]) -> String {
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
 
+fn git_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) {
+    let mut command = Command::new("git");
+    command.args(args).current_dir(repo);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    let status = command.status().expect("git command with env");
+    assert!(status.success(), "git {:?} failed", args);
+}
+
 fn write_file(repo: &Path, name: &str, content: &str) {
     fs::write(repo.join(name), content).expect("write file");
 }
@@ -456,8 +466,16 @@ fn commit_history_all_refs_includes_branch_outside_detached_head() {
         })
         .expect("get all refs history");
 
-    assert!(!current_commits.iter().any(|c| c.message == "side branch commit"));
-    assert!(all_ref_commits.iter().any(|c| c.message == "side branch commit"));
+    assert!(
+        !current_commits
+            .iter()
+            .any(|c| c.message == "side branch commit")
+    );
+    assert!(
+        all_ref_commits
+            .iter()
+            .any(|c| c.message == "side branch commit")
+    );
 }
 
 #[test]
@@ -534,6 +552,90 @@ fn commit_history_returns_commits_newest_first() {
         })
         .expect("get_commit_history");
     assert_eq!(commits[0].message, "third");
+}
+
+#[test]
+fn gix_commit_history_matches_git_log_order_for_merge_commits() {
+    let dir = init_repo();
+    let initial_date = [
+        ("GIT_AUTHOR_DATE", "2026-04-01T09:00:00+01:00"),
+        ("GIT_COMMITTER_DATE", "2026-04-01T09:00:00+01:00"),
+    ];
+    git_with_env(
+        dir.path(),
+        &["commit", "--amend", "--no-edit", "--allow-empty"],
+        &initial_date,
+    );
+
+    git(dir.path(), &["checkout", "-b", "feature"]);
+    write_file(dir.path(), "feature-a.txt", "feature a");
+    git(dir.path(), &["add", "feature-a.txt"]);
+    let feature_first_date = [
+        ("GIT_AUTHOR_DATE", "2026-05-06T16:40:00+01:00"),
+        ("GIT_COMMITTER_DATE", "2026-05-06T16:40:00+01:00"),
+    ];
+    git_with_env(
+        dir.path(),
+        &["commit", "-m", "feature first"],
+        &feature_first_date,
+    );
+
+    write_file(dir.path(), "feature-b.txt", "feature b");
+    git(dir.path(), &["add", "feature-b.txt"]);
+    let feature_second_date = [
+        ("GIT_AUTHOR_DATE", "2026-05-06T16:50:00+01:00"),
+        ("GIT_COMMITTER_DATE", "2026-05-06T16:50:00+01:00"),
+    ];
+    git_with_env(
+        dir.path(),
+        &["commit", "-m", "feature second"],
+        &feature_second_date,
+    );
+
+    git(dir.path(), &["checkout", "main"]);
+    write_file(dir.path(), "main-older.txt", "main older");
+    git(dir.path(), &["add", "main-older.txt"]);
+    let main_older_date = [
+        ("GIT_AUTHOR_DATE", "2026-04-27T14:34:55+01:00"),
+        ("GIT_COMMITTER_DATE", "2026-04-27T14:34:55+01:00"),
+    ];
+    git_with_env(
+        dir.path(),
+        &["commit", "-m", "main older"],
+        &main_older_date,
+    );
+
+    let merge_date = [
+        ("GIT_AUTHOR_DATE", "2026-05-06T16:51:09+01:00"),
+        ("GIT_COMMITTER_DATE", "2026-05-06T16:51:09+01:00"),
+    ];
+    git_with_env(
+        dir.path(),
+        &["merge", "--no-ff", "feature", "-m", "merge feature"],
+        &merge_date,
+    );
+
+    let expected_messages: Vec<String> = git_stdout(dir.path(), &["log", "-5", "--format=%s"])
+        .lines()
+        .map(ToString::to_string)
+        .collect();
+
+    let commits = gix_handler()
+        .get_commit_history(&CommitHistoryRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            limit: Some(5),
+            after_hash: None,
+            offset: None,
+            commit_date_mode: Default::default(),
+            scope: Default::default(),
+        })
+        .expect("get gix commit history");
+    let actual_messages: Vec<String> = commits
+        .iter()
+        .map(|commit| commit.message.clone())
+        .collect();
+
+    assert_eq!(actual_messages, expected_messages);
 }
 
 // commit_details: CLI handler
