@@ -10,11 +10,10 @@ use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use shell::cli::ShellStartupAction;
-#[cfg(windows)]
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::process::Command;
-use std::sync::{Arc, Mutex, OnceLock, atomic::AtomicBool};
+use std::sync::{Arc, Mutex, OnceLock, RwLock, atomic::AtomicBool};
 use tauri::{Emitter, Manager};
 
 pub struct AppState {
@@ -56,6 +55,11 @@ static GIT_BACKEND: OnceLock<GitBackend> = OnceLock::new();
 #[cfg(windows)]
 static BUNDLED_GIT_EXE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+static CONFIGURED_GIT_EXE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
+
+#[cfg(windows)]
+const MSIX_PACKAGE_FAMILY_NAME: &str = "cst8t.Gitmun_yqm0gq6me4wme";
+
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn is_msix_build() -> bool {
     #[cfg(target_os = "windows")]
@@ -88,6 +92,20 @@ fn detect_git_backend() -> GitBackend {
 }
 
 pub(crate) fn git_command() -> std::process::Command {
+    if let Some(git_exe) = configured_git_executable_path() {
+        #[cfg(windows)]
+        {
+            let mut command = std::process::Command::new(&git_exe);
+            configure_bundled_git_environment(&mut command, &git_exe);
+            return command;
+        }
+
+        #[cfg(not(windows))]
+        {
+            return std::process::Command::new(git_exe);
+        }
+    }
+
     match git_backend() {
         GitBackend::FlatpakHost => {
             let mut cmd = std::process::Command::new("flatpak-spawn");
@@ -111,10 +129,133 @@ pub(crate) fn git_command() -> std::process::Command {
     }
 }
 
+pub(crate) fn set_configured_git_executable_path(path: String) {
+    let trimmed = path.trim();
+    let next = if trimmed.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(trimmed.trim_matches('"')))
+    };
+
+    if let Ok(mut configured) = CONFIGURED_GIT_EXE.get_or_init(|| RwLock::new(None)).write() {
+        *configured = next;
+    }
+}
+
+fn configured_git_executable_path() -> Option<PathBuf> {
+    CONFIGURED_GIT_EXE
+        .get_or_init(|| RwLock::new(None))
+        .read()
+        .ok()
+        .and_then(|configured| configured.clone())
+        .filter(|candidate| candidate.exists())
+}
+
+fn resolve_on_path(names: &[&str]) -> Option<PathBuf> {
+    let path = std::env::var_os("PATH")?;
+    for dir in std::env::split_paths(&path) {
+        for name in names {
+            let candidate = dir.join(name);
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    None
+}
+
+pub(crate) fn resolve_active_git_executable_path() -> String {
+    if let Some(path) = configured_git_executable_path() {
+        return path.to_string_lossy().into_owned();
+    }
+
+    match git_backend() {
+        GitBackend::FlatpakHost => "flatpak-spawn --host git".to_string(),
+        GitBackend::FlatpakBundled => "/app/bin/git".to_string(),
+        GitBackend::System => {
+            #[cfg(windows)]
+            {
+                let git_exe = PathBuf::from(resolve_git_exe());
+                if git_exe.is_absolute() {
+                    return git_exe.to_string_lossy().into_owned();
+                }
+                resolve_on_path(&["git.exe", "git"])
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "git".to_string())
+            }
+
+            #[cfg(not(windows))]
+            {
+                resolve_on_path(&["git"])
+                    .map(|path| path.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "git".to_string())
+            }
+        }
+    }
+}
+
+pub(crate) fn git_version_string() -> Result<String, String> {
+    let mut command = git_command();
+    configure_command(&mut command);
+    let output = command
+        .arg("--version")
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if output.status.success() {
+        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        if !version.is_empty() {
+            return Ok(version);
+        }
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        "Failed to detect Git version".to_string()
+    } else {
+        stderr
+    })
+}
+
+pub(crate) fn display_config_path(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        if is_msix_build() {
+            let normalised = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+            let msix_roaming = format!(
+                "\\packages\\{}\\localcache\\roaming\\",
+                MSIX_PACKAGE_FAMILY_NAME.to_ascii_lowercase()
+            );
+            if normalised.contains(&msix_roaming) {
+                return path.to_path_buf();
+            }
+
+            if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
+                return PathBuf::from(local_appdata)
+                    .join("Packages")
+                    .join(MSIX_PACKAGE_FAMILY_NAME)
+                    .join("LocalCache")
+                    .join("Roaming")
+                    .join("com.cst8t.gitmun")
+                    .join(
+                        path.file_name()
+                            .unwrap_or_else(|| std::ffi::OsStr::new("config.toml")),
+                    );
+            }
+        }
+    }
+
+    path.to_path_buf()
+}
+
+#[cfg(windows)]
+fn active_windows_git_exe_path() -> PathBuf {
+    configured_git_executable_path().unwrap_or_else(|| PathBuf::from(resolve_git_exe()))
+}
+
 #[cfg(windows)]
 fn resolve_git_bash_exe() -> Option<std::path::PathBuf> {
-    let git_exe = resolve_git_exe();
-    let git_path = std::path::PathBuf::from(&git_exe);
+    let git_path = active_windows_git_exe_path();
     if git_path.is_absolute() {
         if let Some(parent) = git_path.parent() {
             let direct = parent.join("bash.exe");
@@ -142,6 +283,175 @@ fn resolve_git_bash_exe() -> Option<std::path::PathBuf> {
 #[cfg(windows)]
 pub(crate) fn git_bash_command() -> Option<std::process::Command> {
     resolve_git_bash_exe().map(std::process::Command::new)
+}
+
+#[cfg(windows)]
+fn normalise_configured_program_path(value: &str) -> String {
+    value.trim().trim_matches('"').to_string()
+}
+
+#[cfg(windows)]
+fn configured_program_available(value: &str, names: &[&str]) -> bool {
+    let value = normalise_configured_program_path(value);
+    if value.is_empty() {
+        return false;
+    }
+
+    let path = PathBuf::from(&value);
+    if path.is_absolute() || value.contains('\\') || value.contains('/') {
+        return path.exists();
+    }
+
+    let mut command_names = vec![value.as_str()];
+    command_names.extend(names.iter().copied().filter(|name| *name != value.as_str()));
+    resolve_on_windows_path(&command_names).is_some()
+}
+
+#[cfg(windows)]
+fn git_config_get(key: &str, current_dir: Option<&Path>) -> Result<Option<String>, String> {
+    let mut command = git_command();
+    configure_command(&mut command);
+    if let Some(path) = current_dir {
+        command.current_dir(path);
+    }
+    let output = command
+        .args(["config", "--get", key])
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if output.status.success() {
+        let value = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok((!value.is_empty()).then_some(value));
+    }
+
+    if output.status.code() == Some(1) {
+        return Ok(None);
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        format!("Failed to get git config {key}")
+    } else {
+        stderr
+    })
+}
+
+#[cfg(windows)]
+fn git_config_global_set(key: &str, value: &str) -> Result<(), String> {
+    let mut command = git_command();
+    configure_command(&mut command);
+    let output = command
+        .args(["config", "--global", key, value])
+        .output()
+        .map_err(|error| error.to_string())?;
+
+    if output.status.success() {
+        return Ok(());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+    Err(if stderr.is_empty() {
+        format!("Failed to set git config {key}")
+    } else {
+        stderr
+    })
+}
+
+#[cfg(windows)]
+fn gpg_program_candidates_from_git_exe() -> Vec<PathBuf> {
+    let git_exe = active_windows_git_exe_path();
+    let Some(root) = git_exe.parent().and_then(|path| path.parent()) else {
+        return vec![];
+    };
+
+    vec![
+        root.join("usr").join("bin").join("gpg.exe"),
+        root.join("mingw64").join("bin").join("gpg.exe"),
+    ]
+}
+
+#[cfg(windows)]
+fn known_gpg_program_install_paths() -> Vec<PathBuf> {
+    let mut paths = vec![
+        PathBuf::from(r"C:\Program Files\Git\usr\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files\Git\mingw64\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Git\usr\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Git\mingw64\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files\GnuPG\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\GnuPG\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files\Gpg4win\bin\gpg.exe"),
+        PathBuf::from(r"C:\Program Files (x86)\Gpg4win\bin\gpg.exe"),
+    ];
+
+    if let Some(program_files) = std::env::var_os("ProgramFiles") {
+        let root = PathBuf::from(program_files);
+        paths.extend([
+            root.join("Git").join("usr").join("bin").join("gpg.exe"),
+            root.join("Git").join("mingw64").join("bin").join("gpg.exe"),
+            root.join("GnuPG").join("bin").join("gpg.exe"),
+            root.join("Gpg4win").join("bin").join("gpg.exe"),
+        ]);
+    }
+    if let Some(program_files_x86) = std::env::var_os("ProgramFiles(x86)") {
+        let root = PathBuf::from(program_files_x86);
+        paths.extend([
+            root.join("Git").join("usr").join("bin").join("gpg.exe"),
+            root.join("Git").join("mingw64").join("bin").join("gpg.exe"),
+            root.join("GnuPG").join("bin").join("gpg.exe"),
+            root.join("Gpg4win").join("bin").join("gpg.exe"),
+        ]);
+    }
+    if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
+        paths.extend([
+            PathBuf::from(&local_appdata)
+                .join("Programs")
+                .join("Git")
+                .join("usr")
+                .join("bin")
+                .join("gpg.exe"),
+            PathBuf::from(local_appdata)
+                .join("Programs")
+                .join("Git")
+                .join("mingw64")
+                .join("bin")
+                .join("gpg.exe"),
+        ]);
+    }
+
+    paths
+}
+
+#[cfg(windows)]
+pub(crate) fn resolve_known_gpg_program_path() -> Option<PathBuf> {
+    resolve_on_windows_path(&["gpg.exe", "gpg"])
+        .or_else(|| {
+            gpg_program_candidates_from_git_exe()
+                .into_iter()
+                .find(|candidate| candidate.exists())
+        })
+        .or_else(|| {
+            known_gpg_program_install_paths()
+                .into_iter()
+                .find(|candidate| candidate.exists())
+        })
+}
+
+#[cfg(windows)]
+pub(crate) fn ensure_windows_gpg_program_configured(
+    current_dir: Option<&Path>,
+) -> Result<Option<PathBuf>, String> {
+    if let Some(configured) = git_config_get("gpg.program", current_dir)? {
+        if configured_program_available(&configured, &["gpg.exe", "gpg"]) {
+            return Ok(None);
+        }
+    }
+
+    let Some(path) = resolve_known_gpg_program_path() else {
+        return Ok(None);
+    };
+
+    git_config_global_set("gpg.program", &path.to_string_lossy())?;
+    Ok(Some(path))
 }
 
 #[cfg(windows)]
@@ -183,16 +493,7 @@ fn known_diff_tool_local_appdata_paths(tool_key: &str) -> Vec<std::path::PathBuf
 
 #[cfg(windows)]
 fn resolve_on_windows_path(names: &[&str]) -> Option<std::path::PathBuf> {
-    let path = std::env::var_os("PATH")?;
-    for dir in std::env::split_paths(&path) {
-        for name in names {
-            let candidate = dir.join(name);
-            if candidate.exists() {
-                return Some(candidate);
-            }
-        }
-    }
-    None
+    resolve_on_path(names)
 }
 
 #[cfg(windows)]
@@ -252,7 +553,7 @@ fn bundled_git_exe() -> Option<PathBuf> {
 
 #[cfg(windows)]
 pub(crate) fn is_using_bundled_git_runtime() -> bool {
-    let git_exe = PathBuf::from(resolve_git_exe());
+    let git_exe = active_windows_git_exe_path();
     bundled_git_exe().is_some_and(|bundled| git_exe == bundled)
 }
 
@@ -704,6 +1005,7 @@ pub fn run() {
             commands::settings::set_panel_layout,
             commands::settings::set_confirm_revert,
             commands::settings::get_config_file_path,
+            commands::settings::get_config_folder_path,
             commands::settings::get_build_version,
             commands::settings::get_commit_hash,
             commands::settings::is_updater_enabled,
@@ -713,9 +1015,15 @@ pub fn run() {
             commands::settings::get_global_diff_tool_path,
             commands::settings::get_global_default_branch,
             commands::settings::get_global_file_mode,
+            commands::settings::get_active_git_executable_path,
+            commands::settings::get_active_git_version,
+            commands::settings::get_global_gpg_program,
+            commands::settings::get_global_gpg_program_path,
             commands::settings::set_global_diff_tool,
             commands::settings::set_global_default_branch,
             commands::settings::set_global_file_mode,
+            commands::settings::set_git_executable_path,
+            commands::settings::set_global_gpg_program,
             commands::settings::set_avatar_provider,
             commands::settings::set_try_platform_first,
             commands::settings::set_default_clone_dir,

@@ -148,6 +148,7 @@ impl GitService {
         let (loaded, should_persist) = crate::config_file::load_or_migrate(&path, &json_path);
 
         if let Ok(mut settings) = self.settings.write() {
+            crate::set_configured_git_executable_path(loaded.git_executable_path.clone());
             *settings = loaded;
         }
 
@@ -160,7 +161,23 @@ impl GitService {
         self.config_path
             .read()
             .ok()
-            .and_then(|path| path.as_ref().map(|p| p.to_string_lossy().to_string()))
+            .and_then(|path| {
+                path.as_ref()
+                    .map(|p| crate::display_config_path(p).to_string_lossy().to_string())
+            })
+    }
+
+    pub fn get_config_folder_path(&self) -> Option<String> {
+        self.config_path
+            .read()
+            .ok()
+            .and_then(|path| {
+                path.as_ref().and_then(|p| {
+                    crate::display_config_path(p)
+                        .parent()
+                        .map(|folder| folder.to_string_lossy().to_string())
+                })
+            })
     }
 
     pub fn get_settings(&self) -> Settings {
@@ -293,6 +310,13 @@ impl GitService {
     pub fn set_repo_open_behaviour(&self, behaviour: super::types::RepoOpenBehaviour) -> Settings {
         self.update_settings(|settings| {
             settings.repo_open_behaviour = behaviour;
+        })
+    }
+
+    pub fn set_git_executable_path(&self, path: String) -> Settings {
+        self.update_settings(|settings| {
+            crate::set_configured_git_executable_path(path.clone());
+            settings.git_executable_path = path;
         })
     }
 

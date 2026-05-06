@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="300" height="300" viewBox="0 0 300 300" version="1.1" xmlns="http://www.w3.org/2000/svg">
+  <title>Gitmun Microsoft Store square icon</title>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="300" y2="300" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#0d1117"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <radialGradient id="bgGlow" cx="205" cy="88" r="150" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#312e81" stop-opacity="0.55"/>
+      <stop offset="0.52" stop-color="#1e1b4b" stop-opacity="0.25"/>
+      <stop offset="1" stop-color="#0d1117" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="mainGrad" x1="105" y1="64" x2="105" y2="236" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#a5b4fc"/>
+      <stop offset="1" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="featureGrad" x1="105" y1="150" x2="205" y2="64" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7c7ff5"/>
+      <stop offset="1" stop-color="#c084fc"/>
+    </linearGradient>
+    <filter id="softShadow" x="-35%" y="-35%" width="170%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+    <filter id="lineGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3.5" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Microsoft Store 1:1 artwork: square canvas, no pre-rounded corners. -->
+  <rect width="300" height="300" fill="url(#bgGrad)"/>
+  <rect width="300" height="300" fill="url(#bgGlow)"/>
+
+  <!-- Centred, compact Git branch mark tuned for a square tile. -->
+  <g filter="url(#softShadow)">
+    <g filter="url(#lineGlow)" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <line x1="105" y1="65" x2="105" y2="235" stroke="url(#mainGrad)" stroke-width="18"/>
+      <path d="M105 150 C105 92 205 122 205 65" stroke="url(#featureGrad)" stroke-width="18"/>
+    </g>
+
+    <g>
+      <circle cx="105" cy="235" r="22" fill="#0d1117" stroke="#6366f1" stroke-width="9"/>
+      <circle cx="105" cy="235" r="7" fill="#a5b4fc"/>
+
+      <circle cx="105" cy="150" r="24" fill="#0d1117" stroke="#7c7ff5" stroke-width="9"/>
+      <circle cx="105" cy="150" r="8" fill="#c7d2fe"/>
+
+      <circle cx="105" cy="65" r="22" fill="#0d1117" stroke="#a5b4fc" stroke-width="9"/>
+      <circle cx="105" cy="65" r="7" fill="#c7d2fe"/>
+
+      <circle cx="205" cy="65" r="24" fill="#0d1117" stroke="#c084fc" stroke-width="9"/>
+      <circle cx="205" cy="65" r="8" fill="#e9d5ff"/>
+    </g>
+  </g>
+</svg>

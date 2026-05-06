@@ -435,41 +435,25 @@ impl GixGitHandler {
     fn collect_commit_history_with_gix(
         repo: &gix::Repository,
         limit: usize,
-        after_hash: Option<&str>,
+        offset: usize,
         commit_date_mode: &CommitDateMode,
     ) -> GitResult<Vec<CommitHistoryItem>> {
-        // Determine walk starting points. When a cursor hash is provided, start
-        // from that commit's parents so each page is O(limit) rather than
-        // O(offset + limit). Fall back to HEAD for the first page.
-        let start_ids: Vec<gix::ObjectId> = if let Some(hash) = after_hash {
-            let oid = gix::ObjectId::from_hex(hash.as_bytes())
-                .map_err(|e| GitError::GixError(e.to_string()))?;
-            let after_commit = repo
-                .find_object(oid)
-                .map_err(|e| GitError::GixError(e.to_string()))?
-                .try_into_commit()
-                .map_err(|e| GitError::GixError(e.to_string()))?;
-            after_commit.parent_ids().map(|r| r.detach()).collect()
-        } else {
-            match repo.head_id() {
-                Ok(id) => vec![id.detach()],
-                Err(_) => return Ok(Vec::new()),
-            }
+        let start_id = match repo.head_id() {
+            Ok(id) => id.detach(),
+            Err(_) => return Ok(Vec::new()),
         };
 
-        if start_ids.is_empty() {
-            // after_hash was the root commit (no parents) - nothing more to load
-            return Ok(Vec::new());
-        }
-
         let walk = repo
-            .rev_walk(start_ids)
+            .rev_walk([start_id])
+            .sorting(gix::revision::walk::Sorting::ByCommitTime(
+                Default::default(),
+            ))
             .all()
             .map_err(|e| GitError::GixError(e.to_string()))?;
 
         let mut commits = Vec::with_capacity(limit.min(256));
 
-        for info in walk.take(limit) {
+        for info in walk.skip(offset).take(limit) {
             let info = info.map_err(|e| GitError::GixError(e.to_string()))?;
             let oid = info.id();
             let commit = repo
@@ -947,10 +931,10 @@ impl GitOperationHandler for GixGitHandler {
 
         let repo_path = Path::new(request.repo_path.trim());
         let limit = request.limit.unwrap_or(100).clamp(1, 5000);
-        let after_hash = request.after_hash.as_deref();
+        let offset = request.offset.unwrap_or(0);
         let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
         match repo.and_then(|r| {
-            Self::collect_commit_history_with_gix(&r, limit, after_hash, &request.commit_date_mode)
+            Self::collect_commit_history_with_gix(&r, limit, offset, &request.commit_date_mode)
         }) {
             Ok(history) => Ok(history),
             Err(_) => self.cli_fallback.get_commit_history(request),

@@ -702,6 +702,15 @@ jobs:
       - name: Generate icons
         run: npm run generate:icons
 
+      - name: Install cargo-about
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Generate attribution file
+        shell: bash
+        run: bash ./scripts/generate-attributions.sh
+
       - name: Resolve build version
         shell: pwsh
         run: |
@@ -797,10 +806,10 @@ jobs:
 
           Copy-Item "src-tauri/target/release/gitmun.exe" "$layout/gitmun.exe"
           Copy-Item "packaging/msix/mingit" "$layout/mingit" -Recurse
-          Copy-Item "src-tauri/icons/StoreLogo.png" "$layout/Assets/StoreLogo.png"
-          Copy-Item "src-tauri/icons/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
-          Copy-Item "src-tauri/icons/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
-          Copy-Item "src-tauri/icons/Square150x150Logo.png" "$layout/Assets/Square150x150Logo.png"
+          Copy-Item "packaging/msix/assets/Square300x300Logo.png" "$layout/Assets/Square300x300Logo.png"
+          Copy-Item "packaging/msix/assets/Square150x150Logo.png" "$layout/Assets/Square150x150Logo.png"
+          Copy-Item "packaging/msix/assets/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
+          Copy-Item "packaging/msix/assets/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
 
           $manifest = Get-Content "packaging/msix/Package.appxmanifest" -Raw
           $manifest = $manifest.Replace("__APP_VERSION__", $env:MSIX_VERSION)

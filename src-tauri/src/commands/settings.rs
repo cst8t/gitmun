@@ -5,7 +5,6 @@ use crate::git::types::{
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
 use serde::Serialize;
-#[cfg(windows)]
 use std::path::Path;
 use std::time::Duration;
 use tauri::{Manager, ipc::Channel};
@@ -229,6 +228,11 @@ pub fn get_config_file_path(state: tauri::State<'_, AppState>) -> Option<String>
 }
 
 #[tauri::command]
+pub fn get_config_folder_path(state: tauri::State<'_, AppState>) -> Option<String> {
+    state.git_service.get_config_folder_path()
+}
+
+#[tauri::command]
 pub fn get_build_version(app: tauri::AppHandle) -> String {
     app.package_info().version.to_string()
 }
@@ -334,6 +338,41 @@ pub fn get_global_file_mode() -> Result<Option<bool>, String> {
     }
 }
 
+#[tauri::command]
+pub fn get_active_git_executable_path() -> String {
+    crate::resolve_active_git_executable_path()
+}
+
+#[tauri::command]
+pub fn get_active_git_version() -> Result<String, String> {
+    crate::git_version_string()
+}
+
+#[tauri::command]
+pub fn get_global_gpg_program() -> Result<Option<String>, String> {
+    git_config_global_get("gpg.program")
+}
+
+#[tauri::command]
+pub fn get_global_gpg_program_path() -> Result<Option<String>, String> {
+    let configured = git_config_global_get("gpg.program")?;
+    if let Some(program) = configured.as_ref() {
+        if gpg_program_value_available(program) {
+            return Ok(configured);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        Ok(crate::resolve_known_gpg_program_path().map(|path| path.to_string_lossy().into()))
+    }
+
+    #[cfg(not(windows))]
+    {
+        Ok(configured)
+    }
+}
+
 #[cfg(windows)]
 fn diff_tool_key(tool: &ExternalDiffTool) -> Option<&'static str> {
     match tool {
@@ -344,6 +383,36 @@ fn diff_tool_key(tool: &ExternalDiffTool) -> Option<&'static str> {
         ExternalDiffTool::VsCodium => Some("vscodium"),
         ExternalDiffTool::Other => None,
     }
+}
+
+fn is_path_like(value: &str) -> bool {
+    Path::new(value).is_absolute() || value.contains('/') || value.contains('\\')
+}
+
+fn gpg_program_value_available(value: &str) -> bool {
+    let trimmed = value.trim().trim_matches('"');
+    if trimmed.is_empty() {
+        return false;
+    }
+
+    if is_path_like(trimmed) {
+        return Path::new(trimmed).exists();
+    }
+
+    true
+}
+
+fn validate_gpg_program(program: &str) -> Result<String, String> {
+    let trimmed = program.trim().trim_matches('"');
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    if is_path_like(trimmed) && !Path::new(trimmed).exists() {
+        return Err(format!("GPG executable was not found: {trimmed}"));
+    }
+
+    Ok(trimmed.to_string())
 }
 
 fn git_config_global_set(key: &str, value: &str) -> Result<(), String> {
@@ -636,6 +705,56 @@ pub fn set_global_file_mode(file_mode: bool) -> Result<OperationResult, String> 
         repo_path: None,
         backend_used: "git-cli".to_string(),
     })
+}
+
+#[tauri::command]
+pub fn set_global_gpg_program(gpg_program: String) -> Result<OperationResult, String> {
+    let gpg_program = validate_gpg_program(&gpg_program)?;
+
+    let message = if gpg_program.is_empty() {
+        git_config_global_unset("gpg.program")?;
+        "Cleared gpg.program from global git config".to_string()
+    } else {
+        git_config_global_set("gpg.program", &gpg_program)?;
+        format!("Set git global gpg.program={gpg_program}")
+    };
+
+    Ok(OperationResult {
+        message,
+        output: None,
+        repo_path: None,
+        backend_used: "git-cli".to_string(),
+    })
+}
+
+fn validate_git_executable_path(path: &str) -> Result<String, String> {
+    let trimmed = path.trim().trim_matches('"');
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+
+    let path = Path::new(trimmed);
+    if !path.exists() {
+        return Err(format!("Git executable was not found: {trimmed}"));
+    }
+    if path.is_dir() {
+        return Err(format!(
+            "Git executable path points to a directory: {trimmed}"
+        ));
+    }
+
+    Ok(trimmed.to_string())
+}
+
+#[tauri::command]
+pub fn set_git_executable_path(
+    git_executable_path: String,
+    state: tauri::State<'_, AppState>,
+) -> Result<Settings, String> {
+    let git_executable_path = validate_git_executable_path(&git_executable_path)?;
+    Ok(state
+        .git_service
+        .set_git_executable_path(git_executable_path))
 }
 
 #[tauri::command]

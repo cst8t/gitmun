@@ -2,8 +2,9 @@ import React, {useState, useEffect, useCallback} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
-import {open} from "@tauri-apps/plugin-dialog";
+import {open as openDialog} from "@tauri-apps/plugin-dialog";
 import {platform} from "@tauri-apps/plugin-os";
+import {open as openShell} from "@tauri-apps/plugin-shell";
 import {useTranslation} from "react-i18next";
 import type {
     AvatarProviderMode,
@@ -16,14 +17,18 @@ import type {
     ThemeMode
 } from "../../types";
 import {
+    getConfigFilePath,
+    getConfigFolderPath,
     getGlobalDiffToolPath,
+    getGlobalGpgProgramPath,
     getSystemThemeHint,
     isUpdaterEnabled,
     openResultLogWindow,
     setGlobalDiffToolWithPath,
+    setGlobalGpgProgram as saveGlobalGpgProgram,
     setUpdateEndpoint,
 } from "../../api/commands";
-import {CloseIcon, FolderIcon} from "../icons";
+import {CloseIcon, FileIcon, FolderIcon} from "../icons";
 import "./SettingsWindow.css";
 
 const BACKEND_MODE_KEY = "gitmun.backendMode";
@@ -35,6 +40,10 @@ const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
 const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
 const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
+
+function normaliseOptionalGitConfig(value: string | null | undefined): string {
+    return value?.trim() ?? "";
+}
 
 function supportedDiffTools(os: string): ExternalDiffTool[] {
     const tools: ExternalDiffTool[] = ["Other", "Meld", "VsCode", "VsCodium"];
@@ -78,7 +87,9 @@ export function SettingsWindow() {
     const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
     const [externalDiffTool, setExternalDiffTool] = useState<ExternalDiffTool>("Other");
     const [globalDefaultBranch, setGlobalDefaultBranch] = useState<string>("");
+    const [loadedGlobalDefaultBranch, setLoadedGlobalDefaultBranch] = useState("");
     const [globalFileMode, setGlobalFileMode] = useState(true);
+    const [loadedGlobalFileMode, setLoadedGlobalFileMode] = useState(true);
     const [allowedDiffTools, setAllowedDiffTools] = useState<ExternalDiffTool[]>(["Other", "Meld"]);
     const [defaultCloneDir, setDefaultCloneDir] = useState<string>("");
     const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
@@ -93,8 +104,18 @@ export function SettingsWindow() {
     const [isWindows, setIsWindows] = useState(false);
     const [updaterSupported, setUpdaterSupported] = useState(false);
     const [configFilePath, setConfigFilePath] = useState<string>("");
+    const [configFolderPath, setConfigFolderPath] = useState<string>("");
     const [buildVersion, setBuildVersion] = useState<string>("");
     const [externalDiffToolPath, setExternalDiffToolPath] = useState("");
+    const [loadedExternalDiffTool, setLoadedExternalDiffTool] = useState<ExternalDiffTool>("Other");
+    const [externalDiffToolPathEdited, setExternalDiffToolPathEdited] = useState(false);
+    const [gitExecutablePath, setGitExecutablePath] = useState("");
+    const [gitExecutableConfiguredPath, setGitExecutableConfiguredPath] = useState("");
+    const [gitExecutableEdited, setGitExecutableEdited] = useState(false);
+    const [gitVersion, setGitVersion] = useState("");
+    const [globalGpgProgram, setGlobalGpgProgram] = useState("");
+    const [globalGpgProgramConfigured, setGlobalGpgProgramConfigured] = useState("");
+    const [globalGpgProgramEdited, setGlobalGpgProgramEdited] = useState(false);
     const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
@@ -110,6 +131,13 @@ export function SettingsWindow() {
                 return tool;
         }
     }, [t]);
+
+    const refreshGitExecutable = useCallback(async () => {
+        const activeGitPath = await invoke<string>("get_active_git_executable_path");
+        setGitExecutablePath(activeGitPath);
+        const activeGitVersion = await invoke<string>("get_active_git_version");
+        setGitVersion(activeGitVersion);
+    }, []);
 
     useEffect(() => {
         (async () => {
@@ -138,13 +166,28 @@ export function SettingsWindow() {
 
                 const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
                 setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
+                setLoadedExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
                 const defaultBranch = await invoke<string | null>("get_global_default_branch");
                 setGlobalDefaultBranch(defaultBranch ?? "");
+                setLoadedGlobalDefaultBranch(defaultBranch ?? "");
 
                 const fileMode = await invoke<boolean | null>("get_global_file_mode");
                 setGlobalFileMode(fileMode ?? true);
+                setLoadedGlobalFileMode(fileMode ?? true);
+
+                const configuredGpgProgram = await invoke<string | null>("get_global_gpg_program");
+                setGlobalGpgProgramConfigured(configuredGpgProgram ?? "");
+                setGlobalGpgProgramEdited(false);
+                const gpgProgram = await getGlobalGpgProgramPath();
+                setGlobalGpgProgram(gpgProgram ?? "");
 
                 const settings = await invoke<Settings>("get_settings");
+                const activeGitPath = await invoke<string>("get_active_git_executable_path");
+                setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
+                setGitExecutablePath(settings.gitExecutablePath || activeGitPath);
+                setGitExecutableEdited(false);
+                const activeGitVersion = await invoke<string>("get_active_git_version");
+                setGitVersion(activeGitVersion);
                 setBackendMode(settings.backendMode);
                 setThemeMode(settings.themeMode);
                 setWrapDiffLines(settings.wrapDiffLines ?? false);
@@ -162,8 +205,10 @@ export function SettingsWindow() {
                 setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
 
-                const cfgPath = await invoke<string | null>("get_config_file_path");
+                const cfgPath = await getConfigFilePath();
                 setConfigFilePath(cfgPath ?? "");
+                const cfgFolderPath = await getConfigFolderPath();
+                setConfigFolderPath(cfgFolderPath ?? "");
 
                 const version = await invoke<string>("get_build_version");
                 setBuildVersion(version);
@@ -172,7 +217,7 @@ export function SettingsWindow() {
                 setStatus(t("status.loadFailed", {message: String(e)}));
             }
         })();
-    }, [t]);
+    }, [refreshGitExecutable, t]);
 
     useEffect(() => {
         if (!isWindows || !requiresWindowsDiffToolPath(externalDiffTool)) {
@@ -184,7 +229,10 @@ export function SettingsWindow() {
         (async () => {
             try {
                 const path = await getGlobalDiffToolPath(externalDiffTool);
-                if (!cancelled) setExternalDiffToolPath(path ?? "");
+                if (!cancelled) {
+                    setExternalDiffToolPath(path ?? "");
+                    setExternalDiffToolPathEdited(false);
+                }
             } catch (e) {
                 if (!cancelled) {
                     setExternalDiffToolPath("");
@@ -209,6 +257,8 @@ export function SettingsWindow() {
     const handleSave = useCallback(async () => {
         setSaving(true);
         try {
+            const gitConfigMessages: string[] = [];
+
             await invoke("set_backend_mode", {mode: backendMode});
             await invoke("set_show_result_log", {showResultLog: openResultLogOnLaunch});
             await invoke<Settings>("set_theme_mode", {themeMode});
@@ -216,14 +266,56 @@ export function SettingsWindow() {
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
             await invoke("set_default_clone_dir", {defaultCloneDir});
-            const diffToolResult = await setGlobalDiffToolWithPath(
-                externalDiffTool,
-                isWindows && requiresWindowsDiffToolPath(externalDiffTool)
-                    ? (externalDiffToolPath.trim() || null)
-                    : null,
-            );
-            await invoke("set_global_default_branch", {defaultBranch: globalDefaultBranch});
-            await invoke("set_global_file_mode", {fileMode: globalFileMode});
+            await invoke<Settings>("set_git_executable_path", {
+                gitExecutablePath: gitExecutableEdited ? gitExecutablePath : gitExecutableConfiguredPath,
+            });
+
+            const diffToolSettingChanged = externalDiffTool !== loadedExternalDiffTool || externalDiffToolPathEdited;
+            const currentDiffTool = diffToolSettingChanged
+                ? await invoke<ExternalDiffTool>("get_global_diff_tool")
+                : loadedExternalDiffTool;
+            const diffToolPath = isWindows && requiresWindowsDiffToolPath(externalDiffTool)
+                ? externalDiffToolPath.trim()
+                : "";
+            let shouldSaveDiffTool = diffToolSettingChanged && currentDiffTool !== externalDiffTool;
+            if (diffToolSettingChanged && isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {
+                const currentDiffToolPath = await getGlobalDiffToolPath(externalDiffTool);
+                shouldSaveDiffTool ||= normaliseOptionalGitConfig(currentDiffToolPath) !== diffToolPath;
+            }
+            if (shouldSaveDiffTool) {
+                const diffToolResult = await setGlobalDiffToolWithPath(
+                    externalDiffTool,
+                    diffToolPath || null,
+                );
+                gitConfigMessages.push(diffToolResult.message);
+            }
+
+            const desiredDefaultBranch = globalDefaultBranch.trim();
+            if (desiredDefaultBranch !== loadedGlobalDefaultBranch) {
+                const currentDefaultBranch = await invoke<string | null>("get_global_default_branch");
+                if (normaliseOptionalGitConfig(currentDefaultBranch) !== desiredDefaultBranch) {
+                    const result = await invoke<{message: string}>("set_global_default_branch", {defaultBranch: globalDefaultBranch});
+                    gitConfigMessages.push(result.message);
+                }
+            }
+
+            if (globalFileMode !== loadedGlobalFileMode) {
+                const currentFileMode = await invoke<boolean | null>("get_global_file_mode");
+                if ((currentFileMode ?? true) !== globalFileMode) {
+                    const result = await invoke<{message: string}>("set_global_file_mode", {fileMode: globalFileMode});
+                    gitConfigMessages.push(result.message);
+                }
+            }
+
+            const desiredGpgProgram = globalGpgProgram.trim();
+            if (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured) {
+                const currentGpgProgram = await invoke<string | null>("get_global_gpg_program");
+                if (normaliseOptionalGitConfig(currentGpgProgram) !== desiredGpgProgram) {
+                    const gpgProgramResult = await saveGlobalGpgProgram(globalGpgProgram);
+                    gitConfigMessages.push(gpgProgramResult.message);
+                }
+            }
+
             const parsedCommitMessageRecommendedLength = Number.parseInt(commitMessageRecommendedLength, 10);
             const savedCommitMessageRecommendedLength = Number.isFinite(parsedCommitMessageRecommendedLength)
                 ? Math.max(0, parsedCommitMessageRecommendedLength)
@@ -247,9 +339,27 @@ export function SettingsWindow() {
             if (isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {
                 setExternalDiffToolPath(await getGlobalDiffToolPath(externalDiffTool) ?? "");
             }
+            const savedDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
+            setLoadedExternalDiffTool(savedDiffTool);
+            setExternalDiffToolPathEdited(false);
+            const savedDefaultBranch = await invoke<string | null>("get_global_default_branch");
+            setLoadedGlobalDefaultBranch(savedDefaultBranch ?? "");
+            const savedFileMode = await invoke<boolean | null>("get_global_file_mode");
+            setLoadedGlobalFileMode(savedFileMode ?? true);
+            setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
+            setGitExecutableEdited(false);
+            await refreshGitExecutable();
+            const savedGpgProgram = await invoke<string | null>("get_global_gpg_program");
+            setGlobalGpgProgramConfigured(savedGpgProgram ?? "");
+            setGlobalGpgProgramEdited(false);
+            setGlobalGpgProgram(await getGlobalGpgProgramPath() ?? "");
 
             await emit("settings-updated", settings);
-            setStatus(t("status.saved", {message: diffToolResult.message}));
+            setStatus(t("status.saved", {
+                message: gitConfigMessages.length > 0
+                    ? gitConfigMessages.join("; ")
+                    : t("status.noGitConfigChanges"),
+            }));
         } catch (e) {
             setStatus(t("status.saveFailed", {message: String(e)}));
         } finally {
@@ -263,9 +373,16 @@ export function SettingsWindow() {
         avatarProvider,
         tryPlatformFirst,
         defaultCloneDir,
+        gitExecutableConfiguredPath,
+        gitExecutablePath,
+        gitExecutableEdited,
         externalDiffTool,
+        loadedExternalDiffTool,
+        externalDiffToolPathEdited,
         globalDefaultBranch,
+        loadedGlobalDefaultBranch,
         globalFileMode,
+        loadedGlobalFileMode,
         commitDateMode,
         commitMessageRecommendedLength,
         pushFollowTags,
@@ -277,6 +394,11 @@ export function SettingsWindow() {
         linuxGraphicsMode,
         repoOpenBehaviour,
         externalDiffToolPath,
+        globalGpgProgram,
+        globalGpgProgramConfigured,
+        globalGpgProgramEdited,
+        refreshGitExecutable,
+        saveGlobalGpgProgram,
         t,
     ]);
 
@@ -306,7 +428,7 @@ export function SettingsWindow() {
 
     const handleBrowseCloneDir = useCallback(async () => {
         try {
-            const selected = await open({
+            const selected = await openDialog({
                 directory: true,
                 multiple: false,
                 title: t("picker.cloneDestination"),
@@ -320,18 +442,81 @@ export function SettingsWindow() {
 
     const handleBrowseDiffToolPath = useCallback(async () => {
         try {
-            const selected = await open({
+            const selected = await openDialog({
                 directory: false,
                 multiple: false,
                 title: t("picker.diffToolExecutable", {tool: labelDiffTool(externalDiffTool)}),
                 defaultPath: externalDiffToolPath || undefined,
                 filters: [{name: t("picker.windowsExecutables"), extensions: ["exe"]}],
             });
-            if (typeof selected === "string") setExternalDiffToolPath(selected);
+            if (typeof selected === "string") {
+                setExternalDiffToolPath(selected);
+                setExternalDiffToolPathEdited(true);
+            }
         } catch (e) {
             setStatus(t("picker.cloneDestinationFailed", {message: String(e)}));
         }
     }, [externalDiffTool, externalDiffToolPath, labelDiffTool, t]);
+
+    const handleBrowseGitExecutable = useCallback(async () => {
+        try {
+            const selected = await openDialog({
+                directory: false,
+                multiple: false,
+                title: t("picker.gitExecutable"),
+                defaultPath: gitExecutablePath || undefined,
+                ...(isWindows ? {filters: [{name: t("picker.windowsExecutables"), extensions: ["exe"]}]} : {}),
+            });
+            if (typeof selected === "string") {
+                setGitExecutablePath(selected);
+                setGitExecutableEdited(true);
+            }
+        } catch (e) {
+            setStatus(t("picker.gitExecutableFailed", {message: String(e)}));
+        }
+    }, [gitExecutablePath, isWindows, t]);
+
+    const handleResetGitExecutable = useCallback(async () => {
+        try {
+            const settings = await invoke<Settings>("set_git_executable_path", {gitExecutablePath: ""});
+            setGitExecutableConfiguredPath("");
+            setGitExecutableEdited(false);
+            await refreshGitExecutable();
+            await emit("settings-updated", settings);
+            setStatus(t("status.gitExecutableReset"));
+        } catch (e) {
+            setStatus(t("status.gitExecutableResetFailed", {message: String(e)}));
+        }
+    }, [refreshGitExecutable, t]);
+
+    const handleBrowseGpgProgram = useCallback(async () => {
+        try {
+            const options = {
+                directory: false,
+                multiple: false,
+                title: t("picker.gpgExecutable"),
+                defaultPath: globalGpgProgram || undefined,
+                ...(isWindows ? {filters: [{name: t("picker.windowsExecutables"), extensions: ["exe"]}]} : {}),
+            };
+            const selected = await openDialog(options);
+            if (typeof selected === "string") {
+                setGlobalGpgProgram(selected);
+                setGlobalGpgProgramEdited(true);
+            }
+        } catch (e) {
+            setStatus(t("picker.gpgExecutableFailed", {message: String(e)}));
+        }
+    }, [globalGpgProgram, isWindows, t]);
+
+    const handleOpenConfigFolder = useCallback(async () => {
+        if (!configFolderPath) return;
+        try {
+            await openShell(configFolderPath);
+            setStatus(t("status.openedConfigFolder"));
+        } catch (e) {
+            setStatus(t("status.openConfigFolderFailed", {message: String(e)}));
+        }
+    }, [configFolderPath, t]);
 
     const handleClose = useCallback(() => {
         getCurrentWindow().close();
@@ -354,8 +539,16 @@ export function SettingsWindow() {
                 <div className="settings-window__column">
                     <div className="settings-window__section-title">{t("labels.application")}</div>
                     {configFilePath && (
-                        <div className="settings-window__section-note">
-                            {t("labels.configFile")}<code>{configFilePath}</code>
+                        <div className="settings-window__section-note settings-window__path-note">
+                            <span>{t("labels.configFile")}<code>{configFilePath}</code></span>
+                            <button
+                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                title={t("actions.openConfigFolder")}
+                                aria-label={t("actions.openConfigFolder")}
+                                onClick={handleOpenConfigFolder}
+                                disabled={!configFolderPath}>
+                                <FolderIcon/>
+                            </button>
                         </div>
                     )}
                     {buildVersion && (
@@ -438,6 +631,43 @@ export function SettingsWindow() {
                             <option value="Default">{t("options.backendDefault")}</option>
                             <option value="GitCliOnly">{t("options.backendGitCli")}</option>
                         </select>
+                    </div>
+
+                    <div className="settings-window__row">
+                        <label className="settings-window__label">{t("labels.gitExecutable")}</label>
+                        <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
+                            <input
+                                className="settings-window__input"
+                                type="text"
+                                value={gitExecutablePath}
+                                onChange={e => {
+                                    setGitExecutablePath(e.target.value);
+                                    setGitExecutableEdited(true);
+                                }}
+                                placeholder={t("placeholders.gitExecutable")}
+                                spellCheck={false}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                            />
+                            <button
+                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                title={t("actions.browse")}
+                                aria-label={t("actions.browse")}
+                                onClick={handleBrowseGitExecutable}>
+                                <FileIcon/>
+                            </button>
+                            <button
+                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                title={t("actions.resetGitExecutable")}
+                                aria-label={t("actions.resetGitExecutable")}
+                                onClick={handleResetGitExecutable}>
+                                <CloseIcon/>
+                            </button>
+                        </div>
+                        <div className="settings-window__section-note">
+                            {t("notes.gitExecutable")}
+                            {gitVersion && <><br/>{t("labels.gitVersion")}<code>{gitVersion}</code></>}
+                        </div>
                     </div>
 
                     <div className="settings-window__row">
@@ -667,7 +897,10 @@ export function SettingsWindow() {
                                                 className="settings-window__input"
                                                 type="text"
                                                 value={externalDiffToolPath}
-                                                onChange={e => setExternalDiffToolPath(e.target.value)}
+                                                onChange={e => {
+                                                    setExternalDiffToolPath(e.target.value);
+                                                    setExternalDiffToolPathEdited(true);
+                                                }}
                                                 placeholder={t("placeholders.diffToolPath", {tool: labelDiffTool(externalDiffTool)})}
                                                 spellCheck={false}
                                                 autoCapitalize="off"
@@ -700,6 +933,34 @@ export function SettingsWindow() {
                                     onChange={e => setGlobalDefaultBranch(e.target.value)}
                                     placeholder={t("placeholders.defaultBranch")}
                                 />
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.gpgProgram")}</label>
+                                <div className="settings-window__inline-controls"
+                                     style={{gap: "6px", flexWrap: "nowrap"}}>
+                                    <input
+                                        className="settings-window__input"
+                                        type="text"
+                                        value={globalGpgProgram}
+                                        onChange={e => {
+                                            setGlobalGpgProgram(e.target.value);
+                                            setGlobalGpgProgramEdited(true);
+                                        }}
+                                        placeholder={t("placeholders.gpgProgram")}
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                    />
+                                    <button
+                                        className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                        onClick={handleBrowseGpgProgram}>
+                                        <FileIcon/>
+                                    </button>
+                                </div>
+                                <div className="settings-window__section-note">
+                                    {t("notes.gpgProgram")}
+                                </div>
                             </div>
 
                             <div className="settings-window__row">

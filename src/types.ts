@@ -28,6 +28,7 @@ export type Settings = {
     updateEndpoint: string;
     linuxGraphicsMode: LinuxGraphicsMode;
     repoOpenBehaviour: RepoOpenBehaviour;
+    gitExecutablePath: string;
 };
 
 export type AvailableUpdate = {

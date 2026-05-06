@@ -1,7 +1,10 @@
 {
   "actions": {
+    "browse": "Browse",
     "close": "Close",
+    "openConfigFolder": "Open config folder",
     "openResultLog": "Open result log window",
+    "resetGitExecutable": "Reset Git executable override",
     "resetLayout": "Reset panel layout",
     "save": "Save",
     "saving": "Saving..."
@@ -21,8 +24,11 @@
     "fileMode": "File mode tracking (`core.fileMode`)",
     "git": "Git",
     "gitBackendMode": "Git backend mode",
+    "gitExecutable": "Git executable",
+    "gitVersion": "Git version: ",
     "globalGitConfiguration": "Global Git configuration",
     "graphicsMode": "Graphics mode",
+    "gpgProgram": "GPG executable (`gpg.program`)",
     "layout": "Layout",
     "openAtLaunch": "Open at launch",
     "openRepositories": "Open repositories",
@@ -38,7 +44,9 @@
     "diffToolNotConfigured": "No known difftool is configured. Compare actions may not work unless you have configured one manually in your git config.",
     "diffToolSuggestion": " You can set one here (e.g. {{tools}}).",
     "gitConfiguration": "These options update your global Git configuration (equivalent to `git config --global ...`).",
+    "gitExecutable": "This is the Git binary Gitmun is using. Saving it pins Gitmun to that executable; clear it to return to automatic lookup.",
     "gitOptions": "These options control Git behaviour in Gitmun.",
+    "gpgProgram": "Leave blank to use Git's default GPG lookup. On Windows, Gitmun also searches common Git for Windows and GnuPG install folders.",
     "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
     "commitMessageRecommendedLength": "Recommended maximum for the first line of a commit message. Set to 0 to disable.",
     "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches always open a new window.",
@@ -71,18 +79,29 @@
   "placeholders": {
     "defaultBranch": "Leave blank to use Git's default",
     "defaultCloneDestination": "Leave blank to use ~/GitmunProjects",
-    "diffToolPath": "Auto-detect {{tool}} or choose its .exe"
+    "diffToolPath": "Auto-detect {{tool}} or choose its .exe",
+    "gitExecutable": "Auto-detect Git or choose an executable",
+    "gpgProgram": "Leave blank for Git's default, or choose gpg"
   },
   "picker": {
     "cloneDestination": "Select default clone destination",
     "cloneDestinationFailed": "Browse failed: {{message}}",
     "diffToolExecutable": "Select {{tool}} executable",
+    "gitExecutable": "Select Git executable",
+    "gitExecutableFailed": "Git executable browse failed: {{message}}",
+    "gpgExecutable": "Select GPG executable",
+    "gpgExecutableFailed": "GPG executable browse failed: {{message}}",
     "windowsExecutables": "Windows executables"
   },
   "status": {
     "diffToolPathFailed": "Failed to load diff tool path: {{message}}",
+    "gitExecutableReset": "Cleared Git executable override and returned to automatic lookup.",
+    "gitExecutableResetFailed": "Failed to reset Git executable override: {{message}}",
     "loadFailed": "Failed to load settings: {{message}}",
     "loaded": "Loaded settings (including global Git config).",
+    "noGitConfigChanges": "No global Git config changes.",
+    "openConfigFolderFailed": "Failed to open config folder: {{message}}",
+    "openedConfigFolder": "Opened config folder.",
     "openResultLogFailed": "Failed to open result log: {{message}}",
     "openedResultLog": "Opened result log window.",
     "ready": "Ready.",
