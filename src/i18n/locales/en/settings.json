@@ -79,6 +79,9 @@
   "placeholders": {
     "defaultBranch": "Leave blank to use Git's default",
     "defaultCloneDestination": "Leave blank to use ~/GitmunProjects",
+    "defaultCloneDestinationLinux": "Leave blank to use ~/GitmunProjects",
+    "defaultCloneDestinationMac": "Leave blank to use ~/GitmunProjects",
+    "defaultCloneDestinationWindows": "Leave blank to use %USERPROFILE%\\GitmunProjects",
     "diffToolPath": "Auto-detect {{tool}} or choose its .exe",
     "gitExecutable": "Auto-detect Git or choose an executable",
     "gpgProgram": "Leave blank for Git's default, or choose gpg"

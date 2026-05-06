@@ -733,17 +733,18 @@ fn validate_git_executable_path(path: &str) -> Result<String, String> {
         return Ok(String::new());
     }
 
-    let path = Path::new(trimmed);
+    let normalised = crate::normalise_display_path(trimmed);
+    let path = Path::new(&normalised);
     if !path.exists() {
-        return Err(format!("Git executable was not found: {trimmed}"));
+        return Err(format!("Git executable was not found: {normalised}"));
     }
     if path.is_dir() {
         return Err(format!(
-            "Git executable path points to a directory: {trimmed}"
+            "Git executable path points to a directory: {normalised}"
         ));
     }
 
-    Ok(trimmed.to_string())
+    Ok(normalised)
 }
 
 #[tauri::command]

@@ -10,7 +10,7 @@ export default defineConfig(() => ({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/.flatpak-*/**", "**/packaging/flatpak/rootfs/**"]
+      ignored: ["**/.flatpak-*/**", "**/packaging/flatpak/**"]
     }
   },
   envPrefix: ["VITE_", "TAURI_"],

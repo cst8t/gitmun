@@ -129,12 +129,26 @@ pub(crate) fn git_command() -> std::process::Command {
     }
 }
 
+pub(crate) fn normalise_display_path(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        if let Some(stripped) = path.strip_prefix(r"\\?\") {
+            if let Some(unc) = stripped.strip_prefix(r"UNC\") {
+                return format!("\\\\{}", unc);
+            }
+            return stripped.to_string();
+        }
+    }
+    path.to_string()
+}
+
 pub(crate) fn set_configured_git_executable_path(path: String) {
     let trimmed = path.trim();
     let next = if trimmed.is_empty() {
         None
     } else {
-        Some(PathBuf::from(trimmed.trim_matches('"')))
+        let normalised = normalise_display_path(trimmed.trim_matches('"'));
+        Some(PathBuf::from(normalised))
     };
 
     if let Ok(mut configured) = CONFIGURED_GIT_EXE.get_or_init(|| RwLock::new(None)).write() {
@@ -165,33 +179,35 @@ fn resolve_on_path(names: &[&str]) -> Option<PathBuf> {
 }
 
 pub(crate) fn resolve_active_git_executable_path() -> String {
-    if let Some(path) = configured_git_executable_path() {
-        return path.to_string_lossy().into_owned();
-    }
-
-    match git_backend() {
-        GitBackend::FlatpakHost => "flatpak-spawn --host git".to_string(),
-        GitBackend::FlatpakBundled => "/app/bin/git".to_string(),
-        GitBackend::System => {
-            #[cfg(windows)]
-            {
-                let git_exe = PathBuf::from(resolve_git_exe());
-                if git_exe.is_absolute() {
-                    return git_exe.to_string_lossy().into_owned();
+    let raw = if let Some(path) = configured_git_executable_path() {
+        path.to_string_lossy().into_owned()
+    } else {
+        match git_backend() {
+            GitBackend::FlatpakHost => return "flatpak-spawn --host git".to_string(),
+            GitBackend::FlatpakBundled => return "/app/bin/git".to_string(),
+            GitBackend::System => {
+                #[cfg(windows)]
+                {
+                    let git_exe = PathBuf::from(resolve_git_exe());
+                    if git_exe.is_absolute() {
+                        git_exe.to_string_lossy().into_owned()
+                    } else {
+                        resolve_on_path(&["git.exe", "git"])
+                            .map(|path| path.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| "git".to_string())
+                    }
                 }
-                resolve_on_path(&["git.exe", "git"])
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "git".to_string())
-            }
 
-            #[cfg(not(windows))]
-            {
-                resolve_on_path(&["git"])
-                    .map(|path| path.to_string_lossy().into_owned())
-                    .unwrap_or_else(|| "git".to_string())
+                #[cfg(not(windows))]
+                {
+                    resolve_on_path(&["git"])
+                        .map(|path| path.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "git".to_string())
+                }
             }
         }
-    }
+    };
+    normalise_display_path(&raw)
 }
 
 pub(crate) fn git_version_string() -> Result<String, String> {
@@ -203,7 +219,12 @@ pub(crate) fn git_version_string() -> Result<String, String> {
         .map_err(|error| error.to_string())?;
 
     if output.status.success() {
-        let version = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let version = String::from_utf8_lossy(&output.stdout)
+            .trim()
+            .strip_prefix("git version ")
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if !version.is_empty() {
             return Ok(version);
         }
@@ -521,19 +542,20 @@ pub(crate) fn configured_git_command() -> std::process::Command {
 fn resolve_git_exe() -> std::ffi::OsString {
     #[cfg(windows)]
     {
+        for candidate in &[
+            r"C:\Program Files\Git\cmd\git.exe",
+            r"C:\Program Files\Git\bin\git.exe",
+            r"C:\Program Files (x86)\Git\cmd\git.exe",
+        ] {
+            if std::path::Path::new(candidate).exists() {
+                return (*candidate).into();
+            }
+        }
         let git_in_path = std::env::var_os("PATH")
             .map(|p| std::env::split_paths(&p).any(|dir| dir.join("git.exe").exists()))
             .unwrap_or(false);
-        if !git_in_path {
-            for candidate in &[
-                r"C:\Program Files\Git\cmd\git.exe",
-                r"C:\Program Files\Git\bin\git.exe",
-                r"C:\Program Files (x86)\Git\cmd\git.exe",
-            ] {
-                if std::path::Path::new(candidate).exists() {
-                    return (*candidate).into();
-                }
-            }
+        if git_in_path {
+            return "git".into();
         }
         if let Some(candidate) = bundled_git_exe() {
             return candidate.into_os_string();
