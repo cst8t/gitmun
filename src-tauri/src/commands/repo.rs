@@ -236,8 +236,12 @@ pub fn cancel_clone(flag: tauri::State<'_, CloneCancelFlag>) {
 
 #[tauri::command]
 pub fn get_default_clone_dir() -> String {
+    #[cfg(windows)]
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_else(|_| ".".to_string());
+    #[cfg(not(windows))]
     let home = std::env::var("HOME")
-        .or_else(|_| std::env::var("USERPROFILE"))
         .unwrap_or_else(|_| ".".to_string());
     std::path::PathBuf::from(home)
         .join("GitmunProjects")

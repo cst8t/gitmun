@@ -79,6 +79,12 @@ function safePlatform(): string {
 export function SettingsWindow() {
     const {t} = useTranslation("settings");
     const useNativeWindowBar = true;
+    const os = safePlatform();
+    const cloneDestinationPlaceholder = os === "windows"
+        ? t("placeholders.defaultCloneDestinationWindows")
+        : os === "macos"
+            ? t("placeholders.defaultCloneDestinationMac")
+            : t("placeholders.defaultCloneDestinationLinux");
     const [backendMode, setBackendMode] = useState<BackendMode>("Default");
     const [themeMode, setThemeMode] = useState<ThemeMode>("System");
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
@@ -755,7 +761,7 @@ export function SettingsWindow() {
                                 type="text"
                                 value={defaultCloneDir}
                                 onChange={e => setDefaultCloneDir(e.target.value)}
-                                placeholder={t("placeholders.defaultCloneDestination")}
+                                placeholder={cloneDestinationPlaceholder}
                             />
                             <button
                                 className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
