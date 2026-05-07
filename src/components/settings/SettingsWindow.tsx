@@ -3,8 +3,8 @@ import {invoke} from "@tauri-apps/api/core";
 import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
 import {open as openDialog} from "@tauri-apps/plugin-dialog";
+import {openPath} from "@tauri-apps/plugin-opener";
 import {platform} from "@tauri-apps/plugin-os";
-import {open as openShell} from "@tauri-apps/plugin-shell";
 import {useTranslation} from "react-i18next";
 import type {
     AvatarProviderMode,
@@ -517,7 +517,7 @@ export function SettingsWindow() {
     const handleOpenConfigFolder = useCallback(async () => {
         if (!configFolderPath) return;
         try {
-            await openShell(configFolderPath);
+            await openPath(configFolderPath);
             setStatus(t("status.openedConfigFolder"));
         } catch (e) {
             setStatus(t("status.openConfigFolderFailed", {message: String(e)}));
