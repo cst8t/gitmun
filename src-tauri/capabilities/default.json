@@ -25,7 +25,7 @@
     {
       "identifier": "opener:allow-open-path",
       "allow": [
-        { "path": "$APPDATA/com.cst8t.gitmun" }
+        { "path": "$APPCONFIG" }
       ]
     }
   ]
