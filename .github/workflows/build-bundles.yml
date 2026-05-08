@@ -806,10 +806,7 @@ jobs:
 
           Copy-Item "src-tauri/target/release/gitmun.exe" "$layout/gitmun.exe"
           Copy-Item "packaging/msix/mingit" "$layout/mingit" -Recurse
-          Copy-Item "packaging/msix/assets/Square300x300Logo.png" "$layout/Assets/Square300x300Logo.png"
-          Copy-Item "packaging/msix/assets/Square150x150Logo.png" "$layout/Assets/Square150x150Logo.png"
-          Copy-Item "packaging/msix/assets/Square71x71Logo.png" "$layout/Assets/Square71x71Logo.png"
-          Copy-Item "packaging/msix/assets/Square44x44Logo.png" "$layout/Assets/Square44x44Logo.png"
+          Copy-Item "packaging/msix/assets/*.png" "$layout/Assets"
 
           $manifest = Get-Content "packaging/msix/Package.appxmanifest" -Raw
           $manifest = $manifest.Replace("__APP_VERSION__", $env:MSIX_VERSION)

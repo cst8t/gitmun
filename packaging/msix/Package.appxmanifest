@@ -13,7 +13,7 @@
     <DisplayName>Gitmun</DisplayName>
     <PublisherDisplayName>cst8t</PublisherDisplayName>
     <Description>A cross-platform Git client</Description>
-    <Logo>Assets\Square300x300Logo.png</Logo>
+    <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily
@@ -38,7 +38,8 @@
         Square44x44Logo="Assets\Square44x44Logo.png"
         Square150x150Logo="Assets\Square150x150Logo.png">
         <uap:DefaultTile
-          Square71x71Logo="Assets\Square71x71Logo.png" />
+          Square71x71Logo="Assets\Square71x71Logo.png"
+          Square310x310Logo="Assets\Square310x310Logo.png" />
         <uap:SplashScreen
           Image="Assets\Square150x150Logo.png"
           BackgroundColor="transparent" />
