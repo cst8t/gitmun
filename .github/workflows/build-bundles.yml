@@ -808,6 +808,15 @@ jobs:
           Copy-Item "packaging/msix/mingit" "$layout/mingit" -Recurse
           Copy-Item "packaging/msix/assets/*.png" "$layout/Assets"
 
+          $magick = (Get-Command magick -ErrorAction Stop).Source
+          $source = "$layout/Assets/Square300x300Logo.png"
+          $sizes = @(16, 20, 24, 30, 32, 36, 40, 44, 48, 60, 64, 72, 80, 96, 256)
+          foreach ($size in $sizes) {
+            foreach ($suffix in @("", "_altform-unplated")) {
+              & $magick $source -resize "$($size)x$($size)!" "$layout/Assets/Square44x44Logo.targetsize-$size$suffix.png"
+            }
+          }
+
           $manifest = Get-Content "packaging/msix/Package.appxmanifest" -Raw
           $manifest = $manifest.Replace("__APP_VERSION__", $env:MSIX_VERSION)
           $manifest = $manifest.Replace("__MSIX_PUBLISHER__", $publisher)
