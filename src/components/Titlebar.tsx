@@ -106,10 +106,10 @@ export function Titlebar({
 
       {/* Action buttons */}
       <div className="titlebar__actions">
-        <ActionBtn icon={<FetchIcon />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath} loading={remoteOp === "fetch"} />
-        <ActionBtn icon={<PullIcon />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath} loading={remoteOp === "pull"} />
+        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath} loading={remoteOp === "fetch"} />
+        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath} loading={remoteOp === "pull"} />
         <ActionBtn
-          icon={<PushIcon />}
+          icon={<PushIcon size={18} className="titlebar__toolbar-icon" />}
           label={pushActionLabel}
           badge={pushActionLabel === t("actions.push") && ahead > 0 ? String(ahead) : undefined}
           onClick={onPush}
@@ -117,16 +117,16 @@ export function Titlebar({
           loading={remoteOp === "push"}
           title={pushTitle}
         />
-        <ActionBtn icon={<StashIcon />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath} />
+        <ActionBtn icon={<StashIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath} />
       </div>
       <div className="titlebar__sep" />
 
       {/* New / clone / open repo */}
       <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title={t("actions.initialiseRepository")}>
-        <GitIcon /><span className="titlebar__btn-label">{t("actions.new")}</span>
+        <GitIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.new")}</span>
       </div>
       <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onCloneClick} title={t("actions.cloneRepository")}>
-        <CopyIcon /><span className="titlebar__btn-label">{t("actions.clone")}</span>
+        <CopyIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.clone")}</span>
       </div>
       <OpenDropdown
         repoPath={repoPath}
@@ -141,7 +141,7 @@ export function Titlebar({
         className={`titlebar__search${searchQuery || searchFocused ? " titlebar__search--active" : ""}`}
         onClick={() => searchInputRef.current?.focus()}
       >
-        <SearchIcon />
+        <SearchIcon size={18} className="titlebar__toolbar-icon" />
         <input
           ref={searchInputRef}
           className="titlebar__search-input"
@@ -162,10 +162,10 @@ export function Titlebar({
       </div>
 
       <div className="titlebar__icon-btn" onClick={onAboutClick} title={t("actions.about")}>
-        <InfoIcon />
+        <InfoIcon size={18} className="titlebar__toolbar-icon" />
       </div>
       <div className="titlebar__icon-btn" onClick={onSettingsClick}>
-        <SettingsIcon />
+        <SettingsIcon size={18} className="titlebar__toolbar-icon" />
       </div>
 
       {/* Identity avatar */}
@@ -212,7 +212,7 @@ function OpenDropdown({ repoPath, recentRepos, onOpenExistingClick, onRepoSelect
         onClick={() => setOpen(v => !v)}
         title={t("actions.openRepository")}
       >
-        <FolderIcon />
+        <FolderIcon size={18} className="titlebar__toolbar-icon" />
         <span className="titlebar__btn-label">{t("actions.open")}</span>
         <ChevDownIcon />
       </div>
