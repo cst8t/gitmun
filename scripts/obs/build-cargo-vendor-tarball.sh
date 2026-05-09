@@ -16,8 +16,8 @@ payload_dir="${tmp_dir}/payload"
 mkdir -p "${payload_dir}/.cargo"
 
 (
-  cd "${repo_root}/src-tauri"
-  cargo vendor --locked --versioned-dirs "${payload_dir}/vendor" > "${payload_dir}/.cargo/config.toml"
+  cd "$payload_dir"
+  cargo vendor --locked --versioned-dirs --manifest-path "${repo_root}/src-tauri/Cargo.toml" vendor > .cargo/config.toml
 )
 
 mkdir -p "$(dirname "$output_tarball")"
