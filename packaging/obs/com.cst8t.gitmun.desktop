@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Gitmun
+Comment=A cross-platform Git client
+Exec=gitmun
+Icon=com.cst8t.gitmun
+Terminal=false
+Categories=Development;RevisionControl;
+StartupNotify=true

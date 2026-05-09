@@ -1,0 +1,14 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	:
+
+override_dh_auto_install:
+	install -d debian/local-npm-registry/usr/bin
+	install -d debian/local-npm-registry/usr/share/local-npm-registry
+	cp -a dist node_modules debian/local-npm-registry/usr/share/local-npm-registry/
+	printf '%s\n' '#!/bin/sh' 'exec /usr/bin/node /usr/share/local-npm-registry/dist/index.js "$$@"' > debian/local-npm-registry/usr/bin/local-npm-registry
+	chmod 0755 debian/local-npm-registry/usr/bin/local-npm-registry
