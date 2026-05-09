@@ -252,6 +252,7 @@ jobs:
     name: Linux Flatpak bundle
     needs: [linux-bundles]
     runs-on: ubuntu-22.04
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
@@ -373,6 +374,7 @@ jobs:
   windows-bundles:
     name: Windows (NSIS, MSI)
     runs-on: windows-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout
@@ -733,6 +735,7 @@ jobs:
   windows-msix:
     name: Windows MSIX (native Windows packaging)
     runs-on: windows-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout
@@ -954,6 +957,7 @@ jobs:
   macos-bundles:
     name: macOS (dmg, app updater)
     runs-on: macos-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout
