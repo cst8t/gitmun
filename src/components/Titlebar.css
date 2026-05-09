@@ -92,6 +92,13 @@
   min-width: 0;
 }
 
+.titlebar__toolbar-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  display: block;
+}
+
 .titlebar__action-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
