@@ -5,6 +5,11 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      publish-obs:
+        description: 'Publish to OBS (override release-only gating)'
+        type: boolean
+        default: false
   release:
     types:
       - created
@@ -84,21 +89,21 @@ jobs:
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Setup Python for OBS tooling
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         uses: actions/setup-python@v6
         with:
           python-version: "3.12"
 
       - name: Install OBS CLI
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         run: python -m pip install --upgrade pip osc
 
       - name: Generate OBS source inputs
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         run: bash ./scripts/obs/build-offline-source-inputs.sh ./obs-release-inputs
 
       - name: Configure OBS CLI
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         env:
           OBS_APIURL: ${{ secrets.OBS_APIURL }}
           OBS_USERNAME: ${{ secrets.OBS_USERNAME }}
@@ -106,7 +111,7 @@ jobs:
         run: bash ./scripts/obs/configure-osc.sh
 
       - name: Build Linux deb and rpm packages in OBS
-        if: ${{ github.event_name == 'release' }}
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         env:
           OBS_PROJECT: home:cst8t:gitmun
           OBS_PACKAGE: gitmun
