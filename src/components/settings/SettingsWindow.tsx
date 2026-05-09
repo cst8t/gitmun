@@ -76,8 +76,11 @@ function safePlatform(): string {
     }
 }
 
+type SettingsTab = "application" | "git";
+
 export function SettingsWindow() {
     const {t} = useTranslation("settings");
+    const [tab, setTab] = useState<SettingsTab>("application");
     const useNativeWindowBar = true;
     const os = safePlatform();
     const cloneDestinationPlaceholder = os === "windows"
@@ -541,7 +544,22 @@ export function SettingsWindow() {
 
             <div className="settings-window__body">
 
-                {/* Left column: Application */}
+                <div className="settings-window__tabs">
+                    <button
+                        className={`settings-window__tab ${tab === "application" ? "settings-window__tab--active" : ""}`}
+                        onClick={() => setTab("application")}
+                    >
+                        {t("labels.application")}
+                    </button>
+                    <button
+                        className={`settings-window__tab ${tab === "git" ? "settings-window__tab--active" : ""}`}
+                        onClick={() => setTab("git")}
+                    >
+                        {t("labels.git")}
+                    </button>
+                </div>
+
+                {tab === "application" && (
                 <div className="settings-window__column">
                     <div className="settings-window__section-title">{t("labels.application")}</div>
                     {configFilePath && (
@@ -819,8 +837,9 @@ export function SettingsWindow() {
                     </div>
 
                 </div>
+                )}
 
-                {/* Right column: Git */}
+                {tab === "git" && (
                 <div className="settings-window__column">
                     <div className="settings-window__section-title">{t("labels.git")}</div>
                     <div className="settings-window__section-note">
@@ -986,6 +1005,7 @@ export function SettingsWindow() {
                         </div>
                     </div>
                 </div>
+                )}
 
             </div>
 
