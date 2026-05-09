@@ -70,13 +70,13 @@ jobs:
           grep -qx "pkgname=gitmun-bin" aur-files/PKGBUILD
           grep -qx "pkgname = gitmun-bin" aur-files/.SRCINFO
 
-          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${RELEASE_TAG}"
+          expected_prefix="download.opensuse.org/repositories/home:/cst8t:/gitmun/"
           if ! grep -q "${expected_prefix}" aur-files/PKGBUILD; then
-            echo "PKGBUILD source URL does not match ${expected_prefix}." >&2
+            echo "PKGBUILD source_x86_64 does not point to OBS download URL." >&2
             exit 1
           fi
           if ! grep -q "${expected_prefix}" aur-files/.SRCINFO; then
-            echo ".SRCINFO source URL does not match ${expected_prefix}." >&2
+            echo ".SRCINFO source_x86_64 does not point to OBS download URL." >&2
             exit 1
           fi
 

@@ -5,6 +5,15 @@ permissions:
 
 on:
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag/ref to build (leave empty for branch HEAD)'
+        type: string
+        default: ''
+      publish-obs:
+        description: 'Publish to OBS (override release-only gating)'
+        type: boolean
+        default: false
   release:
     types:
       - created
@@ -17,6 +26,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
@@ -74,7 +85,45 @@ jobs:
           fi
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            echo "LINUX_BUNDLES=appimage" >> "$GITHUB_ENV"
+          else
+            echo "LINUX_BUNDLES=deb,rpm,appimage" >> "$GITHUB_ENV"
+          fi
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
+
+      - name: Setup Python for OBS tooling
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install OBS CLI
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
+        run: python -m pip install --upgrade pip osc
+
+      - name: Generate OBS source inputs
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
+        run: bash ./scripts/obs/build-offline-source-inputs.sh ./obs-release-inputs
+
+      - name: Configure OBS CLI
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
+        env:
+          OBS_APIURL: ${{ secrets.OBS_APIURL }}
+          OBS_USERNAME: ${{ secrets.OBS_USERNAME }}
+          OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
+        run: bash ./scripts/obs/configure-osc.sh
+
+      - name: Build Linux deb and rpm packages in OBS
+        if: ${{ github.event_name == 'release' || inputs.publish-obs }}
+        env:
+          OBS_PROJECT: home:cst8t:gitmun
+          OBS_PACKAGE: gitmun
+          OBS_RPM_REPOSITORY: openSUSE_Tumbleweed
+          OBS_RPM_ARCH: x86_64
+          OBS_DEB_REPOSITORY: Debian_Testing
+          OBS_DEB_ARCH: x86_64
+        run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
       - name: Build Tauri Linux bundles and updater metadata
         uses: tauri-apps/tauri-action@v0.6.2
@@ -90,7 +139,7 @@ jobs:
           tauriScript: npm run tauri
           includeUpdaterJson: true
           args: >-
-            --bundles deb,rpm,appimage
+            --bundles ${{ env.LINUX_BUNDLES }}
             --config '{"version":"${{ env.BUNDLE_VERSION }}"}'
 
       - name: Prepare AUR files
@@ -98,6 +147,7 @@ jobs:
           REPO_SLUG: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          OBS_PROJECT: ${{ github.event_name == 'release' && 'home:cst8t:gitmun' || '' }}
         run: bash ./scripts/generate-aur-package.sh
 
       - name: Validate generated AUR metadata
@@ -107,15 +157,25 @@ jobs:
             exit 1
           fi
 
-          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}"
-          if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
-            echo "PKGBUILD source URL does not match expected repository release path." >&2
-            exit 1
-          fi
-
-          if ! grep -q "$expected_prefix" packaging/aur/.SRCINFO; then
-            echo ".SRCINFO source URL does not match expected repository release path." >&2
-            exit 1
+          if [[ "${{ github.event_name }}" == "release" ]]; then
+            if ! grep -q "download.opensuse.org/repositories/home:/cst8t:/gitmun/" packaging/aur/PKGBUILD; then
+              echo "PKGBUILD source_x86_64 does not point to OBS download URL." >&2
+              exit 1
+            fi
+            if ! grep -q "download.opensuse.org/repositories/home:/cst8t:/gitmun/" packaging/aur/.SRCINFO; then
+              echo ".SRCINFO source_x86_64 does not point to OBS download URL." >&2
+              exit 1
+            fi
+          else
+            expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}"
+            if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
+              echo "PKGBUILD source URL does not match expected repository release path." >&2
+              exit 1
+            fi
+            if ! grep -q "$expected_prefix" packaging/aur/.SRCINFO; then
+              echo ".SRCINFO source URL does not match expected repository release path." >&2
+              exit 1
+            fi
           fi
 
       - name: Package AUR files
@@ -192,6 +252,7 @@ jobs:
     name: Linux Flatpak bundle
     needs: [linux-bundles]
     runs-on: ubuntu-22.04
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
@@ -313,6 +374,7 @@ jobs:
   windows-bundles:
     name: Windows (NSIS, MSI)
     runs-on: windows-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout
@@ -673,6 +735,7 @@ jobs:
   windows-msix:
     name: Windows MSIX (native Windows packaging)
     runs-on: windows-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout
@@ -894,6 +957,7 @@ jobs:
   macos-bundles:
     name: macOS (dmg, app updater)
     runs-on: macos-latest
+    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
 
     steps:
       - name: Checkout

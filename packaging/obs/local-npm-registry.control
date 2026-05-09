@@ -1,0 +1,18 @@
+Source: local-npm-registry
+Section: utils
+Priority: optional
+Maintainer: cst8t <cst8t@users.noreply.github.com>
+Standards-Version: 4.7.0
+Build-Depends:
+ debhelper-compat (= 13)
+Homepage: https://github.com/openSUSE/npm-localhost-proxy
+Rules-Requires-Root: no
+
+Package: local-npm-registry
+Architecture: all
+Depends:
+ nodejs,
+ ${misc:Depends}
+Description: localhost npm proxy for offline package builds
+ local-npm-registry serves pre-fetched npm tarballs over localhost so npm can
+ resolve package dependencies without external network access.
