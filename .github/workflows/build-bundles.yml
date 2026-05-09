@@ -6,6 +6,10 @@ permissions:
 on:
   workflow_dispatch:
     inputs:
+      tag:
+        description: 'Git tag/ref to build (leave empty for branch HEAD)'
+        type: string
+        default: ''
       publish-obs:
         description: 'Publish to OBS (override release-only gating)'
         type: boolean
@@ -23,7 +27,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.release.tag_name || github.ref }}
+          ref: ${{ inputs.tag || github.event.release.tag_name || github.ref }}
 
       - name: Setup Node
         uses: actions/setup-node@v6
