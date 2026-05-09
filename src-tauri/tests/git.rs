@@ -8,8 +8,8 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    PushRequest, RepoRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
-    SubmoduleState,
+    FileRequest, PushRequest, RepoRequest, SetBranchUpstreamRequest, StageFilesRequest,
+    SubmoduleActionRequest, SubmoduleState,
 };
 
 fn init_repo() -> TempDir {
@@ -60,6 +60,13 @@ fn write_file(repo: &Path, name: &str, content: &str) {
 fn repo_request(dir: &TempDir) -> RepoRequest {
     RepoRequest {
         repo_path: dir.path().to_str().unwrap().to_string(),
+    }
+}
+
+fn file_request(dir: &TempDir, path: &str) -> FileRequest {
+    FileRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        file_path: path.to_string(),
     }
 }
 
@@ -198,6 +205,54 @@ fn status_detects_modified_unstaged_file() {
         .get_repo_status(&repo_request(&dir))
         .expect("get_repo_status");
     assert!(status.changed_files.iter().any(|f| f.path == "file.txt"));
+}
+
+#[test]
+fn discard_file_removes_untracked_directory() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("new-dir")).expect("create directory");
+    write_file(dir.path(), "new-dir/file.txt", "new");
+
+    handler()
+        .discard_file(&file_request(&dir, "new-dir"))
+        .expect("discard_file");
+
+    assert!(!dir.path().join("new-dir").exists());
+}
+
+#[test]
+fn discard_file_removes_untracked_ignored_directory() {
+    let dir = init_repo();
+    write_file(dir.path(), ".gitignore", "packaging/flatpak/repo/\n");
+    git(dir.path(), &["add", ".gitignore"]);
+    git(dir.path(), &["commit", "-m", "ignore generated repo"]);
+    fs::create_dir_all(dir.path().join("packaging/flatpak/repo")).expect("create directory");
+    write_file(
+        dir.path(),
+        "packaging/flatpak/repo/generated.txt",
+        "generated",
+    );
+
+    handler()
+        .discard_file(&file_request(&dir, "packaging/flatpak/repo"))
+        .expect("discard_file");
+
+    assert!(!dir.path().join("packaging/flatpak/repo").exists());
+}
+
+#[test]
+fn discard_file_does_not_remove_clean_tracked_directory() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("tracked")).expect("create directory");
+    write_file(dir.path(), "tracked/file.txt", "tracked");
+    git(dir.path(), &["add", "tracked/file.txt"]);
+    git(dir.path(), &["commit", "-m", "add tracked directory"]);
+
+    handler()
+        .discard_file(&file_request(&dir, "tracked"))
+        .expect("discard_file");
+
+    assert!(dir.path().join("tracked/file.txt").exists());
 }
 
 #[test]
