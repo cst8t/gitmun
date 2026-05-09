@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-: "${OBS_APIURL:?OBS_APIURL is required}"
+OBS_APIURL="${OBS_APIURL:-https://api.opensuse.org}"
 
 config_dir="${HOME}/.config/osc"
 config_path="${config_dir}/oscrc"
@@ -10,15 +10,10 @@ config_path="${config_dir}/oscrc"
 mkdir -p "$config_dir"
 
 : "${OBS_USERNAME:?OBS_USERNAME is required}"
-
-if [[ -n "${OBS_TOKEN:-}" ]]; then
-  obs_pass="${OBS_TOKEN}"
-else
-  : "${OBS_PASSWORD:?OBS_PASSWORD is required}"
-  obs_pass="${OBS_PASSWORD}"
-fi
+: "${OBS_PASSWORD:?OBS_PASSWORD is required}"
 
 obs_user="${OBS_USERNAME}"
+obs_pass="${OBS_PASSWORD}"
 
 cat >"$config_path" <<EOF
 [general]
@@ -27,6 +22,7 @@ apiurl = ${OBS_APIURL}
 [${OBS_APIURL}]
 user = ${obs_user}
 pass = ${obs_pass}
+credentials_mgr_class = osc.credentials.PlaintextConfigFileCredentialsManager
 EOF
 chmod 600 "$config_path"
 

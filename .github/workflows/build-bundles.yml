@@ -102,7 +102,7 @@ jobs:
         env:
           OBS_APIURL: ${{ secrets.OBS_APIURL }}
           OBS_USERNAME: ${{ secrets.OBS_USERNAME }}
-          OBS_TOKEN: ${{ secrets.OBS_TOKEN }}
+          OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
         run: bash ./scripts/obs/configure-osc.sh
 
       - name: Build Linux deb and rpm packages in OBS
