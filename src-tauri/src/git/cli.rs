@@ -2562,7 +2562,20 @@ impl GitOperationHandler for CliGitHandler {
                 fs::remove_file(&full_path).map_err(|e| GitError::IoError(e.to_string()))?;
             }
         } else {
-            Self::run_git(&["checkout", "--", file_path], Some(&repo_path))?;
+            let full_path = repo_path.join(file_path);
+            let status_is_empty = status_output.trim().is_empty();
+            if full_path.is_dir() && status_is_empty {
+                let tracked_files =
+                    Self::run_git(&["ls-files", "--", file_path], Some(&repo_path))?;
+                if tracked_files.trim().is_empty() {
+                    fs::remove_dir_all(&full_path)
+                        .map_err(|e| GitError::IoError(e.to_string()))?;
+                } else {
+                    Self::run_git(&["checkout", "--", file_path], Some(&repo_path))?;
+                }
+            } else {
+                Self::run_git(&["checkout", "--", file_path], Some(&repo_path))?;
+            }
         }
 
         Ok(OperationResult {
