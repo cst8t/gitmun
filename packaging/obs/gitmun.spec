@@ -7,6 +7,7 @@ URL:            https://github.com/cst8t/gitmun
 Source0:        %{name}-%{version}.tar.xz
 Source1:        vendor.tar.xz
 Source2:        package-lock.json
+Source3:        ATTRIBUTIONS.html
 BuildRequires:  cargo
 BuildRequires:  desktop-file-utils
 BuildRequires:  hicolor-icon-theme
@@ -59,6 +60,7 @@ install -Dm0644 src-tauri/icons/64x64.png %{buildroot}%{_datadir}/icons/hicolor/
 install -Dm0644 src-tauri/icons/128x128.png %{buildroot}%{_datadir}/icons/hicolor/128x128/apps/com.cst8t.gitmun.png
 install -Dm0644 src-tauri/icons/icon.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/com.cst8t.gitmun.png
 install -Dm0644 /dev/null %{buildroot}%{_datadir}/gitmun/system-managed
+install -Dm0644 %{_sourcedir}/ATTRIBUTIONS.html %{buildroot}%{_datadir}/gitmun/ATTRIBUTIONS.html
 
 %check
 desktop-file-validate %{buildroot}%{_datadir}/applications/com.cst8t.gitmun.desktop
@@ -74,5 +76,6 @@ desktop-file-validate %{buildroot}%{_datadir}/applications/com.cst8t.gitmun.desk
 %{_datadir}/icons/hicolor/512x512/apps/com.cst8t.gitmun.png
 %dir %{_datadir}/gitmun
 %{_datadir}/gitmun/system-managed
+%{_datadir}/gitmun/ATTRIBUTIONS.html
 
 %changelog

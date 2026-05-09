@@ -18,3 +18,4 @@ python3 "${repo_root}/scripts/obs/build-node-modules-sources.py" \
   "${output_dir}/node_modules.obscpio" \
   "${output_dir}/node_modules.spec.inc"
 cp "${repo_root}/package-lock.json" "${output_dir}/package-lock.json"
+cp "${repo_root}/public/ATTRIBUTIONS.html" "${output_dir}/ATTRIBUTIONS.html"
