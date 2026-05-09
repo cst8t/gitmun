@@ -101,6 +101,7 @@ jobs:
         if: ${{ github.event_name == 'release' }}
         env:
           OBS_APIURL: ${{ secrets.OBS_APIURL }}
+          OBS_USERNAME: ${{ secrets.OBS_USERNAME }}
           OBS_TOKEN: ${{ secrets.OBS_TOKEN }}
         run: bash ./scripts/obs/configure-osc.sh
 

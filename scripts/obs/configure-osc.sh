@@ -9,15 +9,16 @@ config_path="${config_dir}/oscrc"
 
 mkdir -p "$config_dir"
 
+: "${OBS_USERNAME:?OBS_USERNAME is required}"
+
 if [[ -n "${OBS_TOKEN:-}" ]]; then
-  obs_user=""
   obs_pass="${OBS_TOKEN}"
 else
-  : "${OBS_USERNAME:?OBS_USERNAME is required}"
   : "${OBS_PASSWORD:?OBS_PASSWORD is required}"
-  obs_user="${OBS_USERNAME}"
   obs_pass="${OBS_PASSWORD}"
 fi
+
+obs_user="${OBS_USERNAME}"
 
 cat >"$config_path" <<EOF
 [general]
