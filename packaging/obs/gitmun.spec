@@ -33,6 +33,20 @@ Gitmun is a desktop Git client built with Tauri, Rust and React.
 
 %build
 export CARGO_NET_OFFLINE=true
+obs_node_bin="$(mktemp -d)"
+for node in /usr/bin/node /usr/bin/nodejs /usr/bin/node-*; do
+    if [ -x "$node" ]; then
+        ln -sf "$node" "$obs_node_bin/node"
+        break
+    fi
+done
+for npm in /usr/bin/npm /usr/bin/npm-*; do
+    if [ -x "$npm" ]; then
+        ln -sf "$npm" "$obs_node_bin/npm"
+        break
+    fi
+done
+export PATH="$obs_node_bin:$PATH"
 local-npm-registry %{_sourcedir} install --also=dev
 npm run generate:icons
 npm run tauri build -- --no-bundle --config '{"version":"%{version}","bundle":{"active":true}}'

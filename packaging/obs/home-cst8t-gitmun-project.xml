@@ -18,8 +18,25 @@
     <path project="openSUSE:Leap:16.0" repository="standard"/>
     <arch>x86_64</arch>
   </repository>
+  <repository name="openSUSE_Slowroll">
+    <path project="openSUSE:Slowroll" repository="standard"/>
+    <arch>x86_64</arch>
+  </repository>
   <repository name="Fedora_43">
     <path project="Fedora:43" repository="standard"/>
+    <arch>x86_64</arch>
+  </repository>
+  <repository name="Fedora_44">
+    <path project="Fedora:44" repository="standard"/>
+    <arch>x86_64</arch>
+  </repository>
+  <repository name="Fedora_Rawhide">
+    <path project="Fedora:Rawhide" repository="standard"/>
+    <arch>x86_64</arch>
+  </repository>
+  <repository name="Debian_13">
+    <path project="Debian:13" repository="backports"/>
+    <path project="Debian:13" repository="standard"/>
     <arch>x86_64</arch>
   </repository>
   <repository name="Debian_Testing">
