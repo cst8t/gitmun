@@ -24,7 +24,7 @@ source_tarball="${tmp_dir}/${release_root}.tar.xz"
 render_dir="${tmp_dir}/rendered"
 checkout_dir="${tmp_dir}/checkout"
 
-for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc package-lock.json ATTRIBUTIONS.html; do
+for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc package-lock.json ATTRIBUTIONS.html commit-hash.txt; do
   if [ ! -f "${input_dir}/${required_file}" ]; then
     echo "missing required input: ${input_dir}/${required_file}" >&2
     exit 1
@@ -74,6 +74,7 @@ find "$checkout_dir" -maxdepth 1 -type f -name 'node_modules.obscpio' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'node_modules.spec.inc' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'package-lock.json' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'ATTRIBUTIONS.html' -delete
+find "$checkout_dir" -maxdepth 1 -type f -name 'commit-hash.txt' -delete
 
 cp "$render_dir"/_service "$checkout_dir"/
 cp "$render_dir"/gitmun.spec "$checkout_dir"/
@@ -88,6 +89,7 @@ cp "${input_dir}/node_modules.obscpio" "$checkout_dir"/
 cp "${input_dir}/node_modules.spec.inc" "$checkout_dir"/
 cp "${input_dir}/package-lock.json" "$checkout_dir"/
 cp "${input_dir}/ATTRIBUTIONS.html" "$checkout_dir"/
+cp "${input_dir}/commit-hash.txt" "$checkout_dir"/
 
 (
   cd "$checkout_dir"

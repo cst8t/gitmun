@@ -8,6 +8,7 @@ Source0:        %{name}-%{version}.tar.xz
 Source1:        vendor.tar.xz
 Source2:        package-lock.json
 Source3:        ATTRIBUTIONS.html
+Source4:        commit-hash.txt
 BuildRequires:  cargo
 BuildRequires:  desktop-file-utils
 BuildRequires:  hicolor-icon-theme
@@ -34,6 +35,7 @@ Gitmun is a desktop Git client built with Tauri, Rust and React.
 
 %build
 export CARGO_NET_OFFLINE=true
+export GITMUN_COMMIT_HASH="$(cat %{_sourcedir}/commit-hash.txt)"
 obs_node_bin="$(mktemp -d)"
 for node in /usr/bin/node /usr/bin/nodejs /usr/bin/node-*; do
     if [ -x "$node" ]; then

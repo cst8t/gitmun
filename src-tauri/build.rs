@@ -1,5 +1,6 @@
 fn main() {
     println!("cargo:rerun-if-env-changed=GITMUN_MSIX");
+    println!("cargo:rerun-if-env-changed=GITMUN_COMMIT_HASH");
 
     let build_version = std::env::var("APP_VERSION")
         .ok()
@@ -12,10 +13,15 @@ fn main() {
         println!("cargo:rustc-env=GITMUN_MSIX=1");
     }
 
-    let commit_hash = std::env::var("GITHUB_SHA")
+    let commit_hash = std::env::var("GITMUN_COMMIT_HASH")
         .ok()
         .filter(|v| !v.trim().is_empty())
-        .map(|sha| sha[..8.min(sha.len())].to_string())
+        .or_else(|| {
+            std::env::var("GITHUB_SHA")
+                .ok()
+                .filter(|v| !v.trim().is_empty())
+                .map(|sha| sha[..8.min(sha.len())].to_string())
+        })
         .or_else(|| {
             std::process::Command::new("git")
                 .args(["rev-parse", "--short", "HEAD"])

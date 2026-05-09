@@ -1,6 +1,7 @@
 #!/usr/bin/make -f
 
 export CARGO_NET_OFFLINE := true
+export GITMUN_COMMIT_HASH := $(shell cat $(firstword $(wildcard commit-hash.txt ../commit-hash.txt /usr/src/packages/SOURCES/commit-hash.txt)))
 GITMUN_VERSION := $(shell dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//')
 CARGO_VENDOR_ARCHIVE := $(firstword $(wildcard vendor.tar.xz ../vendor.tar.xz /usr/src/packages/SOURCES/vendor.tar.xz))
 NODE_MODULES_ARCHIVE := $(firstword $(wildcard node_modules.obscpio ../node_modules.obscpio /usr/src/packages/SOURCES/node_modules.obscpio))

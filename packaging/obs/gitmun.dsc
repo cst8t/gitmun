@@ -8,7 +8,7 @@ Homepage: https://github.com/cst8t/gitmun
 Standards-Version: 4.7.0
 Build-Depends: cargo, cpio, debhelper-compat (= 13), libayatana-appindicator3-dev, librsvg2-dev, libssl-dev, libwebkit2gtk-4.1-dev, local-npm-registry, nodejs, npm, patchelf, pkg-config, python3, rustc
 DEBTRANSFORM-TAR: gitmun-0.1.0.tar.xz
-DEBTRANSFORM-FILES: package-lock.json vendor.tar.xz ATTRIBUTIONS.html
+DEBTRANSFORM-FILES: package-lock.json vendor.tar.xz ATTRIBUTIONS.html commit-hash.txt
 Package-List:
  gitmun deb devel optional arch=any
 Files:
