@@ -1,0 +1,31 @@
+Source: gitmun
+Section: devel
+Priority: optional
+Maintainer: cst8t <cst8t@users.noreply.github.com>
+Standards-Version: 4.7.0
+Build-Depends:
+ cargo,
+ cpio,
+ debhelper-compat (= 13),
+ libayatana-appindicator3-dev,
+ librsvg2-dev,
+ libssl-dev,
+ libwebkit2gtk-4.1-dev,
+ local-npm-registry,
+ nodejs,
+ npm,
+ patchelf,
+ pkg-config,
+ python3,
+ rustc
+Homepage: https://github.com/cst8t/gitmun
+Rules-Requires-Root: no
+
+Package: gitmun
+Architecture: any
+Depends:
+ git,
+ ${misc:Depends},
+ ${shlibs:Depends}
+Description: cross-platform Git client
+ Gitmun is a desktop Git client built with Tauri, Rust and React.

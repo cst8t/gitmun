@@ -5,28 +5,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 AUR_DIR="${ROOT_DIR}/packaging/aur"
 TAURI_CONF="${ROOT_DIR}/src-tauri/tauri.conf.json"
+TEMP_DIR="${ROOT_DIR}/target/aur-deb"
 
 mkdir -p "${AUR_DIR}"
 
-shopt -s nullglob
-DEB_FILES=("${ROOT_DIR}"/src-tauri/target/release/bundle/deb/*.deb)
-if [[ ${#DEB_FILES[@]} -eq 0 ]]; then
-  echo "No .deb bundle found. Build deb first (tauri build --bundles deb) before generating AUR files." >&2
-  exit 1
-fi
-DEB_FILE="${DEB_FILES[0]}"
-DEB_NAME="$(basename "${DEB_FILE}")"
 APP_NAME="$(jq -r '.productName' "${TAURI_CONF}" | tr '[:upper:]' '[:lower:]')"
 PKGNAME="${APP_NAME}-bin"
-PKGVER_RAW="$(printf '%s' "${DEB_NAME}" | sed -E 's/^[^_]+_([^_]+)_.+\.deb$/\1/')"
-if [[ -z "${PKGVER_RAW}" || "${PKGVER_RAW}" == "${DEB_NAME}" ]]; then
-  PKGVER_RAW="$(jq -r '.version' "${TAURI_CONF}")"
-fi
-PKGVER="$(printf '%s' "${PKGVER_RAW}" | sed -E 's/[^[:alnum:]._+]+/_/g')"
-SHA256="$(sha256sum "${DEB_FILE}" | awk '{print $1}')"
 INSTALL_FILE="${APP_NAME}.install"
 UPSTREAM_LICENSE_FILE="LICENSE.${APP_NAME}"
 UPSTREAM_LICENSE_SHA256="$(sha256sum "${ROOT_DIR}/LICENSE" | awk '{print $1}')"
+
 REPO_SLUG="${REPO_SLUG:-${GITHUB_REPOSITORY:-${FORGEJO_REPOSITORY:-}}}"
 if [[ -z "${REPO_SLUG}" ]]; then
   REMOTE_URL="$(git -C "${ROOT_DIR}" remote get-url origin)"
@@ -42,8 +30,39 @@ fi
 SERVER_URL="${SERVER_URL:-${GITHUB_SERVER_URL:-${FORGEJO_SERVER_URL:-https://github.com}}}"
 SERVER_URL="${SERVER_URL%/}"
 PROJECT_URL="${SERVER_URL}/${REPO_SLUG}"
-RELEASE_BASE_URL="${RELEASE_BASE_URL:-${PROJECT_URL}/releases/download}"
-RELEASE_TAG="${RELEASE_TAG:-v${PKGVER_RAW}}"
+PKGVER_RAW="${RELEASE_TAG#v}"
+PKGVER="$(printf '%s' "${PKGVER_RAW}" | sed -E 's/[^[:alnum:]._+]+/_/g')"
+
+shopt -s nullglob
+LOCAL_DEB_FILES=("${ROOT_DIR}"/src-tauri/target/release/bundle/deb/*.deb)
+if [[ ${#LOCAL_DEB_FILES[@]} -gt 0 ]]; then
+  DEB_FILE="${LOCAL_DEB_FILES[0]}"
+  DEB_NAME="$(basename "${DEB_FILE}")"
+  SOURCE_URL=""
+elif [[ -n "${OBS_PROJECT:-}" ]]; then
+  OBS_DEB_REPOSITORY="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
+  OBS_DEB_ARCH="${OBS_DEB_ARCH:-amd64}"
+  OBS_SERVER_URL="${OBS_SERVER_URL:-https://download.opensuse.org}"
+  obs_url_project="$(echo "${OBS_PROJECT}" | sed 's/:/:\//g')"
+  DEB_NAME="gitmun_${PKGVER_RAW}-1_${OBS_DEB_ARCH}.deb"
+  SOURCE_URL="${OBS_SERVER_URL}/repositories/${obs_url_project}/${OBS_DEB_REPOSITORY}/${OBS_DEB_ARCH}/${DEB_NAME}"
+  echo "Downloading .deb from OBS: ${SOURCE_URL}"
+  mkdir -p "${TEMP_DIR}"
+  DEB_FILE="${TEMP_DIR}/${DEB_NAME}"
+  curl -fsSL -o "${DEB_FILE}" "${SOURCE_URL}" || {
+    echo "Failed to download ${DEB_NAME} from OBS. Ensure the OBS build for ${OBS_DEB_REPOSITORY} succeeded." >&2
+    exit 1
+  }
+else
+  echo "No .deb bundle found. Build deb first (tauri build --bundles deb) or set OBS_PROJECT to download from OBS." >&2
+  exit 1
+fi
+
+if [[ -z "${SOURCE_URL:-}" ]]; then
+  SOURCE_URL="${SERVER_URL}/${REPO_SLUG}/releases/download/${RELEASE_TAG}/${DEB_NAME}"
+fi
+
+SHA256="$(sha256sum "${DEB_FILE}" | awk '{print $1}')"
 
 cat > "${AUR_DIR}/PKGBUILD" <<EOF
 pkgname=${PKGNAME}
@@ -72,7 +91,7 @@ options=('!strip' '!debug' '!emptydirs')
 install=${INSTALL_FILE}
 
 source=("${UPSTREAM_LICENSE_FILE}")
-source_x86_64=("${RELEASE_BASE_URL}/${RELEASE_TAG}/${DEB_NAME}")
+source_x86_64=("${SOURCE_URL}")
 sha256sums=('${UPSTREAM_LICENSE_SHA256}')
 sha256sums_x86_64=('${SHA256}')
 
@@ -122,7 +141,7 @@ pkgbase = ${PKGNAME}
   depends = pango
   depends = webkit2gtk-4.1
   source = ${UPSTREAM_LICENSE_FILE}
-  source_x86_64 = ${RELEASE_BASE_URL}/${RELEASE_TAG}/${DEB_NAME}
+  source_x86_64 = ${SOURCE_URL}
   sha256sums = ${UPSTREAM_LICENSE_SHA256}
   sha256sums_x86_64 = ${SHA256}
 

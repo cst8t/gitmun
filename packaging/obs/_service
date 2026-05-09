@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<services>
+  <service name="node_modules" mode="manual">
+    <param name="cpio">node_modules.obscpio</param>
+    <param name="output">node_modules.spec.inc</param>
+    <param name="source-offset">10000</param>
+  </service>
+  <service name="cargo_vendor" mode="manual">
+    <param name="src">gitmun-[0-9]*.tar.xz</param>
+    <param name="custom-root">src-tauri</param>
+    <param name="compression">xz</param>
+    <param name="update">false</param>
+    <param name="respect-lockfile">true</param>
+  </service>
+</services>

@@ -1,0 +1,38 @@
+#!/usr/bin/make -f
+
+export CARGO_NET_OFFLINE := true
+export GITMUN_COMMIT_HASH := $(shell cat $(firstword $(wildcard commit-hash.txt ../commit-hash.txt /usr/src/packages/SOURCES/commit-hash.txt)))
+GITMUN_VERSION := $(shell dpkg-parsechangelog -S Version | sed 's/-[^-]*$$//')
+CARGO_VENDOR_ARCHIVE := $(firstword $(wildcard vendor.tar.xz ../vendor.tar.xz /usr/src/packages/SOURCES/vendor.tar.xz))
+NODE_MODULES_ARCHIVE := $(firstword $(wildcard node_modules.obscpio ../node_modules.obscpio /usr/src/packages/SOURCES/node_modules.obscpio))
+NPM_TARBALLS_DIR := $(firstword $(wildcard /usr/src/packages/SOURCES))
+DESKTOP_FILE := $(firstword $(wildcard com.cst8t.gitmun.desktop ../com.cst8t.gitmun.desktop /usr/src/packages/SOURCES/com.cst8t.gitmun.desktop))
+ATTRIBUTIONS_FILE := $(firstword $(wildcard ATTRIBUTIONS.html ../ATTRIBUTIONS.html /usr/src/packages/SOURCES/ATTRIBUTIONS.html))
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	test -n "$(CARGO_VENDOR_ARCHIVE)"
+	tar -xJf "$(CARGO_VENDOR_ARCHIVE)"
+	if [ -n "$(NODE_MODULES_ARCHIVE)" ] && [ -z "$(NPM_TARBALLS_DIR)" ]; then \
+		mkdir -p .obs-npm-tarballs; \
+		cd .obs-npm-tarballs && cpio -idmu --quiet < "$(NODE_MODULES_ARCHIVE)"; \
+		local-npm-registry "$(CURDIR)/.obs-npm-tarballs" install --also=dev; \
+	else \
+		test -n "$(NPM_TARBALLS_DIR)"; \
+		local-npm-registry "$(NPM_TARBALLS_DIR)" install --also=dev; \
+	fi
+	npm run generate:icons
+	npm run tauri build -- --no-bundle --config '{"version":"$(GITMUN_VERSION)","bundle":{"active":true}}'
+
+override_dh_auto_install:
+	install -Dm755 src-tauri/target/release/gitmun debian/gitmun/usr/bin/gitmun
+	test -n "$(DESKTOP_FILE)"
+	install -Dm644 "$(DESKTOP_FILE)" debian/gitmun/usr/share/applications/com.cst8t.gitmun.desktop
+	install -Dm644 src-tauri/icons/32x32.png debian/gitmun/usr/share/icons/hicolor/32x32/apps/com.cst8t.gitmun.png
+	install -Dm644 src-tauri/icons/64x64.png debian/gitmun/usr/share/icons/hicolor/64x64/apps/com.cst8t.gitmun.png
+	install -Dm644 src-tauri/icons/128x128.png debian/gitmun/usr/share/icons/hicolor/128x128/apps/com.cst8t.gitmun.png
+	install -Dm644 src-tauri/icons/icon.png debian/gitmun/usr/share/icons/hicolor/512x512/apps/com.cst8t.gitmun.png
+	install -Dm644 /dev/null debian/gitmun/usr/share/gitmun/system-managed
+	install -Dm644 "$(ATTRIBUTIONS_FILE)" debian/gitmun/usr/share/gitmun/ATTRIBUTIONS.html
