@@ -124,6 +124,8 @@ jobs:
             aur-files/REUSE.toml \
             aur-repo/
 
+          sed -i 's/\r$//' aur-repo/PKGBUILD aur-repo/.SRCINFO aur-repo/gitmun.install aur-repo/LICENSE aur-repo/LICENSE.gitmun aur-repo/REUSE.toml
+
           cd aur-repo
           if [[ -z "${AUR_COMMIT_NAME}" || -z "${AUR_COMMIT_EMAIL}" ]]; then
             echo "AUR_COMMIT_NAME and AUR_COMMIT_EMAIL variables must be set." >&2

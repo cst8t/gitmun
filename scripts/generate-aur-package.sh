@@ -34,18 +34,23 @@ PKGVER_RAW="${RELEASE_TAG#v}"
 PKGVER="$(printf '%s' "${PKGVER_RAW}" | sed -E 's/[^[:alnum:]._+]+/_/g')"
 
 shopt -s nullglob
-LOCAL_DEB_FILES=("${ROOT_DIR}"/src-tauri/target/release/bundle/deb/*.deb)
-if [[ ${#LOCAL_DEB_FILES[@]} -gt 0 ]]; then
-  DEB_FILE="${LOCAL_DEB_FILES[0]}"
-  DEB_NAME="$(basename "${DEB_FILE}")"
-  SOURCE_URL=""
-elif [[ -n "${OBS_PROJECT:-}" ]]; then
+
+if [[ -n "${OBS_PROJECT:-}" ]]; then
   OBS_DEB_REPOSITORY="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
   OBS_DEB_ARCH="${OBS_DEB_ARCH:-amd64}"
   OBS_SERVER_URL="${OBS_SERVER_URL:-https://download.opensuse.org}"
   obs_url_project="$(echo "${OBS_PROJECT}" | sed 's/:/:\//g')"
   DEB_NAME="gitmun_${PKGVER_RAW}-1_${OBS_DEB_ARCH}.deb"
   SOURCE_URL="${OBS_SERVER_URL}/repositories/${obs_url_project}/${OBS_DEB_REPOSITORY}/${OBS_DEB_ARCH}/${DEB_NAME}"
+fi
+
+LOCAL_DEB_FILES=("${ROOT_DIR}"/src-tauri/target/release/bundle/deb/*.deb)
+if [[ ${#LOCAL_DEB_FILES[@]} -gt 0 ]]; then
+  DEB_FILE="${LOCAL_DEB_FILES[0]}"
+  if [[ -z "${SOURCE_URL:-}" ]]; then
+    DEB_NAME="$(basename "${DEB_FILE}")"
+  fi
+elif [[ -n "${OBS_PROJECT:-}" ]]; then
   echo "Downloading .deb from OBS: ${SOURCE_URL}"
   mkdir -p "${TEMP_DIR}"
   DEB_FILE="${TEMP_DIR}/${DEB_NAME}"
@@ -198,5 +203,7 @@ path = "${UPSTREAM_LICENSE_FILE}"
 SPDX-FileCopyrightText = "cst8t"
 SPDX-License-Identifier = "GPL-3.0-only"
 EOF
+
+sed -i 's/\r$//' "${AUR_DIR}/PKGBUILD" "${AUR_DIR}/.SRCINFO" "${AUR_DIR}/${INSTALL_FILE}" "${AUR_DIR}/LICENSE" "${AUR_DIR}/${UPSTREAM_LICENSE_FILE}" "${AUR_DIR}/REUSE.toml"
 
 echo "Generated AUR files in ${AUR_DIR}"
