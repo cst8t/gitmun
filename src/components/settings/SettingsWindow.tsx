@@ -77,6 +77,41 @@ function safePlatform(): string {
 }
 
 type SettingsTab = "application" | "git";
+type GitBooleanConfig = "" | "true" | "false";
+type PullRebaseMode = "" | "false" | "true" | "merges" | "interactive";
+type PullFastForwardMode = "" | "true" | "false" | "only";
+type PushDefaultMode = "" | "nothing" | "current" | "upstream" | "simple" | "matching";
+type LineEndingMode = "" | "false" | "true" | "input";
+
+function GitConfigLabel({children, configKey}: {children: React.ReactNode; configKey: string}) {
+    return (
+        <span className="settings-window__label-content">
+            <span>{children}</span>
+            <code className="settings-window__git-config-key">{configKey}</code>
+        </span>
+    );
+}
+
+async function saveGlobalConfigIfChanged(
+    value: string,
+    loadedValue: string,
+    getCommand: string,
+    setCommand: string,
+    argName: string,
+): Promise<string | null> {
+    const desiredValue = value.trim();
+    if (desiredValue === loadedValue) return null;
+
+    const currentValue = await invoke<string | null>(getCommand);
+    if (normaliseOptionalGitConfig(currentValue) === desiredValue) return null;
+
+    const result = await invoke<{message: string}>(setCommand, {[argName]: desiredValue});
+    return result.message;
+}
+
+function normaliseChoice<T extends string>(value: string | null, allowed: readonly T[]): T {
+    return allowed.includes(value as T) ? value as T : allowed[0];
+}
 
 export function SettingsWindow() {
     const {t} = useTranslation("settings");
@@ -99,6 +134,24 @@ export function SettingsWindow() {
     const [loadedGlobalDefaultBranch, setLoadedGlobalDefaultBranch] = useState("");
     const [globalFileMode, setGlobalFileMode] = useState(true);
     const [loadedGlobalFileMode, setLoadedGlobalFileMode] = useState(true);
+    const [globalPullRebase, setGlobalPullRebase] = useState<PullRebaseMode>("");
+    const [loadedGlobalPullRebase, setLoadedGlobalPullRebase] = useState("");
+    const [globalPullFastForward, setGlobalPullFastForward] = useState<PullFastForwardMode>("");
+    const [loadedGlobalPullFastForward, setLoadedGlobalPullFastForward] = useState("");
+    const [globalPullAutostash, setGlobalPullAutostash] = useState<GitBooleanConfig>("");
+    const [loadedGlobalPullAutostash, setLoadedGlobalPullAutostash] = useState("");
+    const [globalFetchPrune, setGlobalFetchPrune] = useState<GitBooleanConfig>("");
+    const [loadedGlobalFetchPrune, setLoadedGlobalFetchPrune] = useState("");
+    const [globalPushDefault, setGlobalPushDefault] = useState<PushDefaultMode>("");
+    const [loadedGlobalPushDefault, setLoadedGlobalPushDefault] = useState("");
+    const [globalPushAutoSetupRemote, setGlobalPushAutoSetupRemote] = useState<GitBooleanConfig>("");
+    const [loadedGlobalPushAutoSetupRemote, setLoadedGlobalPushAutoSetupRemote] = useState("");
+    const [globalCoreEditor, setGlobalCoreEditor] = useState("");
+    const [loadedGlobalCoreEditor, setLoadedGlobalCoreEditor] = useState("");
+    const [globalLineEndings, setGlobalLineEndings] = useState<LineEndingMode>("");
+    const [loadedGlobalLineEndings, setLoadedGlobalLineEndings] = useState("");
+    const [globalCredentialHelper, setGlobalCredentialHelper] = useState("");
+    const [loadedGlobalCredentialHelper, setLoadedGlobalCredentialHelper] = useState("");
     const [allowedDiffTools, setAllowedDiffTools] = useState<ExternalDiffTool[]>(["Other", "Meld"]);
     const [defaultCloneDir, setDefaultCloneDir] = useState<string>("");
     const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
@@ -183,6 +236,55 @@ export function SettingsWindow() {
                 const fileMode = await invoke<boolean | null>("get_global_file_mode");
                 setGlobalFileMode(fileMode ?? true);
                 setLoadedGlobalFileMode(fileMode ?? true);
+
+                const pullRebase = normaliseChoice<PullRebaseMode>(
+                    await invoke<string | null>("get_global_pull_rebase"),
+                    ["", "false", "true", "merges", "interactive"],
+                );
+                setGlobalPullRebase(pullRebase);
+                setLoadedGlobalPullRebase(pullRebase);
+                const pullFastForward = normaliseChoice<PullFastForwardMode>(
+                    await invoke<string | null>("get_global_pull_ff"),
+                    ["", "true", "false", "only"],
+                );
+                setGlobalPullFastForward(pullFastForward);
+                setLoadedGlobalPullFastForward(pullFastForward);
+                const pullAutostash = normaliseChoice<GitBooleanConfig>(
+                    await invoke<string | null>("get_global_pull_autostash"),
+                    ["", "true", "false"],
+                );
+                setGlobalPullAutostash(pullAutostash);
+                setLoadedGlobalPullAutostash(pullAutostash);
+                const fetchPrune = normaliseChoice<GitBooleanConfig>(
+                    await invoke<string | null>("get_global_fetch_prune"),
+                    ["", "true", "false"],
+                );
+                setGlobalFetchPrune(fetchPrune);
+                setLoadedGlobalFetchPrune(fetchPrune);
+                const pushDefault = normaliseChoice<PushDefaultMode>(
+                    await invoke<string | null>("get_global_push_default"),
+                    ["", "nothing", "current", "upstream", "simple", "matching"],
+                );
+                setGlobalPushDefault(pushDefault);
+                setLoadedGlobalPushDefault(pushDefault);
+                const pushAutoSetupRemote = normaliseChoice<GitBooleanConfig>(
+                    await invoke<string | null>("get_global_push_auto_setup_remote"),
+                    ["", "true", "false"],
+                );
+                setGlobalPushAutoSetupRemote(pushAutoSetupRemote);
+                setLoadedGlobalPushAutoSetupRemote(pushAutoSetupRemote);
+                const coreEditor = await invoke<string | null>("get_global_core_editor");
+                setGlobalCoreEditor(coreEditor ?? "");
+                setLoadedGlobalCoreEditor(coreEditor ?? "");
+                const lineEndings = normaliseChoice<LineEndingMode>(
+                    await invoke<string | null>("get_global_core_autocrlf"),
+                    ["", "false", "true", "input"],
+                );
+                setGlobalLineEndings(lineEndings);
+                setLoadedGlobalLineEndings(lineEndings);
+                const credentialHelper = await invoke<string | null>("get_global_credential_helper");
+                setGlobalCredentialHelper(credentialHelper ?? "");
+                setLoadedGlobalCredentialHelper(credentialHelper ?? "");
 
                 const configuredGpgProgram = await invoke<string | null>("get_global_gpg_program");
                 setGlobalGpgProgramConfigured(configuredGpgProgram ?? "");
@@ -316,6 +418,19 @@ export function SettingsWindow() {
                 }
             }
 
+            const optionalGitConfigSaves = [
+                await saveGlobalConfigIfChanged(globalPullRebase, loadedGlobalPullRebase, "get_global_pull_rebase", "set_global_pull_rebase", "pullRebase"),
+                await saveGlobalConfigIfChanged(globalPullFastForward, loadedGlobalPullFastForward, "get_global_pull_ff", "set_global_pull_ff", "pullFf"),
+                await saveGlobalConfigIfChanged(globalPullAutostash, loadedGlobalPullAutostash, "get_global_pull_autostash", "set_global_pull_autostash", "pullAutostash"),
+                await saveGlobalConfigIfChanged(globalFetchPrune, loadedGlobalFetchPrune, "get_global_fetch_prune", "set_global_fetch_prune", "fetchPrune"),
+                await saveGlobalConfigIfChanged(globalPushDefault, loadedGlobalPushDefault, "get_global_push_default", "set_global_push_default", "pushDefault"),
+                await saveGlobalConfigIfChanged(globalPushAutoSetupRemote, loadedGlobalPushAutoSetupRemote, "get_global_push_auto_setup_remote", "set_global_push_auto_setup_remote", "pushAutoSetupRemote"),
+                await saveGlobalConfigIfChanged(globalCoreEditor, loadedGlobalCoreEditor, "get_global_core_editor", "set_global_core_editor", "coreEditor"),
+                await saveGlobalConfigIfChanged(globalLineEndings, loadedGlobalLineEndings, "get_global_core_autocrlf", "set_global_core_autocrlf", "coreAutocrlf"),
+                await saveGlobalConfigIfChanged(globalCredentialHelper, loadedGlobalCredentialHelper, "get_global_credential_helper", "set_global_credential_helper", "credentialHelper"),
+            ];
+            gitConfigMessages.push(...optionalGitConfigSaves.filter((message): message is string => message != null));
+
             const desiredGpgProgram = globalGpgProgram.trim();
             if (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured) {
                 const currentGpgProgram = await invoke<string | null>("get_global_gpg_program");
@@ -355,6 +470,54 @@ export function SettingsWindow() {
             setLoadedGlobalDefaultBranch(savedDefaultBranch ?? "");
             const savedFileMode = await invoke<boolean | null>("get_global_file_mode");
             setLoadedGlobalFileMode(savedFileMode ?? true);
+            const savedPullRebase = normaliseChoice<PullRebaseMode>(
+                await invoke<string | null>("get_global_pull_rebase"),
+                ["", "false", "true", "merges", "interactive"],
+            );
+            setGlobalPullRebase(savedPullRebase);
+            setLoadedGlobalPullRebase(savedPullRebase);
+            const savedPullFastForward = normaliseChoice<PullFastForwardMode>(
+                await invoke<string | null>("get_global_pull_ff"),
+                ["", "true", "false", "only"],
+            );
+            setGlobalPullFastForward(savedPullFastForward);
+            setLoadedGlobalPullFastForward(savedPullFastForward);
+            const savedPullAutostash = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_pull_autostash"),
+                ["", "true", "false"],
+            );
+            setGlobalPullAutostash(savedPullAutostash);
+            setLoadedGlobalPullAutostash(savedPullAutostash);
+            const savedFetchPrune = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_fetch_prune"),
+                ["", "true", "false"],
+            );
+            setGlobalFetchPrune(savedFetchPrune);
+            setLoadedGlobalFetchPrune(savedFetchPrune);
+            const savedPushDefault = normaliseChoice<PushDefaultMode>(
+                await invoke<string | null>("get_global_push_default"),
+                ["", "nothing", "current", "upstream", "simple", "matching"],
+            );
+            setGlobalPushDefault(savedPushDefault);
+            setLoadedGlobalPushDefault(savedPushDefault);
+            const savedPushAutoSetupRemote = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_push_auto_setup_remote"),
+                ["", "true", "false"],
+            );
+            setGlobalPushAutoSetupRemote(savedPushAutoSetupRemote);
+            setLoadedGlobalPushAutoSetupRemote(savedPushAutoSetupRemote);
+            const savedCoreEditor = await invoke<string | null>("get_global_core_editor");
+            setGlobalCoreEditor(savedCoreEditor ?? "");
+            setLoadedGlobalCoreEditor(savedCoreEditor ?? "");
+            const savedLineEndings = normaliseChoice<LineEndingMode>(
+                await invoke<string | null>("get_global_core_autocrlf"),
+                ["", "false", "true", "input"],
+            );
+            setGlobalLineEndings(savedLineEndings);
+            setLoadedGlobalLineEndings(savedLineEndings);
+            const savedCredentialHelper = await invoke<string | null>("get_global_credential_helper");
+            setGlobalCredentialHelper(savedCredentialHelper ?? "");
+            setLoadedGlobalCredentialHelper(savedCredentialHelper ?? "");
             setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
             setGitExecutableEdited(false);
             await refreshGitExecutable();
@@ -392,6 +555,24 @@ export function SettingsWindow() {
         loadedGlobalDefaultBranch,
         globalFileMode,
         loadedGlobalFileMode,
+        globalPullRebase,
+        loadedGlobalPullRebase,
+        globalPullFastForward,
+        loadedGlobalPullFastForward,
+        globalPullAutostash,
+        loadedGlobalPullAutostash,
+        globalFetchPrune,
+        loadedGlobalFetchPrune,
+        globalPushDefault,
+        loadedGlobalPushDefault,
+        globalPushAutoSetupRemote,
+        loadedGlobalPushAutoSetupRemote,
+        globalCoreEditor,
+        loadedGlobalCoreEditor,
+        globalLineEndings,
+        loadedGlobalLineEndings,
+        globalCredentialHelper,
+        loadedGlobalCredentialHelper,
         commitDateMode,
         commitMessageRecommendedLength,
         pushFollowTags,
@@ -658,43 +839,6 @@ export function SettingsWindow() {
                     </div>
 
                     <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.gitExecutable")}</label>
-                        <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
-                            <input
-                                className="settings-window__input"
-                                type="text"
-                                value={gitExecutablePath}
-                                onChange={e => {
-                                    setGitExecutablePath(e.target.value);
-                                    setGitExecutableEdited(true);
-                                }}
-                                placeholder={t("placeholders.gitExecutable")}
-                                spellCheck={false}
-                                autoCapitalize="off"
-                                autoCorrect="off"
-                            />
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                title={t("actions.browse")}
-                                aria-label={t("actions.browse")}
-                                onClick={handleBrowseGitExecutable}>
-                                <FileIcon/>
-                            </button>
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                title={t("actions.resetGitExecutable")}
-                                aria-label={t("actions.resetGitExecutable")}
-                                onClick={handleResetGitExecutable}>
-                                <CloseIcon/>
-                            </button>
-                        </div>
-                        <div className="settings-window__section-note">
-                            {t("notes.gitExecutable")}
-                            {gitVersion && <><br/>{t("labels.gitVersion")}<code>{gitVersion}</code></>}
-                        </div>
-                    </div>
-
-                    <div className="settings-window__row">
                         <label className="settings-window__label">{t("labels.theme")}</label>
                         <select
                             className="settings-window__select"
@@ -842,21 +986,59 @@ export function SettingsWindow() {
                 {tab === "git" && (
                 <div className="settings-window__column">
                     <div className="settings-window__section-title">{t("labels.git")}</div>
+
                     <div className="settings-window__section-note">
                         {t("notes.gitOptions")}
                     </div>
 
                     <div className="settings-window__row">
+                        <label className="settings-window__label">{t("labels.gitExecutable")}</label>
+                        <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
+                            <input
+                                className="settings-window__input"
+                                type="text"
+                                value={gitExecutablePath}
+                                onChange={e => {
+                                    setGitExecutablePath(e.target.value);
+                                    setGitExecutableEdited(true);
+                                }}
+                                placeholder={t("placeholders.gitExecutable")}
+                                spellCheck={false}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                            />
+                            <button
+                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                title={t("actions.browse")}
+                                aria-label={t("actions.browse")}
+                                onClick={handleBrowseGitExecutable}>
+                                <FileIcon/>
+                            </button>
+                            <button
+                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                title={t("actions.resetGitExecutable")}
+                                aria-label={t("actions.resetGitExecutable")}
+                                onClick={handleResetGitExecutable}>
+                                <CloseIcon/>
+                            </button>
+                        </div>
+                        <div className="settings-window__section-note">
+                            {t("notes.gitExecutable")}
+                            {gitVersion && <><br/>{t("labels.gitVersion")}<code>{gitVersion}</code></>}
+                        </div>
+                    </div>
+
+                    <div className="settings-window__row">
                         <label className="settings-window__label">{t("labels.pushBehaviour")}</label>
                         <label className="settings-window__switch-row">
-              <span className="settings-window__switch">
-                <input
-                    type="checkbox"
-                    checked={pushFollowTags}
-                    onChange={e => setPushFollowTags(e.target.checked)}
-                />
-                <span className="settings-window__switch-track"/>
-              </span>
+                  <span className="settings-window__switch">
+                    <input
+                        type="checkbox"
+                        checked={pushFollowTags}
+                        onChange={e => setPushFollowTags(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track"/>
+                  </span>
                             <span className="settings-window__switch-label">{t("switches.followTags")}</span>
                         </label>
                     </div>
@@ -886,13 +1068,106 @@ export function SettingsWindow() {
 
                     <div className="settings-window__row">
                         <label className="settings-window__label">{t("labels.globalGitConfiguration")}</label>
+                        <div className="settings-window__section-note">
+                            {t("notes.gitConfiguration")}
+                        </div>
                         <div className="settings-window__sub-section">
-                            <div className="settings-window__section-note">
-                                {t("notes.gitConfiguration")}
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupCore")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="core.editor">{t("labels.gitEditor")}</GitConfigLabel>
+                                </label>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={globalCoreEditor}
+                                    onChange={e => setGlobalCoreEditor(e.target.value)}
+                                    placeholder={t("placeholders.gitEditor")}
+                                    spellCheck={false}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                />
                             </div>
 
                             <div className="settings-window__row">
-                                <label className="settings-window__label">{t("labels.diffTool")}</label>
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="core.autocrlf">{t("labels.lineEndings")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalLineEndings}
+                                    onChange={e => setGlobalLineEndings(e.target.value as LineEndingMode)}
+                                >
+                                    <option value="">{t("options.lineEndingsDefault")}</option>
+                                    <option value="false">{t("options.lineEndingsFalse")}</option>
+                                    <option value="input">{t("options.lineEndingsInput")}</option>
+                                    <option value="true">{t("options.lineEndingsTrue")}</option>
+                                </select>
+                                <div className="settings-window__section-note">
+                                    {t("notes.lineEndings")}
+                                </div>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="core.fileMode">{t("labels.fileMode")}</GitConfigLabel>
+                                </label>
+                                <label className="settings-window__switch-row">
+                                    <span className="settings-window__switch">
+                                        <input
+                                            type="checkbox"
+                                            checked={globalFileMode}
+                                            onChange={e => setGlobalFileMode(e.target.checked)}
+                                        />
+                                        <span className="settings-window__switch-track"/>
+                                    </span>
+                                    <span className="settings-window__switch-label">{t("switches.trackFilePermissions")}</span>
+                                </label>
+                            </div>
+
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupCredential")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="credential.helper">{t("labels.credentialHelper")}</GitConfigLabel>
+                                </label>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={globalCredentialHelper}
+                                    onChange={e => setGlobalCredentialHelper(e.target.value)}
+                                    placeholder={t("placeholders.credentialHelper")}
+                                    spellCheck={false}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                />
+                                <div className="settings-window__section-note">
+                                    {t("notes.credentialHelper")}
+                                </div>
+                            </div>
+
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupInit")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="init.defaultBranch">{t("labels.defaultBranch")}</GitConfigLabel>
+                                </label>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={globalDefaultBranch}
+                                    onChange={e => setGlobalDefaultBranch(e.target.value)}
+                                    placeholder={t("placeholders.defaultBranch")}
+                                />
+                            </div>
+
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupDiff")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="diff.tool">{t("labels.diffTool")}</GitConfigLabel>
+                                </label>
                                 <select
                                     className="settings-window__select"
                                     value={externalDiffTool}
@@ -949,19 +1224,12 @@ export function SettingsWindow() {
                                 )}
                             </div>
 
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">{t("labels.defaultBranch")}</label>
-                                <input
-                                    className="settings-window__input"
-                                    type="text"
-                                    value={globalDefaultBranch}
-                                    onChange={e => setGlobalDefaultBranch(e.target.value)}
-                                    placeholder={t("placeholders.defaultBranch")}
-                                />
-                            </div>
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupSigning")}</div>
 
                             <div className="settings-window__row">
-                                <label className="settings-window__label">{t("labels.gpgProgram")}</label>
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="gpg.program">{t("labels.gpgProgram")}</GitConfigLabel>
+                                </label>
                                 <div className="settings-window__inline-controls"
                                      style={{gap: "6px", flexWrap: "nowrap"}}>
                                     <input
@@ -988,20 +1256,108 @@ export function SettingsWindow() {
                                 </div>
                             </div>
 
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupPull")}</div>
+
                             <div className="settings-window__row">
-                                <label className="settings-window__label">{t("labels.fileMode")}</label>
-                                <label className="settings-window__switch-row">
-                                    <span className="settings-window__switch">
-                                        <input
-                                            type="checkbox"
-                                            checked={globalFileMode}
-                                            onChange={e => setGlobalFileMode(e.target.checked)}
-                                        />
-                                        <span className="settings-window__switch-track"/>
-                                    </span>
-                                    <span className="settings-window__switch-label">{t("switches.trackFilePermissions")}</span>
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="pull.rebase">{t("labels.pullRebase")}</GitConfigLabel>
                                 </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalPullRebase}
+                                    onChange={e => setGlobalPullRebase(e.target.value as PullRebaseMode)}
+                                >
+                                    <option value="">{t("options.pullRebaseDefault")}</option>
+                                    <option value="false">{t("options.pullRebaseFalse")}</option>
+                                    <option value="true">{t("options.pullRebaseTrue")}</option>
+                                    <option value="merges">{t("options.pullRebaseMerges")}</option>
+                                    <option value="interactive">{t("options.pullRebaseInteractive")}</option>
+                                </select>
                             </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="pull.ff">{t("labels.pullFastForward")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalPullFastForward}
+                                    onChange={e => setGlobalPullFastForward(e.target.value as PullFastForwardMode)}
+                                >
+                                    <option value="">{t("options.pullFastForwardDefault")}</option>
+                                    <option value="true">{t("options.pullFastForwardTrue")}</option>
+                                    <option value="false">{t("options.pullFastForwardFalse")}</option>
+                                    <option value="only">{t("options.pullFastForwardOnly")}</option>
+                                </select>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="pull.autostash">{t("labels.pullAutostash")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalPullAutostash}
+                                    onChange={e => setGlobalPullAutostash(e.target.value as GitBooleanConfig)}
+                                >
+                                    <option value="">{t("options.booleanDefault")}</option>
+                                    <option value="true">{t("options.booleanTrue")}</option>
+                                    <option value="false">{t("options.booleanFalse")}</option>
+                                </select>
+                            </div>
+
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupFetch")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="fetch.prune">{t("labels.fetchBehaviour")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalFetchPrune}
+                                    onChange={e => setGlobalFetchPrune(e.target.value as GitBooleanConfig)}
+                                >
+                                    <option value="">{t("options.booleanDefault")}</option>
+                                    <option value="true">{t("options.booleanTrue")}</option>
+                                    <option value="false">{t("options.booleanFalse")}</option>
+                                </select>
+                            </div>
+
+                            <div className="settings-window__config-group-title">{t("labels.gitGroupPush")}</div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="push.default">{t("labels.pushDefault")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalPushDefault}
+                                    onChange={e => setGlobalPushDefault(e.target.value as PushDefaultMode)}
+                                >
+                                    <option value="">{t("options.pushDefaultDefault")}</option>
+                                    <option value="simple">{t("options.pushDefaultSimple")}</option>
+                                    <option value="current">{t("options.pushDefaultCurrent")}</option>
+                                    <option value="upstream">{t("options.pushDefaultUpstream")}</option>
+                                    <option value="nothing">{t("options.pushDefaultNothing")}</option>
+                                    <option value="matching">{t("options.pushDefaultMatching")}</option>
+                                </select>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">
+                                    <GitConfigLabel configKey="push.autoSetupRemote">{t("labels.pushUpstream")}</GitConfigLabel>
+                                </label>
+                                <select
+                                    className="settings-window__select"
+                                    value={globalPushAutoSetupRemote}
+                                    onChange={e => setGlobalPushAutoSetupRemote(e.target.value as GitBooleanConfig)}
+                                >
+                                    <option value="">{t("options.booleanDefault")}</option>
+                                    <option value="true">{t("options.booleanTrue")}</option>
+                                    <option value="false">{t("options.booleanFalse")}</option>
+                                </select>
+                            </div>
+
                         </div>
                     </div>
                 </div>

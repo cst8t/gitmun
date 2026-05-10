@@ -339,6 +339,51 @@ pub fn get_global_file_mode() -> Result<Option<bool>, String> {
 }
 
 #[tauri::command]
+pub fn get_global_pull_rebase() -> Result<Option<String>, String> {
+    git_config_global_get("pull.rebase")
+}
+
+#[tauri::command]
+pub fn get_global_pull_ff() -> Result<Option<String>, String> {
+    git_config_global_get("pull.ff")
+}
+
+#[tauri::command]
+pub fn get_global_pull_autostash() -> Result<Option<String>, String> {
+    git_config_global_get("pull.autostash")
+}
+
+#[tauri::command]
+pub fn get_global_fetch_prune() -> Result<Option<String>, String> {
+    git_config_global_get("fetch.prune")
+}
+
+#[tauri::command]
+pub fn get_global_push_default() -> Result<Option<String>, String> {
+    git_config_global_get("push.default")
+}
+
+#[tauri::command]
+pub fn get_global_push_auto_setup_remote() -> Result<Option<String>, String> {
+    git_config_global_get("push.autoSetupRemote")
+}
+
+#[tauri::command]
+pub fn get_global_core_editor() -> Result<Option<String>, String> {
+    git_config_global_get("core.editor")
+}
+
+#[tauri::command]
+pub fn get_global_core_autocrlf() -> Result<Option<String>, String> {
+    git_config_global_get("core.autocrlf")
+}
+
+#[tauri::command]
+pub fn get_global_credential_helper() -> Result<Option<String>, String> {
+    git_config_global_get("credential.helper")
+}
+
+#[tauri::command]
 pub fn get_active_git_executable_path() -> String {
     crate::resolve_active_git_executable_path()
 }
@@ -693,6 +738,139 @@ pub fn set_global_default_branch(default_branch: String) -> Result<OperationResu
         repo_path: None,
         backend_used: "git-cli".to_string(),
     })
+}
+
+fn validate_config_choice(value: &str, allowed: &[&str], label: &str) -> Result<String, String> {
+    let value = value.trim();
+    if allowed.contains(&value) {
+        Ok(value.to_string())
+    } else {
+        Err(format!("Invalid {label}: {value}"))
+    }
+}
+
+fn set_optional_global_config(
+    key: &str,
+    value: &str,
+    empty_message: &str,
+) -> Result<OperationResult, String> {
+    let value = value.trim();
+    let message = if value.is_empty() {
+        git_config_global_unset(key)?;
+        empty_message.to_string()
+    } else {
+        git_config_global_set(key, value)?;
+        format!("Set git global {key}={value}")
+    };
+
+    Ok(OperationResult {
+        message,
+        output: None,
+        repo_path: None,
+        backend_used: "git-cli".to_string(),
+    })
+}
+
+#[tauri::command]
+pub fn set_global_pull_rebase(pull_rebase: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(
+        &pull_rebase,
+        &["", "false", "true", "merges", "interactive"],
+        "pull.rebase",
+    )?;
+    set_optional_global_config(
+        "pull.rebase",
+        &value,
+        "Cleared pull.rebase from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_pull_ff(pull_ff: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(&pull_ff, &["", "true", "false", "only"], "pull.ff")?;
+    set_optional_global_config("pull.ff", &value, "Cleared pull.ff from global git config")
+}
+
+#[tauri::command]
+pub fn set_global_pull_autostash(pull_autostash: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(&pull_autostash, &["", "true", "false"], "pull.autostash")?;
+    set_optional_global_config(
+        "pull.autostash",
+        &value,
+        "Cleared pull.autostash from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_fetch_prune(fetch_prune: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(&fetch_prune, &["", "true", "false"], "fetch.prune")?;
+    set_optional_global_config(
+        "fetch.prune",
+        &value,
+        "Cleared fetch.prune from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_push_default(push_default: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(
+        &push_default,
+        &["", "nothing", "current", "upstream", "simple", "matching"],
+        "push.default",
+    )?;
+    set_optional_global_config(
+        "push.default",
+        &value,
+        "Cleared push.default from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_push_auto_setup_remote(
+    push_auto_setup_remote: String,
+) -> Result<OperationResult, String> {
+    let value = validate_config_choice(
+        &push_auto_setup_remote,
+        &["", "true", "false"],
+        "push.autoSetupRemote",
+    )?;
+    set_optional_global_config(
+        "push.autoSetupRemote",
+        &value,
+        "Cleared push.autoSetupRemote from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_core_editor(core_editor: String) -> Result<OperationResult, String> {
+    set_optional_global_config(
+        "core.editor",
+        &core_editor,
+        "Cleared core.editor from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_core_autocrlf(core_autocrlf: String) -> Result<OperationResult, String> {
+    let value = validate_config_choice(
+        &core_autocrlf,
+        &["", "false", "true", "input"],
+        "core.autocrlf",
+    )?;
+    set_optional_global_config(
+        "core.autocrlf",
+        &value,
+        "Cleared core.autocrlf from global git config",
+    )
+}
+
+#[tauri::command]
+pub fn set_global_credential_helper(credential_helper: String) -> Result<OperationResult, String> {
+    set_optional_global_config(
+        "credential.helper",
+        &credential_helper,
+        "Cleared credential.helper from global git config",
+    )
 }
 
 #[tauri::command]
