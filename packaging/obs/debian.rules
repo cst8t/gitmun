@@ -7,7 +7,7 @@ CARGO_VENDOR_ARCHIVE := $(firstword $(wildcard vendor.tar.xz ../vendor.tar.xz /u
 NODE_MODULES_ARCHIVE := $(firstword $(wildcard node_modules.obscpio ../node_modules.obscpio /usr/src/packages/SOURCES/node_modules.obscpio))
 NPM_TARBALLS_DIR := $(firstword $(wildcard /usr/src/packages/SOURCES))
 DESKTOP_FILE := $(firstword $(wildcard com.cst8t.gitmun.desktop ../com.cst8t.gitmun.desktop /usr/src/packages/SOURCES/com.cst8t.gitmun.desktop))
-ATTRIBUTIONS_FILE := $(firstword $(wildcard ATTRIBUTIONS.html ../ATTRIBUTIONS.html /usr/src/packages/SOURCES/ATTRIBUTIONS.html))
+ATTRIBUTIONS_FILE := $(firstword $(wildcard public/ATTRIBUTIONS.html ATTRIBUTIONS.html ../ATTRIBUTIONS.html /usr/src/packages/SOURCES/ATTRIBUTIONS.html))
 
 %:
 	dh $@

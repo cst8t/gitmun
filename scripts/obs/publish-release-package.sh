@@ -36,7 +36,7 @@ mkdir -p "$render_dir"
 git -C "$repo_root" archive --format=tar --prefix="${release_root}/" HEAD | xz -T0 >"$source_tarball"
 
 tar -xJf "$source_tarball" -C "$tmp_dir"
-cp "${input_dir}/ATTRIBUTIONS.html" "${tmp_dir}/${release_root}/"
+cp "${input_dir}/ATTRIBUTIONS.html" "${tmp_dir}/${release_root}/public/"
 cp "${input_dir}/commit-hash.txt" "${tmp_dir}/${release_root}/"
 rm "$source_tarball"
 tar -cJf "$source_tarball" -C "$tmp_dir" "$release_root"
