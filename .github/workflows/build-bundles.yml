@@ -252,7 +252,7 @@ jobs:
     name: Linux Flatpak bundle
     needs: [linux-bundles]
     runs-on: ubuntu-22.04
-    if: ${{ github.event_name == 'release' || !inputs.publish-obs }}
+    if: false
     container:
       image: ghcr.io/flathub-infra/flatpak-github-actions:gnome-48
       options: --privileged
@@ -1037,7 +1037,6 @@ jobs:
     if: ${{ github.event_name == 'release' }}
     needs:
       - linux-bundles
-      - flatpak-bundle
       - windows-bundles
       - update-updater-json
       - macos-bundles
