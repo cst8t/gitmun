@@ -160,6 +160,49 @@
   font-weight: 500;
 }
 
+.settings-window__label-content {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.settings-window__git-config-key {
+  display: inline-flex;
+  align-items: center;
+  min-height: 16px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 4px;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xxs);
+  font-weight: 500;
+}
+
+.settings-window__config-group-title {
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: var(--font-size-xxs);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.settings-window__section-note + .settings-window__config-group-title {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
+.settings-window__sub-section > .settings-window__config-group-title:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+
 .settings-window__input {
   flex: 1;
   min-width: 0;
