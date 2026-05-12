@@ -32,7 +32,7 @@ pub(crate) fn background_colour_for_theme_mode(
     }
 }
 
-fn initial_theme_injection_script(system_theme: &str) -> String {
+fn initial_theme_injection_script(system_theme: &str, text_scale: f64) -> String {
     r#"
       (() => {
         try {
@@ -47,6 +47,7 @@ fn initial_theme_injection_script(system_theme: &str) -> String {
           const html = document.documentElement;
           html.dataset.theme = theme;
           html.style.background = background;
+          html.style.setProperty("--text-scale", "__GITMUN_TEXT_SCALE__");
           if (document.body) {
             document.body.style.background = background;
           } else {
@@ -78,6 +79,11 @@ fn initial_theme_injection_script(system_theme: &str) -> String {
     .replace("__GITMUN_DARK_BACKGROUND__", DARK_WINDOW_BACKGROUND_HEX)
     .replace("__GITMUN_LIGHT_BACKGROUND__", LIGHT_WINDOW_BACKGROUND_HEX)
     .replace("__GITMUN_SYSTEM_THEME__", system_theme)
+    .replace("__GITMUN_TEXT_SCALE__", &settings_text_scale(text_scale))
+}
+
+fn settings_text_scale(text_scale: f64) -> String {
+    crate::git::types::Settings::normalised_ui_text_scale(text_scale).to_string()
 }
 
 fn centred_sub_window_position(
@@ -186,7 +192,10 @@ pub async fn open_sub_window(
             .focused(show_immediately)
             .visible(show_immediately)
             .background_color(background_colour)
-            .initialization_script(initial_theme_injection_script(system_theme));
+            .initialization_script(initial_theme_injection_script(
+                system_theme,
+                settings.ui_text_scale,
+            ));
 
     if label == "attributions" {
         let app_handle_for_navigation = app.clone();

@@ -170,6 +170,7 @@ mod tests {
         assert!(settings.show_result_log);
         assert_eq!(settings.theme_mode, crate::git::types::ThemeMode::Dark);
         assert_eq!(settings.commit_message_recommended_length, 50);
+        assert_eq!(settings.ui_text_scale, 1.0);
     }
 
     #[test]
@@ -190,6 +191,57 @@ mod tests {
         assert_eq!(settings.left_pane_width, 300);
         assert_eq!(settings.right_pane_width, 420);
         assert_eq!(settings.commit_message_recommended_length, 72);
+        assert_eq!(settings.ui_text_scale, 1.0);
+    }
+
+    #[test]
+    fn load_toml_populates_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = 1.2\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert_eq!(settings.ui_text_scale, 1.2);
+    }
+
+    #[test]
+    fn load_toml_defaults_invalid_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = 1.25\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert!(settings.show_result_log);
+        assert_eq!(settings.ui_text_scale, 1.0);
+    }
+
+    #[test]
+    fn load_toml_defaults_malformed_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = \"larger\"\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert!(settings.show_result_log);
+        assert_eq!(settings.ui_text_scale, 1.0);
     }
 
     #[test]
@@ -239,6 +291,8 @@ mod tests {
         assert!(toml_text.contains("showResultLog = true"));
         assert!(toml_text.contains("# Recommended maximum length"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
+        assert!(toml_text.contains("# UI text scale."));
+        assert!(toml_text.contains("uiTextScale = 1.0"));
         assert!(!json_path.exists());
         assert!(dir.path().join("config.json.old").exists());
     }
@@ -258,6 +312,7 @@ mod tests {
         let toml_text = std::fs::read_to_string(&toml_path).unwrap();
         assert!(toml_text.contains("# Backend used for Git operations"));
         assert!(toml_text.contains("backendMode = \"Default\""));
+        assert!(toml_text.contains("uiTextScale = 1.0"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
     }
 
@@ -322,5 +377,10 @@ mod tests {
             "missing key gained its template comment"
         );
         assert!(updated.contains("commitMessageRecommendedLength = 72"));
+        assert!(
+            updated.contains("# UI text scale."),
+            "missing key gained its template comment"
+        );
+        assert!(updated.contains("uiTextScale = 1.0"));
     }
 }

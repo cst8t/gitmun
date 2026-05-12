@@ -51,7 +51,7 @@
   background: var(--bg-surface);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-weight: 600;
   transition: background 0.15s, color 0.15s;
 }
@@ -125,7 +125,7 @@
 
 .app__empty-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1.2;
 }
 

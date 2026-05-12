@@ -25,13 +25,13 @@
 }
 
 .no-diff-tool-dialog__title {
-  font-size: 14px;
+  font-size: var(--font-size-lg);
   font-weight: 600;
   color: var(--text);
 }
 
 .no-diff-tool-dialog__body {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   line-height: 1.6;
 }
@@ -45,7 +45,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   cursor: pointer;
   user-select: none;
@@ -64,7 +64,7 @@
 }
 
 .no-diff-tool-dialog__btn {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   font-family: var(--font-ui);
   padding: 6px 14px;

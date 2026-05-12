@@ -314,7 +314,7 @@
 
 @container (max-width: 280px) {
   .sidebar__tab {
-    font-size: 10px;
+    font-size: var(--font-size-xxs);
     letter-spacing: 0.02em;
     padding: 0 2px;
   }
@@ -322,7 +322,7 @@
 
 @container (max-width: 220px) {
   .sidebar__tab {
-    font-size: 9px;
+    font-size: var(--font-size-micro);
     letter-spacing: 0;
     padding: 0 1px;
   }

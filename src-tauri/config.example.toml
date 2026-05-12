@@ -12,6 +12,10 @@ showResultLog = false
 # "Dark" uses the dark theme.
 themeMode = "System"
 
+# UI text scale.
+# Supported values: 0.9, 1.0, 1.1, 1.2, 1.3.
+uiTextScale = 1.0
+
 # Whether to wrap long lines in diff views.
 wrapDiffLines = false
 

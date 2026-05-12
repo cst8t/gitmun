@@ -1024,6 +1024,7 @@ pub fn run() {
             commands::settings::set_backend_mode,
             commands::settings::set_show_result_log,
             commands::settings::set_theme_mode,
+            commands::settings::set_ui_text_scale,
             commands::settings::set_wrap_diff_lines,
             commands::settings::set_panel_layout,
             commands::settings::set_confirm_revert,

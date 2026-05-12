@@ -19,7 +19,7 @@
 
 .result-log__title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 .result-log__header-right {
@@ -35,7 +35,7 @@
 }
 
 .result-log__switch-label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 
@@ -97,7 +97,7 @@
   border-radius: 6px;
   padding: 4px 8px;
   font: inherit;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   cursor: pointer;
 }
 
@@ -114,7 +114,7 @@
   border-radius: 6px;
   padding: 5px 10px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   cursor: pointer;
 }
 
@@ -139,7 +139,7 @@
 .result-log__empty {
   margin: auto;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .result-log__item {
@@ -154,7 +154,7 @@
 
 .result-log__console {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   line-height: 1.4;
 }
 
@@ -207,13 +207,13 @@
 .result-log__content { min-width: 0; }
 
 .result-log__message {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   line-height: 1.35;
 }
 
 .result-log__time {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
@@ -225,7 +225,7 @@
 }
 
 .result-log__backend {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   border: 1px solid var(--border-subtle);
@@ -238,7 +238,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
 }
 

@@ -12,6 +12,7 @@ import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
 import type {AvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction, ThemeMode} from "../types";
 import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
+import {applyUiTextScale} from "../utils/uiTextScale";
 import "./App.css";
 
 const BACKEND_MODE_KEY = "gitmun.backendMode";
@@ -246,6 +247,7 @@ export function App() {
                 const settings = await api.getSettings();
                 if (cancelled) return;
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                applyUiTextScale(settings.uiTextScale);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const leftRatio = parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY));
                 const rightRatio = parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY));
@@ -288,6 +290,7 @@ export function App() {
                 }
             } catch {
                 document.documentElement.dataset.theme = "dark";
+                applyUiTextScale(1);
             }
         })();
         return () => {
@@ -380,6 +383,7 @@ export function App() {
             const fn = await listen<Settings>("settings-updated", async (event) => {
                 const settings = event.payload;
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                applyUiTextScale(settings.uiTextScale);
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
                 localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
@@ -414,6 +418,7 @@ export function App() {
             const fn = await listen("instance-settings-updated", async () => {
                 const settings = await api.getSettings();
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                applyUiTextScale(settings.uiTextScale);
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
                 localStorage.setItem(THEME_MODE_KEY, settings.themeMode);

@@ -51,10 +51,14 @@
   /* Typography */
   --font-ui: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  --font-size-base: 13px;
-  --font-size-sm: 12px;
-  --font-size-xs: 11px;
-  --font-size-xxs: 10px;
+  --text-scale: 1;
+  --font-size-xl: calc(20px * var(--text-scale));
+  --font-size-lg: calc(14px * var(--text-scale));
+  --font-size-base: calc(13px * var(--text-scale));
+  --font-size-sm: calc(12px * var(--text-scale));
+  --font-size-xs: calc(11px * var(--text-scale));
+  --font-size-xxs: calc(10px * var(--text-scale));
+  --font-size-micro: calc(9px * var(--text-scale));
 
   /* Radius */
   --radius-sm: 3px;

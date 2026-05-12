@@ -23,7 +23,7 @@
 }
 
 .remote-section__chevron {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   flex-shrink: 0;
   transition: transform 0.15s;
@@ -94,7 +94,7 @@
 }
 
 .remote-section__upstream-badge {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 600;
   color: var(--accent);
   background: rgba(108, 156, 252, 0.14);

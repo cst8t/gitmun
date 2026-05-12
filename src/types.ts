@@ -7,11 +7,13 @@ export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
+export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
 
 export type Settings = {
     backendMode: BackendMode;
     showResultLog: boolean;
     themeMode: ThemeMode;
+    uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
     leftPaneWidth: number;
     rightPaneWidth: number;

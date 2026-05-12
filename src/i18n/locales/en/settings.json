@@ -52,6 +52,7 @@
     "pushUpstream": "Auto-set upstream",
     "resultLog": "Result log",
     "settings": "Settings",
+    "textScale": "Text size",
     "theme": "Theme",
     "updateFeedUrl": "Update feed URL",
     "updates": "Updates"
@@ -114,6 +115,13 @@
     "themeDark": "Dark",
     "themeLight": "Light",
     "themeSystem": "System",
+    "textScale": {
+      "0_9": "Small",
+      "1": "Default",
+      "1_1": "Large",
+      "1_2": "Larger",
+      "1_3": "Largest"
+    },
     "vsCode": "VS Code",
     "vsCodium": "VS Codium"
   },

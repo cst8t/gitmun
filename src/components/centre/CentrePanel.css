@@ -48,7 +48,7 @@
   margin-left: 6px;
   background: var(--yellow);
   color: var(--bg);
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 700;
   padding: 0 5px;
   border-radius: 10px;
@@ -151,7 +151,7 @@
 .file-row__icon { display: flex; flex-shrink: 0; }
 
 .file-row__badge {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 700;
   letter-spacing: 0.05em;
   padding: 1px 6px;
@@ -550,7 +550,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 700;
   font-family: var(--font-mono);
   flex-shrink: 0;
@@ -603,7 +603,7 @@
 }
 
 .log-view__marker {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-family: var(--font-mono);
   font-weight: 700;
   letter-spacing: 0.03em;
@@ -628,7 +628,7 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 600;
   padding: 1px 6px 1px 4px;
   border-radius: 999px;
@@ -708,7 +708,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 2px 4px;
   border-radius: var(--radius-sm);
   line-height: 1;
@@ -744,7 +744,7 @@
 }
 
 .sig-popover__label {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 500;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -759,7 +759,7 @@
 
 .sig-popover__value--mono {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
 }
 
 .merge-banner {
@@ -856,7 +856,7 @@
 
 .staging__conflict-badge {
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   font-weight: 700;
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.15);

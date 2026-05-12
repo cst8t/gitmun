@@ -5,7 +5,7 @@
   background: var(--bg-surface);
   color: var(--text-primary);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 .settings-window__header {
@@ -19,7 +19,7 @@
 
 .settings-window__title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 .settings-window__close {
@@ -120,7 +120,7 @@
   margin-top: 4px;
   padding-top: 6px;
   border-top: 1px solid var(--border-subtle);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
@@ -134,7 +134,7 @@
 }
 
 .settings-window__section-note {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   color: var(--text-muted);
 }
@@ -155,7 +155,7 @@
 }
 
 .settings-window__label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   font-weight: 500;
 }
@@ -212,7 +212,7 @@
   padding: 6px 8px;
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   outline: none;
 }
 
@@ -236,7 +236,7 @@
   padding: 6px 8px;
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   outline: none;
   color-scheme: dark;
 }
@@ -259,7 +259,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-primary);
   cursor: pointer;
 }
@@ -277,7 +277,7 @@
 }
 
 .settings-window__switch-label {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   flex: 1;
   min-width: 0;
@@ -346,7 +346,7 @@
   border-radius: 6px;
   padding: 6px 14px;
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-weight: 500;
   cursor: pointer;
   transition: background 0.12s;
@@ -382,12 +382,12 @@
 }
 
 .settings-window__status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
 .settings-window__warning {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.1);
@@ -397,7 +397,7 @@
 }
 
 .settings-window__note {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.35;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, transparent);

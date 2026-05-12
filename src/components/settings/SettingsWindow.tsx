@@ -14,7 +14,8 @@ import type {
     LinuxGraphicsMode,
     RepoOpenBehaviour,
     Settings,
-    ThemeMode
+    ThemeMode,
+    UiTextScale
 } from "../../types";
 import {
     getConfigFilePath,
@@ -29,6 +30,7 @@ import {
     setUpdateEndpoint,
 } from "../../api/commands";
 import {CloseIcon, FileIcon, FolderIcon} from "../icons";
+import {UI_TEXT_SCALE_VALUES, applyUiTextScale, normaliseUiTextScale} from "../../utils/uiTextScale";
 import "./SettingsWindow.css";
 
 const BACKEND_MODE_KEY = "gitmun.backendMode";
@@ -125,6 +127,7 @@ export function SettingsWindow() {
             : t("placeholders.defaultCloneDestinationLinux");
     const [backendMode, setBackendMode] = useState<BackendMode>("Default");
     const [themeMode, setThemeMode] = useState<ThemeMode>("System");
+    const [uiTextScale, setUiTextScale] = useState<UiTextScale>(1);
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
     const [avatarProvider, setAvatarProvider] = useState<AvatarProviderMode>("Libravatar");
@@ -301,6 +304,7 @@ export function SettingsWindow() {
                 setGitVersion(activeGitVersion);
                 setBackendMode(settings.backendMode);
                 setThemeMode(settings.themeMode);
+                setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
                 setWrapDiffLines(settings.wrapDiffLines ?? false);
                 setOpenResultLogOnLaunch(settings.showResultLog);
                 setAvatarProvider(settings.avatarProvider);
@@ -315,6 +319,7 @@ export function SettingsWindow() {
                 setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
                 setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
                 document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                applyUiTextScale(settings.uiTextScale);
 
                 const cfgPath = await getConfigFilePath();
                 setConfigFilePath(cfgPath ?? "");
@@ -373,6 +378,7 @@ export function SettingsWindow() {
             await invoke("set_backend_mode", {mode: backendMode});
             await invoke("set_show_result_log", {showResultLog: openResultLogOnLaunch});
             await invoke<Settings>("set_theme_mode", {themeMode});
+            await invoke<Settings>("set_ui_text_scale", {uiTextScale});
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
@@ -454,11 +460,13 @@ export function SettingsWindow() {
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+            setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
             localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
             localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
             document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+            applyUiTextScale(settings.uiTextScale);
 
             if (isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {
                 setExternalDiffToolPath(await getGlobalDiffToolPath(externalDiffTool) ?? "");
@@ -540,6 +548,7 @@ export function SettingsWindow() {
     }, [
         backendMode,
         themeMode,
+        uiTextScale,
         openResultLogOnLaunch,
         wrapDiffLines,
         avatarProvider,
@@ -600,6 +609,12 @@ export function SettingsWindow() {
             setStatus(t("status.openResultLogFailed", {message: String(e)}));
         }
     }, [t]);
+
+    const handleUiTextScaleChange = useCallback((value: string) => {
+        const scale = normaliseUiTextScale(value);
+        setUiTextScale(scale);
+        applyUiTextScale(scale);
+    }, []);
 
     const handleResetLayout = useCallback(async () => {
         try {
@@ -848,6 +863,21 @@ export function SettingsWindow() {
                             <option value="System">{t("options.themeSystem")}</option>
                             <option value="Light">{t("options.themeLight")}</option>
                             <option value="Dark">{t("options.themeDark")}</option>
+                        </select>
+                    </div>
+
+                    <div className="settings-window__row">
+                        <label className="settings-window__label">{t("labels.textScale")}</label>
+                        <select
+                            className="settings-window__select"
+                            value={String(uiTextScale)}
+                            onChange={e => handleUiTextScaleChange(e.target.value)}
+                        >
+                            {UI_TEXT_SCALE_VALUES.map(scale => (
+                                <option value={String(scale)} key={scale}>
+                                    {t(`options.textScale.${String(scale).replace(".", "_")}`)}
+                                </option>
+                            ))}
                         </select>
                     </div>
 

@@ -46,6 +46,7 @@ import type {
     TagInfo,
     BackendMode,
     ThemeMode,
+    UiTextScale,
     NumstatResult,
     SetIdentityRequest,
     AddRemoteRequest,
@@ -374,6 +375,10 @@ export function setShowResultLog(showResultLog: boolean): Promise<Settings> {
 
 export function setThemeMode(themeMode: ThemeMode): Promise<Settings> {
     return invoke<Settings>("set_theme_mode", {themeMode});
+}
+
+export function setUiTextScale(uiTextScale: UiTextScale): Promise<Settings> {
+    return invoke<Settings>("set_ui_text_scale", {uiTextScale});
 }
 
 export function setWrapDiffLines(wrapDiffLines: boolean): Promise<Settings> {

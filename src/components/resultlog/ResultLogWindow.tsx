@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import type { Settings, ThemeMode } from "../../types";
 import { clearResultLog, getResultLogEntries, type ResultLogEntry } from "../../utils/resultLog";
+import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./ResultLogWindow.css";
 
 const THEME_MODE_KEY = "gitmun.themeMode";
@@ -39,8 +40,10 @@ export function ResultLogWindow() {
         }
         const settings = await invoke<Settings>("get_settings");
         document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+        applyUiTextScale(settings.uiTextScale);
       } catch {
         document.documentElement.dataset.theme = "dark";
+        applyUiTextScale(1);
       }
     })();
   }, []);

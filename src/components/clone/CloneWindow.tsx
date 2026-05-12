@@ -10,6 +10,7 @@ import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
 import { getCloneRepoUrlError } from "../../utils/gitInputValidation";
 import { takePendingCloneDestination } from "../../api/commands";
+import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./CloneWindow.css";
 
 const CLONE_BASE_KEY = "gitmun.cloneBaseDir";
@@ -79,6 +80,7 @@ export function CloneWindow() {
         }
         const settings = await invoke<Settings>("get_settings");
         document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+        applyUiTextScale(settings.uiTextScale);
 
         // Initialise destination: pending shell destination > last-used dir > settings default > OS default.
         const pendingDestination = await takePendingCloneDestination();

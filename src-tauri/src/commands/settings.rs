@@ -202,6 +202,13 @@ pub fn set_theme_mode(
 }
 
 #[tauri::command]
+pub fn set_ui_text_scale(ui_text_scale: f64, state: tauri::State<'_, AppState>) -> Settings {
+    let settings = state.git_service.set_ui_text_scale(ui_text_scale);
+    crate::instance_coordinator::broadcast_settings_updated();
+    settings
+}
+
+#[tauri::command]
 pub fn set_wrap_diff_lines(wrap_diff_lines: bool, state: tauri::State<'_, AppState>) -> Settings {
     state.git_service.set_wrap_diff_lines(wrap_diff_lines)
 }
