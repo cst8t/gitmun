@@ -611,7 +611,7 @@ export function SettingsWindow() {
     }, [t]);
 
     const handleUiTextScaleChange = useCallback((value: string) => {
-        const scale = normaliseUiTextScale(value);
+        const scale = UI_TEXT_SCALE_VALUES[Number(value)] ?? 1;
         setUiTextScale(scale);
         applyUiTextScale(scale);
     }, []);
@@ -868,17 +868,21 @@ export function SettingsWindow() {
 
                     <div className="settings-window__row">
                         <label className="settings-window__label">{t("labels.textScale")}</label>
-                        <select
-                            className="settings-window__select"
-                            value={String(uiTextScale)}
-                            onChange={e => handleUiTextScaleChange(e.target.value)}
-                        >
-                            {UI_TEXT_SCALE_VALUES.map(scale => (
-                                <option value={String(scale)} key={scale}>
-                                    {t(`options.textScale.${String(scale).replace(".", "_")}`)}
-                                </option>
-                            ))}
-                        </select>
+                        <div className="settings-window__range-row">
+                            <input
+                                className="settings-window__range"
+                                type="range"
+                                min={0}
+                                max={UI_TEXT_SCALE_VALUES.length - 1}
+                                step={1}
+                                value={UI_TEXT_SCALE_VALUES.indexOf(uiTextScale)}
+                                onChange={e => handleUiTextScaleChange(e.target.value)}
+                                aria-valuetext={t(`options.textScale.${String(uiTextScale).replace(".", "_")}`)}
+                            />
+                            <span className="settings-window__range-value">
+                                {t(`options.textScale.${String(uiTextScale).replace(".", "_")}`)}
+                            </span>
+                        </div>
                     </div>
 
                     {isLinux && (

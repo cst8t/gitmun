@@ -255,6 +255,26 @@
   color-scheme: light;
 }
 
+.settings-window__range-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settings-window__range {
+  flex: 1;
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.settings-window__range-value {
+  width: 64px;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  text-align: right;
+}
+
 .settings-window__checkbox-row {
   display: flex;
   align-items: center;
