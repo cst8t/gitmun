@@ -14,6 +14,7 @@
 
   /* Text */
   --text-primary: #e2e4eb;
+  --text-secondary-strong: #adb1c2;
   --text-secondary: #8b8fa3;
   --text-muted: #555972;
   --text: var(--text-primary);
@@ -80,6 +81,7 @@
   --border-subtle: #e4e9f2;
 
   --text-primary: #1f2430;
+  --text-secondary-strong: #374151;
   --text-secondary: #4b5567;
   --text-muted: #7b8699;
 
@@ -114,6 +116,7 @@
   --border-subtle: #1e2233;
 
   --text-primary: #e2e4eb;
+  --text-secondary-strong: #adb1c2;
   --text-secondary: #8b8fa3;
   --text-muted: #555972;
 

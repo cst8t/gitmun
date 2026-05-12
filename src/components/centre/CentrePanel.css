@@ -164,7 +164,7 @@
   flex: 1;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  color: var(--text-secondary);
+  color: var(--text-secondary-strong);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
