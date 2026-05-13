@@ -6,16 +6,19 @@ use crate::git::types::{
     RenameBranchRequest, RenameRemoteRequest, RepoRequest, SetBranchUpstreamRequest,
     SetRemoteUrlRequest, TagInfo,
 };
+use tauri::Manager;
 
 #[tauri::command]
-pub fn get_branches(
+pub async fn get_branches(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<BranchInfo>, String> {
-    state
-        .git_service
-        .get_branches(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_branches(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -74,14 +77,16 @@ pub fn rename_branch(
 }
 
 #[tauri::command]
-pub fn get_tags(
+pub async fn get_tags(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<TagInfo>, String> {
-    state
-        .git_service
-        .get_tags(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_tags(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -134,14 +139,16 @@ pub fn delete_remote_branch(
 }
 
 #[tauri::command]
-pub fn get_remotes(
+pub async fn get_remotes(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<RemoteInfo>, String> {
-    state
-        .git_service
-        .get_remotes(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_remotes(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
