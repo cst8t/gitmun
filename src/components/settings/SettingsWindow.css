@@ -88,9 +88,22 @@
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
   overflow-y: auto;
   min-width: 0;
+}
+
+.settings-window__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.settings-window__column > .settings-window__section:first-child {
+  padding-top: 0;
+  border-top: none;
 }
 
 .settings-window__row {
@@ -117,20 +130,10 @@
 }
 
 .settings-window__section-title {
-  margin-top: 4px;
-  padding-top: 6px;
-  border-top: 1px solid var(--border-subtle);
   font-size: var(--font-size-xs);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
   color: var(--text-muted);
   font-weight: 700;
-}
-
-.settings-window__column > .settings-window__section-title:first-child {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
 }
 
 .settings-window__section-note {
@@ -179,28 +182,6 @@
   font-family: var(--font-mono);
   font-size: var(--font-size-xxs);
   font-weight: 500;
-}
-
-.settings-window__config-group-title {
-  margin-top: 4px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: var(--font-size-xxs);
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.settings-window__section-note + .settings-window__config-group-title {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
-}
-
-.settings-window__sub-section > .settings-window__config-group-title:first-child {
-  margin-top: 0;
-  padding-top: 0;
-  border-top: none;
 }
 
 .settings-window__input {
