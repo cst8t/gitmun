@@ -779,6 +779,125 @@ fn sanitize_linux_xdg_env() {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn configure_linux_webkit_text_input(window: &tauri::WebviewWindow<tauri::Wry>) {
+    let _ = window.with_webview(|webview| {
+        use webkit2gtk::{WebContextExt, WebViewExt};
+
+        let webview = webview.inner();
+        if let Some(context) = webview.context() {
+            let languages = linux_spell_checking_languages();
+            let language_refs: Vec<&str> = languages.iter().map(String::as_str).collect();
+            context.set_spell_checking_languages(&language_refs);
+            context.set_spell_checking_enabled(true);
+        }
+
+        webview.connect_context_menu(|_, menu, _, _| {
+            filter_linux_webkit_text_context_menu(menu);
+            false
+        });
+    });
+}
+
+#[cfg(target_os = "linux")]
+fn filter_linux_webkit_text_context_menu(menu: &webkit2gtk::ContextMenu) {
+    use webkit2gtk::{ContextMenuExt, ContextMenuItemExt};
+
+    for item in menu.items() {
+        if item.is_separator() {
+            continue;
+        }
+        if !linux_webkit_text_context_menu_item_is_allowed(&item) {
+            menu.remove(&item);
+        }
+    }
+
+    remove_redundant_linux_webkit_context_menu_separators(menu);
+}
+
+#[cfg(target_os = "linux")]
+fn linux_webkit_text_context_menu_item_is_allowed(item: &webkit2gtk::ContextMenuItem) -> bool {
+    use webkit2gtk::{ContextMenuAction, ContextMenuExt, ContextMenuItemExt};
+
+    if let Some(submenu) = item.submenu() {
+        filter_linux_webkit_text_context_menu(&submenu);
+        return submenu.n_items() > 0;
+    }
+
+    matches!(
+        item.stock_action(),
+        ContextMenuAction::Copy
+            | ContextMenuAction::Cut
+            | ContextMenuAction::Paste
+            | ContextMenuAction::PasteAsPlainText
+            | ContextMenuAction::Delete
+            | ContextMenuAction::SelectAll
+            | ContextMenuAction::SpellingGuess
+            | ContextMenuAction::NoGuessesFound
+            | ContextMenuAction::IgnoreSpelling
+            | ContextMenuAction::LearnSpelling
+            | ContextMenuAction::IgnoreGrammar
+    )
+}
+
+#[cfg(target_os = "linux")]
+fn remove_redundant_linux_webkit_context_menu_separators(menu: &webkit2gtk::ContextMenu) {
+    use webkit2gtk::{ContextMenuExt, ContextMenuItemExt};
+
+    let items = menu.items();
+    let mut previous_kept_was_separator = true;
+    let mut last_separator = None;
+
+    for item in items {
+        if item.is_separator() {
+            if previous_kept_was_separator {
+                menu.remove(&item);
+            } else {
+                last_separator = Some(item);
+                previous_kept_was_separator = true;
+            }
+        } else {
+            last_separator = None;
+            previous_kept_was_separator = false;
+        }
+    }
+
+    if let Some(item) = last_separator {
+        menu.remove(&item);
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_spell_checking_languages() -> Vec<String> {
+    for key in ["LC_ALL", "LC_CTYPE", "LANG"] {
+        if let Ok(value) = std::env::var(key) {
+            if let Some(locale) = normalise_linux_spell_checking_locale(&value) {
+                return vec![locale];
+            }
+        }
+    }
+
+    vec!["en_GB".to_string()]
+}
+
+#[cfg(target_os = "linux")]
+fn normalise_linux_spell_checking_locale(value: &str) -> Option<String> {
+    let locale = value
+        .split(['.', '@'])
+        .next()
+        .unwrap_or_default()
+        .replace('-', "_");
+
+    if locale.is_empty()
+        || locale.eq_ignore_ascii_case("c")
+        || locale.eq_ignore_ascii_case("posix")
+    {
+        None
+    } else {
+        Some(locale)
+    }
+}
+
 /// Start watching the `.git` directory of the given repository.
 /// Emits `git-fs-changed` events (debounced) when relevant files change,
 /// allowing the frontend to refresh immediately after external modifications.
@@ -987,6 +1106,9 @@ pub fn run() {
                         &settings.theme_mode,
                     );
                     let _ = main_window.set_background_color(Some(background_colour));
+
+                    #[cfg(target_os = "linux")]
+                    configure_linux_webkit_text_input(&main_window);
 
                     #[cfg(target_os = "windows")]
                     if crate::is_msix_build() {
