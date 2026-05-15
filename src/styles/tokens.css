@@ -50,7 +50,7 @@
   --status-bar-height: 28px;
 
   /* Typography */
-  --font-ui: 'IBM Plex Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+  --font-ui: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Ubuntu', 'Cantarell', 'Noto Sans', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
   --text-scale: 1;
   --font-size-xl: calc(20px * var(--text-scale));
