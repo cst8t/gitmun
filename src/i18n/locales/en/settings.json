@@ -75,6 +75,7 @@
     "toolPathSearch": "Gitmun searches PATH first, then common Windows install folders. If that fails, choose the executable manually.",
     "updateEndpoint": "Advanced setting. Gitmun checks this latest.json URL for updates. Do not change this unless you know what you're doing.",
     "updatesManaged": "Updates are managed by this platform package channel.",
+    "updatesMicrosoftStore": "Updates are checked and installed through Microsoft Store for this installation.",
     "vscodeMergeEditor": "{{tool}}'s merge editor writes the result file when closed, so conflicts will be marked as resolved even if you close without explicitly accepting a side. Use the Accept buttons inside the editor to choose which version to keep."
   },
   "options": {

@@ -10,7 +10,7 @@ import {useToast} from "../hooks/useToast";
 import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {AvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction, ThemeMode} from "../types";
+import type {AppAvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction, ThemeMode} from "../types";
 import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
 import {applyUiTextScale} from "../utils/uiTextScale";
 import "./App.css";
@@ -448,7 +448,7 @@ export function App() {
         let cancelled = false;
         let unlisten: (() => void) | null = null;
         (async () => {
-            const fn = await listen<AvailableUpdate>("update-available", (event) => {
+            const fn = await listen<AppAvailableUpdate>("update-available", (event) => {
                 showUpdatePrompt(event.payload);
             });
             if (cancelled) {

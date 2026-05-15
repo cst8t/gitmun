@@ -8,6 +8,7 @@ export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
 export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
+export type AppUpdateChannel = "SelfManaged" | "MicrosoftStore" | "SystemManaged";
 
 export type Settings = {
     backendMode: BackendMode;
@@ -28,6 +29,7 @@ export type Settings = {
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;
+    enableUpdateWithMSStoreFlow?: boolean;
     linuxGraphicsMode: LinuxGraphicsMode;
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
@@ -39,6 +41,29 @@ export type AvailableUpdate = {
     date: number | null;
     body: string | null;
 };
+
+export type MicrosoftStoreUpdate = {
+    currentVersion: string;
+    packageCount: number;
+    mandatory: boolean;
+};
+
+export type MicrosoftStoreUpdateStatus =
+    | "Completed"
+    | "Canceled"
+    | "OtherError"
+    | "ErrorWifiRecommended"
+    | "ErrorWifiRequired"
+    | "ErrorLowBattery"
+    | "Unknown";
+
+export type MicrosoftStoreUpdateResult = {
+    status: MicrosoftStoreUpdateStatus;
+};
+
+export type AppAvailableUpdate =
+    | (AvailableUpdate & { source: "selfManaged" })
+    | (MicrosoftStoreUpdate & { source: "microsoftStore" });
 
 export type UpdateDownloadEvent =
     | {

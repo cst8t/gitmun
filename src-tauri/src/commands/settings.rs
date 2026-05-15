@@ -26,6 +26,13 @@ pub struct AvailableUpdate {
     body: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+pub enum AppUpdateChannel {
+    SelfManaged,
+    MicrosoftStore,
+    SystemManaged,
+}
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(tag = "event", content = "data")]
 pub enum UpdateDownloadEvent {
@@ -245,25 +252,43 @@ pub fn get_build_version(app: tauri::AppHandle) -> String {
 }
 
 #[tauri::command]
-pub fn is_updater_enabled() -> bool {
+pub fn get_app_update_channel(state: tauri::State<'_, AppState>) -> AppUpdateChannel {
+    #[cfg(not(target_os = "windows"))]
+    let _ = &state;
+
+    if crate::commands::store_update::is_local_test_enabled() {
+        return AppUpdateChannel::MicrosoftStore;
+    }
     if std::env::var_os("GITMUN_NO_UPDATER").is_some() {
-        return false;
+        return AppUpdateChannel::SystemManaged;
     }
     // Flatpak bundles are updated by the Flatpak runtime, not in-app.
     if std::env::var_os("FLATPAK_ID").is_some() {
-        return false;
+        return AppUpdateChannel::SystemManaged;
     }
     // Distro package maintainers (e.g. Debian) install this file to signal
     // that the system package manager owns updates, not the in-app updater.
     #[cfg(target_os = "linux")]
     if std::path::Path::new("/usr/share/gitmun/system-managed").exists() {
-        return false;
+        return AppUpdateChannel::SystemManaged;
     }
     #[cfg(target_os = "windows")]
     if crate::is_msix_build() {
-        return false;
+        if state
+            .git_service
+            .get_settings()
+            .enable_update_with_ms_store_flow
+        {
+            return AppUpdateChannel::MicrosoftStore;
+        }
+        return AppUpdateChannel::SystemManaged;
     }
-    true
+    AppUpdateChannel::SelfManaged
+}
+
+#[tauri::command]
+pub fn is_updater_enabled(state: tauri::State<'_, AppState>) -> bool {
+    matches!(get_app_update_channel(state), AppUpdateChannel::SelfManaged)
 }
 
 #[tauri::command]

@@ -50,7 +50,10 @@ import type {
     NumstatResult,
     SetIdentityRequest,
     AddRemoteRequest,
+    AppUpdateChannel,
     AvailableUpdate,
+    MicrosoftStoreUpdate,
+    MicrosoftStoreUpdateResult,
     UpdateDownloadEvent,
     RemoveRemoteRequest,
     RenameRemoteRequest,
@@ -437,8 +440,20 @@ export function isUpdaterEnabled(): Promise<boolean> {
     return invoke<boolean>("is_updater_enabled");
 }
 
+export function getAppUpdateChannel(): Promise<AppUpdateChannel> {
+    return invoke<AppUpdateChannel>("get_app_update_channel");
+}
+
 export function checkForAppUpdate(): Promise<AvailableUpdate | null> {
     return invoke<AvailableUpdate | null>("check_for_app_update");
+}
+
+export function checkMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdate | null> {
+    return invoke<MicrosoftStoreUpdate | null>("check_microsoft_store_update");
+}
+
+export function requestMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdateResult> {
+    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update");
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {

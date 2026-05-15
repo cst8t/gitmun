@@ -242,7 +242,10 @@ pub(crate) fn display_config_path(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
         if is_msix_build() {
-            let normalised = path.to_string_lossy().replace('/', "\\").to_ascii_lowercase();
+            let normalised = path
+                .to_string_lossy()
+                .replace('/', "\\")
+                .to_ascii_lowercase();
             let msix_roaming = format!(
                 "\\packages\\{}\\localcache\\roaming\\",
                 MSIX_PACKAGE_FAMILY_NAME.to_ascii_lowercase()
@@ -888,9 +891,7 @@ fn normalise_linux_spell_checking_locale(value: &str) -> Option<String> {
         .unwrap_or_default()
         .replace('-', "_");
 
-    if locale.is_empty()
-        || locale.eq_ignore_ascii_case("c")
-        || locale.eq_ignore_ascii_case("posix")
+    if locale.is_empty() || locale.eq_ignore_ascii_case("c") || locale.eq_ignore_ascii_case("posix")
     {
         None
     } else {
@@ -1154,9 +1155,12 @@ pub fn run() {
             commands::settings::get_config_folder_path,
             commands::settings::get_build_version,
             commands::settings::get_commit_hash,
+            commands::settings::get_app_update_channel,
             commands::settings::is_updater_enabled,
             commands::settings::check_for_app_update,
             commands::settings::download_and_install_app_update,
+            commands::store_update::check_microsoft_store_update,
+            commands::store_update::request_microsoft_store_update,
             commands::settings::get_global_diff_tool,
             commands::settings::get_global_diff_tool_path,
             commands::settings::get_global_default_branch,

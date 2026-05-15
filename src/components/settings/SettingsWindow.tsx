@@ -8,6 +8,7 @@ import {platform} from "@tauri-apps/plugin-os";
 import {useTranslation} from "react-i18next";
 import type {
     AvatarProviderMode,
+    AppUpdateChannel,
     BackendMode,
     CommitDateMode,
     ExternalDiffTool,
@@ -18,12 +19,12 @@ import type {
     UiTextScale
 } from "../../types";
 import {
+    getAppUpdateChannel,
     getConfigFilePath,
     getConfigFolderPath,
     getGlobalDiffToolPath,
     getGlobalGpgProgramPath,
     getSystemThemeHint,
-    isUpdaterEnabled,
     openResultLogWindow,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
@@ -167,7 +168,7 @@ export function SettingsWindow() {
     const [repoOpenBehaviour, setRepoOpenBehaviour] = useState<RepoOpenBehaviour>("Ask");
     const [isLinux, setIsLinux] = useState(false);
     const [isWindows, setIsWindows] = useState(false);
-    const [updaterSupported, setUpdaterSupported] = useState(false);
+    const [updateChannel, setUpdateChannel] = useState<AppUpdateChannel>("SystemManaged");
     const [configFilePath, setConfigFilePath] = useState<string>("");
     const [configFolderPath, setConfigFolderPath] = useState<string>("");
     const [buildVersion, setBuildVersion] = useState<string>("");
@@ -225,7 +226,7 @@ export function SettingsWindow() {
                 const os = safePlatform();
                 const supported = supportedDiffTools(os);
                 setAllowedDiffTools(supported);
-                setUpdaterSupported(await isUpdaterEnabled());
+                setUpdateChannel(await getAppUpdateChannel());
                 setIsLinux(os === "linux");
                 setIsWindows(os === "windows");
 
@@ -794,7 +795,7 @@ export function SettingsWindow() {
                             </div>
                         </div>
 
-                        {updaterSupported ? (
+                        {updateChannel === "SelfManaged" ? (
                             <div className="settings-window__row">
                                 <label className="settings-window__label">{t("labels.updates")}</label>
                                 <label className="settings-window__switch-row">
@@ -826,6 +827,24 @@ export function SettingsWindow() {
                                     <div className="settings-window__section-note">
                                         {t("notes.updateEndpoint")}
                                     </div>
+                                </div>
+                            </div>
+                        ) : updateChannel === "MicrosoftStore" ? (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.updates")}</label>
+                                <label className="settings-window__switch-row">
+                  <span className="settings-window__switch">
+                    <input
+                        type="checkbox"
+                        checked={autoCheckForUpdatesOnLaunch}
+                        onChange={e => setAutoCheckForUpdatesOnLaunch(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track"/>
+                  </span>
+                                    <span className="settings-window__switch-label">{t("switches.autoCheckUpdates")}</span>
+                                </label>
+                                <div className="settings-window__section-note">
+                                    {t("notes.updatesMicrosoftStore")}
                                 </div>
                             </div>
                         ) : (

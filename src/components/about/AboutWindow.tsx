@@ -4,23 +4,31 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open } from "@tauri-apps/plugin-shell";
 import { useTranslation } from "react-i18next";
 import { GithubLogoIcon, GlobeIcon } from "../icons";
-import { checkForAppUpdate, getBuildVersion, getCommitHash, isUpdaterEnabled, openAttributionsWindow } from "../../api/commands";
+import {
+  checkForAppUpdate,
+  checkMicrosoftStoreUpdate,
+  getAppUpdateChannel,
+  getBuildVersion,
+  getCommitHash,
+  openAttributionsWindow,
+} from "../../api/commands";
+import type { AppUpdateChannel } from "../../types";
 import "./AboutWindow.css";
 
 export function AboutWindow() {
   const { t } = useTranslation("about");
   const [version, setVersion] = useState<string | null>(null);
   const [commitHash, setCommitHash] = useState<string | null>(null);
-  const [updaterSupported, setUpdaterSupported] = useState<boolean | null>(null);
+  const [updateChannel, setUpdateChannel] = useState<AppUpdateChannel | null>(null);
   const [checking, setChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
 
   useEffect(() => {
-    Promise.all([getBuildVersion(), getCommitHash(), isUpdaterEnabled()])
-      .then(([v, h, updaterEnabled]) => {
+    Promise.all([getBuildVersion(), getCommitHash(), getAppUpdateChannel()])
+      .then(([v, h, channel]) => {
         setVersion(v);
         setCommitHash(h);
-        setUpdaterSupported(updaterEnabled);
+        setUpdateChannel(channel);
       })
       .catch(() => {});
   }, []);
@@ -28,9 +36,12 @@ export function AboutWindow() {
   async function handleCheckForUpdates() {
     setChecking(true);
     try {
-      const update = await checkForAppUpdate();
+      const channel = updateChannel ?? await getAppUpdateChannel();
+      const update = channel === "MicrosoftStore"
+        ? await checkMicrosoftStoreUpdate().then((storeUpdate) => storeUpdate ? {...storeUpdate, source: "microsoftStore" as const} : null)
+        : await checkForAppUpdate().then((availableUpdate) => availableUpdate ? {...availableUpdate, source: "selfManaged" as const} : null);
       if (!update) {
-        setStatusMessage(t("status.latest"));
+        setStatusMessage(channel === "MicrosoftStore" ? t("status.latestMicrosoftStore") : t("status.latest"));
         return;
       }
 
@@ -49,7 +60,7 @@ export function AboutWindow() {
       <h1 className="about__name">Gitmun</h1>
       {version && <div className="about__version">{t("version", { version })}</div>}
       {commitHash && <div className="about__hash">{commitHash}</div>}
-      {updaterSupported ? (
+      {updateChannel === "SelfManaged" || updateChannel === "MicrosoftStore" ? (
         <button
           className="about__attributions-btn"
           onClick={() => void handleCheckForUpdates()}
@@ -57,7 +68,7 @@ export function AboutWindow() {
         >
           {checking ? t("actions.checking") : t("actions.checkForUpdates")}
         </button>
-      ) : updaterSupported === false ? (
+      ) : updateChannel === "SystemManaged" ? (
         <div className="about__status">{t("status.managed")}</div>
       ) : null}
       <button
