@@ -5,6 +5,8 @@ Gitmun is a crossplatform desktop Git client built with Tauri (Rust + React/Type
 ![gitmun screenshot placeholder](docs/gitmun-example-screenshot.png)
 
 ## Get Gitmun
+[![build result](https://build.opensuse.org/projects/home:cst8t:gitmun/packages/gitmun/badge.svg?type=default)](https://build.opensuse.org/package/show/home:cst8t:gitmun/gitmun)
+[![Build Bundles](https://github.com/cst8t/gitmun/actions/workflows/build-bundles.yml/badge.svg)](https://github.com/cst8t/gitmun/actions/workflows/build-bundles.yml)
 
 | Source | Platform | Link |
 | --- | --- | --- |
