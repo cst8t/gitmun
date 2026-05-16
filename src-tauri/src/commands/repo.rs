@@ -13,36 +13,42 @@ use std::sync::atomic::Ordering;
 use tauri::Manager;
 
 #[tauri::command]
-pub fn get_commit_markers(
+pub async fn get_commit_markers(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<CommitMarkers, String> {
-    state
-        .git_service
-        .get_commit_markers(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_commit_markers(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn get_commit_files(
+pub async fn get_commit_files(
     request: CommitFilesRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<CommitFileItem>, String> {
-    state
-        .git_service
-        .get_commit_files(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_commit_files(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn get_commit_details(
+pub async fn get_commit_details(
     request: CommitDetailsRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<CommitDetails, String> {
-    state
-        .git_service
-        .get_commit_details(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_commit_details(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -322,25 +328,29 @@ pub async fn pull_with_strategy(
 }
 
 #[tauri::command]
-pub fn get_repo_status(
+pub async fn get_repo_status(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<RepoStatus, String> {
-    state
-        .git_service
-        .get_repo_status(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_repo_status(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn get_numstat(
+pub async fn get_numstat(
     request: NumstatRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<NumstatResult, String> {
-    state
-        .git_service
-        .get_numstat(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_numstat(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -366,14 +376,16 @@ pub fn commit_changes(
 }
 
 #[tauri::command]
-pub fn get_diff(
+pub async fn get_diff(
     request: DiffRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<FileDiff, String> {
-    state
-        .git_service
-        .get_diff(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.get_diff(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -522,14 +534,16 @@ pub fn stash(
 }
 
 #[tauri::command]
-pub fn stash_list(
+pub async fn stash_list(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<Vec<StashEntry>, String> {
-    state
-        .git_service
-        .stash_list(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.stash_list(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
-import type { CommitHistoryItem, CommitLogScope, CommitMarkers, SignatureStatus } from "../../types";
+import type { CommitHistoryItem, CommitLogScope, CommitMarkers, RowStriping, SignatureStatus } from "../../types";
 import { verifyCommits } from "../../api/commands";
 import { ContextMenu } from "../shared/ContextMenu";
 
@@ -159,6 +159,7 @@ type CommitRowProps = {
   isUpstream: boolean;
   upstreamRef: string | null | undefined;
   avatarUrl: string | null | undefined;
+  striped?: "Subtle" | "Strong";
   onSelectCommit: (hash: string) => void;
   onContextMenu: (hash: string, x: number, y: number) => void;
   onBadgeClick: (rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
@@ -174,6 +175,7 @@ const CommitRow = React.memo(function CommitRow({
   isUpstream,
   upstreamRef,
   avatarUrl,
+  striped,
   onSelectCommit,
   onContextMenu,
   onBadgeClick,
@@ -182,6 +184,7 @@ const CommitRow = React.memo(function CommitRow({
   const colour = hashColour(c.author);
   const initials = getInitials(c.author);
   const handleClick = useCallback(() => onSelectCommit(c.hash), [onSelectCommit, c.hash]);
+  const stripingClass = striped ? ` log-view__row--striped-${striped.toLowerCase()}` : "";
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     onContextMenu(c.hash, e.clientX, e.clientY);
@@ -189,7 +192,7 @@ const CommitRow = React.memo(function CommitRow({
 
   return (
     <div
-      className={`log-view__row ${isSelected ? "log-view__row--selected" : ""}`}
+      className={`log-view__row${stripingClass} ${isSelected ? "log-view__row--selected" : ""}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
     >
@@ -237,6 +240,7 @@ type LogViewProps = {
   logError: string | null;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
+  rowStriping: RowStriping;
   detachedHead: boolean;
   shallow: boolean;
   selectedCommitHash: string | null;
@@ -260,6 +264,7 @@ export function LogView({
   logError,
   commitMarkers,
   logScope,
+  rowStriping,
   detachedHead,
   shallow,
   selectedCommitHash,
@@ -448,6 +453,10 @@ export function LogView({
           : null;
 
   const handleCloseSigPopover = useCallback(() => setSigPopover(null), []);
+  const striped = (index: number): "Subtle" | "Strong" | undefined => {
+    if (rowStriping === "Off" || index % 2 === 0) return undefined;
+    return rowStriping;
+  };
 
   return (
     <div className="log-view">
@@ -474,6 +483,7 @@ export function LogView({
               isUpstream={commitMarkers.upstreamHead === c.hash}
               upstreamRef={commitMarkers.upstreamRef}
               avatarUrl={c.authorEmail ? avatars[c.authorEmail] : undefined}
+              striped={striped(index)}
               onSelectCommit={onSelectCommit}
               onContextMenu={handleCommitContextMenu}
               onBadgeClick={(rect, status, signer, fp, keyType, date) =>

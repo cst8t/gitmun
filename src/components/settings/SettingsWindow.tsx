@@ -8,27 +8,31 @@ import {platform} from "@tauri-apps/plugin-os";
 import {useTranslation} from "react-i18next";
 import type {
     AvatarProviderMode,
+    AppUpdateChannel,
     BackendMode,
     CommitDateMode,
     ExternalDiffTool,
     LinuxGraphicsMode,
     RepoOpenBehaviour,
+    RowStriping,
     Settings,
-    ThemeMode
+    ThemeMode,
+    UiTextScale
 } from "../../types";
 import {
+    getAppUpdateChannel,
     getConfigFilePath,
     getConfigFolderPath,
     getGlobalDiffToolPath,
     getGlobalGpgProgramPath,
-    getSystemThemeHint,
-    isUpdaterEnabled,
     openResultLogWindow,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
     setUpdateEndpoint,
 } from "../../api/commands";
 import {CloseIcon, FileIcon, FolderIcon} from "../icons";
+import {applyThemeMode} from "../../utils/theme";
+import {UI_TEXT_SCALE_VALUES, applyUiTextScale, normaliseUiTextScale} from "../../utils/uiTextScale";
 import "./SettingsWindow.css";
 
 const BACKEND_MODE_KEY = "gitmun.backendMode";
@@ -54,18 +58,6 @@ function supportedDiffTools(os: string): ExternalDiffTool[] {
 
 function requiresWindowsDiffToolPath(tool: ExternalDiffTool): boolean {
     return tool === "Meld" || tool === "WinMerge";
-}
-
-async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
-    if (mode === "Light") return "light";
-    if (mode === "Dark") return "dark";
-    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-    try {
-        const hint = await getSystemThemeHint();
-        return hint === "dark" ? "dark" : "light";
-    } catch {
-        return "dark";
-    }
 }
 
 function safePlatform(): string {
@@ -125,7 +117,9 @@ export function SettingsWindow() {
             : t("placeholders.defaultCloneDestinationLinux");
     const [backendMode, setBackendMode] = useState<BackendMode>("Default");
     const [themeMode, setThemeMode] = useState<ThemeMode>("System");
+    const [uiTextScale, setUiTextScale] = useState<UiTextScale>(1);
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
+    const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
     const [avatarProvider, setAvatarProvider] = useState<AvatarProviderMode>("Libravatar");
     const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
@@ -164,7 +158,7 @@ export function SettingsWindow() {
     const [repoOpenBehaviour, setRepoOpenBehaviour] = useState<RepoOpenBehaviour>("Ask");
     const [isLinux, setIsLinux] = useState(false);
     const [isWindows, setIsWindows] = useState(false);
-    const [updaterSupported, setUpdaterSupported] = useState(false);
+    const [updateChannel, setUpdateChannel] = useState<AppUpdateChannel>("SystemManaged");
     const [configFilePath, setConfigFilePath] = useState<string>("");
     const [configFolderPath, setConfigFolderPath] = useState<string>("");
     const [buildVersion, setBuildVersion] = useState<string>("");
@@ -222,7 +216,7 @@ export function SettingsWindow() {
                 const os = safePlatform();
                 const supported = supportedDiffTools(os);
                 setAllowedDiffTools(supported);
-                setUpdaterSupported(await isUpdaterEnabled());
+                setUpdateChannel(await getAppUpdateChannel());
                 setIsLinux(os === "linux");
                 setIsWindows(os === "windows");
 
@@ -301,7 +295,9 @@ export function SettingsWindow() {
                 setGitVersion(activeGitVersion);
                 setBackendMode(settings.backendMode);
                 setThemeMode(settings.themeMode);
+                setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
                 setWrapDiffLines(settings.wrapDiffLines ?? false);
+                setRowStriping(settings.rowStriping ?? "Off");
                 setOpenResultLogOnLaunch(settings.showResultLog);
                 setAvatarProvider(settings.avatarProvider);
                 setTryPlatformFirst(settings.tryPlatformFirst);
@@ -314,7 +310,8 @@ export function SettingsWindow() {
                 setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
                 setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
                 setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
-                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                await applyThemeMode(settings.themeMode);
+                applyUiTextScale(settings.uiTextScale);
 
                 const cfgPath = await getConfigFilePath();
                 setConfigFilePath(cfgPath ?? "");
@@ -373,7 +370,9 @@ export function SettingsWindow() {
             await invoke("set_backend_mode", {mode: backendMode});
             await invoke("set_show_result_log", {showResultLog: openResultLogOnLaunch});
             await invoke<Settings>("set_theme_mode", {themeMode});
+            await invoke<Settings>("set_ui_text_scale", {uiTextScale});
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
+            await invoke<Settings>("set_row_striping", {rowStriping});
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
             await invoke("set_default_clone_dir", {defaultCloneDir});
@@ -454,11 +453,13 @@ export function SettingsWindow() {
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+            setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
             localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
             localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
-            document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+            await applyThemeMode(settings.themeMode);
+            applyUiTextScale(settings.uiTextScale);
 
             if (isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {
                 setExternalDiffToolPath(await getGlobalDiffToolPath(externalDiffTool) ?? "");
@@ -540,8 +541,10 @@ export function SettingsWindow() {
     }, [
         backendMode,
         themeMode,
+        uiTextScale,
         openResultLogOnLaunch,
         wrapDiffLines,
+        rowStriping,
         avatarProvider,
         tryPlatformFirst,
         defaultCloneDir,
@@ -600,6 +603,12 @@ export function SettingsWindow() {
             setStatus(t("status.openResultLogFailed", {message: String(e)}));
         }
     }, [t]);
+
+    const handleUiTextScaleChange = useCallback((value: string) => {
+        const scale = UI_TEXT_SCALE_VALUES[Number(value)] ?? 1;
+        setUiTextScale(scale);
+        applyUiTextScale(scale);
+    }, []);
 
     const handleResetLayout = useCallback(async () => {
         try {
@@ -742,47 +751,46 @@ export function SettingsWindow() {
 
                 {tab === "application" && (
                 <div className="settings-window__column">
-                    <div className="settings-window__section-title">{t("labels.application")}</div>
-                    {configFilePath && (
-                        <div className="settings-window__section-note settings-window__path-note">
-                            <span>{t("labels.configFile")}<code>{configFilePath}</code></span>
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                title={t("actions.openConfigFolder")}
-                                aria-label={t("actions.openConfigFolder")}
-                                onClick={handleOpenConfigFolder}
-                                disabled={!configFolderPath}>
-                                <FolderIcon/>
-                            </button>
-                        </div>
-                    )}
-                    {buildVersion && (
-                        <div className="settings-window__section-note">
-                            {t("labels.buildVersion")}<code>{buildVersion}</code>
-                        </div>
-                    )}
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.appGroupGeneral")}</div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">Open repositories</label>
-                        <select
-                            className="settings-window__select"
-                            value={repoOpenBehaviour}
-                            onChange={e => setRepoOpenBehaviour(e.target.value as RepoOpenBehaviour)}
-                        >
-                            <option value="Ask">Ask each time (default)</option>
-                            <option value="ExistingWindow">Reuse this window</option>
-                            <option value="NewWindow">Always open a new window</option>
-                        </select>
-                        <div className="settings-window__section-note">
-                            Controls in-app repository opens, including recent repositories. Shell and file manager
-                            launches always open a new window.
-                        </div>
-                    </div>
-
-                    {updaterSupported ? (
                         <div className="settings-window__row">
-                            <label className="settings-window__label">{t("labels.updates")}</label>
-                            <div className="settings-window__sub-section">
+                            <label className="settings-window__label">{t("labels.openRepositories")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={repoOpenBehaviour}
+                                onChange={e => setRepoOpenBehaviour(e.target.value as RepoOpenBehaviour)}
+                            >
+                                <option value="Ask">{t("options.repoOpenAsk")}</option>
+                                <option value="ExistingWindow">{t("options.repoOpenExisting")}</option>
+                                <option value="NewWindow">{t("options.repoOpenNew")}</option>
+                            </select>
+                            <div className="settings-window__section-note">
+                                {t("notes.repoOpenBehaviour")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.cloneDestination")}</label>
+                            <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={defaultCloneDir}
+                                    onChange={e => setDefaultCloneDir(e.target.value)}
+                                    placeholder={cloneDestinationPlaceholder}
+                                />
+                                <button
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                    onClick={handleBrowseCloneDir}>
+                                    <FolderIcon/>
+                                </button>
+                            </div>
+                        </div>
+
+                        {updateChannel === "SelfManaged" ? (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.updates")}</label>
                                 <label className="settings-window__switch-row">
                   <span className="settings-window__switch">
                     <input
@@ -800,78 +808,125 @@ export function SettingsWindow() {
 
                                 <div className="settings-window__row">
                                     <label className="settings-window__label">{t("labels.updateFeedUrl")}</label>
-                                    <div className="settings-window__sub-section">
-                                        <input
-                                            className="settings-window__input"
-                                            type="url"
-                                            value={updateEndpoint}
-                                            onChange={e => setUpdateEndpointState(e.target.value)}
-                                            spellCheck={false}
-                                            autoCapitalize="off"
-                                            autoCorrect="off"
-                                        />
-                                        <div className="settings-window__section-note">
-                                            {t("notes.updateEndpoint")}
-                                        </div>
+                                    <input
+                                        className="settings-window__input"
+                                        type="url"
+                                        value={updateEndpoint}
+                                        onChange={e => setUpdateEndpointState(e.target.value)}
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                    />
+                                    <div className="settings-window__section-note">
+                                        {t("notes.updateEndpoint")}
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    ) : (
-                        <div className="settings-window__row">
-                            <label className="settings-window__label">{t("labels.updates")}</label>
-                            <div className="settings-window__section-note">
-                                {t("notes.updatesManaged")}
+                        ) : updateChannel === "MicrosoftStore" ? (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.updates")}</label>
+                                <label className="settings-window__switch-row">
+                  <span className="settings-window__switch">
+                    <input
+                        type="checkbox"
+                        checked={autoCheckForUpdatesOnLaunch}
+                        onChange={e => setAutoCheckForUpdatesOnLaunch(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track"/>
+                  </span>
+                                    <span className="settings-window__switch-label">{t("switches.autoCheckUpdates")}</span>
+                                </label>
+                                <div className="settings-window__section-note">
+                                    {t("notes.updatesMicrosoftStore")}
+                                </div>
                             </div>
-                        </div>
-                    )}
+                        ) : (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.updates")}</label>
+                                <div className="settings-window__section-note">
+                                    {t("notes.updatesManaged")}
+                                </div>
+                            </div>
+                        )}
+                    </section>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.gitBackendMode")}</label>
-                        <select
-                            className="settings-window__select"
-                            value={backendMode}
-                            onChange={e => setBackendMode(e.target.value as BackendMode)}
-                        >
-                            <option value="Default">{t("options.backendDefault")}</option>
-                            <option value="GitCliOnly">{t("options.backendGitCli")}</option>
-                        </select>
-                    </div>
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.appGroupAppearance")}</div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.theme")}</label>
-                        <select
-                            className="settings-window__select"
-                            value={themeMode}
-                            onChange={e => setThemeMode(e.target.value as ThemeMode)}
-                        >
-                            <option value="System">{t("options.themeSystem")}</option>
-                            <option value="Light">{t("options.themeLight")}</option>
-                            <option value="Dark">{t("options.themeDark")}</option>
-                        </select>
-                    </div>
-
-                    {isLinux && (
                         <div className="settings-window__row">
-                            <label className="settings-window__label">{t("labels.graphicsMode")}</label>
+                            <label className="settings-window__label">{t("labels.theme")}</label>
                             <select
                                 className="settings-window__select"
-                                value={linuxGraphicsMode}
-                                onChange={e => setLinuxGraphicsMode(e.target.value as LinuxGraphicsMode)}
+                                value={themeMode}
+                                onChange={e => setThemeMode(e.target.value as ThemeMode)}
                             >
-                                <option value="Auto">{t("options.graphicsAuto")}</option>
-                                <option value="Safe">{t("options.graphicsSafe")}</option>
-                                <option value="Native">{t("options.graphicsNative")}</option>
+                                <option value="System">{t("options.themeSystem")}</option>
+                                <option value="Light">{t("options.themeLight")}</option>
+                                <option value="Dark">{t("options.themeDark")}</option>
                             </select>
-                            <div className="settings-window__section-note">
-                                {t("notes.linuxGraphics")}
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.textScale")}</label>
+                            <div className="settings-window__range-row">
+                                <input
+                                    className="settings-window__range"
+                                    type="range"
+                                    min={0}
+                                    max={UI_TEXT_SCALE_VALUES.length - 1}
+                                    step={1}
+                                    value={UI_TEXT_SCALE_VALUES.indexOf(uiTextScale)}
+                                    onChange={e => handleUiTextScaleChange(e.target.value)}
+                                    aria-valuetext={t(`options.textScale.${String(uiTextScale).replace(".", "_")}`)}
+                                />
+                                <span className="settings-window__range-value">
+                                {t(`options.textScale.${String(uiTextScale).replace(".", "_")}`)}
+                            </span>
                             </div>
                         </div>
-                    )}
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.diffPanel")}</label>
-                        <label className="settings-window__switch-row">
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.avatars")}</label>
+                            <div className="settings-window__sub-section">
+                                <select
+                                    className="settings-window__select"
+                                    value={avatarProvider}
+                                    onChange={e => setAvatarProvider(e.target.value as AvatarProviderMode)}
+                                >
+                                    <option value="Libravatar">{t("options.avatarLibravatar")}</option>
+                                    <option value="Off">{t("options.avatarDisabled")}</option>
+                                </select>
+                                <label
+                                    className="settings-window__switch-row"
+                                    style={{
+                                        opacity: avatarProvider === "Off" ? 0.4 : 1,
+                                        cursor: avatarProvider === "Off" ? "default" : "pointer",
+                                        pointerEvents: avatarProvider === "Off" ? "none" : "auto",
+                                    }}
+                                >
+                <span className="settings-window__switch">
+                  <input
+                      type="checkbox"
+                      checked={tryPlatformFirst}
+                      disabled={avatarProvider === "Off"}
+                      onChange={e => setTryPlatformFirst(e.target.checked)}
+                  />
+                  <span className="settings-window__switch-track"/>
+                </span>
+                                    <span className="settings-window__switch-label">
+                  {t("switches.platformAvatars")}
+                </span>
+                                </label>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.appGroupViews")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.diffPanel")}</label>
+                            <label className="settings-window__switch-row">
               <span className="settings-window__switch">
                 <input
                     type="checkbox"
@@ -880,13 +935,54 @@ export function SettingsWindow() {
                 />
                 <span className="settings-window__switch-track"/>
               </span>
-                            <span className="settings-window__switch-label">{t("switches.wrapDiffLines")}</span>
-                        </label>
-                    </div>
+                                <span className="settings-window__switch-label">{t("switches.wrapDiffLines")}</span>
+                            </label>
+                        </div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.resultLog")}</label>
-                        <div className="settings-window__sub-section">
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.commitLogDate")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={commitDateMode}
+                                onChange={e => setCommitDateMode(e.target.value as CommitDateMode)}
+                            >
+                                <option value="AuthorDate">{t("options.commitDateAuthor")}</option>
+                                <option value="CommitterDate">{t("options.commitDateCommitter")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.rowStriping")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={rowStriping}
+                                onChange={e => setRowStriping(e.target.value as RowStriping)}
+                            >
+                                <option value="Off">{t("options.rowStripingOff")}</option>
+                                <option value="Subtle">{t("options.rowStripingSubtle")}</option>
+                                <option value="Strong">{t("options.rowStripingStrong")}</option>
+                            </select>
+                            <div className="settings-window__section-note">
+                                {t("notes.rowStriping")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.layout")}</label>
+                            <div className="settings-window__inline-controls">
+                                <button className="settings-window__btn settings-window__btn--secondary"
+                                        onClick={handleResetLayout}>
+                                    {t("actions.resetLayout")}
+                                </button>
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.appGroupDiagnostics")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.resultLog")}</label>
                             <button className="settings-window__btn settings-window__btn--secondary"
                                     onClick={handleOpenResultLog}>
                                 {t("actions.openResultLog")}
@@ -903,134 +999,112 @@ export function SettingsWindow() {
                                 <span className="settings-window__switch-label">{t("labels.openAtLaunch")}</span>
                             </label>
                         </div>
-                    </div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.layout")}</label>
-                        <div className="settings-window__inline-controls">
-                            <button className="settings-window__btn settings-window__btn--secondary"
-                                    onClick={handleResetLayout}>
-                                {t("actions.resetLayout")}
-                            </button>
-                        </div>
-                    </div>
+                        {isLinux && (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.graphicsMode")}</label>
+                                <select
+                                    className="settings-window__select"
+                                    value={linuxGraphicsMode}
+                                    onChange={e => setLinuxGraphicsMode(e.target.value as LinuxGraphicsMode)}
+                                >
+                                    <option value="Auto">{t("options.graphicsAuto")}</option>
+                                    <option value="Safe">{t("options.graphicsSafe")}</option>
+                                    <option value="Native">{t("options.graphicsNative")}</option>
+                                </select>
+                                <div className="settings-window__section-note">
+                                    {t("notes.linuxGraphics")}
+                                </div>
+                            </div>
+                        )}
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.cloneDestination")}</label>
-                        <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
-                            <input
-                                className="settings-window__input"
-                                type="text"
-                                value={defaultCloneDir}
-                                onChange={e => setDefaultCloneDir(e.target.value)}
-                                placeholder={cloneDestinationPlaceholder}
-                            />
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                onClick={handleBrowseCloneDir}>
-                                <FolderIcon/>
-                            </button>
-                        </div>
-                    </div>
-
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.avatars")}</label>
-                        <div className="settings-window__sub-section">
-                            <select
-                                className="settings-window__select"
-                                value={avatarProvider}
-                                onChange={e => setAvatarProvider(e.target.value as AvatarProviderMode)}
-                            >
-                                <option value="Libravatar">{t("options.avatarLibravatar")}</option>
-                                <option value="Off">{t("options.avatarDisabled")}</option>
-                            </select>
-                            <label
-                                className="settings-window__switch-row"
-                                style={{
-                                    opacity: avatarProvider === "Off" ? 0.4 : 1,
-                                    cursor: avatarProvider === "Off" ? "default" : "pointer",
-                                    pointerEvents: avatarProvider === "Off" ? "none" : "auto",
-                                }}
-                            >
-                <span className="settings-window__switch">
-                  <input
-                      type="checkbox"
-                      checked={tryPlatformFirst}
-                      disabled={avatarProvider === "Off"}
-                      onChange={e => setTryPlatformFirst(e.target.checked)}
-                  />
-                  <span className="settings-window__switch-track"/>
-                </span>
-                                <span className="settings-window__switch-label">
-                  {t("switches.platformAvatars")}
-                </span>
-                            </label>
-                        </div>
-                    </div>
-
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.commitLogDate")}</label>
-                        <select
-                            className="settings-window__select"
-                            value={commitDateMode}
-                            onChange={e => setCommitDateMode(e.target.value as CommitDateMode)}
-                        >
-                            <option value="AuthorDate">{t("options.commitDateAuthor")}</option>
-                            <option value="CommitterDate">{t("options.commitDateCommitter")}</option>
-                        </select>
-                    </div>
-
+                        {configFilePath && (
+                            <div className="settings-window__section-note settings-window__path-note">
+                                <span>{t("labels.configFile")}<code>{configFilePath}</code></span>
+                                <button
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                    title={t("actions.openConfigFolder")}
+                                    aria-label={t("actions.openConfigFolder")}
+                                    onClick={handleOpenConfigFolder}
+                                    disabled={!configFolderPath}>
+                                    <FolderIcon/>
+                                </button>
+                            </div>
+                        )}
+                        {buildVersion && (
+                            <div className="settings-window__section-note">
+                                {t("labels.buildVersion")}<code>{buildVersion}</code>
+                            </div>
+                        )}
+                    </section>
                 </div>
                 )}
 
                 {tab === "git" && (
                 <div className="settings-window__column">
-                    <div className="settings-window__section-title">{t("labels.git")}</div>
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupRuntime")}</div>
 
-                    <div className="settings-window__section-note">
-                        {t("notes.gitOptions")}
-                    </div>
-
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.gitExecutable")}</label>
-                        <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
-                            <input
-                                className="settings-window__input"
-                                type="text"
-                                value={gitExecutablePath}
-                                onChange={e => {
-                                    setGitExecutablePath(e.target.value);
-                                    setGitExecutableEdited(true);
-                                }}
-                                placeholder={t("placeholders.gitExecutable")}
-                                spellCheck={false}
-                                autoCapitalize="off"
-                                autoCorrect="off"
-                            />
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                title={t("actions.browse")}
-                                aria-label={t("actions.browse")}
-                                onClick={handleBrowseGitExecutable}>
-                                <FileIcon/>
-                            </button>
-                            <button
-                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                title={t("actions.resetGitExecutable")}
-                                aria-label={t("actions.resetGitExecutable")}
-                                onClick={handleResetGitExecutable}>
-                                <CloseIcon/>
-                            </button>
-                        </div>
                         <div className="settings-window__section-note">
-                            {t("notes.gitExecutable")}
-                            {gitVersion && <><br/>{t("labels.gitVersion")}<code>{gitVersion}</code></>}
+                            {t("notes.gitOptions")}
                         </div>
-                    </div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.pushBehaviour")}</label>
-                        <label className="settings-window__switch-row">
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.gitBackendMode")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={backendMode}
+                                onChange={e => setBackendMode(e.target.value as BackendMode)}
+                            >
+                                <option value="Default">{t("options.backendDefault")}</option>
+                                <option value="GitCliOnly">{t("options.backendGitCli")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.gitExecutable")}</label>
+                            <div className="settings-window__inline-controls" style={{gap: "6px", flexWrap: "nowrap"}}>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={gitExecutablePath}
+                                    onChange={e => {
+                                        setGitExecutablePath(e.target.value);
+                                        setGitExecutableEdited(true);
+                                    }}
+                                    placeholder={t("placeholders.gitExecutable")}
+                                    spellCheck={false}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                />
+                                <button
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                    title={t("actions.browse")}
+                                    aria-label={t("actions.browse")}
+                                    onClick={handleBrowseGitExecutable}>
+                                    <FileIcon/>
+                                </button>
+                                <button
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                    title={t("actions.resetGitExecutable")}
+                                    aria-label={t("actions.resetGitExecutable")}
+                                    onClick={handleResetGitExecutable}>
+                                    <CloseIcon/>
+                                </button>
+                            </div>
+                            <div className="settings-window__section-note">
+                                {t("notes.gitExecutable")}
+                                {gitVersion && <><br/>{t("labels.gitVersion")}<code>{gitVersion}</code></>}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupGitmunBehaviour")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.pushBehaviour")}</label>
+                            <label className="settings-window__switch-row">
                   <span className="settings-window__switch">
                     <input
                         type="checkbox"
@@ -1039,327 +1113,322 @@ export function SettingsWindow() {
                     />
                     <span className="settings-window__switch-track"/>
                   </span>
-                            <span className="settings-window__switch-label">{t("switches.followTags")}</span>
-                        </label>
-                    </div>
-
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.commitMessageRecommendedLength")}</label>
-                        <input
-                            className="settings-window__input"
-                            type="number"
-                            min={0}
-                            step={1}
-                            value={commitMessageRecommendedLength}
-                            onChange={e => {
-                                if (/^\d*$/.test(e.target.value)) {
-                                    setCommitMessageRecommendedLength(e.target.value);
-                                }
-                            }}
-                            onBlur={() => {
-                                const next = Number.parseInt(commitMessageRecommendedLength, 10);
-                                setCommitMessageRecommendedLength(String(Number.isFinite(next) ? Math.max(0, next) : DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
-                            }}
-                        />
-                        <div className="settings-window__section-note">
-                            {t("notes.commitMessageRecommendedLength")}
+                                <span className="settings-window__switch-label">{t("switches.followTags")}</span>
+                            </label>
                         </div>
-                    </div>
 
-                    <div className="settings-window__row">
-                        <label className="settings-window__label">{t("labels.globalGitConfiguration")}</label>
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.commitMessageRecommendedLength")}</label>
+                            <input
+                                className="settings-window__input"
+                                type="number"
+                                min={0}
+                                step={1}
+                                value={commitMessageRecommendedLength}
+                                onChange={e => {
+                                    if (/^\d*$/.test(e.target.value)) {
+                                        setCommitMessageRecommendedLength(e.target.value);
+                                    }
+                                }}
+                                onBlur={() => {
+                                    const next = Number.parseInt(commitMessageRecommendedLength, 10);
+                                    setCommitMessageRecommendedLength(String(Number.isFinite(next) ? Math.max(0, next) : DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+                                }}
+                            />
+                            <div className="settings-window__section-note">
+                                {t("notes.commitMessageRecommendedLength")}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupCore")}</div>
                         <div className="settings-window__section-note">
                             {t("notes.gitConfiguration")}
                         </div>
-                        <div className="settings-window__sub-section">
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupCore")}</div>
 
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="core.editor">{t("labels.gitEditor")}</GitConfigLabel>
-                                </label>
-                                <input
-                                    className="settings-window__input"
-                                    type="text"
-                                    value={globalCoreEditor}
-                                    onChange={e => setGlobalCoreEditor(e.target.value)}
-                                    placeholder={t("placeholders.gitEditor")}
-                                    spellCheck={false}
-                                    autoCapitalize="off"
-                                    autoCorrect="off"
-                                />
-                            </div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="core.autocrlf">{t("labels.lineEndings")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalLineEndings}
-                                    onChange={e => setGlobalLineEndings(e.target.value as LineEndingMode)}
-                                >
-                                    <option value="">{t("options.lineEndingsDefault")}</option>
-                                    <option value="false">{t("options.lineEndingsFalse")}</option>
-                                    <option value="input">{t("options.lineEndingsInput")}</option>
-                                    <option value="true">{t("options.lineEndingsTrue")}</option>
-                                </select>
-                                <div className="settings-window__section-note">
-                                    {t("notes.lineEndings")}
-                                </div>
-                            </div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="core.fileMode">{t("labels.fileMode")}</GitConfigLabel>
-                                </label>
-                                <label className="settings-window__switch-row">
-                                    <span className="settings-window__switch">
-                                        <input
-                                            type="checkbox"
-                                            checked={globalFileMode}
-                                            onChange={e => setGlobalFileMode(e.target.checked)}
-                                        />
-                                        <span className="settings-window__switch-track"/>
-                                    </span>
-                                    <span className="settings-window__switch-label">{t("switches.trackFilePermissions")}</span>
-                                </label>
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupCredential")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="credential.helper">{t("labels.credentialHelper")}</GitConfigLabel>
-                                </label>
-                                <input
-                                    className="settings-window__input"
-                                    type="text"
-                                    value={globalCredentialHelper}
-                                    onChange={e => setGlobalCredentialHelper(e.target.value)}
-                                    placeholder={t("placeholders.credentialHelper")}
-                                    spellCheck={false}
-                                    autoCapitalize="off"
-                                    autoCorrect="off"
-                                />
-                                <div className="settings-window__section-note">
-                                    {t("notes.credentialHelper")}
-                                </div>
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupInit")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="init.defaultBranch">{t("labels.defaultBranch")}</GitConfigLabel>
-                                </label>
-                                <input
-                                    className="settings-window__input"
-                                    type="text"
-                                    value={globalDefaultBranch}
-                                    onChange={e => setGlobalDefaultBranch(e.target.value)}
-                                    placeholder={t("placeholders.defaultBranch")}
-                                />
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupDiff")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="diff.tool">{t("labels.diffTool")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={externalDiffTool}
-                                    onChange={e => setExternalDiffTool(e.target.value as ExternalDiffTool)}
-                                >
-                                    {allowedDiffTools.map(tool => (
-                                        <option key={tool} value={tool}>{labelDiffTool(tool)}</option>
-                                    ))}
-                                </select>
-                                {externalDiffTool === "Other" && (
-                                    <div className="settings-window__warning">
-                                        {t("notes.diffToolNotConfigured")}
-                                        {suggestedTools.length > 0 && t("notes.diffToolSuggestion", {tools: suggestedTools.map(labelDiffTool).join(", ")})}
-                                    </div>
-                                )}
-                                {(externalDiffTool === "VsCode" || externalDiffTool === "VsCodium") && (
-                                    <div className="settings-window__note">
-                                        {t("notes.vscodeMergeEditor", {tool: labelDiffTool(externalDiffTool)})}
-                                    </div>
-                                )}
-                                {isWindows && requiresWindowsDiffToolPath(externalDiffTool) && (
-                                    <div className="settings-window__row">
-                                        <label className="settings-window__label">{t("labels.diffToolExecutable")}</label>
-                                        <div className="settings-window__inline-controls"
-                                             style={{gap: "6px", flexWrap: "nowrap"}}>
-                                            <input
-                                                className="settings-window__input"
-                                                type="text"
-                                                value={externalDiffToolPath}
-                                                onChange={e => {
-                                                    setExternalDiffToolPath(e.target.value);
-                                                    setExternalDiffToolPathEdited(true);
-                                                }}
-                                                placeholder={t("placeholders.diffToolPath", {tool: labelDiffTool(externalDiffTool)})}
-                                                spellCheck={false}
-                                                autoCapitalize="off"
-                                                autoCorrect="off"
-                                            />
-                                            <button
-                                                className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                                onClick={handleBrowseDiffToolPath}>
-                                                <FolderIcon/>
-                                            </button>
-                                        </div>
-                                        <div className="settings-window__section-note">
-                                            {t("notes.toolPathSearch")}
-                                        </div>
-                                        {!externalDiffToolPath && (
-                                            <div className="settings-window__warning">
-                                                {t("notes.toolPathMissing", {tool: labelDiffTool(externalDiffTool)})}
-                                            </div>
-                                        )}
-                                    </div>
-                                )}
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupSigning")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="gpg.program">{t("labels.gpgProgram")}</GitConfigLabel>
-                                </label>
-                                <div className="settings-window__inline-controls"
-                                     style={{gap: "6px", flexWrap: "nowrap"}}>
-                                    <input
-                                        className="settings-window__input"
-                                        type="text"
-                                        value={globalGpgProgram}
-                                        onChange={e => {
-                                            setGlobalGpgProgram(e.target.value);
-                                            setGlobalGpgProgramEdited(true);
-                                        }}
-                                        placeholder={t("placeholders.gpgProgram")}
-                                        spellCheck={false}
-                                        autoCapitalize="off"
-                                        autoCorrect="off"
-                                    />
-                                    <button
-                                        className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
-                                        onClick={handleBrowseGpgProgram}>
-                                        <FileIcon/>
-                                    </button>
-                                </div>
-                                <div className="settings-window__section-note">
-                                    {t("notes.gpgProgram")}
-                                </div>
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupPull")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="pull.rebase">{t("labels.pullRebase")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalPullRebase}
-                                    onChange={e => setGlobalPullRebase(e.target.value as PullRebaseMode)}
-                                >
-                                    <option value="">{t("options.pullRebaseDefault")}</option>
-                                    <option value="false">{t("options.pullRebaseFalse")}</option>
-                                    <option value="true">{t("options.pullRebaseTrue")}</option>
-                                    <option value="merges">{t("options.pullRebaseMerges")}</option>
-                                    <option value="interactive">{t("options.pullRebaseInteractive")}</option>
-                                </select>
-                            </div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="pull.ff">{t("labels.pullFastForward")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalPullFastForward}
-                                    onChange={e => setGlobalPullFastForward(e.target.value as PullFastForwardMode)}
-                                >
-                                    <option value="">{t("options.pullFastForwardDefault")}</option>
-                                    <option value="true">{t("options.pullFastForwardTrue")}</option>
-                                    <option value="false">{t("options.pullFastForwardFalse")}</option>
-                                    <option value="only">{t("options.pullFastForwardOnly")}</option>
-                                </select>
-                            </div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="pull.autostash">{t("labels.pullAutostash")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalPullAutostash}
-                                    onChange={e => setGlobalPullAutostash(e.target.value as GitBooleanConfig)}
-                                >
-                                    <option value="">{t("options.booleanDefault")}</option>
-                                    <option value="true">{t("options.booleanTrue")}</option>
-                                    <option value="false">{t("options.booleanFalse")}</option>
-                                </select>
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupFetch")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="fetch.prune">{t("labels.fetchBehaviour")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalFetchPrune}
-                                    onChange={e => setGlobalFetchPrune(e.target.value as GitBooleanConfig)}
-                                >
-                                    <option value="">{t("options.booleanDefault")}</option>
-                                    <option value="true">{t("options.booleanTrue")}</option>
-                                    <option value="false">{t("options.booleanFalse")}</option>
-                                </select>
-                            </div>
-
-                            <div className="settings-window__config-group-title">{t("labels.gitGroupPush")}</div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="push.default">{t("labels.pushDefault")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalPushDefault}
-                                    onChange={e => setGlobalPushDefault(e.target.value as PushDefaultMode)}
-                                >
-                                    <option value="">{t("options.pushDefaultDefault")}</option>
-                                    <option value="simple">{t("options.pushDefaultSimple")}</option>
-                                    <option value="current">{t("options.pushDefaultCurrent")}</option>
-                                    <option value="upstream">{t("options.pushDefaultUpstream")}</option>
-                                    <option value="nothing">{t("options.pushDefaultNothing")}</option>
-                                    <option value="matching">{t("options.pushDefaultMatching")}</option>
-                                </select>
-                            </div>
-
-                            <div className="settings-window__row">
-                                <label className="settings-window__label">
-                                    <GitConfigLabel configKey="push.autoSetupRemote">{t("labels.pushUpstream")}</GitConfigLabel>
-                                </label>
-                                <select
-                                    className="settings-window__select"
-                                    value={globalPushAutoSetupRemote}
-                                    onChange={e => setGlobalPushAutoSetupRemote(e.target.value as GitBooleanConfig)}
-                                >
-                                    <option value="">{t("options.booleanDefault")}</option>
-                                    <option value="true">{t("options.booleanTrue")}</option>
-                                    <option value="false">{t("options.booleanFalse")}</option>
-                                </select>
-                            </div>
-
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="core.editor">{t("labels.gitEditor")}</GitConfigLabel>
+                            </label>
+                            <input
+                                className="settings-window__input"
+                                type="text"
+                                value={globalCoreEditor}
+                                onChange={e => setGlobalCoreEditor(e.target.value)}
+                                placeholder={t("placeholders.gitEditor")}
+                                spellCheck={false}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                            />
                         </div>
-                    </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="core.autocrlf">{t("labels.lineEndings")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalLineEndings}
+                                onChange={e => setGlobalLineEndings(e.target.value as LineEndingMode)}
+                            >
+                                <option value="">{t("options.lineEndingsDefault")}</option>
+                                <option value="false">{t("options.lineEndingsFalse")}</option>
+                                <option value="input">{t("options.lineEndingsInput")}</option>
+                                <option value="true">{t("options.lineEndingsTrue")}</option>
+                            </select>
+                            <div className="settings-window__section-note">
+                                {t("notes.lineEndings")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="core.fileMode">{t("labels.fileMode")}</GitConfigLabel>
+                            </label>
+                            <label className="settings-window__switch-row">
+                                <span className="settings-window__switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={globalFileMode}
+                                        onChange={e => setGlobalFileMode(e.target.checked)}
+                                    />
+                                    <span className="settings-window__switch-track"/>
+                                </span>
+                                <span className="settings-window__switch-label">{t("switches.trackFilePermissions")}</span>
+                            </label>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupSetup")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="credential.helper">{t("labels.credentialHelper")}</GitConfigLabel>
+                            </label>
+                            <input
+                                className="settings-window__input"
+                                type="text"
+                                value={globalCredentialHelper}
+                                onChange={e => setGlobalCredentialHelper(e.target.value)}
+                                placeholder={t("placeholders.credentialHelper")}
+                                spellCheck={false}
+                                autoCapitalize="off"
+                                autoCorrect="off"
+                            />
+                            <div className="settings-window__section-note">
+                                {t("notes.credentialHelper")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="init.defaultBranch">{t("labels.defaultBranch")}</GitConfigLabel>
+                            </label>
+                            <input
+                                className="settings-window__input"
+                                type="text"
+                                value={globalDefaultBranch}
+                                onChange={e => setGlobalDefaultBranch(e.target.value)}
+                                placeholder={t("placeholders.defaultBranch")}
+                            />
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupTools")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="diff.tool">{t("labels.diffTool")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={externalDiffTool}
+                                onChange={e => setExternalDiffTool(e.target.value as ExternalDiffTool)}
+                            >
+                                {allowedDiffTools.map(tool => (
+                                    <option key={tool} value={tool}>{labelDiffTool(tool)}</option>
+                                ))}
+                            </select>
+                            {externalDiffTool === "Other" && (
+                                <div className="settings-window__warning">
+                                    {t("notes.diffToolNotConfigured")}
+                                    {suggestedTools.length > 0 && t("notes.diffToolSuggestion", {tools: suggestedTools.map(labelDiffTool).join(", ")})}
+                                </div>
+                            )}
+                            {(externalDiffTool === "VsCode" || externalDiffTool === "VsCodium") && (
+                                <div className="settings-window__note">
+                                    {t("notes.vscodeMergeEditor", {tool: labelDiffTool(externalDiffTool)})}
+                                </div>
+                            )}
+                            {isWindows && requiresWindowsDiffToolPath(externalDiffTool) && (
+                                <div className="settings-window__row">
+                                    <label className="settings-window__label">{t("labels.diffToolExecutable")}</label>
+                                    <div className="settings-window__inline-controls"
+                                         style={{gap: "6px", flexWrap: "nowrap"}}>
+                                        <input
+                                            className="settings-window__input"
+                                            type="text"
+                                            value={externalDiffToolPath}
+                                            onChange={e => {
+                                                setExternalDiffToolPath(e.target.value);
+                                                setExternalDiffToolPathEdited(true);
+                                            }}
+                                            placeholder={t("placeholders.diffToolPath", {tool: labelDiffTool(externalDiffTool)})}
+                                            spellCheck={false}
+                                            autoCapitalize="off"
+                                            autoCorrect="off"
+                                        />
+                                        <button
+                                            className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                            onClick={handleBrowseDiffToolPath}>
+                                            <FolderIcon/>
+                                        </button>
+                                    </div>
+                                    <div className="settings-window__section-note">
+                                        {t("notes.toolPathSearch")}
+                                    </div>
+                                    {!externalDiffToolPath && (
+                                        <div className="settings-window__warning">
+                                            {t("notes.toolPathMissing", {tool: labelDiffTool(externalDiffTool)})}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="gpg.program">{t("labels.gpgProgram")}</GitConfigLabel>
+                            </label>
+                            <div className="settings-window__inline-controls"
+                                 style={{gap: "6px", flexWrap: "nowrap"}}>
+                                <input
+                                    className="settings-window__input"
+                                    type="text"
+                                    value={globalGpgProgram}
+                                    onChange={e => {
+                                        setGlobalGpgProgram(e.target.value);
+                                        setGlobalGpgProgramEdited(true);
+                                    }}
+                                    placeholder={t("placeholders.gpgProgram")}
+                                    spellCheck={false}
+                                    autoCapitalize="off"
+                                    autoCorrect="off"
+                                />
+                                <button
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__icon-btn"
+                                    onClick={handleBrowseGpgProgram}>
+                                    <FileIcon/>
+                                </button>
+                            </div>
+                            <div className="settings-window__section-note">
+                                {t("notes.gpgProgram")}
+                            </div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.gitGroupSync")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="pull.rebase">{t("labels.pullRebase")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalPullRebase}
+                                onChange={e => setGlobalPullRebase(e.target.value as PullRebaseMode)}
+                            >
+                                <option value="">{t("options.pullRebaseDefault")}</option>
+                                <option value="false">{t("options.pullRebaseFalse")}</option>
+                                <option value="true">{t("options.pullRebaseTrue")}</option>
+                                <option value="merges">{t("options.pullRebaseMerges")}</option>
+                                <option value="interactive">{t("options.pullRebaseInteractive")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="pull.ff">{t("labels.pullFastForward")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalPullFastForward}
+                                onChange={e => setGlobalPullFastForward(e.target.value as PullFastForwardMode)}
+                            >
+                                <option value="">{t("options.pullFastForwardDefault")}</option>
+                                <option value="true">{t("options.pullFastForwardTrue")}</option>
+                                <option value="false">{t("options.pullFastForwardFalse")}</option>
+                                <option value="only">{t("options.pullFastForwardOnly")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="pull.autostash">{t("labels.pullAutostash")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalPullAutostash}
+                                onChange={e => setGlobalPullAutostash(e.target.value as GitBooleanConfig)}
+                            >
+                                <option value="">{t("options.booleanDefault")}</option>
+                                <option value="true">{t("options.booleanTrue")}</option>
+                                <option value="false">{t("options.booleanFalse")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="fetch.prune">{t("labels.fetchBehaviour")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalFetchPrune}
+                                onChange={e => setGlobalFetchPrune(e.target.value as GitBooleanConfig)}
+                            >
+                                <option value="">{t("options.booleanDefault")}</option>
+                                <option value="true">{t("options.booleanTrue")}</option>
+                                <option value="false">{t("options.booleanFalse")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="push.default">{t("labels.pushDefault")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalPushDefault}
+                                onChange={e => setGlobalPushDefault(e.target.value as PushDefaultMode)}
+                            >
+                                <option value="">{t("options.pushDefaultDefault")}</option>
+                                <option value="simple">{t("options.pushDefaultSimple")}</option>
+                                <option value="current">{t("options.pushDefaultCurrent")}</option>
+                                <option value="upstream">{t("options.pushDefaultUpstream")}</option>
+                                <option value="nothing">{t("options.pushDefaultNothing")}</option>
+                                <option value="matching">{t("options.pushDefaultMatching")}</option>
+                            </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">
+                                <GitConfigLabel configKey="push.autoSetupRemote">{t("labels.pushUpstream")}</GitConfigLabel>
+                            </label>
+                            <select
+                                className="settings-window__select"
+                                value={globalPushAutoSetupRemote}
+                                onChange={e => setGlobalPushAutoSetupRemote(e.target.value as GitBooleanConfig)}
+                            >
+                                <option value="">{t("options.booleanDefault")}</option>
+                                <option value="true">{t("options.booleanTrue")}</option>
+                                <option value="false">{t("options.booleanFalse")}</option>
+                            </select>
+                        </div>
+                    </section>
                 </div>
                 )}
 

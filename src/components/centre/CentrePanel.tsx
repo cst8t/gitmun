@@ -13,6 +13,7 @@ import type {
   CommitPrimaryAction,
   ConflictFileItem,
   FileStatusItem,
+  RowStriping,
   SubmoduleStatus,
 } from "../../types";
 import "./CentrePanel.css";
@@ -44,6 +45,7 @@ type CentrePanelProps = {
   logError: string | null;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
+  rowStriping: RowStriping;
   onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
   shallow: boolean;
@@ -234,6 +236,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onOpenMergeTool={props.onOpenMergeTool}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
+          rowStriping={props.rowStriping}
         />
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>
@@ -247,6 +250,7 @@ export function CentrePanel(props: CentrePanelProps) {
           logError={props.logError}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
+          rowStriping={props.rowStriping}
           detachedHead={props.detachedHead}
           shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}

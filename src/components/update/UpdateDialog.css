@@ -16,7 +16,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-dialog);
   z-index: 221;
   padding: 20px;
   display: flex;
@@ -27,7 +27,7 @@
 
 .update-dialog__title {
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
 }
 
@@ -128,7 +128,7 @@
   border: 1px solid transparent;
   font-family: var(--font-ui);
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: opacity 0.15s, background 0.15s;
 }
@@ -139,7 +139,7 @@
 
 .update-dialog__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .update-dialog__btn--secondary {

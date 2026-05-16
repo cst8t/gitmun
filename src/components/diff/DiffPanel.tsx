@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
 import { FileIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
-import type { CommitDetails, CommitFileItem, FileDiff, SubmoduleStatus } from "../../types";
+import type { CommitDetails, CommitFileItem, FileDiff, RowStriping, SubmoduleStatus } from "../../types";
 import { getCommitDetails } from "../../api/commands";
 import type { CentreTab } from "../centre/CentrePanel";
 import "react-diff-view/style/index.css";
@@ -176,6 +176,7 @@ type DiffPanelProps = {
   hunkAction: "stage" | "unstage" | null;
   hunkActionBusy: boolean;
   wrapLines: boolean;
+  rowStriping: RowStriping;
   onHunkAction: (hunkIndex: number) => void;
 };
 
@@ -200,6 +201,7 @@ export function DiffPanel({
   hunkAction,
   hunkActionBusy,
   wrapLines,
+  rowStriping,
   onHunkAction,
 }: DiffPanelProps) {
   const { t } = useTranslation("diffPanel");
@@ -226,6 +228,10 @@ export function DiffPanel({
   const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "add").length, 0) ?? 0;
   const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "remove").length, 0) ?? 0;
   const fileName = selectedFile ? selectedFile.split("/").pop() ?? selectedFile : null;
+  const striped = (index: number): "Subtle" | "Strong" | undefined => {
+    if (rowStriping === "Off" || index % 2 === 0) return undefined;
+    return rowStriping;
+  };
   const language = currentDiff?.detectedFileType ?? "Text";
   const lineEndingLabel = currentDiff ? (() => {
     switch (currentDiff.lineEnding) {
@@ -382,20 +388,23 @@ export function DiffPanel({
             <div className="diff-panel__placeholder">{t("placeholders.loadingCommitFiles")}</div>
           ) : commitFiles.length > 0 ? (
             <div className="diff-panel__commit-files">
-              {commitFiles.map((file) => (
-                <button
-                  key={`${file.status}:${file.path}`}
-                  className={`diff-panel__commit-file-row ${selectedCommitFile === file.path ? "diff-panel__commit-file-row--selected" : ""}`}
-                  onClick={() => setSelectedCommitFile(file.path)}
-                  onDoubleClick={() => onOpenCommitFileDiff(file.path)}
-                  title={t("toolbar.openDiff", {defaultValue: "Double-click to open diff"})}
-                >
-                  <span className={`diff-panel__commit-file-status diff-panel__commit-file-status--${file.status.toLowerCase()}`}>
-                    {statusLetter(file.status)}
-                  </span>
-                  <span className="diff-panel__commit-file-path">{file.path}</span>
-                </button>
-              ))}
+              {commitFiles.map((file, index) => {
+                const rowStripe = striped(index);
+                return (
+                  <button
+                    key={`${file.status}:${file.path}`}
+                    className={`diff-panel__commit-file-row${rowStripe ? ` diff-panel__commit-file-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedCommitFile === file.path ? "diff-panel__commit-file-row--selected" : ""}`}
+                    onClick={() => setSelectedCommitFile(file.path)}
+                    onDoubleClick={() => onOpenCommitFileDiff(file.path)}
+                    title={t("toolbar.openDiff", {defaultValue: "Double-click to open diff"})}
+                  >
+                    <span className={`diff-panel__commit-file-status diff-panel__commit-file-status--${file.status.toLowerCase()}`}>
+                      {statusLetter(file.status)}
+                    </span>
+                    <span className="diff-panel__commit-file-path">{file.path}</span>
+                  </button>
+                );
+              })}
             </div>
           ) : (
             <div className="diff-panel__placeholder">{t("placeholders.selectCommit")}</div>

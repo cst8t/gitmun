@@ -7,12 +7,17 @@ export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
+export type RowStriping = "Off" | "Subtle" | "Strong";
+export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
+export type AppUpdateChannel = "SelfManaged" | "MicrosoftStore" | "SystemManaged";
 
 export type Settings = {
     backendMode: BackendMode;
     showResultLog: boolean;
     themeMode: ThemeMode;
+    uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
+    rowStriping: RowStriping;
     leftPaneWidth: number;
     rightPaneWidth: number;
     confirmRevert: boolean;
@@ -26,9 +31,75 @@ export type Settings = {
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;
+    enableUpdateWithMSStoreFlow?: boolean;
     linuxGraphicsMode: LinuxGraphicsMode;
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
+};
+
+export type ThemeBundle = {
+    light: ThemeDefinition;
+    dark: ThemeDefinition;
+};
+
+export type ThemeDefinition = {
+    name: string;
+    mode: "light" | "dark";
+    font: {
+        uiFamily: string;
+        monoFamily: string;
+        regularWeight: string;
+        mediumWeight: string;
+        semiboldWeight: string;
+        boldWeight: string;
+    };
+    background: {
+        base: string;
+        surface: string;
+        elevated: string;
+        hover: string;
+        subtle: string;
+        rowAlternate: string;
+        rowAlternateStrong: string;
+    };
+    border: {
+        default: string;
+        subtle: string;
+    };
+    text: {
+        primary: string;
+        secondaryStrong: string;
+        secondary: string;
+        muted: string;
+        onAccent: string;
+    };
+    accent: {
+        default: string;
+        hover: string;
+        dim: string;
+        selectionBg: string;
+        selectionBorder: string;
+        focusRing: string;
+    };
+    semantic: {
+        green: string;
+        greenDim: string;
+        red: string;
+        redDim: string;
+        yellow: string;
+    };
+    diff: {
+        addBg: string;
+        addText: string;
+        addBorder: string;
+        delBg: string;
+        delText: string;
+        delBorder: string;
+    };
+    shadow: {
+        popover: string;
+        dialog: string;
+    };
 };
 
 export type AvailableUpdate = {
@@ -37,6 +108,29 @@ export type AvailableUpdate = {
     date: number | null;
     body: string | null;
 };
+
+export type MicrosoftStoreUpdate = {
+    currentVersion: string;
+    packageCount: number;
+    mandatory: boolean;
+};
+
+export type MicrosoftStoreUpdateStatus =
+    | "Completed"
+    | "Canceled"
+    | "OtherError"
+    | "ErrorWifiRecommended"
+    | "ErrorWifiRequired"
+    | "ErrorLowBattery"
+    | "Unknown";
+
+export type MicrosoftStoreUpdateResult = {
+    status: MicrosoftStoreUpdateStatus;
+};
+
+export type AppAvailableUpdate =
+    | (AvailableUpdate & { source: "selfManaged" })
+    | (MicrosoftStoreUpdate & { source: "microsoftStore" });
 
 export type UpdateDownloadEvent =
     | {

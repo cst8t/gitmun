@@ -51,6 +51,7 @@ import type {
   PushRequest,
   PushRejectionAnalysis,
   RemoteInfo,
+  RowStriping,
   StashEntry,
 } from "../types";
 import type { ResultLogEntry } from "../utils/resultLog";
@@ -239,6 +240,7 @@ export function ProjectView({
   const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(72);
   const [pushFollowTags, setPushFollowTags] = useState(false);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
+  const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [searchQuery, setSearchQuery] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -391,6 +393,7 @@ export function ProjectView({
           setCommitMessageRecommendedLength(settings.commitMessageRecommendedLength ?? 72);
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
+          setRowStriping(settings.rowStriping ?? "Off");
         }
       })
       .catch(() => {
@@ -399,6 +402,7 @@ export function ProjectView({
           setCommitMessageRecommendedLength(72);
           setPushFollowTags(false);
           setWrapDiffLines(false);
+          setRowStriping("Off");
         }
       });
 
@@ -2126,6 +2130,7 @@ export function ProjectView({
                   logError={logError}
                   commitMarkers={commitMarkers}
                   logScope={logScope}
+                  rowStriping={rowStriping}
                   onLogScopeChange={setLogScope}
                   detachedHead={status?.detachedHead ?? false}
                   shallow={status?.shallow ?? false}
@@ -2210,6 +2215,7 @@ export function ProjectView({
                   hunkAction={selectedFile && !selectedSubmodule ? (selectedFileStaged ? "unstage" : "stage") : null}
                   hunkActionBusy={hunkActionBusy}
                   wrapLines={wrapDiffLines}
+                  rowStriping={rowStriping}
                   onHunkAction={handleHunkAction}
                 />
               </div>

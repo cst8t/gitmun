@@ -15,7 +15,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   z-index: 51;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-popover);
   animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
   max-height: calc(100vh - 100px);
@@ -35,8 +35,8 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
 }
 
 .identity-panel__header-actions {
@@ -55,8 +55,8 @@
   display: flex;
   align-items: center;
   gap: 4px;
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-medium);
   font-family: var(--font-ui);
 }
 
@@ -84,8 +84,8 @@
   background: none;
   border: none;
   color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   padding: 9px 0;
   cursor: pointer;
   border-bottom: 2px solid transparent;
@@ -120,13 +120,13 @@
   gap: 6px;
   padding: 6px 10px;
   border-radius: 6px;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
 }
 
 .identity-detail__scope--local {
-  background: rgba(108, 156, 252, 0.08);
-  border: 1px solid rgba(108, 156, 252, 0.15);
+  background: var(--accent-dim);
+  border: 1px solid var(--selection-border);
   color: var(--accent);
 }
 
@@ -138,9 +138,9 @@
 
 .identity-detail__override-badge {
   margin-left: auto;
-  font-size: 9px;
-  font-weight: 700;
-  background: rgba(108, 156, 252, 0.15);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-bold);
+  background: var(--accent-dim);
   color: var(--accent);
   padding: 1px 6px;
   border-radius: 3px;
@@ -152,21 +152,21 @@
 .identity-detail__field { }
 
 .identity-detail__label {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   margin-bottom: 5px;
 }
 
 .identity-detail__value {
-  font-size: 14px;
-  font-weight: 500;
+  font-size: var(--font-size-lg);
+  font-weight: var(--font-weight-medium);
 }
 
 .identity-detail__email {
-  font-size: 13px;
+  font-size: var(--font-size-base);
   font-family: var(--font-mono);
   color: var(--accent);
 }
@@ -177,7 +177,7 @@
 }
 
 .identity-detail__hint {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
   padding: 8px 10px;
   background: var(--bg-elevated);
@@ -193,18 +193,18 @@
 }
 
 .identity-detail__signing-label {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .identity-detail__signing-badge {
   margin-left: auto;
-  font-size: 9px;
-  font-weight: 700;
-  background: rgba(248, 113, 113, 0.12);
+  font-size: var(--font-size-micro);
+  font-weight: var(--font-weight-bold);
+  background: var(--red-dim);
   color: var(--red);
   padding: 1px 6px;
   border-radius: 3px;
@@ -212,7 +212,7 @@
 }
 
 .identity-detail__signing-badge--enabled {
-  background: rgba(52, 211, 153, 0.12);
+  background: var(--green-dim);
   color: var(--green);
 }
 
@@ -232,10 +232,10 @@
   grid-template-columns: 72px 1fr;
   gap: 10px;
   align-items: start;
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   color: var(--text-muted);
   text-transform: uppercase;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   min-width: 0;
 }
 
@@ -244,11 +244,11 @@
 }
 
 .identity-detail__key-value {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--text-secondary);
   text-transform: none;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   text-align: right;
   white-space: normal;
   overflow-wrap: anywhere;
@@ -256,14 +256,14 @@
 }
 
 .identity-detail__format-pill {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
   color: var(--yellow);
   background: rgba(251, 191, 36, 0.1);
   padding: 1px 8px;
   border-radius: 4px;
   text-transform: none;
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .identity-detail__format-pill--ssh {
@@ -287,15 +287,15 @@
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   font-family: var(--font-mono);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .identity-detail__input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.1);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .identity-detail__input:disabled {
@@ -328,11 +328,11 @@
 }
 
 .identity-detail__form-label {
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .identity-detail__form-actions {
@@ -350,8 +350,8 @@
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
   font-family: var(--font-ui);
   cursor: pointer;
   transition: all 0.15s ease;
@@ -391,7 +391,7 @@
 }
 
 .identity-profiles__desc {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
   margin-bottom: 12px;
   line-height: 1.5;
@@ -401,7 +401,7 @@
   padding: 20px;
   text-align: center;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-style: italic;
   border: 1px dashed var(--border-subtle);
   border-radius: 6px;

@@ -22,8 +22,8 @@
 }
 
 .titlebar__name {
-  font-weight: 600;
-  font-size: 14px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-lg);
   letter-spacing: -0.01em;
 }
 
@@ -42,12 +42,12 @@
 
 .titlebar__repo-dir {
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
 }
 
 .titlebar__repo-name {
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
 }
 
 .titlebar__branch-pill {
@@ -60,8 +60,8 @@
   margin-left: 8px;
   cursor: default;
   color: var(--accent);
-  font-weight: 500;
-  font-size: 12px;
+  font-weight: var(--font-weight-medium);
+  font-size: var(--font-size-sm);
   font-family: var(--font-mono);
 }
 
@@ -85,8 +85,8 @@
   border-radius: var(--radius-lg);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   transition: all 0.15s;
   white-space: nowrap;
   min-width: 0;
@@ -128,8 +128,8 @@
 .titlebar__badge {
   background: var(--accent);
   color: var(--bg);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
   padding: 0 5px;
   border-radius: 10px;
   line-height: 16px;
@@ -149,7 +149,7 @@
   border-radius: var(--radius-lg);
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   width: 190px;
   /* Wide enough to show "Search commits  Ctrl+F" without clipping */
   min-width: 180px;
@@ -169,7 +169,7 @@
   border: none;
   outline: none;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   font-family: inherit;
   flex: 1;
   min-width: 0;
@@ -182,7 +182,7 @@
 
 .titlebar__search-hint {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   opacity: 0.5;
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -208,8 +208,8 @@
   gap: 5px;
   padding: 5px 10px;
   border-radius: var(--radius-lg);
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
 }
 
 .titlebar__open-dropdown {
@@ -228,7 +228,7 @@
   max-width: min(420px, calc(100vw - 16px));
   box-sizing: border-box;
   z-index: 100;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-popover);
 }
 
 .titlebar__open-menu-item {
@@ -237,7 +237,7 @@
   gap: 8px;
   padding: 6px 10px;
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.1s;
@@ -262,7 +262,7 @@
 }
 
 .titlebar__no-repo {
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -276,8 +276,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-bold);
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all 0.15s;
@@ -295,7 +295,7 @@
 
 .titlebar__avatar--active {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--text-on-accent);
   border: none;
 }
 
@@ -347,7 +347,7 @@
   .titlebar__icon-btn--labeled {
     padding: 4px 6px;
     gap: 3px;
-    font-size: 11px;
+    font-size: var(--font-size-xs);
   }
 
   .titlebar__search {

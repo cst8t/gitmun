@@ -5,27 +5,17 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
-import type { OperationResult, Settings, ThemeMode } from "../../types";
+import type { OperationResult, Settings } from "../../types";
 import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
 import { getCloneRepoUrlError } from "../../utils/gitInputValidation";
 import { takePendingCloneDestination } from "../../api/commands";
+import { applyThemeMode } from "../../utils/theme";
+import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./CloneWindow.css";
 
 const CLONE_BASE_KEY = "gitmun.cloneBaseDir";
 const THEME_MODE_KEY = "gitmun.themeMode";
-
-async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
-  if (mode === "Light") return "light";
-  if (mode === "Dark") return "dark";
-  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-  try {
-    const hint = await invoke<string>("get_system_theme_hint");
-    return hint === "dark" ? "dark" : "light";
-  } catch {
-    return "dark";
-  }
-}
 
 function safePlatform(): string {
   try {
@@ -78,7 +68,8 @@ export function CloneWindow() {
           await invoke("set_theme_mode", { themeMode: persistedTheme });
         }
         const settings = await invoke<Settings>("get_settings");
-        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+        await applyThemeMode(settings.themeMode);
+        applyUiTextScale(settings.uiTextScale);
 
         // Initialise destination: pending shell destination > last-used dir > settings default > OS default.
         const pendingDestination = await takePendingCloneDestination();

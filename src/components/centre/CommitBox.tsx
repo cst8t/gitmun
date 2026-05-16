@@ -134,6 +134,8 @@ export function CommitBox({
         onChange={e => setMessage(e.target.value)}
         placeholder={amend ? t("commitBox.amendMessage") : t("commitBox.commitMessage")}
         rows={3}
+        spellCheck="true"
+        data-allow-native-context-menu="true"
       />
 
       <div className="commit-box__hints">

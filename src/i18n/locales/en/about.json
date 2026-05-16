@@ -10,6 +10,7 @@
   },
   "status": {
     "latest": "You're already running the latest version.",
+    "latestMicrosoftStore": "You're already running the latest Microsoft Store version.",
     "checkFailed": "Update check failed: {{message}}",
     "managed": "Updates are managed by this installation channel."
   },

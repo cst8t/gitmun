@@ -1,0 +1,60 @@
+name = "Gitmun Dark"
+mode = "dark"
+
+[font]
+# "default" uses the bundled Inter UI font and JetBrains Mono code font.
+# Set a family name here to use a font installed on your system.
+# Weight defaults are 400, 500, 600, and 700.
+uiFamily = "default"
+monoFamily = "default"
+regularWeight = "default"
+mediumWeight = "default"
+semiboldWeight = "default"
+boldWeight = "default"
+
+[background]
+base = "#0f1117"
+surface = "#171a22"
+elevated = "#1d2230"
+hover = "#252b3a"
+subtle = "#1b1f2a"
+rowAlternate = "#131720"
+rowAlternateStrong = "#1b2130"
+
+[border]
+default = "#2b3142"
+subtle = "#202636"
+
+[text]
+primary = "#e5e7ee"
+secondaryStrong = "#b8bdcc"
+secondary = "#9298aa"
+muted = "#646b80"
+onAccent = "#0f1117"
+
+[accent]
+default = "#79a7ff"
+hover = "#8bb4ff"
+dim = "rgba(121, 167, 255, 0.14)"
+selectionBg = "rgba(121, 167, 255, 0.16)"
+selectionBorder = "rgba(121, 167, 255, 0.42)"
+focusRing = "rgba(121, 167, 255, 0.28)"
+
+[semantic]
+green = "#34d399"
+greenDim = "rgba(52, 211, 153, 0.08)"
+red = "#f87171"
+redDim = "rgba(248, 113, 113, 0.06)"
+yellow = "#fbbf24"
+
+[diff]
+addBg = "rgba(52, 211, 153, 0.1)"
+addText = "#34d399"
+addBorder = "rgba(52, 211, 153, 0.25)"
+delBg = "rgba(248, 113, 113, 0.1)"
+delText = "#f87171"
+delBorder = "rgba(248, 113, 113, 0.25)"
+
+[shadow]
+popover = "0 8px 32px rgba(0, 0, 0, 0.45)"
+dialog = "0 20px 60px rgba(0, 0, 0, 0.6)"

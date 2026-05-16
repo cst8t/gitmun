@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
-import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, SubmoduleStatus } from "../../types";
+import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, RowStriping, SubmoduleStatus } from "../../types";
 import { getNumstat } from "../../api/commands";
 
 type StagingViewProps = {
@@ -46,6 +46,7 @@ type StagingViewProps = {
   onOpenMergeTool: (path: string) => void;
   isCommitting: boolean;
   lastCommitMessage: string;
+  rowStriping: RowStriping;
 };
 
 type CachedNumstat = {
@@ -78,6 +79,7 @@ function shortHash(hash: string | null): string {
 type SubmoduleRowProps = {
   submodule: SubmoduleStatus;
   selected: boolean;
+  striped?: "Subtle" | "Strong";
   onSelect: () => void;
   onInit: () => void;
   onUpdate: () => void;
@@ -90,6 +92,7 @@ type SubmoduleRowProps = {
 function SubmoduleRow({
   submodule,
   selected,
+  striped,
   onSelect,
   onInit,
   onUpdate,
@@ -105,10 +108,11 @@ function SubmoduleRow({
   const canFetch = submodule.initialised;
   const canPull = submodule.initialised && !submodule.dirty && !!submodule.currentBranch;
   const canOpen = submodule.initialised;
+  const stripingClass = striped ? ` submodule-row--striped-${striped.toLowerCase()}` : "";
 
   return (
     <div
-      className={`submodule-row ${selected ? "submodule-row--selected" : ""}`}
+      className={`submodule-row${stripingClass} ${selected ? "submodule-row--selected" : ""}`}
       onClick={onSelect}
       onDoubleClick={canOpen ? onOpen : undefined}
     >
@@ -146,7 +150,7 @@ export function StagingView({
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
-  isCommitting, lastCommitMessage,
+  isCommitting, lastCommitMessage, rowStriping,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [selectedUnstaged, setSelectedUnstaged] = useState<Record<string, boolean>>({});
@@ -291,6 +295,10 @@ export function StagingView({
     onUnstageFiles(selectedStagedPaths);
     setSelectedStaged({});
   };
+  const striped = (index: number): "Subtle" | "Strong" | undefined => {
+    if (rowStriping === "Off" || index % 2 === 0) return undefined;
+    return rowStriping;
+  };
 
   return (
     <div className="staging">
@@ -302,11 +310,12 @@ export function StagingView({
                 {t("staging.submodules")} {"\u00B7"} {submodules.length}
               </span>
             </div>
-            {submodules.map(submodule => (
+            {submodules.map((submodule, index) => (
               <div key={submodule.path} className="staging__row-anim">
                 <SubmoduleRow
                   submodule={submodule}
                   selected={selectedSubmodulePath === submodule.path}
+                  striped={striped(index)}
                   onSelect={() => onSubmoduleSelect(submodule.path)}
                   onInit={() => onSubmoduleInit(submodule.path)}
                   onUpdate={() => onSubmoduleUpdate(submodule.path)}
@@ -328,10 +337,12 @@ export function StagingView({
                 {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
               </span>
             </div>
-            {conflictedFiles.map(f => (
+            {conflictedFiles.map((f, index) => {
+              const rowStripe = striped(index);
+              return (
               <div key={f.path} className="staging__row-anim">
                 <div
-                  className={`staging__conflict-row ${selectedFile === f.path ? "staging__conflict-row--selected" : ""}`}
+                  className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === f.path ? "staging__conflict-row--selected" : ""}`}
                   onClick={() => onFileSelect(f.path, false)}
                   onDoubleClick={() => onOpenMergeTool(f.path)}
                 >
@@ -370,7 +381,8 @@ export function StagingView({
                   </div>
                 </div>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
@@ -398,12 +410,13 @@ export function StagingView({
           {mergedStaged.length === 0 ? (
             <div className="staging__empty">{t("staging.noStagedChanges")}</div>
           ) : (
-            mergedStaged.map(f => (
+            mergedStaged.map((f, index) => (
               <div key={f.path} className="staging__row-anim">
                 <FileRow
                   file={f}
                   isStaged
                   isSelected={selectedFile === f.path}
+                  striped={striped(index)}
                   checked={selectedStaged[f.path] ?? false}
                   onToggleChecked={() => toggleStaged(f.path)}
                   onSelect={() => onFileSelect(f.path, true)}
@@ -452,12 +465,13 @@ export function StagingView({
           {allUnstaged.length === 0 ? (
             <div className="staging__empty">{t("staging.workingTreeClean")}</div>
           ) : (
-            allUnstaged.map(f => (
+            allUnstaged.map((f, index) => (
               <div key={f.path} className="staging__row-anim">
                 <FileRow
                   file={f}
                   isStaged={false}
                   isSelected={selectedFile === f.path}
+                  striped={striped(index)}
                   checked={selectedUnstaged[f.path] ?? false}
                   onToggleChecked={() => toggleUnstaged(f.path)}
                   onSelect={() => onFileSelect(f.path, false)}

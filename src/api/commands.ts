@@ -39,6 +39,7 @@ import type {
     RepoRequest,
     RepoStatus,
     RepoOpenBehaviour,
+    RowStriping,
     SetBranchUpstreamRequest,
     Settings,
     StageFilesRequest,
@@ -46,10 +47,15 @@ import type {
     TagInfo,
     BackendMode,
     ThemeMode,
+    ThemeBundle,
+    UiTextScale,
     NumstatResult,
     SetIdentityRequest,
     AddRemoteRequest,
+    AppUpdateChannel,
     AvailableUpdate,
+    MicrosoftStoreUpdate,
+    MicrosoftStoreUpdateResult,
     UpdateDownloadEvent,
     RemoveRemoteRequest,
     RenameRemoteRequest,
@@ -364,6 +370,10 @@ export function getSettings(): Promise<Settings> {
     return invoke<Settings>("get_settings");
 }
 
+export function getThemeBundle(): Promise<ThemeBundle> {
+    return invoke<ThemeBundle>("get_theme_bundle");
+}
+
 export function setBackendMode(mode: BackendMode): Promise<Settings> {
     return invoke<Settings>("set_backend_mode", {mode});
 }
@@ -376,8 +386,16 @@ export function setThemeMode(themeMode: ThemeMode): Promise<Settings> {
     return invoke<Settings>("set_theme_mode", {themeMode});
 }
 
+export function setUiTextScale(uiTextScale: UiTextScale): Promise<Settings> {
+    return invoke<Settings>("set_ui_text_scale", {uiTextScale});
+}
+
 export function setWrapDiffLines(wrapDiffLines: boolean): Promise<Settings> {
     return invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
+}
+
+export function setRowStriping(rowStriping: RowStriping): Promise<Settings> {
+    return invoke<Settings>("set_row_striping", {rowStriping});
 }
 
 export function setPanelLayout(leftPaneWidth: number, rightPaneWidth: number): Promise<Settings> {
@@ -432,8 +450,20 @@ export function isUpdaterEnabled(): Promise<boolean> {
     return invoke<boolean>("is_updater_enabled");
 }
 
+export function getAppUpdateChannel(): Promise<AppUpdateChannel> {
+    return invoke<AppUpdateChannel>("get_app_update_channel");
+}
+
 export function checkForAppUpdate(): Promise<AvailableUpdate | null> {
     return invoke<AvailableUpdate | null>("check_for_app_update");
+}
+
+export function checkMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdate | null> {
+    return invoke<MicrosoftStoreUpdate | null>("check_microsoft_store_update");
+}
+
+export function requestMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdateResult> {
+    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update");
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {

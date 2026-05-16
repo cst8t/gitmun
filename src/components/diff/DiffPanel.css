@@ -23,7 +23,7 @@
 .diff-panel__filename {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -154,7 +154,7 @@
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   padding: 3px 8px;
 }
 
@@ -188,7 +188,17 @@
 }
 
 .diff-panel__commit-file-row--selected {
-  background: var(--bg-elevated);
+  background: var(--selection-bg);
+  border-left-color: var(--accent);
+}
+
+.diff-panel__commit-file-row--striped-subtle { background: var(--row-alternate-bg); }
+.diff-panel__commit-file-row--striped-strong { background: var(--row-alternate-strong-bg); }
+.diff-panel__commit-file-row--striped-subtle:hover,
+.diff-panel__commit-file-row--striped-strong:hover { background: var(--bg-elevated); }
+.diff-panel__commit-file-row--striped-subtle.diff-panel__commit-file-row--selected,
+.diff-panel__commit-file-row--striped-strong.diff-panel__commit-file-row--selected {
+  background: var(--selection-bg);
   border-left-color: var(--accent);
 }
 
@@ -197,7 +207,7 @@
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   flex-shrink: 0;
 }
 
@@ -269,13 +279,13 @@
 
 .diff-hunk__stage-btn {
   background: var(--bg-surface);
-  border: 1px solid rgba(108, 156, 252, 0.35);
+  border: 1px solid var(--selection-border);
   color: var(--accent);
   border-radius: 3px;
   padding: 2px 8px;
   cursor: pointer;
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -290,12 +300,12 @@
 
 .diff-hunk__stage-btn--staged {
   background: var(--bg-surface);
-  border-color: rgba(52, 211, 153, 0.35);
+  border-color: var(--diff-add-border);
   color: var(--green);
 }
 
 .diff-hunk__stage-btn--unstage {
-  border-color: rgba(248, 113, 113, 0.35);
+  border-color: var(--diff-del-border);
   color: var(--red);
 }
 
@@ -303,21 +313,21 @@
   --diff-background-color: transparent;
   --diff-text-color: var(--text-secondary);
   --diff-font-family: var(--font-mono);
-  --diff-selection-background-color: rgba(108, 156, 252, 0.25);
+  --diff-selection-background-color: var(--selection-bg);
   --diff-selection-text-color: var(--text-primary);
-  --diff-gutter-insert-background-color: rgba(52, 211, 153, 0.1);
-  --diff-gutter-insert-text-color: var(--green);
-  --diff-gutter-delete-background-color: rgba(248, 113, 113, 0.1);
-  --diff-gutter-delete-text-color: var(--red);
-  --diff-gutter-selected-background-color: rgba(108, 156, 252, 0.12);
+  --diff-gutter-insert-background-color: var(--diff-add-bg);
+  --diff-gutter-insert-text-color: var(--diff-add-text);
+  --diff-gutter-delete-background-color: var(--diff-del-bg);
+  --diff-gutter-delete-text-color: var(--diff-del-text);
+  --diff-gutter-selected-background-color: var(--selection-bg);
   --diff-gutter-selected-text-color: var(--text-primary);
-  --diff-code-insert-background-color: rgba(52, 211, 153, 0.08);
-  --diff-code-insert-text-color: var(--green);
-  --diff-code-delete-background-color: rgba(248, 113, 113, 0.08);
-  --diff-code-delete-text-color: var(--red);
-  --diff-code-insert-edit-background-color: rgba(52, 211, 153, 0.2);
-  --diff-code-delete-edit-background-color: rgba(248, 113, 113, 0.2);
-  --diff-code-selected-background-color: rgba(108, 156, 252, 0.12);
+  --diff-code-insert-background-color: var(--diff-add-bg);
+  --diff-code-insert-text-color: var(--diff-add-text);
+  --diff-code-delete-background-color: var(--diff-del-bg);
+  --diff-code-delete-text-color: var(--diff-del-text);
+  --diff-code-insert-edit-background-color: var(--green-dim);
+  --diff-code-delete-edit-background-color: var(--red-dim);
+  --diff-code-selected-background-color: var(--selection-bg);
   --diff-code-selected-text-color: var(--text-primary);
 }
 
@@ -343,7 +353,7 @@
 
 @media (max-width: 1400px) {
   .diff-panel__view-btn {
-    font-size: 11px;
+    font-size: var(--font-size-xs);
     padding: 2px 5px;
   }
 
@@ -356,7 +366,7 @@
   background: transparent;
   border: none;
   color: var(--text-muted);
-  font-size: 14px;
+  font-size: var(--font-size-lg);
   padding: 2px 6px;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -383,7 +393,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-popover);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -399,7 +409,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   padding: 2px 4px;
   border-radius: var(--radius-md);
 }
@@ -416,8 +426,8 @@
 }
 
 .commit-details-popover__label {
-  font-size: 10px;
-  font-weight: 600;
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -432,7 +442,7 @@
 
 .commit-details-popover__value--mono {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
 }
 
 .commit-details-popover__value--muted {
@@ -451,7 +461,7 @@
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--font-size-base);
   padding: 1px 3px;
   border-radius: var(--radius-md);
   flex-shrink: 0;
@@ -471,7 +481,7 @@
 
 .commit-details-popover__chip {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--font-size-xxs);
   padding: 2px 6px;
   border-radius: var(--radius-md);
   background: var(--bg-elevated);
