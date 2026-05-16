@@ -43,6 +43,14 @@ export type ThemeBundle = {
 export type ThemeDefinition = {
     name: string;
     mode: "light" | "dark";
+    font: {
+        uiFamily: string;
+        monoFamily: string;
+        regularWeight: string;
+        mediumWeight: string;
+        semiboldWeight: string;
+        boldWeight: string;
+    };
     background: {
         base: string;
         surface: string;

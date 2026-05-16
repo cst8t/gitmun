@@ -1,6 +1,17 @@
 name = "Gitmun Dark"
 mode = "dark"
 
+[font]
+# "default" uses the bundled Inter UI font and JetBrains Mono code font.
+# Set a family name here to use a font installed on your system.
+# Weight defaults are 400, 500, 600, and 700.
+uiFamily = "default"
+monoFamily = "default"
+regularWeight = "default"
+mediumWeight = "default"
+semiboldWeight = "default"
+boldWeight = "default"
+
 [background]
 base = "#0f1117"
 surface = "#171a22"

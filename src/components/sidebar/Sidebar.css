@@ -27,7 +27,7 @@
   border: none;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0 4px;
@@ -83,14 +83,14 @@
 
 .sidebar__branch--current .sidebar__branch-name {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .sidebar__branch-name {
   display: block;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,7 +129,7 @@
   padding: 2px 8px;
   font-size: var(--font-size-xxs);
   font-family: var(--font-ui);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   background: var(--accent-dim);
   color: var(--accent);
   border: 1px solid transparent;
@@ -155,7 +155,7 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
@@ -177,7 +177,7 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
@@ -199,7 +199,7 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
@@ -287,7 +287,7 @@
   padding: 2px 6px;
   font-size: var(--font-size-xxs);
   font-family: var(--font-ui);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   background: var(--bg-elevated);
   color: var(--text-secondary);
   border: 1px solid var(--border);

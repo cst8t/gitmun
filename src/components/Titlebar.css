@@ -22,7 +22,7 @@
 }
 
 .titlebar__name {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-lg);
   letter-spacing: -0.01em;
 }
@@ -46,7 +46,7 @@
 }
 
 .titlebar__repo-name {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
 }
 
@@ -60,7 +60,7 @@
   margin-left: 8px;
   cursor: default;
   color: var(--accent);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
 }
@@ -86,7 +86,7 @@
   color: var(--text-secondary);
   cursor: pointer;
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   transition: all 0.15s;
   white-space: nowrap;
   min-width: 0;
@@ -129,7 +129,7 @@
   background: var(--accent);
   color: var(--bg);
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   padding: 0 5px;
   border-radius: 10px;
   line-height: 16px;
@@ -209,7 +209,7 @@
   padding: 5px 10px;
   border-radius: var(--radius-lg);
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .titlebar__open-dropdown {
@@ -277,7 +277,7 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all 0.15s;

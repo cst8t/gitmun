@@ -61,7 +61,7 @@
 
 .divergent-pull-dialog__option-title {
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .divergent-pull-dialog__option-copy {

@@ -82,12 +82,20 @@ fn initial_theme_injection_script(
     .replace("__GITMUN_DARK_BACKGROUND__", dark_background)
     .replace("__GITMUN_LIGHT_BACKGROUND__", light_background)
     .replace("__GITMUN_SYSTEM_THEME__", system_theme)
-    .replace("__GITMUN_THEME_CSS__", theme_css)
+    .replace("__GITMUN_THEME_CSS__", &js_string_value(theme_css))
     .replace("__GITMUN_TEXT_SCALE__", &settings_text_scale(text_scale))
 }
 
 fn settings_text_scale(text_scale: f64) -> String {
     crate::git::types::Settings::normalised_ui_text_scale(text_scale).to_string()
+}
+
+fn js_string_value(value: &str) -> String {
+    value
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
 }
 
 fn centred_sub_window_position(

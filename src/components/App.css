@@ -52,7 +52,7 @@
   color: var(--text-muted);
   cursor: pointer;
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   transition: background 0.15s, color 0.15s;
 }
 

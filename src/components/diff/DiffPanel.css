@@ -23,7 +23,7 @@
 .diff-panel__filename {
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -154,7 +154,7 @@
   background: var(--bg-hover);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   padding: 3px 8px;
 }
 
@@ -197,7 +197,7 @@
   text-align: center;
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   flex-shrink: 0;
 }
 
@@ -275,7 +275,7 @@
   padding: 2px 8px;
   cursor: pointer;
   font-size: var(--font-size-xxs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   display: flex;
   align-items: center;
   gap: 4px;
@@ -417,7 +417,7 @@
 
 .commit-details-popover__label {
   font-size: var(--font-size-xxs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;

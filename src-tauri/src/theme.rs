@@ -5,6 +5,8 @@ use tauri::{Manager, Theme, window::Color};
 
 const LIGHT_THEME: &str = include_str!("../themes/light.toml");
 const DARK_THEME: &str = include_str!("../themes/dark.toml");
+const DEFAULT_UI_FONT: &str = "'Inter', sans-serif";
+const DEFAULT_MONO_FONT: &str = "'JetBrains Mono', monospace";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -18,6 +20,8 @@ pub struct ThemeBundle {
 pub struct ThemeDefinition {
     pub name: String,
     pub mode: String,
+    #[serde(default = "default_font_tokens")]
+    pub font: FontTokens,
     pub background: BackgroundTokens,
     pub border: BorderTokens,
     pub text: TextTokens,
@@ -25,6 +29,28 @@ pub struct ThemeDefinition {
     pub semantic: SemanticTokens,
     pub diff: DiffTokens,
     pub shadow: ShadowTokens,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FontTokens {
+    pub ui_family: String,
+    pub mono_family: String,
+    pub regular_weight: String,
+    pub medium_weight: String,
+    pub semibold_weight: String,
+    pub bold_weight: String,
+}
+
+fn default_font_tokens() -> FontTokens {
+    FontTokens {
+        ui_family: "default".to_string(),
+        mono_family: "default".to_string(),
+        regular_weight: "default".to_string(),
+        medium_weight: "default".to_string(),
+        semibold_weight: "default".to_string(),
+        bold_weight: "default".to_string(),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -152,6 +178,30 @@ pub fn background_value_for_theme_name(app: &tauri::AppHandle, theme_name: &str)
 
 pub fn css_variables(theme: &ThemeDefinition) -> String {
     [
+        (
+            "--font-ui",
+            resolved_font_family(&theme.font.ui_family, DEFAULT_UI_FONT),
+        ),
+        (
+            "--font-mono",
+            resolved_font_family(&theme.font.mono_family, DEFAULT_MONO_FONT),
+        ),
+        (
+            "--font-weight-regular",
+            resolved_font_weight(&theme.font.regular_weight, "400"),
+        ),
+        (
+            "--font-weight-medium",
+            resolved_font_weight(&theme.font.medium_weight, "500"),
+        ),
+        (
+            "--font-weight-semibold",
+            resolved_font_weight(&theme.font.semibold_weight, "600"),
+        ),
+        (
+            "--font-weight-bold",
+            resolved_font_weight(&theme.font.bold_weight, "700"),
+        ),
         ("--bg", &theme.background.base),
         ("--bg-surface", &theme.background.surface),
         ("--bg-elevated", &theme.background.elevated),
@@ -287,6 +337,23 @@ fn validate_theme(theme: &ThemeDefinition, expected_mode: &str) -> Result<(), St
         }
     }
 
+    for value in [&theme.font.ui_family, &theme.font.mono_family] {
+        if !is_font_family(value) {
+            return Err(format!("Invalid font family value: {value}"));
+        }
+    }
+
+    for value in [
+        &theme.font.regular_weight,
+        &theme.font.medium_weight,
+        &theme.font.semibold_weight,
+        &theme.font.bold_weight,
+    ] {
+        if !is_font_weight(value) {
+            return Err(format!("Invalid font weight value: {value}"));
+        }
+    }
+
     for value in [&theme.shadow.popover, &theme.shadow.dialog] {
         if !is_css_shadow(value) {
             return Err(format!("Invalid shadow value: {value}"));
@@ -294,6 +361,50 @@ fn validate_theme(theme: &ThemeDefinition, expected_mode: &str) -> Result<(), St
     }
 
     Ok(())
+}
+
+fn resolved_font_family<'a>(value: &'a str, default_value: &'a str) -> &'a str {
+    if value.trim() == "default" {
+        default_value
+    } else {
+        value
+    }
+}
+
+fn resolved_font_weight<'a>(value: &'a str, default_value: &'a str) -> &'a str {
+    if value.trim() == "default" {
+        default_value
+    } else {
+        value
+    }
+}
+
+fn is_font_family(value: &str) -> bool {
+    let trimmed = value.trim();
+    !trimmed.is_empty()
+        && !trimmed.contains(';')
+        && !trimmed.contains('{')
+        && !trimmed.contains('}')
+        && !trimmed.contains('<')
+        && !trimmed.contains('>')
+        && !trimmed.contains('@')
+        && !trimmed.contains('\n')
+        && !trimmed.contains('\r')
+        && !trimmed.to_ascii_lowercase().contains("url(")
+        && !trimmed.to_ascii_lowercase().contains("var(")
+        && trimmed.chars().all(|c| {
+            c.is_ascii_alphanumeric()
+                || c.is_ascii_whitespace()
+                || matches!(c, ',' | '-' | '_' | '\'' | '"')
+        })
+}
+
+fn is_font_weight(value: &str) -> bool {
+    let trimmed = value.trim();
+    matches!(trimmed, "default" | "normal" | "bold")
+        || trimmed
+            .parse::<u16>()
+            .is_ok_and(|weight| (100..=900).contains(&weight) && weight % 100 == 0)
 }
 
 fn is_css_colour(value: &str) -> bool {
@@ -386,5 +497,47 @@ mod tests {
         let mut theme = fallback_light_theme();
         theme.shadow.dialog = "0 0 0 red; display:none".to_string();
         assert!(validate_theme(&theme, "light").is_err());
+    }
+
+    #[test]
+    fn validates_quoted_font_family() {
+        let mut theme = fallback_light_theme();
+        theme.font.ui_family = "'Fake UI Font', sans-serif".to_string();
+        theme.font.mono_family = "\"Fake Mono Font\", monospace".to_string();
+        assert!(validate_theme(&theme, "light").is_ok());
+    }
+
+    #[test]
+    fn validates_font_weights() {
+        let mut theme = fallback_light_theme();
+        theme.font.regular_weight = "normal".to_string();
+        theme.font.medium_weight = "500".to_string();
+        theme.font.semibold_weight = "600".to_string();
+        theme.font.bold_weight = "bold".to_string();
+        assert!(validate_theme(&theme, "light").is_ok());
+    }
+
+    #[test]
+    fn rejects_css_injection_in_font_family() {
+        let mut theme = fallback_light_theme();
+        theme.font.ui_family = "Inter; display:none".to_string();
+        assert!(validate_theme(&theme, "light").is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_font_weight() {
+        let mut theme = fallback_light_theme();
+        theme.font.medium_weight = "550".to_string();
+        assert!(validate_theme(&theme, "light").is_err());
+    }
+
+    #[test]
+    fn missing_font_section_defaults() {
+        let contents = LIGHT_THEME.replace(
+            "[font]\nuiFamily = \"default\"\nmonoFamily = \"default\"\nregularWeight = \"default\"\nmediumWeight = \"default\"\nsemiboldWeight = \"default\"\nboldWeight = \"default\"\n\n",
+            "",
+        );
+        let theme = parse_theme(&contents, "light").unwrap();
+        assert_eq!(theme.font.ui_family, "default");
     }
 }

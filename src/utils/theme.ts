@@ -3,6 +3,9 @@ import type { ThemeBundle, ThemeDefinition, ThemeMode } from "../types";
 
 export type ResolvedTheme = "light" | "dark";
 
+const DEFAULT_UI_FONT = "'Inter', sans-serif";
+const DEFAULT_MONO_FONT = "'JetBrains Mono', monospace";
+
 export async function resolveThemeMode(mode: ThemeMode): Promise<ResolvedTheme> {
     if (mode === "Light") return "light";
     if (mode === "Dark") return "dark";
@@ -30,6 +33,12 @@ export async function applyThemeMode(mode: ThemeMode): Promise<ResolvedTheme> {
 function applyThemeDefinition(theme: ThemeDefinition) {
     const root = document.documentElement;
     const values: Array<[string, string]> = [
+        ["--font-ui", resolveThemeValue(theme.font.uiFamily, DEFAULT_UI_FONT)],
+        ["--font-mono", resolveThemeValue(theme.font.monoFamily, DEFAULT_MONO_FONT)],
+        ["--font-weight-regular", resolveThemeValue(theme.font.regularWeight, "400")],
+        ["--font-weight-medium", resolveThemeValue(theme.font.mediumWeight, "500")],
+        ["--font-weight-semibold", resolveThemeValue(theme.font.semiboldWeight, "600")],
+        ["--font-weight-bold", resolveThemeValue(theme.font.boldWeight, "700")],
         ["--bg", theme.background.base],
         ["--bg-surface", theme.background.surface],
         ["--bg-elevated", theme.background.elevated],
@@ -66,4 +75,8 @@ function applyThemeDefinition(theme: ThemeDefinition) {
     for (const [key, value] of values) {
         root.style.setProperty(key, value);
     }
+}
+
+function resolveThemeValue(value: string, defaultValue: string): string {
+    return value.trim() === "default" ? defaultValue : value;
 }

@@ -65,8 +65,12 @@
   --status-bar-height: 28px;
 
   /* Typography */
-  --font-ui: 'Inter', 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Ubuntu', 'Cantarell', 'Noto Sans', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-ui: 'Inter', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
   --text-scale: 1;
   --font-size-xl: calc(20px * var(--text-scale));
   --font-size-lg: calc(14px * var(--text-scale));

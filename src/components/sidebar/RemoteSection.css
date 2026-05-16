@@ -37,7 +37,7 @@
 
 .remote-section__name {
   font-size: var(--font-size-sm);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text);
   flex-shrink: 0;
 }
@@ -95,7 +95,7 @@
 
 .remote-section__upstream-badge {
   font-size: var(--font-size-xxs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--accent);
   background: var(--accent-dim);
   border: 1px solid var(--selection-border);

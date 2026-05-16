@@ -31,7 +31,7 @@
   border: none;
   color: var(--text-muted);
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   padding: 0 18px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
@@ -49,7 +49,7 @@
   background: var(--yellow);
   color: var(--bg);
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   padding: 0 5px;
   border-radius: 10px;
   line-height: 16px;
@@ -91,7 +91,7 @@
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--text-muted);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .staging__section-action {
@@ -152,7 +152,7 @@
 
 .file-row__badge {
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.05em;
   padding: 1px 6px;
   border-radius: 3px;
@@ -162,7 +162,7 @@
 
 .file-row__path {
   flex: 1;
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-size-sm);
   color: var(--text-secondary-strong);
   white-space: nowrap;
@@ -238,7 +238,7 @@
 }
 
 .submodule-row__path {
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
   font-size: var(--font-size-sm);
   color: var(--text-primary);
   overflow: hidden;
@@ -264,7 +264,7 @@
   border-radius: 999px;
   padding: 2px 7px;
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   background: var(--bg-hover);
   color: var(--text-secondary);
 }
@@ -388,7 +388,7 @@
   border: none;
   border-radius: var(--radius-lg);
   padding: 8px 0;
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
   cursor: pointer;
   font-family: var(--font-ui);
@@ -551,7 +551,7 @@
   align-items: center;
   justify-content: center;
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   font-family: var(--font-mono);
   flex-shrink: 0;
   margin-top: 1px;
@@ -582,7 +582,7 @@
 
 .log-view__message {
   font-size: var(--font-size-base);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -605,7 +605,7 @@
 .log-view__marker {
   font-size: var(--font-size-xxs);
   font-family: var(--font-mono);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   letter-spacing: 0.03em;
   padding: 1px 6px;
   border-radius: 999px;
@@ -629,7 +629,7 @@
   align-items: center;
   gap: 3px;
   font-size: var(--font-size-xxs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   padding: 1px 6px 1px 4px;
   border-radius: 999px;
   border: 1px solid transparent;
@@ -721,7 +721,7 @@
   align-items: flex-start;
   gap: 7px;
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--text-primary);
   padding-right: 18px;
   line-height: 1.4;
@@ -745,7 +745,7 @@
 
 .sig-popover__label {
   font-size: var(--font-size-xxs);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -800,7 +800,7 @@
   padding: 3px 10px;
   border-radius: 4px;
   font-size: var(--font-size-xs);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   border: 1px solid transparent;
   transition: opacity 0.15s;
@@ -857,7 +857,7 @@
 .staging__conflict-badge {
   flex-shrink: 0;
   font-size: var(--font-size-xxs);
-  font-weight: 700;
+  font-weight: var(--font-weight-bold);
   color: #f59e0b;
   background: rgba(245, 158, 11, 0.15);
   border: 1px solid rgba(245, 158, 11, 0.3);

@@ -18,7 +18,7 @@
 }
 
 .result-log__title {
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
 }
 

@@ -26,7 +26,7 @@
 
 .no-diff-tool-dialog__title {
   font-size: var(--font-size-lg);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text);
 }
 
@@ -38,7 +38,7 @@
 
 .no-diff-tool-dialog__body strong {
   color: var(--text);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .no-diff-tool-dialog__suppress {
@@ -65,7 +65,7 @@
 
 .no-diff-tool-dialog__btn {
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-family: var(--font-ui);
   padding: 6px 14px;
   border-radius: 6px;
