@@ -97,8 +97,8 @@
   font-size: var(--font-size-xxs);
   font-weight: 600;
   color: var(--accent);
-  background: rgba(108, 156, 252, 0.14);
-  border: 1px solid rgba(108, 156, 252, 0.3);
+  background: var(--accent-dim);
+  border: 1px solid var(--selection-border);
   border-radius: 3px;
   padding: 0 4px;
   flex-shrink: 0;

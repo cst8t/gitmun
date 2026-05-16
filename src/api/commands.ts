@@ -46,6 +46,7 @@ import type {
     TagInfo,
     BackendMode,
     ThemeMode,
+    ThemeBundle,
     UiTextScale,
     NumstatResult,
     SetIdentityRequest,
@@ -366,6 +367,10 @@ export function pruneRemote(request: PruneRemoteRequest): Promise<OperationResul
 
 export function getSettings(): Promise<Settings> {
     return invoke<Settings>("get_settings");
+}
+
+export function getThemeBundle(): Promise<ThemeBundle> {
+    return invoke<ThemeBundle>("get_theme_bundle");
 }
 
 export function setBackendMode(mode: BackendMode): Promise<Settings> {

@@ -228,7 +228,7 @@
   max-width: min(420px, calc(100vw - 16px));
   box-sizing: border-box;
   z-index: 100;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-popover);
 }
 
 .titlebar__open-menu-item {
@@ -295,7 +295,7 @@
 
 .titlebar__avatar--active {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--text-on-accent);
   border: none;
 }
 

@@ -10,8 +10,9 @@ import {useToast} from "../hooks/useToast";
 import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {AppAvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction, ThemeMode} from "../types";
+import type {AppAvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction} from "../types";
 import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
+import {applyThemeMode} from "../utils/theme";
 import {applyUiTextScale} from "../utils/uiTextScale";
 import "./App.css";
 
@@ -32,18 +33,6 @@ const MIN_CENTRE_PANE_WIDTH = 420;
 const SPLITTER_WIDTH = 6;
 const LEFT_PANE_TOGGLE_WIDTH = 22;
 const SPLITTER_SPACE = 12;
-
-async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
-    if (mode === "Light") return "light";
-    if (mode === "Dark") return "dark";
-    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-    try {
-        const hint = await api.getSystemThemeHint();
-        return hint === "dark" ? "dark" : "light";
-    } catch {
-        return "dark";
-    }
-}
 
 function isValidPaneWidth(value: number): boolean {
     return Number.isFinite(value) && value > 0;
@@ -246,7 +235,7 @@ export function App() {
                 }
                 const settings = await api.getSettings();
                 if (cancelled) return;
-                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                await applyThemeMode(settings.themeMode);
                 applyUiTextScale(settings.uiTextScale);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const leftRatio = parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY));
@@ -382,7 +371,7 @@ export function App() {
         (async () => {
             const fn = await listen<Settings>("settings-updated", async (event) => {
                 const settings = event.payload;
-                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                await applyThemeMode(settings.themeMode);
                 applyUiTextScale(settings.uiTextScale);
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
@@ -417,7 +406,7 @@ export function App() {
         (async () => {
             const fn = await listen("instance-settings-updated", async () => {
                 const settings = await api.getSettings();
-                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                await applyThemeMode(settings.themeMode);
                 applyUiTextScale(settings.uiTextScale);
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));

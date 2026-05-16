@@ -3,11 +3,6 @@ use tauri::webview::NewWindowResponse;
 use tauri::{Manager, Theme, window::Color};
 use tauri_plugin_shell::ShellExt;
 
-const LIGHT_WINDOW_BACKGROUND_COLOUR: Color = Color(244, 246, 251, 255);
-const DARK_WINDOW_BACKGROUND_COLOUR: Color = Color(15, 17, 23, 255);
-const LIGHT_WINDOW_BACKGROUND_HEX: &str = "#f4f6fb";
-const DARK_WINDOW_BACKGROUND_HEX: &str = "#0f1117";
-
 fn resolve_system_theme(app: &tauri::AppHandle) -> Theme {
     if let Some(window) = app.get_webview_window("main") {
         if let Ok(theme) = window.theme() {
@@ -21,18 +16,17 @@ pub(crate) fn background_colour_for_theme_mode(
     app: &tauri::AppHandle,
     theme_mode: &ThemeMode,
 ) -> Color {
-    match theme_mode {
-        ThemeMode::Light => LIGHT_WINDOW_BACKGROUND_COLOUR,
-        ThemeMode::Dark => DARK_WINDOW_BACKGROUND_COLOUR,
-        ThemeMode::System => match resolve_system_theme(app) {
-            Theme::Light => LIGHT_WINDOW_BACKGROUND_COLOUR,
-            Theme::Dark => DARK_WINDOW_BACKGROUND_COLOUR,
-            _ => DARK_WINDOW_BACKGROUND_COLOUR,
-        },
-    }
+    let system_theme = resolve_system_theme(app);
+    crate::theme::background_colour_for_theme_mode(app, theme_mode, system_theme)
 }
 
-fn initial_theme_injection_script(system_theme: &str, text_scale: f64) -> String {
+fn initial_theme_injection_script(
+    system_theme: &str,
+    text_scale: f64,
+    theme_css: &str,
+    light_background: &str,
+    dark_background: &str,
+) -> String {
     r#"
       (() => {
         try {
@@ -47,6 +41,15 @@ fn initial_theme_injection_script(system_theme: &str, text_scale: f64) -> String
           const html = document.documentElement;
           html.dataset.theme = theme;
           html.style.background = background;
+          "__GITMUN_THEME_CSS__".split(";").forEach((declaration) => {
+            if (!declaration) return;
+            const separator = declaration.indexOf(":");
+            if (separator <= 0) return;
+            html.style.setProperty(
+              declaration.slice(0, separator),
+              declaration.slice(separator + 1)
+            );
+          });
           html.style.setProperty("--text-scale", "__GITMUN_TEXT_SCALE__");
           if (document.body) {
             document.body.style.background = background;
@@ -76,9 +79,10 @@ fn initial_theme_injection_script(system_theme: &str, text_scale: f64) -> String
         } catch (_) {}
       })();
     "#
-    .replace("__GITMUN_DARK_BACKGROUND__", DARK_WINDOW_BACKGROUND_HEX)
-    .replace("__GITMUN_LIGHT_BACKGROUND__", LIGHT_WINDOW_BACKGROUND_HEX)
+    .replace("__GITMUN_DARK_BACKGROUND__", dark_background)
+    .replace("__GITMUN_LIGHT_BACKGROUND__", light_background)
     .replace("__GITMUN_SYSTEM_THEME__", system_theme)
+    .replace("__GITMUN_THEME_CSS__", theme_css)
     .replace("__GITMUN_TEXT_SCALE__", &settings_text_scale(text_scale))
 }
 
@@ -159,6 +163,14 @@ pub async fn open_sub_window(
             _ => "dark",
         }
     };
+    let resolved_theme = match settings.theme_mode {
+        ThemeMode::Light => "light",
+        ThemeMode::Dark => "dark",
+        ThemeMode::System => system_theme,
+    };
+    let theme_css = crate::theme::css_variables_for_theme_name(&app, resolved_theme);
+    let light_background = crate::theme::background_value_for_theme_name(&app, "light");
+    let dark_background = crate::theme::background_value_for_theme_name(&app, "dark");
 
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.set_background_color(Some(background_colour));
@@ -195,6 +207,9 @@ pub async fn open_sub_window(
             .initialization_script(initial_theme_injection_script(
                 system_theme,
                 settings.ui_text_scale,
+                &theme_css,
+                &light_background,
+                &dark_background,
             ));
 
     if label == "attributions" {

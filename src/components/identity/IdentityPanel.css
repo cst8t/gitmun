@@ -15,7 +15,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
   z-index: 51;
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-popover);
   animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
   overflow: hidden;
   max-height: calc(100vh - 100px);
@@ -125,8 +125,8 @@
 }
 
 .identity-detail__scope--local {
-  background: rgba(108, 156, 252, 0.08);
-  border: 1px solid rgba(108, 156, 252, 0.15);
+  background: var(--accent-dim);
+  border: 1px solid var(--selection-border);
   color: var(--accent);
 }
 
@@ -140,7 +140,7 @@
   margin-left: auto;
   font-size: var(--font-size-micro);
   font-weight: 700;
-  background: rgba(108, 156, 252, 0.15);
+  background: var(--accent-dim);
   color: var(--accent);
   padding: 1px 6px;
   border-radius: 3px;
@@ -204,7 +204,7 @@
   margin-left: auto;
   font-size: var(--font-size-micro);
   font-weight: 700;
-  background: rgba(248, 113, 113, 0.12);
+  background: var(--red-dim);
   color: var(--red);
   padding: 1px 6px;
   border-radius: 3px;
@@ -212,7 +212,7 @@
 }
 
 .identity-detail__signing-badge--enabled {
-  background: rgba(52, 211, 153, 0.12);
+  background: var(--green-dim);
   color: var(--green);
 }
 
@@ -295,7 +295,7 @@
 .identity-detail__input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.1);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .identity-detail__input:disabled {

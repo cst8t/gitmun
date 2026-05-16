@@ -145,7 +145,7 @@
   flex-shrink: 0;
 }
 
-.file-row--selected { background: var(--bg-hover); }
+.file-row--selected { background: var(--selection-bg); }
 .file-row--hovered { background: var(--bg-elevated); }
 
 .file-row__icon { display: flex; flex-shrink: 0; }
@@ -194,7 +194,7 @@
 }
 
 .file-row__action-btn--red {
-  background: rgba(248, 113, 113, 0.1);
+  background: var(--red-dim);
   color: var(--red);
 }
 
@@ -326,7 +326,7 @@
 
 .commit-box__checkbox--active {
   border-color: var(--accent);
-  background: var(--accent-dim);
+  background: var(--selection-bg);
   color: var(--accent);
 }
 
@@ -354,7 +354,7 @@
 }
 
 .commit-box__textarea:focus { border-color: var(--accent); }
-.commit-box__textarea--warn { border-color: rgba(248, 113, 113, 0.3); }
+.commit-box__textarea--warn { border-color: var(--diff-del-border); }
 
 .commit-box__hints {
   display: flex;
@@ -441,7 +441,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 4px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  box-shadow: var(--shadow-popover);
   z-index: 20;
 }
 
@@ -480,8 +480,8 @@
   margin: 6px 10px 8px;
   padding: 7px 10px;
   border-radius: var(--radius-md);
-  background: rgba(108, 156, 252, 0.12);
-  border: 1px solid rgba(108, 156, 252, 0.28);
+  background: var(--selection-bg);
+  border: 1px solid var(--selection-border);
   color: var(--text-secondary);
   font-size: var(--font-size-xs);
 }
@@ -525,7 +525,7 @@
 }
 
 .log-view__scope-btn--active {
-  color: var(--bg);
+  color: var(--text-on-accent);
   background: var(--accent);
 }
 
@@ -540,7 +540,7 @@
 }
 
 .log-view__row:hover { background: var(--bg-elevated); }
-.log-view__row--selected { background: var(--bg-hover); border-left-color: var(--accent); }
+.log-view__row--selected { background: var(--selection-bg); border-left-color: var(--accent); }
 
 .log-view__avatar {
   position: relative;
@@ -614,14 +614,14 @@
 
 .log-view__marker--head {
   color: var(--green);
-  background: rgba(52, 211, 153, 0.14);
-  border-color: rgba(52, 211, 153, 0.3);
+  background: var(--green-dim);
+  border-color: var(--diff-add-border);
 }
 
 .log-view__marker--upstream {
   color: var(--accent);
-  background: rgba(108, 156, 252, 0.14);
-  border-color: rgba(108, 156, 252, 0.3);
+  background: var(--accent-dim);
+  border-color: var(--selection-border);
 }
 
 .log-view__sig-badge {
@@ -641,8 +641,8 @@
 
 .log-view__sig-badge--verified {
   color: var(--green);
-  background: rgba(52, 211, 153, 0.12);
-  border-color: rgba(52, 211, 153, 0.3);
+  background: var(--green-dim);
+  border-color: var(--diff-add-border);
 }
 
 .log-view__sig-badge--unknown {
@@ -653,8 +653,8 @@
 
 .log-view__sig-badge--bad {
   color: var(--red);
-  background: rgba(248, 113, 113, 0.12);
-  border-color: rgba(248, 113, 113, 0.3);
+  background: var(--red-dim);
+  border-color: var(--diff-del-border);
 }
 
 .log-view__sig-icon {
@@ -688,7 +688,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-xl);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.45);
+  box-shadow: var(--shadow-popover);
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
@@ -775,8 +775,8 @@
 }
 
 .merge-banner--resolved {
-  background: rgba(52, 211, 153, 0.1);
-  border-bottom-color: rgba(52, 211, 153, 0.25);
+  background: var(--green-dim);
+  border-bottom-color: var(--diff-add-border);
 }
 
 .merge-banner__text {
@@ -812,18 +812,18 @@
 }
 
 .merge-banner__btn--abort {
-  background: rgba(248, 113, 113, 0.15);
-  border-color: rgba(248, 113, 113, 0.3);
+  background: var(--red-dim);
+  border-color: var(--diff-del-border);
   color: var(--red);
 }
 
 .merge-banner__btn--abort:hover:not(:disabled) {
-  background: rgba(248, 113, 113, 0.25);
+  background: var(--diff-del-bg);
 }
 
 .merge-banner__btn--commit {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .merge-banner__btn--commit:hover:not(:disabled) {
@@ -851,7 +851,7 @@
 }
 
 .staging__conflict-row--selected {
-  background: var(--bg-hover);
+  background: var(--selection-bg);
 }
 
 .staging__conflict-badge {
@@ -910,13 +910,13 @@
 }
 
 .staging__conflict-btn--ours {
-  background: rgba(108, 156, 252, 0.12);
-  border-color: rgba(108, 156, 252, 0.3);
+  background: var(--accent-dim);
+  border-color: var(--selection-border);
   color: var(--accent);
 }
 
 .staging__conflict-btn--ours:hover {
-  background: rgba(108, 156, 252, 0.22);
+  background: var(--selection-bg);
 }
 
 .staging__conflict-btn--theirs {
@@ -930,11 +930,11 @@
 }
 
 .staging__conflict-btn--resolve {
-  background: rgba(52, 211, 153, 0.15);
-  border-color: rgba(52, 211, 153, 0.3);
+  background: var(--green-dim);
+  border-color: var(--diff-add-border);
   color: var(--green);
 }
 
 .staging__conflict-btn--resolve:hover {
-  background: rgba(52, 211, 153, 0.25);
+  background: var(--diff-add-bg);
 }

@@ -35,6 +35,61 @@ export type Settings = {
     gitExecutablePath: string;
 };
 
+export type ThemeBundle = {
+    light: ThemeDefinition;
+    dark: ThemeDefinition;
+};
+
+export type ThemeDefinition = {
+    name: string;
+    mode: "light" | "dark";
+    background: {
+        base: string;
+        surface: string;
+        elevated: string;
+        hover: string;
+        subtle: string;
+    };
+    border: {
+        default: string;
+        subtle: string;
+    };
+    text: {
+        primary: string;
+        secondaryStrong: string;
+        secondary: string;
+        muted: string;
+        onAccent: string;
+    };
+    accent: {
+        default: string;
+        hover: string;
+        dim: string;
+        selectionBg: string;
+        selectionBorder: string;
+        focusRing: string;
+    };
+    semantic: {
+        green: string;
+        greenDim: string;
+        red: string;
+        redDim: string;
+        yellow: string;
+    };
+    diff: {
+        addBg: string;
+        addText: string;
+        addBorder: string;
+        delBg: string;
+        delText: string;
+        delBorder: string;
+    };
+    shadow: {
+        popover: string;
+        dialog: string;
+    };
+};
+
 export type AvailableUpdate = {
     currentVersion: string;
     version: string;

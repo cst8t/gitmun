@@ -24,13 +24,13 @@ import {
     getConfigFolderPath,
     getGlobalDiffToolPath,
     getGlobalGpgProgramPath,
-    getSystemThemeHint,
     openResultLogWindow,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
     setUpdateEndpoint,
 } from "../../api/commands";
 import {CloseIcon, FileIcon, FolderIcon} from "../icons";
+import {applyThemeMode} from "../../utils/theme";
 import {UI_TEXT_SCALE_VALUES, applyUiTextScale, normaliseUiTextScale} from "../../utils/uiTextScale";
 import "./SettingsWindow.css";
 
@@ -57,18 +57,6 @@ function supportedDiffTools(os: string): ExternalDiffTool[] {
 
 function requiresWindowsDiffToolPath(tool: ExternalDiffTool): boolean {
     return tool === "Meld" || tool === "WinMerge";
-}
-
-async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
-    if (mode === "Light") return "light";
-    if (mode === "Dark") return "dark";
-    if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-    try {
-        const hint = await getSystemThemeHint();
-        return hint === "dark" ? "dark" : "light";
-    } catch {
-        return "dark";
-    }
 }
 
 function safePlatform(): string {
@@ -319,7 +307,7 @@ export function SettingsWindow() {
                 setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
                 setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
                 setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
-                document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+                await applyThemeMode(settings.themeMode);
                 applyUiTextScale(settings.uiTextScale);
 
                 const cfgPath = await getConfigFilePath();
@@ -466,7 +454,7 @@ export function SettingsWindow() {
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
             localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
             localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
-            document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+            await applyThemeMode(settings.themeMode);
             applyUiTextScale(settings.uiTextScale);
 
             if (isWindows && requiresWindowsDiffToolPath(externalDiffTool)) {

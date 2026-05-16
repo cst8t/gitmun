@@ -4,6 +4,7 @@ mod config_file;
 pub mod git;
 mod instance_coordinator;
 pub mod shell;
+mod theme;
 mod window_manager;
 
 use git::handler::GitService;
@@ -1147,6 +1148,7 @@ pub fn run() {
             commands::settings::set_backend_mode,
             commands::settings::set_show_result_log,
             commands::settings::set_theme_mode,
+            commands::settings::get_theme_bundle,
             commands::settings::set_ui_text_scale,
             commands::settings::set_wrap_diff_lines,
             commands::settings::set_panel_layout,

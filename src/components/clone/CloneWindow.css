@@ -78,7 +78,7 @@
 
 .clone-window__input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.15);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .clone-window__inline-field {
@@ -133,11 +133,11 @@
 
 .clone-window__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .clone-window__btn--primary:hover {
-  background: #5a8ae8;
+  background: var(--accent-hover);
 }
 
 .clone-window__btn--primary:disabled {
@@ -157,7 +157,7 @@
 
 .clone-window__btn--danger {
   background: var(--red, #e05c5c);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .clone-window__btn--danger:hover {
@@ -203,7 +203,7 @@
   width: 10px;
   height: 10px;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
+  border-top-color: var(--text-on-accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin-right: 6px;

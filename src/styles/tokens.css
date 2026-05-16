@@ -2,26 +2,31 @@
 :root {
   /* Background */
   --bg: #0f1117;
-  --bg-surface: #161921;
-  --bg-elevated: #1c1f2b;
-  --bg-hover: #222638;
-  --bg-subtle: #1c1f2b;
+  --bg-surface: #171a22;
+  --bg-elevated: #1d2230;
+  --bg-hover: #252b3a;
+  --bg-subtle: #1b1f2a;
   --hover: var(--bg-hover);
 
   /* Borders */
-  --border: #2a2e3e;
-  --border-subtle: #1e2233;
+  --border: #2b3142;
+  --border-subtle: #202636;
 
   /* Text */
-  --text-primary: #e2e4eb;
-  --text-secondary-strong: #adb1c2;
-  --text-secondary: #8b8fa3;
-  --text-muted: #555972;
+  --text-primary: #e5e7ee;
+  --text-secondary-strong: #b8bdcc;
+  --text-secondary: #9298aa;
+  --text-muted: #646b80;
   --text: var(--text-primary);
 
   /* Accent */
-  --accent: #6c9cfc;
-  --accent-dim: rgba(108, 156, 252, 0.12);
+  --accent: #79a7ff;
+  --accent-hover: #8bb4ff;
+  --accent-dim: rgba(121, 167, 255, 0.14);
+  --selection-bg: rgba(121, 167, 255, 0.16);
+  --selection-border: rgba(121, 167, 255, 0.42);
+  --focus-ring: rgba(121, 167, 255, 0.28);
+  --text-on-accent: #0f1117;
 
   /* Semantic */
   --green: #34d399;
@@ -29,6 +34,16 @@
   --red: #f87171;
   --red-dim: rgba(248, 113, 113, 0.06);
   --yellow: #fbbf24;
+  --diff-add-bg: rgba(52, 211, 153, 0.1);
+  --diff-add-text: var(--green);
+  --diff-add-border: rgba(52, 211, 153, 0.25);
+  --diff-del-bg: rgba(248, 113, 113, 0.1);
+  --diff-del-text: var(--red);
+  --diff-del-border: rgba(248, 113, 113, 0.25);
+
+  /* Shadows */
+  --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.6);
 
   /* Toast */
   --toast-success-bg: #065f46;
@@ -71,28 +86,42 @@
 }
 
 :root[data-theme="light"] {
-  --bg: #f4f6fb;
-  --bg-surface: #ffffff;
-  --bg-elevated: #eef2f8;
-  --bg-hover: #e7edf7;
-  --bg-subtle: #eef2f8;
+  --bg: #eceff3;
+  --bg-surface: #f8f9fb;
+  --bg-elevated: #f2f4f7;
+  --bg-hover: #e6eaef;
+  --bg-subtle: #f0f2f5;
 
-  --border: #d8deeb;
-  --border-subtle: #e4e9f2;
+  --border: #c4ccd6;
+  --border-subtle: #d4dbe3;
 
-  --text-primary: #1f2430;
-  --text-secondary-strong: #374151;
-  --text-secondary: #4b5567;
-  --text-muted: #7b8699;
+  --text-primary: #24272d;
+  --text-secondary-strong: #323a45;
+  --text-secondary: #47505c;
+  --text-muted: #5f6874;
 
-  --accent: #2f6df6;
-  --accent-dim: rgba(47, 109, 246, 0.13);
+  --accent: #2b5cc4;
+  --accent-hover: #244da8;
+  --accent-dim: rgba(43, 92, 196, 0.12);
+  --selection-bg: rgba(43, 92, 196, 0.12);
+  --selection-border: rgba(43, 92, 196, 0.34);
+  --focus-ring: rgba(43, 92, 196, 0.22);
+  --text-on-accent: #ffffff;
 
-  --green: #1f9d66;
-  --green-dim: rgba(31, 157, 102, 0.1);
-  --red: #d64545;
-  --red-dim: rgba(214, 69, 69, 0.08);
-  --yellow: #b7791f;
+  --green: #16803a;
+  --green-dim: rgba(22, 128, 58, 0.1);
+  --red: #c2410c;
+  --red-dim: rgba(194, 65, 12, 0.08);
+  --yellow: #9a6700;
+  --diff-add-bg: rgba(22, 128, 58, 0.1);
+  --diff-add-text: var(--green);
+  --diff-add-border: rgba(22, 128, 58, 0.22);
+  --diff-del-bg: rgba(194, 65, 12, 0.1);
+  --diff-del-text: var(--red);
+  --diff-del-border: rgba(194, 65, 12, 0.22);
+
+  --shadow-popover: 0 12px 32px rgba(31, 35, 40, 0.16);
+  --shadow-dialog: 0 24px 60px rgba(31, 35, 40, 0.18);
 
   --toast-success-bg: #dcfce7;
   --toast-success-border: #86efac;
@@ -107,27 +136,41 @@
 
 :root[data-theme="dark"] {
   --bg: #0f1117;
-  --bg-surface: #161921;
-  --bg-elevated: #1c1f2b;
-  --bg-hover: #222638;
-  --bg-subtle: #1c1f2b;
+  --bg-surface: #171a22;
+  --bg-elevated: #1d2230;
+  --bg-hover: #252b3a;
+  --bg-subtle: #1b1f2a;
 
-  --border: #2a2e3e;
-  --border-subtle: #1e2233;
+  --border: #2b3142;
+  --border-subtle: #202636;
 
-  --text-primary: #e2e4eb;
-  --text-secondary-strong: #adb1c2;
-  --text-secondary: #8b8fa3;
-  --text-muted: #555972;
+  --text-primary: #e5e7ee;
+  --text-secondary-strong: #b8bdcc;
+  --text-secondary: #9298aa;
+  --text-muted: #646b80;
 
-  --accent: #6c9cfc;
-  --accent-dim: rgba(108, 156, 252, 0.12);
+  --accent: #79a7ff;
+  --accent-hover: #8bb4ff;
+  --accent-dim: rgba(121, 167, 255, 0.14);
+  --selection-bg: rgba(121, 167, 255, 0.16);
+  --selection-border: rgba(121, 167, 255, 0.42);
+  --focus-ring: rgba(121, 167, 255, 0.28);
+  --text-on-accent: #0f1117;
 
   --green: #34d399;
   --green-dim: rgba(52, 211, 153, 0.08);
   --red: #f87171;
   --red-dim: rgba(248, 113, 113, 0.06);
   --yellow: #fbbf24;
+  --diff-add-bg: rgba(52, 211, 153, 0.1);
+  --diff-add-text: var(--green);
+  --diff-add-border: rgba(52, 211, 153, 0.25);
+  --diff-del-bg: rgba(248, 113, 113, 0.1);
+  --diff-del-text: var(--red);
+  --diff-del-border: rgba(248, 113, 113, 0.25);
+
+  --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.45);
+  --shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.6);
 
   --toast-success-bg: #065f46;
   --toast-success-border: #059669;

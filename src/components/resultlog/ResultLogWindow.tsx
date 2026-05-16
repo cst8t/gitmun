@@ -1,24 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
-import type { Settings, ThemeMode } from "../../types";
+import type { Settings } from "../../types";
 import { clearResultLog, getResultLogEntries, type ResultLogEntry } from "../../utils/resultLog";
+import { applyThemeMode } from "../../utils/theme";
 import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./ResultLogWindow.css";
 
 const THEME_MODE_KEY = "gitmun.themeMode";
-
-async function resolveTheme(mode: ThemeMode): Promise<"light" | "dark"> {
-  if (mode === "Light") return "light";
-  if (mode === "Dark") return "dark";
-  if (window.matchMedia("(prefers-color-scheme: dark)").matches) return "dark";
-  try {
-    const hint = await invoke<string>("get_system_theme_hint");
-    return hint === "dark" ? "dark" : "light";
-  } catch {
-    return "dark";
-  }
-}
 
 function repoLabel(repoPath?: string | null): string | null {
   if (!repoPath) return null;
@@ -39,7 +28,7 @@ export function ResultLogWindow() {
           await invoke("set_theme_mode", { themeMode: persistedTheme });
         }
         const settings = await invoke<Settings>("get_settings");
-        document.documentElement.dataset.theme = await resolveTheme(settings.themeMode);
+        await applyThemeMode(settings.themeMode);
         applyUiTextScale(settings.uiTextScale);
       } catch {
         document.documentElement.dataset.theme = "dark";

@@ -199,7 +199,7 @@
 
 .settings-window__input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.15);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .settings-window__icon-btn {
@@ -224,7 +224,7 @@
 
 .settings-window__select:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.15);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .settings-window__select option {
@@ -355,11 +355,11 @@
 
 .settings-window__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .settings-window__btn--primary:hover {
-  background: #5a8ae8;
+  background: var(--accent-hover);
 }
 
 .settings-window__btn--primary:disabled {

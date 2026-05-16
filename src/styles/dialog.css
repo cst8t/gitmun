@@ -16,7 +16,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-dialog);
   z-index: 201;
   padding: 20px;
   display: flex;
@@ -73,7 +73,7 @@ select.dialog__input {
 .dialog__textarea:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .dialog__input::placeholder,
@@ -121,7 +121,7 @@ select.dialog__input {
 
 .dialog__btn--confirm {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .dialog__btn--confirm:hover:not(.dialog__btn--disabled) {

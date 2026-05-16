@@ -10,6 +10,7 @@ showResultLog = false
 # "System" follows the operating system preference.
 # "Light" uses the light theme.
 # "Dark" uses the dark theme.
+# Edit themes/light.toml and themes/dark.toml in the config folder to customise colours.
 themeMode = "System"
 
 # UI text scale.

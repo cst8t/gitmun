@@ -209,6 +209,11 @@ pub fn set_theme_mode(
 }
 
 #[tauri::command]
+pub fn get_theme_bundle(app: tauri::AppHandle) -> crate::theme::ThemeBundle {
+    crate::theme::load_or_create_theme_bundle(&app)
+}
+
+#[tauri::command]
 pub fn set_ui_text_scale(ui_text_scale: f64, state: tauri::State<'_, AppState>) -> Settings {
     let settings = state.git_service.set_ui_text_scale(ui_text_scale);
     crate::instance_coordinator::broadcast_settings_updated();
