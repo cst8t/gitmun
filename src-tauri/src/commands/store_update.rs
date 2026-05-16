@@ -153,16 +153,6 @@ mod platform {
         Ok(version_string(version))
     }
 
-    async fn store_updates()
-    -> Result<windows::Foundation::Collections::IVectorView<StorePackageUpdate>, String> {
-        let context = StoreContext::GetDefault().map_err(|error| error.to_string())?;
-        context
-            .GetAppAndOptionalStorePackageUpdatesAsync()
-            .map_err(|error| error.to_string())?
-            .await
-            .map_err(|error| error.to_string())
-    }
-
     fn update_status(state: StorePackageUpdateState) -> MicrosoftStoreUpdateStatus {
         if state == StorePackageUpdateState::Completed {
             MicrosoftStoreUpdateStatus::Completed
@@ -182,7 +172,12 @@ mod platform {
     }
 
     pub async fn check() -> Result<Option<MicrosoftStoreUpdate>, String> {
-        let updates = store_updates().await?;
+        let context = StoreContext::GetDefault().map_err(|error| error.to_string())?;
+        let updates = context
+            .GetAppAndOptionalStorePackageUpdatesAsync()
+            .map_err(|error| error.to_string())?
+            .await
+            .map_err(|error| error.to_string())?;
         let package_count = updates.Size().map_err(|error| error.to_string())?;
         if package_count == 0 {
             return Ok(None);
@@ -229,7 +224,7 @@ mod platform {
                     let operation = context
                         .RequestDownloadAndInstallStorePackageUpdatesAsync(updates)
                         .map_err(|error| error.to_string())?;
-                    let mut completion_sender = sender.take().ok_or_else(|| {
+                    let completion_sender = sender.take().ok_or_else(|| {
                         "Microsoft Store update callback was already used.".to_string()
                     })?;
                     operation
@@ -241,9 +236,7 @@ mod platform {
                                     .and_then(|result| result.OverallState())
                                     .map(update_status)
                                     .map_err(|error| error.to_string());
-                                if let Some(sender) = completion_sender.take() {
-                                    let _ = sender.send(result);
-                                }
+                                let _ = completion_sender.send(result);
                                 Ok(())
                             },
                         ))
