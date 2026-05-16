@@ -699,14 +699,17 @@ pub fn set_global_diff_tool(
     let message = match tool {
         ExternalDiffTool::Other => {
             let _ = git_config_global_unset("diff.tool");
-            "Cleared diff.tool from global git config".to_string()
+            let _ = git_config_global_unset("merge.tool");
+            "Cleared diff.tool and merge.tool from global git config".to_string()
         }
         ExternalDiffTool::Meld => {
             #[cfg(windows)]
             {
                 if maybe_set_tool_paths("meld", tool_path.as_deref())? {
                     git_config_global_set("diff.tool", "meld")?;
-                    "Set git global diff.tool=meld (with detected tool path)".to_string()
+                    git_config_global_set("merge.tool", "meld")?;
+                    "Set git global diff.tool=meld and merge.tool=meld (with detected tool path)"
+                        .to_string()
                 } else {
                     return Err(windows_tool_path_message("Meld"));
                 }
@@ -715,32 +718,39 @@ pub fn set_global_diff_tool(
             {
                 let _ = tool_path;
                 git_config_global_set("diff.tool", "meld")?;
-                "Set git global diff.tool=meld".to_string()
+                git_config_global_set("merge.tool", "meld")?;
+                "Set git global diff.tool=meld and merge.tool=meld".to_string()
             }
         }
         ExternalDiffTool::Kompare => {
             git_config_global_set("diff.tool", "kompare")?;
-            "Set git global diff.tool=kompare".to_string()
+            git_config_global_set("merge.tool", "kompare")?;
+            "Set git global diff.tool=kompare and merge.tool=kompare".to_string()
         }
         ExternalDiffTool::WinMerge => {
             if maybe_set_tool_paths("winmerge", tool_path.as_deref())? {
                 git_config_global_set("diff.tool", "winmerge")?;
-                "Set git global diff.tool=winmerge (with detected tool path)".to_string()
+                git_config_global_set("merge.tool", "winmerge")?;
+                "Set git global diff.tool=winmerge and merge.tool=winmerge (with detected tool path)"
+                    .to_string()
             } else {
                 return Err(windows_tool_path_message("WinMerge"));
             }
         }
         ExternalDiffTool::VsCode => {
             git_config_global_set("diff.tool", "vscode")?;
+            git_config_global_set("merge.tool", "vscode")?;
             git_config_global_set("difftool.vscode.cmd", "code --wait --diff $LOCAL $REMOTE")?;
             git_config_global_set(
                 "mergetool.vscode.cmd",
                 "code --wait --merge $REMOTE $LOCAL $BASE $MERGED",
             )?;
-            "Set git global diff.tool=vscode (with difftool/mergetool cmd)".to_string()
+            "Set git global diff.tool=vscode and merge.tool=vscode (with difftool/mergetool cmd)"
+                .to_string()
         }
         ExternalDiffTool::VsCodium => {
             git_config_global_set("diff.tool", "vscodium")?;
+            git_config_global_set("merge.tool", "vscodium")?;
             git_config_global_set(
                 "difftool.vscodium.cmd",
                 "codium --wait --diff $LOCAL $REMOTE",
@@ -749,7 +759,8 @@ pub fn set_global_diff_tool(
                 "mergetool.vscodium.cmd",
                 "codium --wait --merge $REMOTE $LOCAL $BASE $MERGED",
             )?;
-            "Set git global diff.tool=vscodium (with difftool/mergetool cmd)".to_string()
+            "Set git global diff.tool=vscodium and merge.tool=vscodium (with difftool/mergetool cmd)"
+                .to_string()
         }
     };
 
