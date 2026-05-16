@@ -700,6 +700,14 @@ mod linux_config_tests {
         let mode = read_saved_linux_graphics_mode_from_config_dir(dir.path());
         assert_eq!(mode.as_deref(), Some("safe"));
     }
+
+    #[test]
+    fn amd_graphics_device_requires_amd_display_driver() {
+        assert!(linux_is_amd_graphics_device(0x1002, Some(0x03), true));
+        assert!(!linux_is_amd_graphics_device(0x1002, Some(0x03), false));
+        assert!(!linux_is_amd_graphics_device(0x1002, Some(0x04), true));
+        assert!(!linux_is_amd_graphics_device(0x8086, Some(0x03), true));
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -716,32 +724,53 @@ fn apply_linux_appimage_webkit_workarounds() {
         .or_else(|_| read_saved_linux_graphics_mode().ok_or(()))
         .unwrap_or_else(|_| "auto".to_string());
 
+    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
+        || std::env::var("XDG_SESSION_TYPE")
+            .map(|value| value.eq_ignore_ascii_case("wayland"))
+            .unwrap_or(false);
+
     // "native" opts out entirely; every other mode (including the default "auto")
     // applies the dmabuf workaround because some EGL/Mesa stacks corrupt the heap
     // without it, regardless of whether we are running from an AppImage.
     if graphics_mode == "native" {
+        let renderer = if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_some() {
+            "software"
+        } else {
+            "hardware"
+        };
+        eprintln!(
+            "gitmun: graphics mode=native renderer={renderer} gtk_backend={} wayland={is_wayland}",
+            std::env::var("GDK_BACKEND").unwrap_or_else(|_| "default".to_string()),
+        );
         return;
     }
 
+    let disabled_dmabuf_renderer = std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some();
     if std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
         unsafe {
             std::env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
         }
     }
 
+    let disabled_compositing = std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some();
     if std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_none() {
         unsafe {
             std::env::set_var("WEBKIT_DISABLE_COMPOSITING_MODE", "1");
         }
     }
 
-    let is_wayland = std::env::var_os("WAYLAND_DISPLAY").is_some()
-        || std::env::var("XDG_SESSION_TYPE")
-            .map(|value| value.eq_ignore_ascii_case("wayland"))
-            .unwrap_or(false);
     let has_xwayland = std::env::var_os("DISPLAY").is_some();
 
-    // safe: aggressively maximize compatibility, auto: only apply when Wayland likely triggers EGL issues.
+    let is_kde = std::env::var("XDG_CURRENT_DESKTOP")
+        .map(|v| v.to_lowercase())
+        .map(|v| v.split(':').any(|s| s == "kde"))
+        .unwrap_or(false);
+    let has_amd_graphics = linux_has_amd_graphics();
+
+    // safe: aggressively maximise compatibility.
+    // auto: only apply when Wayland + XWayland, because the X11 backend
+    // preserves GTK client-side decorations (CSD), which correctly show
+    // the full window title (repo path / project name).
     let prefer_x11 =
         graphics_mode == "safe" || (graphics_mode == "auto" && is_wayland && has_xwayland);
     if prefer_x11 && std::env::var_os("GDK_BACKEND").is_none() {
@@ -750,13 +779,69 @@ fn apply_linux_appimage_webkit_workarounds() {
         }
     }
 
-    let force_software =
-        graphics_mode == "safe" || (graphics_mode == "auto" && is_wayland && !has_xwayland);
+    // On KDE Plasma with recent AMD/Mesa stacks (e.g. Mesa 26.1 + radeonsi),
+    // XWayland's GLX-to-EGL translation layer (glamor) can trigger heap
+    // corruption over time.  LIBGL_ALWAYS_SOFTWARE forces Mesa's llvmpipe
+    // software rasterizer, bypassing the GPU driver entirely, while keeping
+    // the X11 backend for correct title-bar rendering.
+    let force_software = graphics_mode == "safe"
+        || (graphics_mode == "auto" && is_wayland && !has_xwayland)
+        || (graphics_mode == "auto" && is_wayland && has_xwayland && is_kde && has_amd_graphics);
     if force_software && std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
         unsafe {
             std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
         }
     }
+
+    let renderer = if std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_some() {
+        "software"
+    } else {
+        "hardware"
+    };
+    eprintln!(
+        "gitmun: graphics mode={graphics_mode} renderer={renderer} gtk_backend={} \
+         wayland={is_wayland} xwayland={has_xwayland} kde={is_kde} amd_graphics={has_amd_graphics} \
+         disable_dmabuf={} disable_compositing={}",
+        std::env::var("GDK_BACKEND").unwrap_or_else(|_| "default".to_string()),
+        disabled_dmabuf_renderer || std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some(),
+        disabled_compositing || std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some(),
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn linux_has_amd_graphics() -> bool {
+    pci_info::PciInfo::enumerate_pci()
+        .map(|devices| {
+            devices.into_iter().any(|device| {
+                device
+                    .ok()
+                    .map(|device| {
+                        let driver_matches = device
+                            .os_driver()
+                            .ok()
+                            .and_then(|driver| driver.as_deref())
+                            .map(|driver| driver == "amdgpu" || driver == "radeon")
+                            .unwrap_or(false);
+
+                        linux_is_amd_graphics_device(
+                            device.vendor_id(),
+                            device.device_class_code().ok(),
+                            driver_matches,
+                        )
+                    })
+                    .unwrap_or(false)
+            })
+        })
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn linux_is_amd_graphics_device(
+    vendor_id: u16,
+    device_class_code: Option<u8>,
+    driver_matches: bool,
+) -> bool {
+    vendor_id == 0x1002 && device_class_code == Some(0x03) && driver_matches
 }
 
 #[cfg(target_os = "linux")]
