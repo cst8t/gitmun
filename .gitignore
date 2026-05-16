@@ -25,6 +25,9 @@ node_modules
 dist
 *.log
 
+# Local OBS checkout
+packaging/obs-checkout/
+
 # Local IDE metadata
 .idea/
 

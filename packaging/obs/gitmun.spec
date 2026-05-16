@@ -16,6 +16,7 @@ BuildRequires:  local-npm-registry
 BuildRequires:  nodejs >= 20
 BuildRequires:  npm
 BuildRequires:  patchelf
+BuildRequires:  protobuf-c
 BuildRequires:  python3
 BuildRequires:  rust >= 1.85
 BuildRequires:  pkgconfig(ayatana-appindicator3-0.1)
