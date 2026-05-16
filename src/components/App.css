@@ -51,8 +51,8 @@
   background: var(--bg-surface);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
   transition: background 0.15s, color 0.15s;
 }
 
@@ -97,16 +97,16 @@
   align-items: center;
   justify-content: center;
   background:
-    radial-gradient(1200px 500px at 50% -15%, rgba(108, 156, 252, 0.08), transparent 65%),
-    linear-gradient(180deg, rgba(22, 25, 33, 0.7), rgba(15, 17, 23, 0.9));
+    radial-gradient(1200px 500px at 50% -15%, var(--accent-dim), transparent 65%),
+    var(--bg);
 }
 
 .app__empty-card {
   width: min(520px, calc(100% - 48px));
   border: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(28, 31, 43, 0.9), rgba(22, 25, 33, 0.94));
+  background: var(--bg-surface);
   border-radius: var(--radius-2xl);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.35);
+  box-shadow: var(--shadow-dialog);
   padding: 28px;
   text-align: center;
 }
@@ -116,8 +116,8 @@
   height: 44px;
   margin: 0 auto 14px;
   border-radius: var(--radius-xl);
-  border: 1px solid rgba(108, 156, 252, 0.35);
-  background: rgba(108, 156, 252, 0.12);
+  border: 1px solid var(--selection-border);
+  background: var(--accent-dim);
   color: var(--accent);
   display: grid;
   place-items: center;
@@ -125,7 +125,7 @@
 
 .app__empty-title {
   margin: 0;
-  font-size: 20px;
+  font-size: var(--font-size-xl);
   line-height: 1.2;
 }
 
@@ -157,7 +157,7 @@
 
 .app__empty-btn--primary {
   background: var(--accent);
-  color: var(--bg);
+  color: var(--text-on-accent);
 }
 
 .app__empty-btn--primary:hover {
@@ -172,20 +172,4 @@
 
 .app__empty-btn--secondary:hover {
   background: var(--bg-hover);
-}
-
-:root[data-theme="light"] .app__empty-state {
-  background:
-    radial-gradient(1200px 500px at 50% -15%, rgba(47, 109, 246, 0.11), transparent 65%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.92), rgba(244, 246, 251, 0.98));
-}
-
-:root[data-theme="light"] .app__empty-card {
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(246, 249, 255, 0.98));
-  box-shadow: 0 18px 36px rgba(26, 46, 88, 0.12);
-}
-
-:root[data-theme="light"] .app__empty-icon {
-  border-color: rgba(47, 109, 246, 0.28);
-  background: rgba(47, 109, 246, 0.1);
 }

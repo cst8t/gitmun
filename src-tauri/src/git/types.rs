@@ -1,4 +1,4 @@
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CommitDateMode {
@@ -123,14 +123,72 @@ impl Default for RepoOpenBehaviour {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RowStriping {
+    Off,
+    Subtle,
+    Strong,
+}
+
+impl Default for RowStriping {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
+const UI_TEXT_SCALE_VALUES: [f64; 5] = [0.9, 1.0, 1.1, 1.2, 1.3];
+
+fn default_ui_text_scale() -> f64 {
+    1.0
+}
+
+fn normalise_ui_text_scale(value: f64) -> f64 {
+    if UI_TEXT_SCALE_VALUES.contains(&value) {
+        value
+    } else {
+        default_ui_text_scale()
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum UiTextScaleValue {
+    Number(f64),
+    Text(String),
+    Other(serde::de::IgnoredAny),
+}
+
+fn deserialise_ui_text_scale<'de, D>(deserialiser: D) -> Result<f64, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = UiTextScaleValue::deserialize(deserialiser)?;
+    let scale = match value {
+        UiTextScaleValue::Number(value) => value,
+        UiTextScaleValue::Text(value) => value
+            .trim()
+            .parse::<f64>()
+            .unwrap_or(default_ui_text_scale()),
+        UiTextScaleValue::Other(_) => default_ui_text_scale(),
+    };
+    Ok(normalise_ui_text_scale(scale))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
     pub backend_mode: BackendMode,
     pub show_result_log: bool,
     pub theme_mode: ThemeMode,
+    #[serde(
+        default = "default_ui_text_scale",
+        deserialize_with = "deserialise_ui_text_scale"
+    )]
+    pub ui_text_scale: f64,
     #[serde(default)]
     pub wrap_diff_lines: bool,
+    #[serde(default)]
+    pub row_striping: RowStriping,
     pub left_pane_width: u32,
     pub right_pane_width: u32,
     #[serde(default = "Settings::default_confirm_revert")]
@@ -157,6 +215,8 @@ pub struct Settings {
     pub auto_install_updates: bool,
     #[serde(default = "Settings::default_update_endpoint")]
     pub update_endpoint: String,
+    #[serde(default, rename = "enableUpdateWithMSStoreFlow")]
+    pub enable_update_with_ms_store_flow: bool,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
     #[serde(default)]
@@ -171,7 +231,9 @@ impl Default for Settings {
             backend_mode: BackendMode::Default,
             show_result_log: false,
             theme_mode: ThemeMode::System,
+            ui_text_scale: default_ui_text_scale(),
             wrap_diff_lines: false,
+            row_striping: RowStriping::Off,
             left_pane_width: 300,
             right_pane_width: 420,
             confirm_revert: true,
@@ -185,6 +247,7 @@ impl Default for Settings {
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
+            enable_update_with_ms_store_flow: false,
             linux_graphics_mode: LinuxGraphicsMode::Auto,
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),
@@ -193,6 +256,10 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn normalised_ui_text_scale(value: f64) -> f64 {
+        normalise_ui_text_scale(value)
+    }
+
     fn default_confirm_revert() -> bool {
         true
     }

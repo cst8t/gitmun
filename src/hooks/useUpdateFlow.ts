@@ -1,14 +1,24 @@
 import { useCallback, useState } from "react";
+import { useTranslation } from "react-i18next";
 import * as api from "../api/commands";
-import type { AvailableUpdate, UpdateDownloadEvent } from "../types";
+import type { AppAvailableUpdate, AvailableUpdate, MicrosoftStoreUpdate, UpdateDownloadEvent } from "../types";
 
 const DISMISSED_UPDATE_VERSION_KEY = "gitmun.dismissedUpdateVersion";
+const STORE_UPDATE_AUTO_CHECKED_AT_KEY = "gitmun.microsoftStoreUpdateAutoCheckedAt";
+const STORE_UPDATE_AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
-export type UpdateDialogPhase = "prompt" | "downloading" | "installing" | "success";
+export type UpdateDialogPhase =
+  | "prompt"
+  | "downloading"
+  | "installing"
+  | "success"
+  | "storeOpening"
+  | "storeDeferred"
+  | "storeError";
 
 export type UpdateDialogState = {
   open: boolean;
-  update: AvailableUpdate | null;
+  update: AppAvailableUpdate | null;
   phase: UpdateDialogPhase;
   errorMessage: string | null;
   dontShowAgain: boolean;
@@ -31,6 +41,42 @@ function writeDismissedVersion(version: string): void {
   }
 }
 
+function shouldSkipStoreAutoCheck(): boolean {
+  try {
+    const checkedAt = Number(localStorage.getItem(STORE_UPDATE_AUTO_CHECKED_AT_KEY) ?? "0");
+    return Number.isFinite(checkedAt) && Date.now() - checkedAt < STORE_UPDATE_AUTO_CHECK_INTERVAL_MS;
+  } catch {
+    return false;
+  }
+}
+
+function markStoreAutoCheck(): void {
+  try {
+    localStorage.setItem(STORE_UPDATE_AUTO_CHECKED_AT_KEY, String(Date.now()));
+  } catch {
+  }
+}
+
+function releaseUpdate(update: AvailableUpdate): AppAvailableUpdate {
+  return {...update, source: "selfManaged"};
+}
+
+function microsoftStoreUpdate(update: MicrosoftStoreUpdate): AppAvailableUpdate {
+  return {...update, source: "microsoftStore"};
+}
+
+function dismissedVersionKey(update: AppAvailableUpdate): string {
+  return update.source === "selfManaged"
+    ? `self-managed:${update.version}`
+    : `microsoft-store:${update.currentVersion}`;
+}
+
+function isDismissedUpdate(update: AppAvailableUpdate): boolean {
+  const dismissedVersion = readDismissedVersion();
+  return dismissedVersion === dismissedVersionKey(update)
+    || (update.source === "selfManaged" && dismissedVersion === update.version);
+}
+
 function createClosedState(): UpdateDialogState {
   return {
     open: false,
@@ -44,11 +90,12 @@ function createClosedState(): UpdateDialogState {
 }
 
 export function useUpdateFlow() {
+  const { t } = useTranslation("update");
   const [checking, setChecking] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [dialog, setDialog] = useState<UpdateDialogState>(createClosedState);
 
-  const openPrompt = useCallback((update: AvailableUpdate) => {
+  const openPrompt = useCallback((update: AppAvailableUpdate) => {
     setDialog({
       open: true,
       update,
@@ -60,42 +107,55 @@ export function useUpdateFlow() {
     });
   }, []);
 
-  const showUpdatePrompt = useCallback((update: AvailableUpdate) => {
+  const showUpdatePrompt = useCallback((update: AppAvailableUpdate) => {
     openPrompt(update);
-    setStatusMessage(`Update ${update.version} is available.`);
-  }, [openPrompt]);
+    setStatusMessage(update.source === "selfManaged"
+      ? t("status.updateAvailable", { version: update.version })
+      : t("status.storeUpdateAvailable"));
+  }, [openPrompt, t]);
 
   const checkForUpdates = useCallback(async (options?: {
     silentIfNoUpdate?: boolean;
     respectDismissedVersion?: boolean;
-  }): Promise<AvailableUpdate | null> => {
+  }): Promise<AppAvailableUpdate | null> => {
     const { silentIfNoUpdate = false, respectDismissedVersion = false } = options ?? {};
     setChecking(true);
     try {
-      const updaterSupported = await api.isUpdaterEnabled();
-      if (!updaterSupported) {
+      const updateChannel = await api.getAppUpdateChannel();
+      if (updateChannel === "SystemManaged") {
         if (!silentIfNoUpdate) {
-          setStatusMessage("Updates are managed by this installation channel.");
+          setStatusMessage(t("status.managed"));
         }
         return null;
       }
 
-      const update = await api.checkForAppUpdate();
+      if (updateChannel === "MicrosoftStore" && silentIfNoUpdate && shouldSkipStoreAutoCheck()) {
+        return null;
+      }
+
+      const update = updateChannel === "MicrosoftStore"
+        ? await api.checkMicrosoftStoreUpdate().then((storeUpdate) => storeUpdate ? microsoftStoreUpdate(storeUpdate) : null)
+        : await api.checkForAppUpdate().then((availableUpdate) => availableUpdate ? releaseUpdate(availableUpdate) : null);
+      if (updateChannel === "MicrosoftStore" && silentIfNoUpdate) {
+        markStoreAutoCheck();
+      }
       if (!update) {
         if (!silentIfNoUpdate) {
-          setStatusMessage("You're already running the latest version.");
+          setStatusMessage(updateChannel === "MicrosoftStore"
+            ? t("status.latestMicrosoftStore")
+            : t("status.latest"));
         }
         return null;
       }
 
-      if (respectDismissedVersion && readDismissedVersion() === update.version) {
+      if (respectDismissedVersion && isDismissedUpdate(update)) {
         return update;
       }
 
       showUpdatePrompt(update);
       return update;
     } catch (error) {
-      const message = `Update check failed: ${String(error)}`;
+      const message = t("status.checkFailed", { message: String(error) });
       if (!silentIfNoUpdate) {
         setStatusMessage(message);
       }
@@ -103,7 +163,7 @@ export function useUpdateFlow() {
     } finally {
       setChecking(false);
     }
-  }, [openPrompt]);
+  }, [showUpdatePrompt, t]);
 
   const checkForUpdatesOnLaunch = useCallback(async () => {
     await checkForUpdates({silentIfNoUpdate: true, respectDismissedVersion: true});
@@ -146,6 +206,43 @@ export function useUpdateFlow() {
       return;
     }
 
+    if (update.source === "microsoftStore") {
+      setDialog((current) => current.update ? {
+        ...current,
+        phase: "storeOpening",
+        errorMessage: null,
+        downloadedBytes: 0,
+        contentLength: null,
+      } : current);
+
+      try {
+        const result = await api.requestMicrosoftStoreUpdate();
+        if (result.status === "Canceled") {
+          setDialog((current) => current.update ? {
+            ...current,
+            phase: "storeDeferred",
+            errorMessage: null,
+          } : current);
+          setStatusMessage(t("status.storeDeferred"));
+          return;
+        }
+        if (result.status !== "Completed") {
+          throw new Error(result.status);
+        }
+        setDialog(createClosedState());
+        setStatusMessage(t("status.storeCompleted"));
+      } catch (error) {
+        const message = String(error);
+        setDialog((current) => current.update ? {
+          ...current,
+          phase: "storeError",
+          errorMessage: message,
+        } : current);
+        setStatusMessage(t("status.storeFailed", { message }));
+      }
+      return;
+    }
+
     setDialog((current) => current.update ? {
       ...current,
       phase: "downloading",
@@ -162,9 +259,9 @@ export function useUpdateFlow() {
         errorMessage: null,
         downloadedBytes: current.contentLength ?? current.downloadedBytes,
       } : current);
-      setStatusMessage("Update installed. Restart Gitmun to finish applying it.");
+      setStatusMessage(t("status.installed"));
     } catch (error) {
-      const message = `Update failed: ${String(error)}`;
+      const message = t("status.failed", { message: String(error) });
       setDialog((current) => current.update ? {
         ...current,
         phase: "prompt",
@@ -172,12 +269,12 @@ export function useUpdateFlow() {
       } : current);
       setStatusMessage(message);
     }
-  }, [dialog.update, handleDownloadEvent]);
+  }, [dialog.update, handleDownloadEvent, t]);
 
   const closeDialog = useCallback(() => {
     setDialog((current) => {
       if (current.update && current.dontShowAgain) {
-        writeDismissedVersion(current.update.version);
+        writeDismissedVersion(dismissedVersionKey(current.update));
       }
       return createClosedState();
     });

@@ -6,6 +6,7 @@ License:        GPL-3.0-or-later
 URL:            https://github.com/openSUSE/npm-localhost-proxy
 Source0:        local_npm_registry-v%{version}.tar.gz
 Source1:        local-npm-registry.sh
+BuildRequires:  protobuf-c
 Requires:       nodejs
 BuildArch:      noarch
 

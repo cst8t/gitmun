@@ -27,7 +27,7 @@
   border: none;
   color: var(--text-muted);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   padding: 0 4px;
@@ -77,20 +77,20 @@
 }
 
 .sidebar__branch--current {
-  background: var(--accent-dim);
+  background: var(--selection-bg);
   border-left-color: var(--accent);
 }
 
 .sidebar__branch--current .sidebar__branch-name {
   color: var(--accent);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .sidebar__branch-name {
   display: block;
   font-family: var(--font-mono);
   font-size: var(--font-size-sm);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -129,7 +129,7 @@
   padding: 2px 8px;
   font-size: var(--font-size-xxs);
   font-family: var(--font-ui);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   background: var(--accent-dim);
   color: var(--accent);
   border: 1px solid transparent;
@@ -140,7 +140,7 @@
 
 .sidebar__branch-checkout:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .sidebar__create-branch-btn {
@@ -155,14 +155,14 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .sidebar__create-branch-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .sidebar__add-remote-btn {
@@ -177,14 +177,14 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .sidebar__add-remote-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .sidebar__create-tag-btn {
@@ -199,14 +199,14 @@
   color: var(--accent);
   font-family: var(--font-ui);
   font-size: var(--font-size-xs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   cursor: pointer;
   transition: background 0.12s, color 0.12s;
 }
 
 .sidebar__create-tag-btn:hover {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .sidebar__item {
@@ -287,7 +287,7 @@
   padding: 2px 6px;
   font-size: var(--font-size-xxs);
   font-family: var(--font-ui);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   background: var(--bg-elevated);
   color: var(--text-secondary);
   border: 1px solid var(--border);
@@ -309,12 +309,12 @@
 
 .sidebar__stash-btn--danger:hover {
   background: var(--red);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 @container (max-width: 280px) {
   .sidebar__tab {
-    font-size: 10px;
+    font-size: var(--font-size-xxs);
     letter-spacing: 0.02em;
     padding: 0 2px;
   }
@@ -322,7 +322,7 @@
 
 @container (max-width: 220px) {
   .sidebar__tab {
-    font-size: 9px;
+    font-size: var(--font-size-micro);
     letter-spacing: 0;
     padding: 0 1px;
   }

@@ -14,6 +14,7 @@ type FileRowProps = {
   onStage?: () => void;
   onUnstage?: () => void;
   onDiscard?: () => void;
+  striped?: "Subtle" | "Strong";
 };
 
 const STATUS_MAP: Record<string, { bg: string; text: string; label: string }> = {
@@ -35,15 +36,17 @@ export function FileRow({
   onStage,
   onUnstage,
   onDiscard,
+  striped,
 }: FileRowProps) {
   const { t } = useTranslation("centre");
   const [hovered, setHovered] = useState(false);
   const statusKey = file.status.toLowerCase();
   const s = STATUS_MAP[statusKey] ?? STATUS_MAP.modified;
+  const stripingClass = striped ? ` file-row--striped-${striped.toLowerCase()}` : "";
 
   return (
     <div
-      className={`file-row ${isSelected ? "file-row--selected" : ""} ${hovered ? "file-row--hovered" : ""}`}
+      className={`file-row${stripingClass} ${isSelected ? "file-row--selected" : ""} ${hovered ? "file-row--hovered" : ""}`}
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
       onMouseEnter={() => setHovered(true)}

@@ -3,6 +3,7 @@ use std::path::Path;
 use crate::git::types::Settings;
 
 const TEMPLATE: &str = include_str!("../config.example.toml");
+const MANUAL_CONFIG_KEYS: &[&str] = &["enableUpdateWithMSStoreFlow"];
 
 /// Load settings from config.toml, migrating from config.json if needed.
 ///
@@ -125,7 +126,7 @@ fn apply_settings_to_doc(doc: &mut toml_edit::DocumentMut, settings: &Settings) 
                 *v = new_val.clone();
             }
             table.insert_formatted(template_key, new_item);
-        } else {
+        } else if !MANUAL_CONFIG_KEYS.contains(&key) {
             table.insert(key, toml_edit::value(new_val.clone()));
         }
     }
@@ -170,6 +171,7 @@ mod tests {
         assert!(settings.show_result_log);
         assert_eq!(settings.theme_mode, crate::git::types::ThemeMode::Dark);
         assert_eq!(settings.commit_message_recommended_length, 50);
+        assert_eq!(settings.ui_text_scale, 1.0);
     }
 
     #[test]
@@ -190,6 +192,70 @@ mod tests {
         assert_eq!(settings.left_pane_width, 300);
         assert_eq!(settings.right_pane_width, 420);
         assert_eq!(settings.commit_message_recommended_length, 72);
+        assert_eq!(settings.ui_text_scale, 1.0);
+    }
+
+    #[test]
+    fn load_toml_populates_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = 1.2\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert_eq!(settings.ui_text_scale, 1.2);
+    }
+
+    #[test]
+    fn load_toml_populates_manual_ms_store_update_flow_config() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(&toml_path, "enableUpdateWithMSStoreFlow = true\n");
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert!(settings.enable_update_with_ms_store_flow);
+    }
+
+    #[test]
+    fn load_toml_defaults_invalid_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = 1.25\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert!(settings.show_result_log);
+        assert_eq!(settings.ui_text_scale, 1.0);
+    }
+
+    #[test]
+    fn load_toml_defaults_malformed_ui_text_scale() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "showResultLog = true\nuiTextScale = \"larger\"\ncommitMessageRecommendedLength = 72\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert!(settings.show_result_log);
+        assert_eq!(settings.ui_text_scale, 1.0);
     }
 
     #[test]
@@ -239,6 +305,8 @@ mod tests {
         assert!(toml_text.contains("showResultLog = true"));
         assert!(toml_text.contains("# Recommended maximum length"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
+        assert!(toml_text.contains("# UI text scale."));
+        assert!(toml_text.contains("uiTextScale = 1.0"));
         assert!(!json_path.exists());
         assert!(dir.path().join("config.json.old").exists());
     }
@@ -258,7 +326,9 @@ mod tests {
         let toml_text = std::fs::read_to_string(&toml_path).unwrap();
         assert!(toml_text.contains("# Backend used for Git operations"));
         assert!(toml_text.contains("backendMode = \"Default\""));
+        assert!(toml_text.contains("uiTextScale = 1.0"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
+        assert!(!toml_text.contains("enableUpdateWithMSStoreFlow"));
     }
 
     #[test]
@@ -322,5 +392,27 @@ mod tests {
             "missing key gained its template comment"
         );
         assert!(updated.contains("commitMessageRecommendedLength = 72"));
+        assert!(
+            updated.contains("# UI text scale."),
+            "missing key gained its template comment"
+        );
+        assert!(updated.contains("uiTextScale = 1.0"));
+        assert!(!updated.contains("enableUpdateWithMSStoreFlow"));
+    }
+
+    #[test]
+    fn persist_preserves_manual_ms_store_update_flow_config() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+
+        write_file(&toml_path, "enableUpdateWithMSStoreFlow = true\n");
+
+        let mut settings = Settings::default();
+        settings.enable_update_with_ms_store_flow = true;
+
+        persist(&toml_path, &settings).unwrap();
+
+        let updated = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(updated.contains("enableUpdateWithMSStoreFlow = true"));
     }
 }

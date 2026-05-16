@@ -5,7 +5,7 @@
   background: var(--bg-surface);
   color: var(--text-primary);
   font-family: var(--font-ui);
-  font-size: 13px;
+  font-size: var(--font-size-base);
 }
 
 .clone-window__header {
@@ -18,8 +18,8 @@
 }
 
 .clone-window__title {
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: var(--font-weight-semibold);
+  font-size: var(--font-size-base);
 }
 
 .clone-window__close {
@@ -54,13 +54,13 @@
 }
 
 .clone-window__label {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-secondary);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
 }
 
 .clone-window__error {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--red, #e05c5c);
 }
 
@@ -72,13 +72,13 @@
   padding: 6px 8px;
   color: var(--text-primary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--font-size-sm);
   outline: none;
 }
 
 .clone-window__input:focus {
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px rgba(108, 156, 252, 0.15);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .clone-window__inline-field {
@@ -125,19 +125,19 @@
   border-radius: 6px;
   padding: 6px 14px;
   font: inherit;
-  font-size: 12px;
-  font-weight: 500;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
   cursor: pointer;
   transition: background 0.12s;
 }
 
 .clone-window__btn--primary {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .clone-window__btn--primary:hover {
-  background: #5a8ae8;
+  background: var(--accent-hover);
 }
 
 .clone-window__btn--primary:disabled {
@@ -157,7 +157,7 @@
 
 .clone-window__btn--danger {
   background: var(--red, #e05c5c);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .clone-window__btn--danger:hover {
@@ -165,13 +165,13 @@
 }
 
 .clone-window__status {
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   color: var(--text-muted);
 }
 
 .clone-window__progress {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--font-size-xs);
   line-height: 1.5;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
@@ -203,7 +203,7 @@
   width: 10px;
   height: 10px;
   border: 2px solid rgba(255, 255, 255, 0.4);
-  border-top-color: #fff;
+  border-top-color: var(--text-on-accent);
   border-radius: 50%;
   animation: spin 0.7s linear infinite;
   margin-right: 6px;

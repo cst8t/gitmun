@@ -217,9 +217,21 @@ impl GitService {
         })
     }
 
+    pub fn set_ui_text_scale(&self, ui_text_scale: f64) -> Settings {
+        self.update_settings(|settings| {
+            settings.ui_text_scale = Settings::normalised_ui_text_scale(ui_text_scale);
+        })
+    }
+
     pub fn set_wrap_diff_lines(&self, wrap_diff_lines: bool) -> Settings {
         self.update_settings(|settings| {
             settings.wrap_diff_lines = wrap_diff_lines;
+        })
+    }
+
+    pub fn set_row_striping(&self, row_striping: super::types::RowStriping) -> Settings {
+        self.update_settings(|settings| {
+            settings.row_striping = row_striping;
         })
     }
 

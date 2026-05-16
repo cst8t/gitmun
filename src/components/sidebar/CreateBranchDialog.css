@@ -10,7 +10,7 @@
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
-  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+  box-shadow: var(--shadow-dialog);
   z-index: 201;
   padding: 20px;
   display: flex;
@@ -28,7 +28,7 @@
 
 .create-branch-dialog__title {
   font-size: var(--font-size-base);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   color: var(--text-primary);
   margin-bottom: 4px;
 }
@@ -41,7 +41,7 @@
 
 .create-branch-dialog__label {
   font-size: var(--font-size-xs);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   color: var(--text-secondary);
 }
 
@@ -59,7 +59,7 @@
 .create-branch-dialog__name-input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-dim);
+  box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
 .create-branch-dialog__name-input::placeholder {
@@ -102,7 +102,7 @@
 .create-branch-dialog__revision-type {
   padding: 6px 8px;
   font-size: var(--font-size-xxs);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   background: none;
@@ -184,13 +184,13 @@
 
 .create-branch-dialog__revision-item--current {
   color: var(--text-primary);
-  font-weight: 600;
+  font-weight: var(--font-weight-semibold);
 }
 
 .create-branch-dialog__revision-item--current::after {
   content: ' (current)';
   color: var(--text-muted);
-  font-weight: 400;
+  font-weight: var(--font-weight-regular);
 }
 
 .create-branch-dialog__revision-item--empty {
@@ -237,7 +237,7 @@
 
 .create-branch-dialog__btn {
   font-size: var(--font-size-sm);
-  font-weight: 500;
+  font-weight: var(--font-weight-medium);
   font-family: var(--font-ui);
   padding: 8px 16px;
   border-radius: var(--radius-lg);
@@ -262,7 +262,7 @@
 
 .create-branch-dialog__btn--create {
   background: var(--accent);
-  color: #fff;
+  color: var(--text-on-accent);
 }
 
 .create-branch-dialog__btn--disabled {
