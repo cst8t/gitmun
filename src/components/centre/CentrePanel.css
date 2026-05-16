@@ -147,6 +147,12 @@
 
 .file-row--selected { background: var(--selection-bg); }
 .file-row--hovered { background: var(--bg-elevated); }
+.file-row--striped-subtle { background: var(--row-alternate-bg); }
+.file-row--striped-strong { background: var(--row-alternate-strong-bg); }
+.file-row--striped-subtle.file-row--selected,
+.file-row--striped-strong.file-row--selected { background: var(--selection-bg); }
+.file-row--striped-subtle.file-row--hovered,
+.file-row--striped-strong.file-row--hovered { background: var(--bg-elevated); }
 
 .file-row__icon { display: flex; flex-shrink: 0; }
 
@@ -224,6 +230,16 @@
 
 .submodule-row:hover,
 .submodule-row--selected {
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+
+.submodule-row--striped-subtle { background: var(--row-alternate-bg); }
+.submodule-row--striped-strong { background: var(--row-alternate-strong-bg); }
+.submodule-row--striped-subtle:hover,
+.submodule-row--striped-strong:hover,
+.submodule-row--striped-subtle.submodule-row--selected,
+.submodule-row--striped-strong.submodule-row--selected {
   background: var(--bg-elevated);
   border-color: var(--border);
 }
@@ -541,6 +557,12 @@
 
 .log-view__row:hover { background: var(--bg-elevated); }
 .log-view__row--selected { background: var(--selection-bg); border-left-color: var(--accent); }
+.log-view__row--striped-subtle { background: var(--row-alternate-bg); }
+.log-view__row--striped-strong { background: var(--row-alternate-strong-bg); }
+.log-view__row--striped-subtle:hover,
+.log-view__row--striped-strong:hover { background: var(--bg-elevated); }
+.log-view__row--striped-subtle.log-view__row--selected,
+.log-view__row--striped-strong.log-view__row--selected { background: var(--selection-bg); border-left-color: var(--accent); }
 
 .log-view__avatar {
   position: relative;
@@ -853,6 +875,13 @@
 .staging__conflict-row--selected {
   background: var(--selection-bg);
 }
+
+.staging__conflict-row--striped-subtle { background: var(--row-alternate-bg); }
+.staging__conflict-row--striped-strong { background: var(--row-alternate-strong-bg); }
+.staging__conflict-row--striped-subtle:hover,
+.staging__conflict-row--striped-strong:hover { background: var(--hover); }
+.staging__conflict-row--striped-subtle.staging__conflict-row--selected,
+.staging__conflict-row--striped-strong.staging__conflict-row--selected { background: var(--selection-bg); }
 
 .staging__conflict-badge {
   flex-shrink: 0;

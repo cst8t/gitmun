@@ -1,6 +1,6 @@
 use crate::git::types::{
     AvatarProviderMode, BackendMode, CommitDateMode, CommitPrimaryAction, ExternalDiffTool,
-    LinuxGraphicsMode, OperationResult, RepoOpenBehaviour, Settings, ThemeMode,
+    LinuxGraphicsMode, OperationResult, RepoOpenBehaviour, RowStriping, Settings, ThemeMode,
 };
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
@@ -223,6 +223,11 @@ pub fn set_ui_text_scale(ui_text_scale: f64, state: tauri::State<'_, AppState>) 
 #[tauri::command]
 pub fn set_wrap_diff_lines(wrap_diff_lines: bool, state: tauri::State<'_, AppState>) -> Settings {
     state.git_service.set_wrap_diff_lines(wrap_diff_lines)
+}
+
+#[tauri::command]
+pub fn set_row_striping(row_striping: RowStriping, state: tauri::State<'_, AppState>) -> Settings {
+    state.git_service.set_row_striping(row_striping)
 }
 
 #[tauri::command]

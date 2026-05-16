@@ -44,6 +44,8 @@ function applyThemeDefinition(theme: ThemeDefinition) {
         ["--bg-elevated", theme.background.elevated],
         ["--bg-hover", theme.background.hover],
         ["--bg-subtle", theme.background.subtle],
+        ["--row-alternate-bg", theme.background.rowAlternate],
+        ["--row-alternate-strong-bg", theme.background.rowAlternateStrong],
         ["--border", theme.border.default],
         ["--border-subtle", theme.border.subtle],
         ["--text-primary", theme.text.primary],

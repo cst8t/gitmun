@@ -14,6 +14,7 @@ import type {
     ExternalDiffTool,
     LinuxGraphicsMode,
     RepoOpenBehaviour,
+    RowStriping,
     Settings,
     ThemeMode,
     UiTextScale
@@ -118,6 +119,7 @@ export function SettingsWindow() {
     const [themeMode, setThemeMode] = useState<ThemeMode>("System");
     const [uiTextScale, setUiTextScale] = useState<UiTextScale>(1);
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
+    const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
     const [avatarProvider, setAvatarProvider] = useState<AvatarProviderMode>("Libravatar");
     const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
@@ -295,6 +297,7 @@ export function SettingsWindow() {
                 setThemeMode(settings.themeMode);
                 setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
                 setWrapDiffLines(settings.wrapDiffLines ?? false);
+                setRowStriping(settings.rowStriping ?? "Off");
                 setOpenResultLogOnLaunch(settings.showResultLog);
                 setAvatarProvider(settings.avatarProvider);
                 setTryPlatformFirst(settings.tryPlatformFirst);
@@ -369,6 +372,7 @@ export function SettingsWindow() {
             await invoke<Settings>("set_theme_mode", {themeMode});
             await invoke<Settings>("set_ui_text_scale", {uiTextScale});
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
+            await invoke<Settings>("set_row_striping", {rowStriping});
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
             await invoke("set_default_clone_dir", {defaultCloneDir});
@@ -540,6 +544,7 @@ export function SettingsWindow() {
         uiTextScale,
         openResultLogOnLaunch,
         wrapDiffLines,
+        rowStriping,
         avatarProvider,
         tryPlatformFirst,
         defaultCloneDir,
@@ -944,6 +949,22 @@ export function SettingsWindow() {
                                 <option value="AuthorDate">{t("options.commitDateAuthor")}</option>
                                 <option value="CommitterDate">{t("options.commitDateCommitter")}</option>
                             </select>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.rowStriping")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={rowStriping}
+                                onChange={e => setRowStriping(e.target.value as RowStriping)}
+                            >
+                                <option value="Off">{t("options.rowStripingOff")}</option>
+                                <option value="Subtle">{t("options.rowStripingSubtle")}</option>
+                                <option value="Strong">{t("options.rowStripingStrong")}</option>
+                            </select>
+                            <div className="settings-window__section-note">
+                                {t("notes.rowStriping")}
+                            </div>
                         </div>
 
                         <div className="settings-window__row">

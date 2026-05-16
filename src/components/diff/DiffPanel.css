@@ -192,6 +192,16 @@
   border-left-color: var(--accent);
 }
 
+.diff-panel__commit-file-row--striped-subtle { background: var(--row-alternate-bg); }
+.diff-panel__commit-file-row--striped-strong { background: var(--row-alternate-strong-bg); }
+.diff-panel__commit-file-row--striped-subtle:hover,
+.diff-panel__commit-file-row--striped-strong:hover { background: var(--bg-elevated); }
+.diff-panel__commit-file-row--striped-subtle.diff-panel__commit-file-row--selected,
+.diff-panel__commit-file-row--striped-strong.diff-panel__commit-file-row--selected {
+  background: var(--selection-bg);
+  border-left-color: var(--accent);
+}
+
 .diff-panel__commit-file-status {
   width: 18px;
   text-align: center;

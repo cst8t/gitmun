@@ -123,6 +123,19 @@ impl Default for RepoOpenBehaviour {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum RowStriping {
+    Off,
+    Subtle,
+    Strong,
+}
+
+impl Default for RowStriping {
+    fn default() -> Self {
+        Self::Off
+    }
+}
+
 const UI_TEXT_SCALE_VALUES: [f64; 5] = [0.9, 1.0, 1.1, 1.2, 1.3];
 
 fn default_ui_text_scale() -> f64 {
@@ -174,6 +187,8 @@ pub struct Settings {
     pub ui_text_scale: f64,
     #[serde(default)]
     pub wrap_diff_lines: bool,
+    #[serde(default)]
+    pub row_striping: RowStriping,
     pub left_pane_width: u32,
     pub right_pane_width: u32,
     #[serde(default = "Settings::default_confirm_revert")]
@@ -218,6 +233,7 @@ impl Default for Settings {
             theme_mode: ThemeMode::System,
             ui_text_scale: default_ui_text_scale(),
             wrap_diff_lines: false,
+            row_striping: RowStriping::Off,
             left_pane_width: 300,
             right_pane_width: 420,
             confirm_revert: true,

@@ -18,6 +18,8 @@ surface = "#f8f9fb"
 elevated = "#f2f4f7"
 hover = "#e6eaef"
 subtle = "#f0f2f5"
+rowAlternate = "#f3f5f8"
+rowAlternateStrong = "#e8edf4"
 
 [border]
 default = "#c4ccd6"

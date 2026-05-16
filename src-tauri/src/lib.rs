@@ -1236,6 +1236,7 @@ pub fn run() {
             commands::settings::get_theme_bundle,
             commands::settings::set_ui_text_scale,
             commands::settings::set_wrap_diff_lines,
+            commands::settings::set_row_striping,
             commands::settings::set_panel_layout,
             commands::settings::set_confirm_revert,
             commands::settings::get_config_file_path,

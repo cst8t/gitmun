@@ -229,6 +229,12 @@ impl GitService {
         })
     }
 
+    pub fn set_row_striping(&self, row_striping: super::types::RowStriping) -> Settings {
+        self.update_settings(|settings| {
+            settings.row_striping = row_striping;
+        })
+    }
+
     pub fn set_confirm_revert(&self, confirm_revert: bool) -> Settings {
         self.update_settings(|settings| {
             settings.confirm_revert = confirm_revert;

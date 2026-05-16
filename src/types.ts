@@ -7,6 +7,7 @@ export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
+export type RowStriping = "Off" | "Subtle" | "Strong";
 export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
 export type AppUpdateChannel = "SelfManaged" | "MicrosoftStore" | "SystemManaged";
 
@@ -16,6 +17,7 @@ export type Settings = {
     themeMode: ThemeMode;
     uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
+    rowStriping: RowStriping;
     leftPaneWidth: number;
     rightPaneWidth: number;
     confirmRevert: boolean;
@@ -57,6 +59,8 @@ export type ThemeDefinition = {
         elevated: string;
         hover: string;
         subtle: string;
+        rowAlternate: string;
+        rowAlternateStrong: string;
     };
     border: {
         default: string;

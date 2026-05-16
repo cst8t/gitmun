@@ -39,6 +39,7 @@ import type {
     RepoRequest,
     RepoStatus,
     RepoOpenBehaviour,
+    RowStriping,
     SetBranchUpstreamRequest,
     Settings,
     StageFilesRequest,
@@ -391,6 +392,10 @@ export function setUiTextScale(uiTextScale: UiTextScale): Promise<Settings> {
 
 export function setWrapDiffLines(wrapDiffLines: boolean): Promise<Settings> {
     return invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
+}
+
+export function setRowStriping(rowStriping: RowStriping): Promise<Settings> {
+    return invoke<Settings>("set_row_striping", {rowStriping});
 }
 
 export function setPanelLayout(leftPaneWidth: number, rightPaneWidth: number): Promise<Settings> {

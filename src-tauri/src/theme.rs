@@ -61,6 +61,18 @@ pub struct BackgroundTokens {
     pub elevated: String,
     pub hover: String,
     pub subtle: String,
+    #[serde(default = "default_row_alternate")]
+    pub row_alternate: String,
+    #[serde(default = "default_row_alternate_strong")]
+    pub row_alternate_strong: String,
+}
+
+fn default_row_alternate() -> String {
+    "rgba(255, 255, 255, 0.03)".to_string()
+}
+
+fn default_row_alternate_strong() -> String {
+    "rgba(255, 255, 255, 0.06)".to_string()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -207,6 +219,11 @@ pub fn css_variables(theme: &ThemeDefinition) -> String {
         ("--bg-elevated", &theme.background.elevated),
         ("--bg-hover", &theme.background.hover),
         ("--bg-subtle", &theme.background.subtle),
+        ("--row-alternate-bg", &theme.background.row_alternate),
+        (
+            "--row-alternate-strong-bg",
+            &theme.background.row_alternate_strong,
+        ),
         ("--border", &theme.border.default),
         ("--border-subtle", &theme.border.subtle),
         ("--text-primary", &theme.text.primary),
@@ -307,6 +324,8 @@ fn validate_theme(theme: &ThemeDefinition, expected_mode: &str) -> Result<(), St
         &theme.background.elevated,
         &theme.background.hover,
         &theme.background.subtle,
+        &theme.background.row_alternate,
+        &theme.background.row_alternate_strong,
         &theme.border.default,
         &theme.border.subtle,
         &theme.text.primary,
