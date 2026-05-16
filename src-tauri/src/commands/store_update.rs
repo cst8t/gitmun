@@ -222,7 +222,7 @@ mod platform {
                         return Ok(MicrosoftStoreUpdateStatus::Completed);
                     }
                     let operation = context
-                        .RequestDownloadAndInstallStorePackageUpdatesAsync(updates)
+                        .RequestDownloadAndInstallStorePackageUpdatesAsync(&updates)
                         .map_err(|error| error.to_string())?;
                     let completion_sender = sender.take().ok_or_else(|| {
                         "Microsoft Store update callback was already used.".to_string()
