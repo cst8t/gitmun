@@ -132,7 +132,7 @@ mod platform {
     use tauri::{Manager, WebviewWindow};
     use windows::{
         ApplicationModel::{Package, PackageVersion},
-        Services::Store::{StoreContext, StorePackageUpdate, StorePackageUpdateState},
+        Services::Store::{StoreContext, StorePackageUpdateState},
         Win32::Foundation::HWND,
         Win32::UI::Shell::IInitializeWithWindow,
         core::Interface,
@@ -230,12 +230,14 @@ mod platform {
                     operation
                         .SetCompleted(&AsyncOperationWithProgressCompletedHandler::new(
                             move |operation, _status| {
-                                let result = operation
-                                    .ok()
-                                    .and_then(|operation| operation.GetResults())
-                                    .and_then(|result| result.OverallState())
-                                    .map(update_status)
-                                    .map_err(|error| error.to_string());
+                                let result = match operation {
+                                    Ok(operation) => operation
+                                        .GetResults()
+                                        .and_then(|result| result.OverallState())
+                                        .map(update_status)
+                                        .map_err(|error| error.to_string()),
+                                    Err(error) => Err(error.to_string()),
+                                };
                                 let _ = completion_sender.send(result);
                                 Ok(())
                             },
