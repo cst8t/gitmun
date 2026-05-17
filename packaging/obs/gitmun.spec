@@ -25,6 +25,8 @@ BuildRequires:  pkgconfig(librsvg-2.0)
 BuildRequires:  pkgconfig(openssl)
 BuildRequires:  pkgconfig(webkit2gtk-4.1)
 Requires:       git
+Requires:       xdg-desktop-portal
+Requires:       zenity
 
 %undefine __brp_mangle_shebangs
 

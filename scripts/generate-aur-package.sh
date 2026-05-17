@@ -91,6 +91,8 @@ depends=(
   'libsoup3'
   'pango'
   'webkit2gtk-4.1'
+  'xdg-desktop-portal'
+  'zenity'
 )
 options=('!strip' '!debug' '!emptydirs')
 install=${INSTALL_FILE}
@@ -145,6 +147,8 @@ pkgbase = ${PKGNAME}
   depends = libsoup3
   depends = pango
   depends = webkit2gtk-4.1
+  depends = xdg-desktop-portal
+  depends = zenity
   source = ${UPSTREAM_LICENSE_FILE}
   source_x86_64 = ${SOURCE_URL}
   sha256sums = ${UPSTREAM_LICENSE_SHA256}
