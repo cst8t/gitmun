@@ -20,6 +20,8 @@ install_apt() {
     libxdo-dev \
     patchelf \
     pkg-config \
+    xdg-desktop-portal \
+    zenity \
     wget
 }
 
@@ -37,8 +39,10 @@ install_pacman() {
     patchelf \
     pkgconf \
     webkit2gtk-4.1 \
+    xdg-desktop-portal \
     wget \
-    xdotool
+    xdotool \
+    zenity
 }
 
 install_dnf() {
@@ -56,7 +60,9 @@ install_dnf() {
     patchelf \
     pkgconf-pkg-config \
     webkit2gtk4.1-devel \
-    wget
+    xdg-desktop-portal \
+    wget \
+    zenity
 
   if ! sudo dnf install -y libappindicator-gtk3-devel; then
     if ! sudo dnf install -y libayatana-appindicator-gtk3-devel; then

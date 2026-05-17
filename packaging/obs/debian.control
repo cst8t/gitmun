@@ -25,6 +25,8 @@ Package: gitmun
 Architecture: any
 Depends:
  git,
+ xdg-desktop-portal,
+ zenity,
  ${misc:Depends},
  ${shlibs:Depends}
 Description: cross-platform Git client

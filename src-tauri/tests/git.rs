@@ -24,6 +24,16 @@ fn init_repo() -> TempDir {
     dir
 }
 
+fn init_unborn_repo() -> TempDir {
+    let dir = TempDir::new().expect("create temp dir");
+    let path = dir.path();
+    git(path, &["init", "-b", "main"]);
+    git(path, &["config", "user.email", "test@gitmun.test"]);
+    git(path, &["config", "user.name", "Gitmun Test"]);
+    git(path, &["config", "commit.gpgsign", "false"]);
+    dir
+}
+
 fn git(repo: &Path, args: &[&str]) {
     let status = Command::new("git")
         .args(args)
@@ -270,6 +280,82 @@ fn stage_files_moves_file_to_staged() {
         .expect("get_repo_status");
     assert!(status.staged_files.iter().any(|f| f.path == "a.txt"));
     assert!(status.unversioned_files.is_empty());
+}
+
+#[test]
+fn unstage_file_in_initial_commit_keeps_worktree_file() {
+    let dir = init_unborn_repo();
+    write_file(dir.path(), "PLAN.md", "draft v1");
+    git(dir.path(), &["add", "PLAN.md"]);
+    write_file(dir.path(), "PLAN.md", "draft v2");
+
+    handler()
+        .unstage_file(&file_request(&dir, "PLAN.md"))
+        .expect("unstage_file");
+
+    assert_eq!(
+        fs::read_to_string(dir.path().join("PLAN.md")).expect("read PLAN.md"),
+        "draft v2"
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        ""
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["status", "--porcelain"]),
+        "?? PLAN.md"
+    );
+}
+
+#[test]
+fn unstage_all_in_initial_commit_keeps_worktree_files() {
+    let dir = init_unborn_repo();
+    fs::create_dir_all(dir.path().join("notes")).expect("create notes dir");
+    write_file(dir.path(), "PLAN.md", "plan");
+    write_file(dir.path(), "notes/todo.txt", "todo v1");
+    git(dir.path(), &["add", "."]);
+    write_file(dir.path(), "notes/todo.txt", "todo v2");
+
+    handler()
+        .unstage_all(&repo_request(&dir))
+        .expect("unstage_all");
+
+    assert!(dir.path().join("PLAN.md").exists());
+    assert_eq!(
+        fs::read_to_string(dir.path().join("notes/todo.txt")).expect("read todo"),
+        "todo v2"
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        ""
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["status", "--porcelain"]),
+        "?? PLAN.md\n?? notes/"
+    );
+}
+
+#[test]
+fn unstage_file_in_repo_with_head_keeps_change_unstaged() {
+    let dir = init_repo();
+    write_file(dir.path(), "tracked.txt", "v1");
+    git(dir.path(), &["add", "tracked.txt"]);
+    git(dir.path(), &["commit", "-m", "add tracked file"]);
+    write_file(dir.path(), "tracked.txt", "v2");
+    git(dir.path(), &["add", "tracked.txt"]);
+
+    handler()
+        .unstage_file(&file_request(&dir, "tracked.txt"))
+        .expect("unstage_file");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        ""
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--name-only"]),
+        "tracked.txt"
+    );
 }
 
 #[test]

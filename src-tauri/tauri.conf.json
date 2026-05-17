@@ -41,10 +41,10 @@
     ],
     "linux": {
       "deb": {
-        "depends": ["git"]
+        "depends": ["git", "xdg-desktop-portal", "zenity"]
       },
       "rpm": {
-        "depends": ["git"]
+        "depends": ["git", "xdg-desktop-portal", "zenity"]
       }
     },
     "windows": {

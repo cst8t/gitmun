@@ -1614,6 +1614,19 @@ impl CliGitHandler {
             _ => None,
         }
     }
+
+    fn has_head_commit(repo_path: &Path) -> GitResult<bool> {
+        if let Some(error) = Self::check_head_broken(repo_path) {
+            return Err(error);
+        }
+
+        let output = Self::run_git_allow_exit_codes(
+            &["rev-parse", "--verify", "--quiet", "HEAD"],
+            Some(repo_path),
+            &[1],
+        )?;
+        Ok(!output.trim().is_empty())
+    }
 }
 
 impl GitOperationHandler for CliGitHandler {
@@ -2425,7 +2438,11 @@ impl GitOperationHandler for CliGitHandler {
     fn unstage_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
-        Self::run_git(&["restore", "--staged", "--", file_path], Some(&repo_path))?;
+        if Self::has_head_commit(&repo_path)? {
+            Self::run_git(&["restore", "--staged", "--", file_path], Some(&repo_path))?;
+        } else {
+            Self::run_git(&["rm", "--cached", "-f", "--", file_path], Some(&repo_path))?;
+        }
 
         Ok(OperationResult {
             message: format!("Unstaged {file_path}"),
@@ -2437,7 +2454,11 @@ impl GitOperationHandler for CliGitHandler {
 
     fn unstage_all(&self, request: &RepoRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-        Self::run_git(&["restore", "--staged", "."], Some(&repo_path))?;
+        if Self::has_head_commit(&repo_path)? {
+            Self::run_git(&["restore", "--staged", "."], Some(&repo_path))?;
+        } else {
+            Self::run_git(&["rm", "-r", "--cached", "-f", "--", "."], Some(&repo_path))?;
+        }
 
         Ok(OperationResult {
             message: "Unstaged all files".to_string(),
