@@ -13,7 +13,7 @@ project="${OBS_PROJECT:-home:cst8t:gitmun}"
 package="${OBS_PACKAGE:-gitmun}"
 rpm_repository="${OBS_RPM_REPOSITORY:-openSUSE_Tumbleweed}"
 rpm_arch="${OBS_RPM_ARCH:-x86_64}"
-deb_repository="${OBS_DEB_REPOSITORY:-Debian_Testing}"
+deb_repository="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
 deb_arch="${OBS_DEB_ARCH:-x86_64}"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 tmp_dir="$(mktemp -d)"
@@ -104,5 +104,7 @@ cp "${input_dir}/commit-hash.txt" "$checkout_dir"/
   osc commit --skip-local-service-run -m "Prepare OBS sources for ${version}"
 )
 
-osc rebuild "$project" "$package"
-osc results -w "$project" "$package"
+osc rebuild "$project" "$package" "$rpm_repository" "$rpm_arch"
+osc rebuild "$project" "$package" "$deb_repository" "$deb_arch"
+osc results -w -F -r "$rpm_repository" -a "$rpm_arch" "$project" "$package"
+osc results -w -F -r "$deb_repository" -a "$deb_arch" "$project" "$package"

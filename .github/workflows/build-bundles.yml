@@ -121,7 +121,7 @@ jobs:
           OBS_PACKAGE: gitmun
           OBS_RPM_REPOSITORY: openSUSE_Tumbleweed
           OBS_RPM_ARCH: x86_64
-          OBS_DEB_REPOSITORY: Debian_Testing
+          OBS_DEB_REPOSITORY: xUbuntu_26.04
           OBS_DEB_ARCH: x86_64
         run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
