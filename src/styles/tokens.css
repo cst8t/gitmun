@@ -97,6 +97,8 @@
   --bg-elevated: #f2f4f7;
   --bg-hover: #e6eaef;
   --bg-subtle: #f0f2f5;
+  --row-alternate-bg: #f3f5f8;
+  --row-alternate-strong-bg: #dfe6ef;
 
   --border: #c4ccd6;
   --border-subtle: #d4dbe3;
@@ -146,6 +148,8 @@
   --bg-elevated: #1d2230;
   --bg-hover: #252b3a;
   --bg-subtle: #1b1f2a;
+  --row-alternate-bg: #131720;
+  --row-alternate-strong-bg: #1b2130;
 
   --border: #2b3142;
   --border-subtle: #202636;

@@ -7,6 +7,8 @@ const LIGHT_THEME: &str = include_str!("../themes/light.toml");
 const DARK_THEME: &str = include_str!("../themes/dark.toml");
 const DEFAULT_UI_FONT: &str = "'Inter', sans-serif";
 const DEFAULT_MONO_FONT: &str = "'JetBrains Mono', monospace";
+const OLD_LIGHT_STRONG_STRIPE: &str = "rowAlternateStrong = \"#e8edf4\"";
+const LIGHT_STRONG_STRIPE: &str = "rowAlternateStrong = \"#dfe6ef\"";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -279,16 +281,29 @@ fn load_or_create_theme(
     }
 
     match std::fs::read_to_string(path) {
-        Ok(contents) => match parse_theme(&contents, expected_mode) {
-            Ok(theme) => theme,
-            Err(error) => {
-                eprintln!(
-                    "Failed to load theme {}: {error}. Using built-in fallback.",
-                    path.display()
-                );
-                fallback
+        Ok(contents) => {
+            let contents =
+                match migrated_generated_theme_contents(&contents, bundled, expected_mode) {
+                    Some(migrated) => {
+                        if let Err(error) = std::fs::write(path, &migrated) {
+                            eprintln!("Failed to update theme {}: {error}.", path.display());
+                        }
+                        migrated
+                    }
+                    None => contents,
+                };
+
+            match parse_theme(&contents, expected_mode) {
+                Ok(theme) => theme,
+                Err(error) => {
+                    eprintln!(
+                        "Failed to load theme {}: {error}. Using built-in fallback.",
+                        path.display()
+                    );
+                    fallback
+                }
             }
-        },
+        }
         Err(error) => {
             eprintln!(
                 "Failed to read theme {}: {error}. Using built-in fallback.",
@@ -297,6 +312,19 @@ fn load_or_create_theme(
             fallback
         }
     }
+}
+
+fn migrated_generated_theme_contents(
+    contents: &str,
+    bundled: &str,
+    expected_mode: &str,
+) -> Option<String> {
+    if expected_mode != "light" {
+        return None;
+    }
+
+    let old_generated = bundled.replace(LIGHT_STRONG_STRIPE, OLD_LIGHT_STRONG_STRIPE);
+    (contents == old_generated).then(|| bundled.to_string())
 }
 
 fn parse_theme(contents: &str, expected_mode: &str) -> Result<ThemeDefinition, String> {
@@ -502,6 +530,24 @@ mod tests {
     fn bundled_themes_are_valid() {
         parse_theme(LIGHT_THEME, "light").unwrap();
         parse_theme(DARK_THEME, "dark").unwrap();
+    }
+
+    #[test]
+    fn migrates_old_generated_light_theme() {
+        let old_generated = LIGHT_THEME.replace(LIGHT_STRONG_STRIPE, OLD_LIGHT_STRONG_STRIPE);
+
+        assert_eq!(
+            migrated_generated_theme_contents(&old_generated, LIGHT_THEME, "light").as_deref(),
+            Some(LIGHT_THEME)
+        );
+    }
+
+    #[test]
+    fn leaves_customised_light_theme_unchanged() {
+        let old_generated = LIGHT_THEME.replace(LIGHT_STRONG_STRIPE, OLD_LIGHT_STRONG_STRIPE);
+        let customised = old_generated.replace("base = \"#eceff3\"", "base = \"#ffffff\"");
+
+        assert!(migrated_generated_theme_contents(&customised, LIGHT_THEME, "light").is_none());
     }
 
     #[test]
