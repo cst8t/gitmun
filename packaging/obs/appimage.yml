@@ -7,5 +7,9 @@ ingredients:
 
 script:
   - cd "$BUILD_APPDIR"
+  - rm -f usr/lib64/libgst*.so*
+  - rm -f usr/lib64/libgstreamer*.so*
+  - rm -rf usr/lib64/gstreamer-1.0
+  - rm -f usr/lib64/libpcre2-8.so*
   - cp usr/share/applications/com.cst8t.gitmun.desktop .
   - cp usr/share/icons/hicolor/512x512/apps/com.cst8t.gitmun.png .
