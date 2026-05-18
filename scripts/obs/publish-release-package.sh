@@ -15,6 +15,9 @@ rpm_repository="${OBS_RPM_REPOSITORY:-openSUSE_Tumbleweed}"
 rpm_arch="${OBS_RPM_ARCH:-x86_64}"
 deb_repository="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
 deb_arch="${OBS_DEB_ARCH:-x86_64}"
+appimage_repository="${OBS_APPIMAGE_REPOSITORY:-AppImage}"
+appimage_arch="${OBS_APPIMAGE_ARCH:-x86_64}"
+build_appimage="${OBS_BUILD_APPIMAGE:-true}"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -82,8 +85,10 @@ find "$checkout_dir" -maxdepth 1 -type f -name 'node_modules.spec.inc' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'package-lock.json' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'ATTRIBUTIONS.html' -delete
 find "$checkout_dir" -maxdepth 1 -type f -name 'commit-hash.txt' -delete
+find "$checkout_dir" -maxdepth 1 -type f -name 'appimage.yml' -delete
 
 cp "$render_dir"/_service "$checkout_dir"/
+cp "$render_dir"/appimage.yml "$checkout_dir"/
 cp "$render_dir"/gitmun.spec "$checkout_dir"/
 cp "$render_dir"/gitmun.dsc "$checkout_dir"/
 cp "$render_dir"/debian.changelog "$checkout_dir"/
@@ -108,3 +113,8 @@ osc rebuild "$project" "$package" "$rpm_repository" "$rpm_arch"
 osc rebuild "$project" "$package" "$deb_repository" "$deb_arch"
 osc results -w -F -r "$rpm_repository" -a "$rpm_arch" "$project" "$package"
 osc results -w -F -r "$deb_repository" -a "$deb_arch" "$project" "$package"
+
+if [ "$build_appimage" = "true" ]; then
+  osc rebuild "$project" "$package" "$appimage_repository" "$appimage_arch"
+  osc results -w -F -r "$appimage_repository" -a "$appimage_arch" "$project" "$package"
+fi

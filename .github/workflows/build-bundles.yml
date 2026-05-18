@@ -85,11 +85,7 @@ jobs:
           fi
           echo "BUNDLE_VERSION=${BUNDLE_VERSION}" >> "$GITHUB_ENV"
           echo "RELEASE_TAG=${RELEASE_TAG}" >> "$GITHUB_ENV"
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            echo "LINUX_BUNDLES=appimage" >> "$GITHUB_ENV"
-          else
-            echo "LINUX_BUNDLES=deb,rpm,appimage" >> "$GITHUB_ENV"
-          fi
+          echo "LINUX_BUNDLES=deb,rpm" >> "$GITHUB_ENV"
           echo "Using BUNDLE_VERSION=${BUNDLE_VERSION}"
 
       - name: Setup Python for OBS tooling
@@ -114,7 +110,7 @@ jobs:
           OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
         run: bash ./scripts/obs/configure-osc.sh
 
-      - name: Build Linux deb and rpm packages in OBS
+      - name: Build Linux deb, rpm and AppImage packages in OBS
         if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         env:
           OBS_PROJECT: home:cst8t:gitmun
@@ -123,9 +119,12 @@ jobs:
           OBS_RPM_ARCH: x86_64
           OBS_DEB_REPOSITORY: xUbuntu_26.04
           OBS_DEB_ARCH: x86_64
+          OBS_APPIMAGE_REPOSITORY: AppImage
+          OBS_APPIMAGE_ARCH: x86_64
         run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
       - name: Build Tauri Linux bundles and updater metadata
+        if: ${{ github.event_name != 'release' }}
         uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -200,8 +199,6 @@ jobs:
           path: |
             src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
-            src-tauri/target/release/bundle/appimage/*.AppImage
-            src-tauri/target/release/bundle/appimage/*.sig
             src-tauri/target/release/bundle/aur/*.zip
             public/ATTRIBUTIONS.html
 
