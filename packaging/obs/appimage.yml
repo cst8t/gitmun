@@ -1,0 +1,11 @@
+app: gitmun
+binpatch: true
+
+ingredients:
+  packages:
+    - gitmun
+
+script:
+  - cd "$BUILD_APPDIR"
+  - cp usr/share/applications/com.cst8t.gitmun.desktop .
+  - cp usr/share/icons/hicolor/512x512/apps/com.cst8t.gitmun.png .

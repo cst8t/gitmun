@@ -12,4 +12,5 @@
     <param name="update">false</param>
     <param name="respect-lockfile">true</param>
   </service>
+  <service name="appimage"/>
 </services>
