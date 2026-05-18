@@ -4,8 +4,6 @@ import * as api from "../api/commands";
 import type { AppAvailableUpdate, AvailableUpdate, MicrosoftStoreUpdate, UpdateDownloadEvent } from "../types";
 
 const DISMISSED_UPDATE_VERSION_KEY = "gitmun.dismissedUpdateVersion";
-const STORE_UPDATE_AUTO_CHECKED_AT_KEY = "gitmun.microsoftStoreUpdateAutoCheckedAt";
-const STORE_UPDATE_AUTO_CHECK_INTERVAL_MS = 30 * 60 * 1000;
 
 export type UpdateDialogPhase =
   | "prompt"
@@ -37,22 +35,6 @@ function readDismissedVersion(): string | null {
 function writeDismissedVersion(version: string): void {
   try {
     localStorage.setItem(DISMISSED_UPDATE_VERSION_KEY, version);
-  } catch {
-  }
-}
-
-function shouldSkipStoreAutoCheck(): boolean {
-  try {
-    const checkedAt = Number(localStorage.getItem(STORE_UPDATE_AUTO_CHECKED_AT_KEY) ?? "0");
-    return Number.isFinite(checkedAt) && Date.now() - checkedAt < STORE_UPDATE_AUTO_CHECK_INTERVAL_MS;
-  } catch {
-    return false;
-  }
-}
-
-function markStoreAutoCheck(): void {
-  try {
-    localStorage.setItem(STORE_UPDATE_AUTO_CHECKED_AT_KEY, String(Date.now()));
   } catch {
   }
 }
@@ -129,16 +111,9 @@ export function useUpdateFlow() {
         return null;
       }
 
-      if (updateChannel === "MicrosoftStore" && silentIfNoUpdate && shouldSkipStoreAutoCheck()) {
-        return null;
-      }
-
       const update = updateChannel === "MicrosoftStore"
         ? await api.checkMicrosoftStoreUpdate().then((storeUpdate) => storeUpdate ? microsoftStoreUpdate(storeUpdate) : null)
         : await api.checkForAppUpdate().then((availableUpdate) => availableUpdate ? releaseUpdate(availableUpdate) : null);
-      if (updateChannel === "MicrosoftStore" && silentIfNoUpdate) {
-        markStoreAutoCheck();
-      }
       if (!update) {
         if (!silentIfNoUpdate) {
           setStatusMessage(updateChannel === "MicrosoftStore"

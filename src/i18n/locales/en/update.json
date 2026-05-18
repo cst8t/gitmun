@@ -24,9 +24,9 @@
     "storeFailedBody": "Microsoft Store could not start the update: {{message}}",
     "storeFailedTitle": "Microsoft Store update failed",
     "storeMandatory": "Microsoft Store marks this update as required.",
-    "storeOpening": "Opening Microsoft Store...",
-    "storeOpeningBody": "Windows is preparing the update. Follow any Microsoft Store prompts to continue.",
-    "storeOpeningTitle": "Opening Microsoft Store update",
+    "storeOpening": "Starting Microsoft Store update...",
+    "storeOpeningBody": "Windows is preparing the update. Follow any Windows prompts to continue.",
+    "storeOpeningTitle": "Starting Microsoft Store update",
     "storePromptBody": "A newer Gitmun release is available through Microsoft Store.",
     "storePromptTitle": "An update is available",
     "unknownError": "Unknown error"
