@@ -11,5 +11,9 @@ script:
   - rm -f usr/lib64/libgstreamer*.so*
   - rm -rf usr/lib64/gstreamer-1.0
   - rm -f usr/lib64/libpcre2-8.so*
+  - perl -0pi -e 's#/usr/lib/libwebkit2gtk-4_1-0#/tmp/gitmun-webkit2gtk-4_1-0#g; s#/usr/lib64/webkit2gtk-4\.1/injected-bundle/#/tmp/gitmun-webkit-injected-bundle-000000/#g' usr/lib64/libwebkit2gtk-4.1.so.0.*
+  - mv usr/bin/gitmun usr/bin/gitmun.real
+  - printf '%s\n' '#!/bin/sh' 'set -eu' 'appdir="${APPDIR:-$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)}"' 'webkit_process_dir="/tmp/gitmun-webkit2gtk-4_1-0"' 'webkit_bundle_dir="/tmp/gitmun-webkit-injected-bundle-000000"' 'rm -rf "$webkit_process_dir" "$webkit_bundle_dir"' 'ln -s "$appdir/usr/lib/libwebkit2gtk-4_1-0" "$webkit_process_dir"' 'ln -s "$appdir/usr/lib64/webkit2gtk-4.1/injected-bundle" "$webkit_bundle_dir"' 'exec "$appdir/usr/bin/gitmun.real" "$@"' > usr/bin/gitmun
+  - chmod 0755 usr/bin/gitmun
   - cp usr/share/applications/com.cst8t.gitmun.desktop .
   - cp usr/share/icons/hicolor/512x512/apps/com.cst8t.gitmun.png .
