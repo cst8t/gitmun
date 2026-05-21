@@ -534,6 +534,7 @@ pub struct RebaseResult {
     pub success: bool,
     pub has_conflicts: bool,
     pub conflicted_files: Vec<String>,
+    pub rebase_in_progress: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

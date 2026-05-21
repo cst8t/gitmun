@@ -129,6 +129,13 @@ export function getEffectiveCommitAction(
   return canCommitAndPush ? selectedAction : "commit";
 }
 
+export function shouldForceWithLeaseAfterRebase(
+  rebasedBranchAwaitingPush: string | null,
+  currentBranch: string | null,
+): boolean {
+  return rebasedBranchAwaitingPush !== null && rebasedBranchAwaitingPush === currentBranch;
+}
+
 export type ProjectViewProps = {
   /** The active repository path. Changing this key causes a full remount. */
   repoPath: string | null;
@@ -241,6 +248,7 @@ export function ProjectView({
   const [commitPrimaryAction, setCommitPrimaryActionState] = useState<CommitPrimaryAction>("commit");
   const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(72);
   const [pushFollowTags, setPushFollowTags] = useState(false);
+  const [rebasedBranchAwaitingPush, setRebasedBranchAwaitingPush] = useState<string | null>(null);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [searchQuery, setSearchQuery] = useState("");
@@ -294,6 +302,7 @@ export function ProjectView({
   const currentBranchInfo = branches.find(b => b.isCurrent && !b.isRemote);
   const remoteBranches = branches.filter(b => b.isRemote);
   const remoteActionState = getRemoteActionState(currentBranch, currentBranchInfo);
+  const forceWithLeaseAfterRebase = shouldForceWithLeaseAfterRebase(rebasedBranchAwaitingPush, currentBranch);
   const canCommitAndPush = currentBranchInfo?.upstreamStatus === "tracked";
   const effectiveCommitAction = getEffectiveCommitAction(commitPrimaryAction, canCommitAndPush);
   const remoteActionLabel = remoteActionState.kind === "publish"
@@ -305,7 +314,9 @@ export function ProjectView({
     ? t("remoteAction.detachedTitle", { ns: "git" })
     : remoteActionState.kind === "repair-upstream"
       ? t("remoteAction.repairUpstreamTitle", { ns: "git" })
-      : undefined;
+      : forceWithLeaseAfterRebase
+        ? t("remoteAction.forceWithLeaseTitle", { ns: "git" })
+        : undefined;
 
   useEffect(() => {
     setLogScope("currentCheckout");
@@ -753,6 +764,9 @@ export function ProjectView({
       }
       showToast(successToast);
       appendResultLog("success", result.message, result.backendUsed);
+      if (request.forceWithLease) {
+        setRebasedBranchAwaitingPush(null);
+      }
       await refreshAll();
     } catch (e) {
       showToast(String(e), "error");
@@ -784,9 +798,10 @@ export function ProjectView({
 
     await runPushRequest({
       repoPath,
+      forceWithLease: forceWithLeaseAfterRebase,
       pushFollowTags,
     }, t("toast.pushComplete"), t("toast.pushFailed"));
-  }, [remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
+  }, [forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     setIsCommitting(true);
@@ -1530,6 +1545,7 @@ export function ProjectView({
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
+        setRebasedBranchAwaitingPush(currentBranch);
       }
       await refreshAll();
     } catch (e) {
@@ -1552,6 +1568,9 @@ export function ProjectView({
       } else {
         showToast(result.message, "success");
         appendResultLog("success", result.message, result.backendUsed);
+        if (!result.rebaseInProgress) {
+          setRebasedBranchAwaitingPush(currentBranch);
+        }
       }
       await refreshAll();
     } catch (e) {
@@ -1560,7 +1579,7 @@ export function ProjectView({
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, rebaseInProgress, refreshAll, showToast, t]);
+  }, [repoPath, rebaseInProgress, currentBranch, refreshAll, showToast, t]);
 
   const handleRebaseAbort = useCallback(async () => {
     if (!repoPath || !rebaseInProgress) return;

@@ -416,6 +416,7 @@ export type RebaseResult = {
     success: boolean;
     hasConflicts: boolean;
     conflictedFiles: string[];
+    rebaseInProgress: boolean;
 };
 
 export type CherryPickRequest = RepoRequest & {

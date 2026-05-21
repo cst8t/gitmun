@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import i18n from "../i18n";
-import { buildStashDropPrompt, getEffectiveCommitAction } from "./ProjectView";
+import { buildStashDropPrompt, getEffectiveCommitAction, shouldForceWithLeaseAfterRebase } from "./ProjectView";
 
 const t = i18n.getFixedT("en", "projectView");
 
@@ -23,5 +23,19 @@ describe("getEffectiveCommitAction", () => {
 
   it("keeps the selected action when commit and push is available", () => {
     expect(getEffectiveCommitAction("commitAndPush", true)).toBe("commitAndPush");
+  });
+});
+
+describe("shouldForceWithLeaseAfterRebase", () => {
+  it("forces the next push on the rebased branch", () => {
+    expect(shouldForceWithLeaseAfterRebase("main", "main")).toBe(true);
+  });
+
+  it("does not force pushes on other branches", () => {
+    expect(shouldForceWithLeaseAfterRebase("main", "feature")).toBe(false);
+  });
+
+  it("does not force pushes without a completed rebase", () => {
+    expect(shouldForceWithLeaseAfterRebase(null, "main")).toBe(false);
   });
 });

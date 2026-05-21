@@ -3758,6 +3758,7 @@ impl GitOperationHandler for CliGitHandler {
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
+            rebase_in_progress,
         })
     }
 
@@ -3801,6 +3802,7 @@ impl GitOperationHandler for CliGitHandler {
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
+            rebase_in_progress,
         })
     }
 
