@@ -58,6 +58,7 @@ import type { ResultLogEntry } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
+import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
 import { getRemoteActionState } from "../utils/remoteActionState";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
@@ -723,24 +724,15 @@ export function ProjectView({
   }, [runPullWithStrategy]);
 
   const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
-    let interpretedMessage: string | null = null;
-    if (result.interpretedError) {
-      const actions = result.interpretedError.suggestedActions
-        .slice(0, 3)
-        .map((action) => tGitAdvice(`actions.${action}`, { defaultValue: action }))
-        .join(", ");
-      interpretedMessage = actions
-        ? tGitAdvice("withActions", { summary: result.interpretedError.summary, actions })
-        : result.interpretedError.summary;
-    }
-    if (result.rejection && ["non-fast-forward", "no-upstream", "upstream-missing"].includes(result.rejection.kind)) {
-      setPushRejectionAnalysis(result.rejection);
-      appendResultLog("error", interpretedMessage ?? result.rejection.message, result.backendUsed);
+    const display = buildPushFailureDisplay(result, tGitAdvice);
+    if (display.dialogRejection) {
+      setPushRejectionAnalysis(display.dialogRejection);
+      appendResultLog("error", display.logMessage, result.backendUsed, undefined, display.logDetails);
       return;
     }
 
-    showToast(interpretedMessage ?? result.message, "error");
-    appendResultLog("error", result.output?.trim() || result.message, result.backendUsed);
+    showToast(display.toastMessage ?? result.message, "error");
+    appendResultLog("error", display.logMessage, result.backendUsed, undefined, display.logDetails);
   }, [showToast, tGitAdvice]);
 
   const runPushRequest = useCallback(async (

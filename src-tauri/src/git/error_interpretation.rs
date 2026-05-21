@@ -168,11 +168,32 @@ fn classify_message(message: &str) -> (GitErrorCategory, f32) {
             "could not find remote ref",
             "upstream is gone",
             "remote ref does not exist",
+            "no such ref",
+            "no such remote ref",
         ],
     ) || (lower.contains("remote branch")
         && contains_any(&lower, &["not found", "does not exist", "missing"]))
     {
         return (GitErrorCategory::UpstreamMissing, 0.9);
+    }
+
+    if contains_any(
+        &lower,
+        &[
+            "could not resolve host",
+            "failed to connect",
+            "connection timed out",
+            "network is unreachable",
+            "connection reset",
+            "operation timed out",
+            "temporary failure in name resolution",
+            "name or service not known",
+            "could not resolve hostname",
+            "unable to access",
+            "couldn't connect to server",
+        ],
+    ) {
+        return (GitErrorCategory::Network, 0.85);
     }
 
     if contains_any(
@@ -190,22 +211,6 @@ fn classify_message(message: &str) -> (GitErrorCategory, f32) {
         ],
     ) {
         return (GitErrorCategory::Auth, 0.9);
-    }
-
-    if contains_any(
-        &lower,
-        &[
-            "could not resolve host",
-            "failed to connect",
-            "connection timed out",
-            "network is unreachable",
-            "connection reset",
-            "operation timed out",
-            "unable to access",
-            "couldn't connect to server",
-        ],
-    ) {
-        return (GitErrorCategory::Network, 0.85);
     }
 
     if contains_any(
@@ -330,6 +335,21 @@ mod tests {
     #[derive(Debug)]
     struct FakeTransportError;
 
+    #[derive(Debug)]
+    struct FakeAuthError;
+
+    #[derive(Debug)]
+    struct FakeLockTransactionError;
+
+    #[derive(Debug)]
+    struct FakeConfigError;
+
+    #[derive(Debug)]
+    struct FakeReferenceRevisionError;
+
+    #[derive(Debug)]
+    struct FakeFallbackError(&'static str);
+
     impl std::fmt::Display for FakeTransportError {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             write!(f, "handshake failed")
@@ -337,6 +357,46 @@ mod tests {
     }
 
     impl Error for FakeTransportError {}
+
+    impl std::fmt::Display for FakeAuthError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "credential lookup failed")
+        }
+    }
+
+    impl Error for FakeAuthError {}
+
+    impl std::fmt::Display for FakeLockTransactionError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "transaction could not write lock")
+        }
+    }
+
+    impl Error for FakeLockTransactionError {}
+
+    impl std::fmt::Display for FakeConfigError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "config value is invalid")
+        }
+    }
+
+    impl Error for FakeConfigError {}
+
+    impl std::fmt::Display for FakeReferenceRevisionError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "revision could not be resolved")
+        }
+    }
+
+    impl Error for FakeReferenceRevisionError {}
+
+    impl std::fmt::Display for FakeFallbackError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            write!(f, "{}", self.0)
+        }
+    }
+
+    impl Error for FakeFallbackError {}
 
     #[test]
     fn cli_non_fast_forward_wins_before_broader_rejected_text() {
@@ -381,6 +441,34 @@ mod tests {
 
         assert_eq!(auth.category, GitErrorCategory::Auth);
         assert_eq!(network.category, GitErrorCategory::Network);
+    }
+
+    #[test]
+    fn cli_upstream_missing_matches_common_remote_ref_messages() {
+        let interpreted = interpret_cli_error(
+            Some("push"),
+            "fatal: couldn't find remote ref refs/heads/main\nerror: no such ref was fetched",
+            Some(128),
+        );
+
+        assert_eq!(interpreted.category, GitErrorCategory::UpstreamMissing);
+        assert!(interpreted.confidence >= 0.85);
+    }
+
+    #[test]
+    fn cli_dns_style_output_maps_to_network() {
+        let interpreted = interpret_cli_error(
+            Some("fetch"),
+            "ssh: Could not resolve hostname example.invalid: Name or service not known\nfatal: Could not read from remote repository.",
+            Some(128),
+        );
+
+        assert_eq!(interpreted.category, GitErrorCategory::Network);
+        assert!(
+            interpreted
+                .suggested_actions
+                .contains(&"check-network".to_string())
+        );
     }
 
     #[test]
@@ -431,6 +519,48 @@ mod tests {
 
         assert_eq!(interpreted.category, GitErrorCategory::Network);
         assert_eq!(interpreted.backend, GitBackendSource::Gix);
+    }
+
+    #[test]
+    fn gix_typed_auth_family_maps_to_auth() {
+        let err = FakeAuthError;
+        let interpreted = interpret_gix_error(Some("fetch"), &err);
+
+        assert_eq!(interpreted.category, GitErrorCategory::Auth);
+        assert_eq!(interpreted.backend, GitBackendSource::Gix);
+    }
+
+    #[test]
+    fn gix_typed_lock_transaction_family_maps_to_index_lock() {
+        let err = FakeLockTransactionError;
+        let interpreted = interpret_gix_error(Some("commit"), &err);
+
+        assert_eq!(interpreted.category, GitErrorCategory::IndexLock);
+    }
+
+    #[test]
+    fn gix_typed_config_family_maps_to_repo_state() {
+        let err = FakeConfigError;
+        let interpreted = interpret_gix_error(Some("status"), &err);
+
+        assert_eq!(interpreted.category, GitErrorCategory::RepoState);
+    }
+
+    #[test]
+    fn gix_typed_reference_revision_family_maps_to_repo_state() {
+        let err = FakeReferenceRevisionError;
+        let interpreted = interpret_gix_error(Some("log"), &err);
+
+        assert_eq!(interpreted.category, GitErrorCategory::RepoState);
+    }
+
+    #[test]
+    fn gix_fallback_message_uses_other_for_unknowns() {
+        let err = FakeFallbackError("unexpected internal state");
+        let interpreted = interpret_gix_error(Some("status"), &err);
+
+        assert_eq!(interpreted.category, GitErrorCategory::Other);
+        assert!(interpreted.confidence < 0.5);
     }
 
     #[test]

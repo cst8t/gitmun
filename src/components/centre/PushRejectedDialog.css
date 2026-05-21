@@ -1,7 +1,13 @@
 .push-rejected-dialog {
+  --push-rejected-warning: var(--yellow);
+
   position: relative;
   width: 460px;
   overflow: hidden;
+}
+
+:root[data-theme="light"] .push-rejected-dialog {
+  --push-rejected-warning: #d19500;
 }
 
 .push-rejected-dialog::before {
@@ -9,7 +15,7 @@
   position: absolute;
   inset: 0 0 auto;
   height: 3px;
-  background: var(--yellow);
+  background: var(--push-rejected-warning);
 }
 
 .push-rejected-dialog__title {
@@ -17,7 +23,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  color: var(--yellow);
+  color: var(--push-rejected-warning);
 }
 
 .push-rejected-dialog__icon {

@@ -10,6 +10,7 @@
   },
   "labels": {
     "consoleView": "Console view",
+    "details": "Details",
     "empty": "No matching results.",
     "title": "Result Log"
   }
