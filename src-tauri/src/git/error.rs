@@ -1,12 +1,21 @@
 use std::fmt::{Display, Formatter};
 
+use super::error_interpretation::{interpret_cli_error, interpret_gix_error, InterpretedGitError};
+
 #[derive(Debug)]
 pub enum GitError {
     InvalidInput(String),
     GitUnavailable,
-    CommandFailed { command: String, stderr: String },
+    CommandFailed {
+        command: String,
+        stderr: String,
+        exit_code: Option<i32>,
+    },
     IoError(String),
-    GixError(String),
+    GixError {
+        message: String,
+        interpreted: Option<InterpretedGitError>,
+    },
 }
 
 impl Display for GitError {
@@ -14,15 +23,39 @@ impl Display for GitError {
         match self {
             Self::InvalidInput(message) => write!(f, "Invalid input: {message}"),
             Self::GitUnavailable => write!(f, "Git executable was not found on PATH"),
-            Self::CommandFailed { command, stderr } => {
+            Self::CommandFailed {
+                command,
+                stderr,
+                exit_code,
+            } => {
+                let operation = command.split_whitespace().nth(1);
+                let interpreted = interpret_cli_error(operation, stderr, *exit_code);
                 if stderr.is_empty() {
-                    write!(f, "Git command failed: {command}")
+                    write!(f, "{}\nGit command failed: {command}", interpreted.summary)
                 } else {
-                    write!(f, "Git command failed: {command}\n{stderr}")
+                    write!(
+                        f,
+                        "{}\nGit command failed: {command}\n{stderr}",
+                        interpreted.summary
+                    )
                 }
             }
             Self::IoError(message) => write!(f, "I/O error: {message}"),
-            Self::GixError(message) => write!(f, "gix error: {message}"),
+            Self::GixError {
+                message,
+                interpreted,
+            } => {
+                let fallback;
+                let interpreted = match interpreted {
+                    Some(interpreted) => interpreted,
+                    None => {
+                        fallback =
+                            interpret_gix_error(None, &std::io::Error::other(message.clone()));
+                        &fallback
+                    }
+                };
+                write!(f, "{}\ngix error: {message}", interpreted.summary)
+            }
         }
     }
 }

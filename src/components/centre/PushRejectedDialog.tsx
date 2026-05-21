@@ -1,6 +1,7 @@
 import React, { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import type { PushRejectionAnalysis } from "../../types";
+import { WarningIcon } from "../icons";
 import "./PushRejectedDialog.css";
 
 type PushRejectedDialogProps = {
@@ -36,7 +37,10 @@ export function PushRejectedDialog({
     <>
       <div className="dialog-backdrop" onClick={onCancel} />
       <div className="dialog push-rejected-dialog" role="dialog" aria-modal="true">
-        <div className="dialog__title">{t("pushRejected.title")}</div>
+        <div className="dialog__title push-rejected-dialog__title">
+          <WarningIcon size={18} className="push-rejected-dialog__icon" />
+          <span>{t("pushRejected.title")}</span>
+        </div>
         <div className="push-rejected-dialog__body">
           <p>{analysis.message}</p>
           <div className="push-rejected-dialog__meta">

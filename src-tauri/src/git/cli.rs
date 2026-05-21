@@ -8,6 +8,7 @@ use std::process::{Command, Stdio};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::error::{GitError, GitResult};
+use super::error_interpretation::{GitErrorCategory, InterpretedGitError, interpret_cli_error};
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
@@ -128,6 +129,7 @@ impl CliGitHandler {
             return Err(GitError::CommandFailed {
                 command: joined,
                 stderr,
+                exit_code: output.status.code(),
             });
         }
 
@@ -258,6 +260,7 @@ impl CliGitHandler {
                     return Err(GitError::CommandFailed {
                         command: joined,
                         stderr,
+                        exit_code: output.status.code(),
                     });
                 }
 
@@ -302,6 +305,7 @@ impl CliGitHandler {
             return Err(GitError::CommandFailed {
                 command: joined,
                 stderr,
+                exit_code: output.status.code(),
             });
         }
 
@@ -453,6 +457,7 @@ impl CliGitHandler {
             output: (!output.trim().is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         }
     }
 
@@ -828,72 +833,13 @@ impl CliGitHandler {
     }
 
     fn classify_push_failure(repo_path: &Path, stderr: &str) -> PushRejectionAnalysis {
-        let stderr_lower = stderr.to_ascii_lowercase();
         let (current_branch, upstream_branch) = Self::push_failure_branch_context(repo_path);
-
-        let (kind, message, suggested_next_actions) = if stderr_lower.contains("non-fast-forward")
-            || stderr_lower.contains("[rejected]")
-            || stderr_lower.contains("fetch first")
-            || stderr_lower.contains("tip of your current branch is behind")
-        {
-            (
-                PushFailureKind::NonFastForward,
-                "Push was rejected because the remote branch has new commits. Fetch, review, and integrate those changes before pushing again.".to_string(),
-                vec![
-                    "fetch".to_string(),
-                    "review".to_string(),
-                    "integrate".to_string(),
-                ],
-            )
-        } else if stderr_lower.contains("no upstream branch") {
-            (
-                PushFailureKind::NoUpstream,
-                "This branch does not have an upstream yet. Publish it to a remote before pushing normally.".to_string(),
-                vec!["publish".to_string()],
-            )
-        } else if stderr_lower.contains("upstream branch of your current branch does not match")
-            || stderr_lower.contains("has no such ref was fetched")
-            || stderr_lower.contains("couldn't find remote ref")
-            || stderr_lower.contains("upstream is gone")
-            || stderr_lower.contains("remote branch")
-                && (stderr_lower.contains("not found")
-                    || stderr_lower.contains("does not exist")
-                    || stderr_lower.contains("missing"))
-        {
-            (
-                PushFailureKind::UpstreamMissing,
-                "The configured upstream branch is missing or no longer matches this branch. Repair the upstream before retrying.".to_string(),
-                vec!["repair-upstream".to_string()],
-            )
-        } else if stderr_lower.contains("authentication failed")
-            || stderr_lower.contains("could not read from remote repository")
-            || stderr_lower.contains("permission denied")
-            || stderr_lower.contains("permission to")
-            || stderr_lower.contains("repository not found")
-        {
-            (
-                PushFailureKind::Auth,
-                "Push failed because Git could not authenticate with the remote.".to_string(),
-                vec!["retry".to_string()],
-            )
-        } else if stderr_lower.contains("could not resolve host")
-            || stderr_lower.contains("failed to connect")
-            || stderr_lower.contains("connection timed out")
-            || stderr_lower.contains("network is unreachable")
-            || stderr_lower.contains("connection reset")
-        {
-            (
-                PushFailureKind::Network,
-                "Push failed because Git could not reach the remote.".to_string(),
-                vec!["retry".to_string()],
-            )
+        let interpreted = Self::interpret_push_failure(stderr, None);
+        let kind = Self::push_failure_kind(interpreted.category);
+        let suggested_next_actions = if matches!(kind, PushFailureKind::NoUpstream) {
+            vec!["publish".to_string()]
         } else {
-            (
-                PushFailureKind::Other,
-                "Push failed. Review the Git output and retry when the repository state is clear."
-                    .to_string(),
-                vec!["retry".to_string()],
-            )
+            interpreted.suggested_actions
         };
 
         PushRejectionAnalysis {
@@ -901,8 +847,23 @@ impl CliGitHandler {
             current_branch,
             upstream_branch,
             kind,
-            message,
+            message: interpreted.summary,
             suggested_next_actions,
+        }
+    }
+
+    fn interpret_push_failure(stderr: &str, exit_code: Option<i32>) -> InterpretedGitError {
+        interpret_cli_error(Some("push"), stderr, exit_code)
+    }
+
+    fn push_failure_kind(category: GitErrorCategory) -> PushFailureKind {
+        match category {
+            GitErrorCategory::NonFastForward => PushFailureKind::NonFastForward,
+            GitErrorCategory::NoUpstream => PushFailureKind::NoUpstream,
+            GitErrorCategory::UpstreamMissing => PushFailureKind::UpstreamMissing,
+            GitErrorCategory::Auth => PushFailureKind::Auth,
+            GitErrorCategory::Network => PushFailureKind::Network,
+            _ => PushFailureKind::Other,
         }
     }
 
@@ -919,6 +880,7 @@ impl CliGitHandler {
                 output: (!output.is_empty()).then_some(output),
                 repo_path: Some(Self::path_to_string(repo_path)),
                 backend_used: "git-cli".to_string(),
+                interpreted_error: None,
             }),
             Err(GitError::CommandFailed { stderr, .. }) => {
                 let status = self.get_repo_status(&Self::repo_request(repo_path))?;
@@ -928,12 +890,14 @@ impl CliGitHandler {
                         output: (!stderr.is_empty()).then_some(stderr),
                         repo_path: Some(Self::path_to_string(repo_path)),
                         backend_used: "git-cli".to_string(),
+                        interpreted_error: None,
                     });
                 }
 
                 Err(GitError::CommandFailed {
                     command: format!("git {}", args.join(" ")),
                     stderr,
+                    exit_code: None,
                 })
             }
             Err(error) => Err(error),
@@ -1177,6 +1141,7 @@ impl CliGitHandler {
             return Err(GitError::CommandFailed {
                 command: joined,
                 stderr,
+                exit_code: output.status.code(),
             });
         }
 
@@ -1217,6 +1182,7 @@ impl CliGitHandler {
             return Err(GitError::CommandFailed {
                 command: joined,
                 stderr,
+                exit_code: output.status.code(),
             });
         }
 
@@ -1382,6 +1348,7 @@ impl CliGitHandler {
             return Err(GitError::CommandFailed {
                 command: format!("open {}", path.display()),
                 stderr,
+                exit_code: output.status.code(),
             });
         }
 
@@ -1648,6 +1615,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&resolved_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -1689,6 +1657,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(final_destination_str),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -1815,6 +1784,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -1842,6 +1812,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -1876,6 +1847,7 @@ impl GitOperationHandler for CliGitHandler {
                 output: None,
                 repo_path: Some(Self::path_to_string(&repo_path)),
                 backend_used: "git-cli".to_string(),
+                interpreted_error: None,
             });
         }
 
@@ -1904,6 +1876,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -1967,6 +1940,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2079,9 +2053,10 @@ impl GitOperationHandler for CliGitHandler {
 
         let output = match Self::run_git(args.as_slice(), Some(&repo_path)) {
             Ok(stdout) => stdout,
-            Err(GitError::CommandFailed { command: _, stderr })
-                if stderr.contains("does not have any commits yet")
-                    || stderr.contains("appears to be broken") =>
+            Err(GitError::CommandFailed {
+                command: _, stderr, ..
+            }) if stderr.contains("does not have any commits yet")
+                || stderr.contains("appears to be broken") =>
             {
                 return Ok(Vec::new());
             }
@@ -2287,7 +2262,9 @@ impl GitOperationHandler for CliGitHandler {
 
         let output = match Self::run_git(&args, Some(&repo_path)) {
             Ok(stdout) => stdout,
-            Err(GitError::CommandFailed { command: _, stderr }) if stderr.is_empty() => {
+            Err(GitError::CommandFailed {
+                command: _, stderr, ..
+            }) if stderr.is_empty() => {
                 // Empty stderr + non-zero exit: no tracked changes. Fall through to check
                 // whether this is an untracked new file that we can diff with --no-index.
                 String::new()
@@ -2449,6 +2426,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2465,6 +2443,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2477,6 +2456,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2517,6 +2497,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2553,6 +2534,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2604,6 +2586,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2749,6 +2732,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2779,6 +2763,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2831,6 +2816,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2843,6 +2829,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2855,6 +2842,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2965,6 +2953,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -2980,7 +2969,9 @@ impl GitOperationHandler for CliGitHandler {
             Some(&repo_path),
         ) {
             Ok(stdout) => stdout,
-            Err(GitError::CommandFailed { command: _, stderr }) if stderr.is_empty() => {
+            Err(GitError::CommandFailed {
+                command: _, stderr, ..
+            }) if stderr.is_empty() => {
                 return Ok(Vec::new());
             }
             Err(error) => return Err(error),
@@ -3120,16 +3111,21 @@ impl GitOperationHandler for CliGitHandler {
                 output: (!output.is_empty()).then_some(output),
                 repo_path: Some(Self::path_to_string(&repo_path)),
                 backend_used: "git-cli".to_string(),
+                interpreted_error: None,
                 success: true,
                 rejection: None,
             }),
-            Err(GitError::CommandFailed { stderr, .. }) => {
+            Err(GitError::CommandFailed {
+                stderr, exit_code, ..
+            }) => {
+                let interpreted = Self::interpret_push_failure(&stderr, exit_code);
                 let rejection = Self::classify_push_failure(&repo_path, &stderr);
                 Ok(PushResult {
                     message: rejection.message.clone(),
                     output: (!stderr.is_empty()).then_some(stderr),
                     repo_path: Some(Self::path_to_string(&repo_path)),
                     backend_used: "git-cli".to_string(),
+                    interpreted_error: Some(interpreted),
                     success: false,
                     rejection: Some(rejection),
                 })
@@ -3161,6 +3157,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3213,6 +3210,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3298,6 +3296,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3325,6 +3324,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3388,6 +3388,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3404,6 +3405,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3459,6 +3461,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3477,6 +3480,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3495,6 +3499,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3532,6 +3537,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3552,6 +3558,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3565,6 +3572,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3580,6 +3588,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3600,6 +3609,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3613,6 +3623,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3675,6 +3686,7 @@ impl GitOperationHandler for CliGitHandler {
                     output: Some(output),
                     repo_path: Some(Self::path_to_string(&repo_path)),
                     backend_used: "git-cli".to_string(),
+                    interpreted_error: None,
                     success: !has_conflicts,
                     has_conflicts,
                     conflicted_files,
@@ -3705,6 +3717,7 @@ impl GitOperationHandler for CliGitHandler {
             },
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3741,6 +3754,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -3783,6 +3797,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -3803,6 +3818,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3840,6 +3856,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -3882,6 +3899,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -3902,6 +3920,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -3941,6 +3960,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -3983,6 +4003,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
             success: !has_conflicts,
             has_conflicts,
             conflicted_files,
@@ -4003,6 +4024,7 @@ impl GitOperationHandler for CliGitHandler {
             output: (!output.is_empty()).then_some(output),
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -4030,6 +4052,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -4048,6 +4071,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -4066,6 +4090,7 @@ impl GitOperationHandler for CliGitHandler {
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -4111,6 +4136,7 @@ impl GitOperationHandler for CliGitHandler {
             },
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         })
     }
 }

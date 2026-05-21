@@ -185,6 +185,7 @@ export function ProjectView({
   winRadius,
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
+  const { t: tGitAdvice } = useTranslation("gitAdvice");
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
     : 0;
@@ -722,16 +723,25 @@ export function ProjectView({
   }, [runPullWithStrategy]);
 
   const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
+    let interpretedMessage: string | null = null;
+    if (result.interpretedError) {
+      const actions = result.interpretedError.suggestedActions
+        .slice(0, 3)
+        .map((action) => tGitAdvice(`actions.${action}`, { defaultValue: action }))
+        .join(", ");
+      interpretedMessage = actions
+        ? tGitAdvice("withActions", { summary: result.interpretedError.summary, actions })
+        : result.interpretedError.summary;
+    }
     if (result.rejection && ["non-fast-forward", "no-upstream", "upstream-missing"].includes(result.rejection.kind)) {
       setPushRejectionAnalysis(result.rejection);
-      showToast(result.rejection.message, "error");
-      appendResultLog("error", result.rejection.message, result.backendUsed);
+      appendResultLog("error", interpretedMessage ?? result.rejection.message, result.backendUsed);
       return;
     }
 
-    showToast(result.message, "error");
+    showToast(interpretedMessage ?? result.message, "error");
     appendResultLog("error", result.output?.trim() || result.message, result.backendUsed);
-  }, [showToast]);
+  }, [showToast, tGitAdvice]);
 
   const runPushRequest = useCallback(async (
     request: PushRequest,

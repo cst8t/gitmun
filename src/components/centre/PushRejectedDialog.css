@@ -1,5 +1,27 @@
 .push-rejected-dialog {
+  position: relative;
   width: 460px;
+  overflow: hidden;
+}
+
+.push-rejected-dialog::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: var(--yellow);
+}
+
+.push-rejected-dialog__title {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: var(--yellow);
+}
+
+.push-rejected-dialog__icon {
+  flex: 0 0 auto;
 }
 
 .push-rejected-dialog__body {

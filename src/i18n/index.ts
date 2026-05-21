@@ -7,6 +7,7 @@ import clone from "./locales/en/clone.json";
 import common from "./locales/en/common.json";
 import diffPanel from "./locales/en/diffPanel.json";
 import git from "./locales/en/git.json";
+import gitAdvice from "./locales/en/gitAdvice.json";
 import identity from "./locales/en/identity.json";
 import projectView from "./locales/en/projectView.json";
 import resultLog from "./locales/en/resultLog.json";
@@ -23,6 +24,7 @@ export const namespaces = [
   "common",
   "diffPanel",
   "git",
+  "gitAdvice",
   "identity",
   "projectView",
   "resultLog",
@@ -49,6 +51,7 @@ i18n
         common,
         diffPanel,
         git,
+        gitAdvice,
         identity,
         projectView,
         resultLog,

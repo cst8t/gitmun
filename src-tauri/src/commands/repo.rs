@@ -83,6 +83,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
             output: None,
             repo_path: Some(path.to_string_lossy().to_string()),
             backend_used: "git-cli".to_string(),
+            interpreted_error: None,
         });
     }
 
@@ -117,6 +118,7 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
         output: None,
         repo_path: Some(path.to_string_lossy().to_string()),
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 
@@ -232,6 +234,7 @@ pub async fn clone_repo(
         output: None,
         repo_path: Some(final_dest_str),
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 

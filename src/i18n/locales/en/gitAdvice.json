@@ -1,0 +1,19 @@
+{
+  "actions": {
+    "abort-sequencer": "abort the in-progress operation",
+    "check-network": "check the network connection",
+    "continue-sequencer": "continue the in-progress operation",
+    "fetch": "fetch",
+    "fix-auth-https": "check HTTPS credentials",
+    "fix-auth-ssh": "check SSH access",
+    "integrate": "integrate remote changes",
+    "open-settings-git-executable": "choose the Git executable in Settings",
+    "repair-upstream": "repair the upstream branch",
+    "resolve-conflicts": "resolve conflicts",
+    "retry": "retry",
+    "review": "review Git output",
+    "set-upstream": "set an upstream branch",
+    "unlock-index": "clear the stale index lock"
+  },
+  "withActions": "{{summary}} Try: {{actions}}."
+}
