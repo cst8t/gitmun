@@ -118,6 +118,7 @@ export function ResultLogWindow() {
                 </span>
                 {entry.repoPath && <span className="result-log__console-repo">[{repoLabel(entry.repoPath)}]</span>}
                 <span className="result-log__console-message"> {entry.message}</span>
+                {entry.details && <span className="result-log__console-details">{"\n"}{entry.details}</span>}
               </div>
             ))}
           </div>
@@ -126,6 +127,12 @@ export function ResultLogWindow() {
             <div className={`result-log__dot result-log__dot--${entry.level}`} />
             <div className="result-log__content">
               <div className="result-log__message">{entry.message}</div>
+              {entry.details && (
+                <details className="result-log__details">
+                  <summary>{t("labels.details")}</summary>
+                  <pre>{entry.details}</pre>
+                </details>
+              )}
               <div className="result-log__meta">
                 <span className="result-log__time">{new Date(entry.ts).toLocaleString()}</span>
                 {entry.repoPath && <span className="result-log__repo" title={entry.repoPath}>{repoLabel(entry.repoPath)}</span>}

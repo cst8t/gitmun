@@ -25,7 +25,11 @@
     {
       "identifier": "opener:allow-open-path",
       "allow": [
-        { "path": "$APPCONFIG" }
+        { "path": "$APPCONFIG" },
+        { "path": "$HOME/**" },
+        { "path": "$DESKTOP/**" },
+        { "path": "$DOCUMENT/**" },
+        { "path": "$DOWNLOAD/**" }
       ]
     }
   ]

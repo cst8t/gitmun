@@ -12,6 +12,7 @@
     "publish": "Publish",
     "repairUpstream": "Repair Upstream",
     "detachedTitle": "Push is unavailable while HEAD is detached.",
+    "forceWithLeaseTitle": "Next push will use --force-with-lease because this branch was rebased.",
     "repairUpstreamTitle": "The configured upstream branch is missing. Repair it before pushing."
   },
   "submoduleState": {

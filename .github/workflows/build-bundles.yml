@@ -1068,3 +1068,53 @@ jobs:
             --header "x-ci-signature: sha256=$SIGNATURE" \
             --data "$PAYLOAD" \
             "${WORKER_URL%/}/webhook"
+
+  notify-website-release-metadata:
+    name: Notify website release metadata
+    if: ${{ github.event_name == 'release' }}
+    needs:
+      - linux-bundles
+      - windows-bundles
+      - update-updater-json
+      - windows-msix
+      - macos-bundles
+      - notify-r2-release-sync
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: Dispatch website metadata update
+        env:
+          DISPATCH_TOKEN: ${{ secrets.GITMUN_WEBSITE_DISPATCH_TOKEN }}
+          GITHUB_API_URL: ${{ github.api_url }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          RELEASE_URL: ${{ github.event.release.html_url }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DISPATCH_TOKEN:-}" ]; then
+            echo "GITMUN_WEBSITE_DISPATCH_TOKEN is not configured." >&2
+            exit 1
+          fi
+
+          payload="$(
+            jq -cn \
+              --arg event_type "gitmun-release-assets-ready" \
+              --arg tag "$RELEASE_TAG" \
+              --arg release_url "$RELEASE_URL" \
+              '{
+                event_type: $event_type,
+                client_payload: {
+                  tag: $tag,
+                  release_url: $release_url
+                }
+              }'
+          )"
+
+          curl --fail-with-body \
+            --request POST \
+            --header "Accept: application/vnd.github+json" \
+            --header "Authorization: Bearer ${DISPATCH_TOKEN}" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            --data "$payload" \
+            "${GITHUB_API_URL%/}/repos/cst8t/gitmun-org-website/dispatches"

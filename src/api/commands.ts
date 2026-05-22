@@ -36,6 +36,8 @@ import type {
     PushRequest,
     PushResult,
     RemoteInfo,
+    RepoOpenLocation,
+    RepoOpenLocationKind,
     RepoRequest,
     RepoStatus,
     RepoOpenBehaviour,
@@ -67,6 +69,14 @@ import type {
 
 export function getRepoStatus(repoPath: string): Promise<RepoStatus> {
     return invoke<RepoStatus>("get_repo_status", {request: {repoPath}});
+}
+
+export function getRepoOpenLocations(): Promise<RepoOpenLocation[]> {
+    return invoke<RepoOpenLocation[]>("get_repo_open_locations");
+}
+
+export function openRepoLocation(repoPath: string, kind: RepoOpenLocationKind): Promise<OperationResult> {
+    return invoke<OperationResult>("open_repo_location", {repoPath, kind});
 }
 
 export function getNumstat(repoPath: string, filePath: string, staged: boolean): Promise<NumstatResult> {

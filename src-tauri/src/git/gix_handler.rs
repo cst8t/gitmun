@@ -4,6 +4,7 @@ use std::{collections::HashMap, collections::HashSet};
 
 use super::cli::CliGitHandler;
 use super::error::{GitError, GitResult};
+use super::error_interpretation::interpret_gix_error;
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
@@ -35,13 +36,13 @@ impl GixGitHandler {
     fn validate_repo_with_gix(&self, repo_path: &str) -> GitResult<()> {
         let path = Path::new(repo_path.trim());
 
-        gix::discover(path).map_err(|error| GitError::GixError(error.to_string()))?;
+        gix::discover(path).map_err(|error| Self::gix_error(None, error))?;
         Ok(())
     }
 
     fn discover_repo_root(&self, repo_path: &str) -> GitResult<String> {
         let path = Path::new(repo_path.trim());
-        let repo = gix::discover(path).map_err(|error| GitError::GixError(error.to_string()))?;
+        let repo = gix::discover(path).map_err(|error| Self::gix_error(None, error))?;
         let root = repo.workdir().unwrap_or(repo.path());
         Ok(root.to_string_lossy().to_string())
     }
@@ -58,6 +59,17 @@ impl GixGitHandler {
 
     fn bstr_to_string(value: &gix::bstr::BStr) -> String {
         String::from_utf8_lossy(value.as_ref()).to_string()
+    }
+
+    fn gix_error<E>(operation: Option<&str>, error: E) -> GitError
+    where
+        E: std::error::Error + 'static,
+    {
+        let interpreted = interpret_gix_error(operation, &error);
+        GitError::GixError {
+            message: error.to_string(),
+            interpreted: Some(interpreted),
+        }
     }
 
     fn status_from_worktree_summary(
@@ -111,16 +123,19 @@ impl GixGitHandler {
         let config = repo.config_snapshot();
         let refs = repo
             .references()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         let mut branches = Vec::new();
 
         let local_iter = refs
             .local_branches()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         for reference in local_iter {
-            let reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
             let is_current = current_branch_name.as_deref() == Some(short_name.as_str());
 
@@ -191,10 +206,13 @@ impl GixGitHandler {
 
         let remote_iter = refs
             .remote_branches()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         for reference in remote_iter {
-            let reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
             // Skip symbolic HEAD pointers like "origin/HEAD"
             if short_name.ends_with("/HEAD") {
@@ -264,12 +282,15 @@ impl GixGitHandler {
     ) -> GitResult<Vec<String>> {
         let refs = repo
             .references()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
-        let tag_iter = refs.tags().map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
+        let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
 
         let mut matching = Vec::new();
         for reference in tag_iter {
-            let reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
             let raw_oid = reference.id().detach();
 
             // Peel through annotated tag objects to reach the commit.
@@ -291,14 +312,17 @@ impl GixGitHandler {
     fn collect_tags_with_gix(repo: &gix::Repository) -> GitResult<Vec<TagInfo>> {
         let refs = repo
             .references()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
-        let tag_iter = refs.tags().map_err(|e| GitError::GixError(e.to_string()))?;
+        let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
 
         let mut tags = Vec::new();
 
         for reference in tag_iter {
-            let mut reference = reference.map_err(|e| GitError::GixError(e.to_string()))?;
+            let mut reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
 
             // The tag object OID (before peeling) - format as hex then truncate to 7 chars
@@ -336,7 +360,7 @@ impl GixGitHandler {
         for name in names.iter() {
             let remote = repo
                 .find_remote(name.as_ref())
-                .map_err(|e| GitError::GixError(e.to_string()))?;
+                .map_err(|e| Self::gix_error(None, e))?;
 
             // Prefer the fetch URL; fall back to push URL
             let url = remote
@@ -449,18 +473,18 @@ impl GixGitHandler {
                 Default::default(),
             ))
             .all()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         let mut commits = Vec::with_capacity(limit.min(256));
 
         for info in walk.skip(offset).take(limit) {
-            let info = info.map_err(|e| GitError::GixError(e.to_string()))?;
+            let info = info.map_err(|e| Self::gix_error(None, e))?;
             let oid = info.id();
             let commit = repo
                 .find_object(oid)
-                .map_err(|e| GitError::GixError(e.to_string()))?
+                .map_err(|e| Self::gix_error(None, e))?
                 .try_into_commit()
-                .map_err(|e| GitError::GixError(e.to_string()))?;
+                .map_err(|e| Self::gix_error(None, e))?;
 
             // Full hex hash
             let hash = oid.to_hex().to_string();
@@ -470,7 +494,7 @@ impl GixGitHandler {
             // Author name and email from the author signature
             let author_sig = commit
                 .author()
-                .map_err(|e| GitError::GixError(e.to_string()))?;
+                .map_err(|e| Self::gix_error(None, e))?;
             let author = Self::bstr_to_string(author_sig.name);
             let author_email = Self::bstr_to_string(author_sig.email);
             // Date from author or committer signature depending on the setting
@@ -479,7 +503,7 @@ impl GixGitHandler {
                 CommitDateMode::CommitterDate => {
                     commit
                         .committer()
-                        .map_err(|e| GitError::GixError(e.to_string()))?
+                        .map_err(|e| Self::gix_error(None, e))?
                         .time
                 }
             };
@@ -499,7 +523,7 @@ impl GixGitHandler {
             // Verification happens lazily via verify_commits.
             let decoded = commit
                 .decode()
-                .map_err(|e| GitError::GixError(e.to_string()))?;
+                .map_err(|e| Self::gix_error(None, e))?;
             let sig_value = decoded
                 .extra_headers
                 .iter()
@@ -653,12 +677,12 @@ impl GixGitHandler {
 
         let mut status_iter = repo
             .status(gix::progress::Discard)
-            .map_err(|error| GitError::GixError(error.to_string()))?
+            .map_err(|error| Self::gix_error(None, error))?
             .into_iter(Vec::<gix::bstr::BString>::new())
-            .map_err(|error| GitError::GixError(error.to_string()))?;
+            .map_err(|error| Self::gix_error(None, error))?;
 
         while let Some(next_item) = status_iter.next() {
-            let item = next_item.map_err(|error| GitError::GixError(error.to_string()))?;
+            let item = next_item.map_err(|error| Self::gix_error(None, error))?;
 
             match item {
                 gix::status::Item::IndexWorktree(worktree_item) => {
@@ -808,6 +832,7 @@ impl GitOperationHandler for GixGitHandler {
             output: None,
             repo_path: Some(resolved_repo_path),
             backend_used: "gix".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -823,19 +848,20 @@ impl GitOperationHandler for GixGitHandler {
 
         let should_interrupt = AtomicBool::new(false);
         let mut prepare = gix::prepare_clone(repo_url, final_destination_str.as_str())
-            .map_err(|error| GitError::GixError(error.to_string()))?;
+            .map_err(|error| Self::gix_error(None, error))?;
         let (mut checkout, _) = prepare
             .fetch_then_checkout(gix::progress::Discard, &should_interrupt)
-            .map_err(|error| GitError::GixError(error.to_string()))?;
+            .map_err(|error| Self::gix_error(None, error))?;
         checkout
             .main_worktree(gix::progress::Discard, &should_interrupt)
-            .map_err(|error| GitError::GixError(error.to_string()))?;
+            .map_err(|error| Self::gix_error(None, error))?;
 
         Ok(OperationResult {
             message: format!("Cloned repository to {}", final_destination.display()),
             output: Some("Clone completed using gix".to_string()),
             repo_path: Some(final_destination_str),
             backend_used: "gix".to_string(),
+            interpreted_error: None,
         })
     }
 
@@ -913,7 +939,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|error| GitError::GixError(error.to_string()));
+        let repo = gix::discover(repo_path).map_err(|error| Self::gix_error(None, error));
 
         match repo.and_then(|repository| Self::collect_repo_status_with_gix(&repository)) {
             Ok(status) => Ok(status),
@@ -932,7 +958,7 @@ impl GitOperationHandler for GixGitHandler {
         let repo_path = Path::new(request.repo_path.trim());
         let limit = request.limit.unwrap_or(100).clamp(1, 5000);
         let offset = request.offset.unwrap_or(0);
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|r| {
             Self::collect_commit_history_with_gix(&r, limit, offset, &request.commit_date_mode)
         }) {
@@ -943,7 +969,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_commit_markers(&self, request: &RepoRequest) -> GitResult<CommitMarkers> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|r| Self::collect_commit_markers_with_gix(&r)) {
             Ok(markers) => Ok(markers),
             Err(_) => self.cli_fallback.get_commit_markers(request),
@@ -957,20 +983,20 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_commit_details(&self, request: &CommitDetailsRequest) -> GitResult<CommitDetails> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()))?;
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e))?;
 
         let oid = gix::ObjectId::from_hex(request.commit_hash.trim().as_bytes())
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         let commit = repo
             .find_object(oid)
-            .map_err(|e| GitError::GixError(e.to_string()))?
+            .map_err(|e| Self::gix_error(None, e))?
             .try_into_commit()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
 
         let author_sig = commit
             .author()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
         let author = Self::bstr_to_string(author_sig.name);
         let author_email = Self::bstr_to_string(author_sig.email);
         let author_date = gix::date::parse_header(author_sig.time)
@@ -979,7 +1005,7 @@ impl GitOperationHandler for GixGitHandler {
 
         let committer_sig = commit
             .committer()
-            .map_err(|e| GitError::GixError(e.to_string()))?;
+            .map_err(|e| Self::gix_error(None, e))?;
         let committer = Self::bstr_to_string(committer_sig.name);
         let committer_email = Self::bstr_to_string(committer_sig.email);
         let committer_date = gix::date::parse_header(committer_sig.time)
@@ -1020,7 +1046,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_branches(&self, request: &RepoRequest) -> GitResult<Vec<BranchInfo>> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|repository| Self::collect_branches_with_gix(&repository)) {
             Ok(branches) => Ok(branches),
             Err(_) => self.cli_fallback.get_branches(request),
@@ -1146,7 +1172,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|r| Self::collect_identity_with_gix(&r, &request.scope)) {
             Ok(identity) => Ok(identity),
             Err(_) => self.cli_fallback.get_identity(request),
@@ -1162,7 +1188,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|r| Self::collect_tags_with_gix(&r)) {
             Ok(tags) => Ok(tags),
             Err(_) => self.cli_fallback.get_tags(request),
@@ -1171,7 +1197,7 @@ impl GitOperationHandler for GixGitHandler {
 
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>> {
         let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| GitError::GixError(e.to_string()));
+        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
         match repo.and_then(|r| Self::collect_remotes_with_gix(&r)) {
             Ok(remotes) => Ok(remotes),
             Err(_) => self.cli_fallback.get_remotes(request),

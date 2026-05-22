@@ -5,6 +5,7 @@ export type ResultLogEntry = {
   ts: string;
   level: ResultLogLevel;
   message: string;
+  details?: string | null;
   backend: "gix" | "git-cli" | "gix+cli-fallback" | "unknown";
   repoPath?: string | null;
 };
@@ -30,6 +31,7 @@ export function getResultLogEntries(): ResultLogEntry[] {
         ts: entry.ts ?? new Date().toISOString(),
         level: entry.level === "success" || entry.level === "error" ? entry.level : "info",
         message: entry.message as string,
+        details: typeof entry.details === "string" && entry.details.trim() ? entry.details : null,
         backend: entry.backend === "gix" || entry.backend === "git-cli" || entry.backend === "gix+cli-fallback"
           ? entry.backend
           : "unknown",
@@ -45,12 +47,14 @@ export function appendResultLog(
   message: string,
   backend: ResultLogEntry["backend"] = "unknown",
   repoPath?: string | null,
+  details?: string | null,
 ) {
   const entry: ResultLogEntry = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
     ts: new Date().toISOString(),
     level,
     message,
+    details: details?.trim() || null,
     backend,
     repoPath: repoPath ?? currentRepoPath,
   };

@@ -15,6 +15,7 @@
     "cloneWindowFailed": "Clone window failed to open: {{message}}",
     "openedRepository": "Opened repository {{path}}",
     "openedRepositoryFromShell": "Opened repository {{path}} from shell",
+    "openRepoLocationFailed": "Repository location failed to open: {{message}}",
     "resultLogWindowFailed": "Result log window failed to open: {{message}}",
     "settingsUpdated": "Settings updated",
     "settingsWindowFailed": "Settings window failed to open: {{message}}"
