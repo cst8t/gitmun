@@ -51,6 +51,7 @@ import type {
   PushRequest,
   PushRejectionAnalysis,
   RemoteInfo,
+  RepoOpenLocationKind,
   RowStriping,
   StashEntry,
 } from "../types";
@@ -147,6 +148,7 @@ export type ProjectViewProps = {
   identityOpen: boolean;
   onIdentityToggle: () => void;
   onRepoSelect: (path: string) => void;
+  onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onOpenExistingClick: () => void;
   onCloneClick: () => void;
   onInitRepoClick: () => void;
@@ -175,6 +177,7 @@ export function ProjectView({
   identityOpen,
   onIdentityToggle,
   onRepoSelect,
+  onOpenRepoLocation,
   onOpenExistingClick,
   onCloneClick,
   onInitRepoClick,
@@ -2032,6 +2035,7 @@ export function ProjectView({
           onInitRepoClick={onInitRepoClick}
           onOpenExistingClick={onOpenExistingClick}
           onRepoSelect={onRepoSelect}
+          onOpenRepoLocation={onOpenRepoLocation}
           onFetch={handleFetch}
           onPull={handlePull}
           onPush={handlePush}

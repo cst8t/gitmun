@@ -24,7 +24,6 @@
 .titlebar__name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-lg);
-  letter-spacing: -0.01em;
 }
 
 .titlebar__sep {
@@ -73,6 +72,13 @@
 
 .titlebar__actions {
   display: flex;
+  gap: 2px;
+  min-width: 0;
+}
+
+.titlebar__repo-actions {
+  display: flex;
+  align-items: center;
   gap: 2px;
   min-width: 0;
 }
@@ -202,6 +208,14 @@
   color: var(--text-primary);
 }
 
+.titlebar__icon-btn--disabled,
+.titlebar__icon-btn--disabled:hover {
+  opacity: 0.35;
+  cursor: default;
+  background: transparent;
+  color: var(--text-secondary);
+}
+
 .titlebar__icon-btn--labeled {
   display: flex;
   align-items: center;
@@ -246,6 +260,12 @@
 .titlebar__open-menu-item:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.titlebar__open-menu-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
 }
 
 .titlebar__open-menu-item--recent {
@@ -356,5 +376,84 @@
 
   .titlebar__search--active {
     width: 200px;
+  }
+}
+
+@media (max-width: 1260px) {
+  .titlebar__repo-actions .titlebar__btn-label {
+    display: none;
+  }
+
+  .titlebar__repo-actions .titlebar__icon-btn--labeled {
+    padding: 5px;
+  }
+
+  .titlebar__search {
+    min-width: 150px;
+    width: 150px;
+  }
+
+  .titlebar__search--active {
+    width: 176px;
+  }
+}
+
+@media (max-width: 1160px) {
+  .titlebar__actions .titlebar__btn-label {
+    display: none;
+  }
+
+  .titlebar__action-btn {
+    position: relative;
+    padding: 5px;
+    gap: 0;
+  }
+
+  .titlebar__badge {
+    position: absolute;
+    top: -4px;
+    right: -4px;
+    line-height: 14px;
+    min-width: 14px;
+    box-sizing: border-box;
+    text-align: center;
+  }
+
+  .titlebar__search-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 1040px) {
+  .titlebar {
+    gap: 6px;
+  }
+
+  .titlebar__sep {
+    margin: 0 2px;
+  }
+
+  .titlebar__repo-dir {
+    display: none;
+  }
+
+  .titlebar__branch-pill {
+    max-width: 150px;
+    min-width: 0;
+  }
+
+  .titlebar__branch-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .titlebar__search {
+    min-width: 118px;
+    width: 118px;
+  }
+
+  .titlebar__search--active {
+    width: 150px;
   }
 }

@@ -329,6 +329,76 @@ fn resolve_git_bash_exe() -> Option<std::path::PathBuf> {
 }
 
 #[cfg(windows)]
+pub(crate) fn resolve_system_git_bash_exe() -> Option<PathBuf> {
+    fn git_bash_exe_from_git_exe(git_exe: &Path) -> Option<PathBuf> {
+        let parent = git_exe.parent()?;
+        let root = if parent
+            .file_name()
+            .is_some_and(|name| name == "cmd" || name == "bin")
+        {
+            parent.parent()?
+        } else {
+            parent
+        };
+        let candidate = root.join("git-bash.exe");
+        if candidate.exists() {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+
+    fn is_bundled_path(candidate: &Path) -> bool {
+        let Some(bundled) = bundled_git_exe() else {
+            return false;
+        };
+        let Some(root) = bundled.parent().and_then(|path| path.parent()) else {
+            return false;
+        };
+        candidate.starts_with(root)
+    }
+
+    fn is_git_for_windows_bash(candidate: &Path) -> bool {
+        candidate.exists()
+            && !is_bundled_path(candidate)
+            && candidate
+                .parent()
+                .is_some_and(|root| root.join("cmd").join("git.exe").exists())
+    }
+
+    let active_git = active_windows_git_exe_path();
+    if active_git.is_absolute() && !is_bundled_path(&active_git) {
+        if let Some(candidate) = git_bash_exe_from_git_exe(&active_git) {
+            if is_git_for_windows_bash(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    for candidate in [
+        r"C:\Program Files\Git\git-bash.exe",
+        r"C:\Program Files (x86)\Git\git-bash.exe",
+    ] {
+        let candidate = PathBuf::from(candidate);
+        if is_git_for_windows_bash(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if let Some(candidate) = git_bash_exe_from_git_exe(&dir.join("git.exe")) {
+                if is_git_for_windows_bash(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
 pub(crate) fn git_bash_command() -> Option<std::process::Command> {
     resolve_git_bash_exe().map(std::process::Command::new)
 }
@@ -1337,6 +1407,8 @@ pub fn run() {
             commands::repo::get_commit_details,
             commands::repo::validate_repo_path,
             commands::repo::init_repo,
+            commands::repo::get_repo_open_locations,
+            commands::repo::open_repo_location,
             commands::repo::clone_repo,
             commands::repo::cancel_clone,
             commands::repo::get_default_clone_dir,

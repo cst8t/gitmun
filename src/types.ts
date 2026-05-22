@@ -183,6 +183,15 @@ export type OperationResult = {
     interpretedError?: InterpretedGitError | null;
 };
 
+export type RepoOpenLocationKind = "fileExplorer" | "terminal" | "gitBash";
+
+export type RepoOpenLocation = {
+    kind: RepoOpenLocationKind;
+    label: string;
+    fallbackLabel: string;
+    iconDataUrl?: string | null;
+};
+
 export type RepoRequest = {
     repoPath: string;
 };

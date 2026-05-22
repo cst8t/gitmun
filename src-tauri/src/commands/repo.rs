@@ -7,10 +7,282 @@ use crate::git::types::{
     SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
+use serde::{Deserialize, Serialize};
 use std::io::Read;
-use std::process::Stdio;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
 use std::sync::atomic::Ordering;
 use tauri::Manager;
+use tauri_plugin_opener::OpenerExt;
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum RepoOpenLocationKind {
+    FileExplorer,
+    Terminal,
+    GitBash,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct RepoOpenLocation {
+    kind: RepoOpenLocationKind,
+    label: String,
+    fallback_label: String,
+    icon_data_url: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_repo_open_locations() -> Vec<RepoOpenLocation> {
+    let locations = vec![
+        RepoOpenLocation {
+            kind: RepoOpenLocationKind::FileExplorer,
+            label: default_file_manager_label().to_string(),
+            fallback_label: default_file_manager_label().to_string(),
+            icon_data_url: None,
+        },
+        RepoOpenLocation {
+            kind: RepoOpenLocationKind::Terminal,
+            label: default_terminal_label().to_string(),
+            fallback_label: "Terminal".to_string(),
+            icon_data_url: None,
+        },
+    ];
+
+    #[cfg(target_os = "windows")]
+    let locations = {
+        let mut locations = locations;
+        if crate::resolve_system_git_bash_exe().is_some() {
+            locations.push(RepoOpenLocation {
+                kind: RepoOpenLocationKind::GitBash,
+                label: "Git Bash".to_string(),
+                fallback_label: "Git Bash".to_string(),
+                icon_data_url: None,
+            });
+        }
+        locations
+    };
+
+    locations
+}
+
+#[tauri::command]
+pub fn open_repo_location(
+    repo_path: String,
+    kind: RepoOpenLocationKind,
+    app: tauri::AppHandle,
+) -> Result<OperationResult, String> {
+    let path = validate_repo_open_path(&repo_path)?;
+
+    match kind {
+        RepoOpenLocationKind::FileExplorer => {
+            app.opener()
+                .open_path(path.to_string_lossy().to_string(), None::<&str>)
+                .map_err(|e| format!("Failed to open file manager: {e}"))?;
+            Ok(repo_open_result(
+                format!("Opened repository in {}", default_file_manager_label()),
+                path,
+            ))
+        }
+        RepoOpenLocationKind::Terminal => {
+            open_terminal_at(&path)?;
+            Ok(repo_open_result(
+                "Opened repository in Terminal".to_string(),
+                path,
+            ))
+        }
+        RepoOpenLocationKind::GitBash => {
+            open_git_bash_at(&path)?;
+            Ok(repo_open_result(
+                "Opened repository in Git Bash".to_string(),
+                path,
+            ))
+        }
+    }
+}
+
+fn validate_repo_open_path(repo_path: &str) -> Result<PathBuf, String> {
+    let trimmed = repo_path.trim();
+    if trimmed.is_empty() {
+        return Err("Repository path cannot be empty".to_string());
+    }
+
+    let path = PathBuf::from(trimmed);
+    if !path.is_dir() {
+        return Err("Repository path must be an existing directory".to_string());
+    }
+    Ok(path)
+}
+
+fn repo_open_result(message: String, path: PathBuf) -> OperationResult {
+    OperationResult {
+        message,
+        output: None,
+        repo_path: Some(path.to_string_lossy().to_string()),
+        backend_used: "git-cli".to_string(),
+        interpreted_error: None,
+    }
+}
+
+fn default_file_manager_label() -> &'static str {
+    #[cfg(target_os = "windows")]
+    {
+        "File Explorer"
+    }
+    #[cfg(target_os = "macos")]
+    {
+        "Finder"
+    }
+    #[cfg(target_os = "linux")]
+    {
+        "File Manager"
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        "File Manager"
+    }
+}
+
+fn default_terminal_label() -> &'static str {
+    "Terminal"
+}
+
+fn open_terminal_at(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return open_terminal_at_windows(path);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        return open_terminal_at_macos(path);
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        return open_terminal_at_linux(path);
+    }
+
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
+    {
+        let _ = path;
+        Err("Opening a terminal is not supported on this platform".to_string())
+    }
+}
+
+fn open_git_bash_at(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        return open_git_bash_at_windows(path);
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = path;
+        Err("Git Bash is only available on Windows".to_string())
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn open_git_bash_at_windows(path: &Path) -> Result<(), String> {
+    let git_bash = crate::resolve_system_git_bash_exe()
+        .ok_or_else(|| "Git Bash from Git for Windows was not found".to_string())?;
+    Command::new(git_bash)
+        .arg(format!("--cd={}", path.display()))
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open Git Bash: {e}"))
+}
+
+#[cfg(target_os = "windows")]
+fn open_terminal_at_windows(path: &Path) -> Result<(), String> {
+    let mut wt = Command::new("wt.exe");
+    wt.arg("-d").arg(path);
+    if wt.spawn().is_ok() {
+        return Ok(());
+    }
+
+    Command::new("cmd.exe")
+        .arg("/C")
+        .arg("start")
+        .arg("")
+        .arg("/D")
+        .arg(path)
+        .arg("cmd.exe")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open terminal: {e}"))
+}
+
+#[cfg(target_os = "macos")]
+fn open_terminal_at_macos(path: &Path) -> Result<(), String> {
+    Command::new("open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(path)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Failed to open Terminal: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+fn open_terminal_at_linux(path: &Path) -> Result<(), String> {
+    let mut errors = Vec::new();
+
+    if let Some(terminal) = std::env::var_os("TERMINAL").and_then(|value| value.into_string().ok())
+    {
+        if !terminal.trim().is_empty() && spawn_terminal_command(&terminal, path, &mut errors) {
+            return Ok(());
+        }
+    }
+
+    for command in [
+        "x-terminal-emulator",
+        "gnome-terminal",
+        "kgx",
+        "konsole",
+        "xfce4-terminal",
+        "mate-terminal",
+        "lxterminal",
+        "alacritty",
+        "kitty",
+        "wezterm",
+        "foot",
+        "xterm",
+    ] {
+        if spawn_terminal_command(command, path, &mut errors) {
+            return Ok(());
+        }
+    }
+
+    Err(if errors.is_empty() {
+        "No supported terminal emulator was found".to_string()
+    } else {
+        format!(
+            "No supported terminal emulator was found ({})",
+            errors.join("; ")
+        )
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn spawn_terminal_command(command_spec: &str, path: &Path, errors: &mut Vec<String>) -> bool {
+    let mut parts = command_spec.split_whitespace();
+    let Some(command_name) = parts.next() else {
+        return false;
+    };
+
+    let mut command = Command::new(command_name);
+    command.args(parts).current_dir(path);
+
+    match command.spawn() {
+        Ok(_) => true,
+        Err(error) => {
+            errors.push(format!("{command_name}: {error}"));
+            false
+        }
+    }
+}
 
 #[tauri::command]
 pub async fn get_commit_markers(

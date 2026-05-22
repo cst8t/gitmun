@@ -4,14 +4,17 @@
     "clone": "Clone",
     "cloneRepository": "Clone a repository",
     "fetch": "Fetch",
+    "fileManager": "File Manager",
     "initialiseRepository": "Initialise a repository",
     "new": "New",
     "open": "Open",
+    "openIn": "Open in...",
     "openRepository": "Open a repository",
     "openRepositoryMenu": "Open repository...",
     "pull": "Pull",
     "push": "Push",
-    "stash": "Stash"
+    "stash": "Stash",
+    "terminal": "Terminal"
   },
   "labels": {
     "noRepositoryOpen": "No repository open",

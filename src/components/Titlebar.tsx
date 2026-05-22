@@ -2,10 +2,11 @@ import React, { useState, useEffect, useRef, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GitIcon, BranchIcon, FetchIcon, PullIcon, PushIcon,
-  StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon, InfoIcon,
+  StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon, InfoIcon, TerminalIcon, OpenExternalIcon,
 } from "./icons";
+import * as api from "../api/commands";
 import type { PlatformType } from "../hooks/usePlatform";
-import type { BranchInfo } from "../types";
+import type { BranchInfo, RepoOpenLocation, RepoOpenLocationKind } from "../types";
 import "./Titlebar.css";
 
 type TitlebarProps = {
@@ -28,6 +29,7 @@ type TitlebarProps = {
   onInitRepoClick: () => void;
   onOpenExistingClick: () => void;
   onRepoSelect: (path: string) => void;
+  onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onFetch: () => void;
   onPull: () => void;
   onPush: () => void;
@@ -56,7 +58,7 @@ export function Titlebar({
   platform, native, repoPath, currentBranch, branches,
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
-  onRepoSelect, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
+  onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
   identityOpen, remoteOp,
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
@@ -121,19 +123,24 @@ export function Titlebar({
       </div>
       <div className="titlebar__sep" />
 
-      {/* New / clone / open repo */}
-      <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title={t("actions.initialiseRepository")}>
-        <GitIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.new")}</span>
+      <div className="titlebar__repo-actions">
+        <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onInitRepoClick} title={t("actions.initialiseRepository")}>
+          <GitIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.new")}</span>
+        </div>
+        <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onCloneClick} title={t("actions.cloneRepository")}>
+          <CopyIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.clone")}</span>
+        </div>
+        <OpenDropdown
+          repoPath={repoPath}
+          recentRepos={recentRepos}
+          onOpenExistingClick={onOpenExistingClick}
+          onRepoSelect={onRepoSelect}
+        />
+        <OpenInDropdown
+          repoPath={repoPath}
+          onOpenRepoLocation={onOpenRepoLocation}
+        />
       </div>
-      <div className="titlebar__icon-btn titlebar__icon-btn--labeled" onClick={onCloneClick} title={t("actions.cloneRepository")}>
-        <CopyIcon size={18} className="titlebar__toolbar-icon" /><span className="titlebar__btn-label">{t("actions.clone")}</span>
-      </div>
-      <OpenDropdown
-        repoPath={repoPath}
-        recentRepos={recentRepos}
-        onOpenExistingClick={onOpenExistingClick}
-        onRepoSelect={onRepoSelect}
-      />
       <div className="titlebar__sep" />
 
       {/* Search */}
@@ -178,6 +185,103 @@ export function Titlebar({
           : identityInitials}
       </div>
 
+    </div>
+  );
+}
+
+function fallbackOpenLocations(t: ReturnType<typeof useTranslation<"titlebar">>["t"]): RepoOpenLocation[] {
+  return [
+    {
+      kind: "fileExplorer",
+      label: t("actions.fileManager"),
+      fallbackLabel: t("actions.fileManager"),
+      iconDataUrl: null,
+    },
+    {
+      kind: "terminal",
+      label: t("actions.terminal"),
+      fallbackLabel: t("actions.terminal"),
+      iconDataUrl: null,
+    },
+  ];
+}
+
+function OpenInDropdown({ repoPath, onOpenRepoLocation }: {
+  repoPath: string | null;
+  onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
+}) {
+  const { t } = useTranslation("titlebar");
+  const [open, setOpen] = useState(false);
+  const [locations, setLocations] = useState<RepoOpenLocation[]>(() => fallbackOpenLocations(t));
+  const ref = useRef<HTMLDivElement>(null);
+  const disabled = !repoPath;
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    api.getRepoOpenLocations()
+      .then(result => {
+        if (!cancelled && result.length > 0) {
+          setLocations(result);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLocations(fallbackOpenLocations(t));
+        }
+      });
+    return () => { cancelled = true; };
+  }, [open, t]);
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  return (
+    <div className="titlebar__open-dropdown" ref={ref}>
+      <div
+        className={`titlebar__icon-btn titlebar__icon-btn--labeled${disabled ? " titlebar__icon-btn--disabled" : ""}`}
+        onClick={disabled ? undefined : () => setOpen(v => !v)}
+        title={t("actions.openIn")}
+        aria-disabled={disabled}
+      >
+        <OpenExternalIcon size={18} className="titlebar__toolbar-icon" />
+        <span className="titlebar__btn-label">{t("actions.openIn")}</span>
+        <ChevDownIcon />
+      </div>
+      {open && !disabled && (
+        <div className="titlebar__open-menu">
+          {locations.map(location => (
+            <div
+              key={location.kind}
+              className="titlebar__open-menu-item"
+              onClick={() => { setOpen(false); onOpenRepoLocation(location.kind); }}
+            >
+              {location.iconDataUrl ? (
+                <img className="titlebar__open-menu-icon" src={location.iconDataUrl} alt="" />
+              ) : location.kind === "terminal" || location.kind === "gitBash" ? (
+                <TerminalIcon size={14} />
+              ) : (
+                <FolderIcon size={14} />
+              )}
+              <span>{location.label || location.fallbackLabel}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -254,7 +358,7 @@ function ActionBtn({ icon, label, badge, onClick, disabled, loading, title }: {
     <div
       className={`titlebar__action-btn${disabled ? " titlebar__action-btn--disabled" : ""}${loading ? " titlebar__action-btn--loading" : ""}`}
       onClick={inactive ? undefined : onClick}
-      title={title}
+      title={title ?? label}
     >
       {loading ? <span className="titlebar__btn-spinner" /> : icon}
       <span className="titlebar__btn-label">{label}</span>

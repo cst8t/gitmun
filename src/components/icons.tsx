@@ -23,6 +23,7 @@ import {
   Globe,
   FolderOpen,
   Copy,
+  ArrowSquareOut,
   ArrowsLeftRight,
   Info,
   WarningCircle,
@@ -57,6 +58,7 @@ export const WarningIcon = ({ size = 16, className }: IconProps) => <WarningCirc
 export const GithubLogoIcon = ({ size = 16, className }: IconProps) => <GithubLogo size={size} className={className} />;
 export const FolderIcon = ({ size = 16, className }: IconProps) => <FolderOpen size={size} className={className} />;
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
+export const OpenExternalIcon = ({ size = 16, className }: IconProps) => <ArrowSquareOut size={size} className={className} />;
 export const CloseIcon = ({ size = 16, className }: IconProps) => <X size={size} className={className} />;
 export const SwapIcon = ({ size = 16, className }: IconProps) => <ArrowsLeftRight size={size} className={className} />;
 
