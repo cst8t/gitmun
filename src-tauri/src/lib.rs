@@ -35,6 +35,11 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(target_os = "windows")]
+use windows::{
+    Win32::System::Recovery::{REGISTER_APPLICATION_RESTART_FLAGS, RegisterApplicationRestart},
+    core::w,
+};
 
 pub(crate) fn configure_command(_command: &mut std::process::Command) {
     #[cfg(windows)]
@@ -72,6 +77,17 @@ pub(crate) fn is_msix_build() -> bool {
         false
     }
 }
+
+#[cfg(target_os = "windows")]
+fn register_msix_application_restart() {
+    if is_msix_build() {
+        let _ =
+            unsafe { RegisterApplicationRestart(w!(""), REGISTER_APPLICATION_RESTART_FLAGS(0)) };
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn register_msix_application_restart() {}
 
 fn git_backend() -> GitBackend {
     *GIT_BACKEND.get_or_init(detect_git_backend)
@@ -1265,6 +1281,8 @@ pub fn run() {
         .manage(StartupState(Mutex::new(startup_action)))
         .manage(PendingCloneDestination(Mutex::new(None)))
         .setup(|app| {
+            register_msix_application_restart();
+
             #[cfg(windows)]
             initialise_bundled_git_path(app);
 

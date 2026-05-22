@@ -75,14 +75,20 @@ export function UpdateDialog({
   } else if (phase === "storeError") {
     title = t("labels.storeFailedTitle");
     body = t("labels.storeFailedBody", { message: errorMessage ?? t("labels.unknownError") });
-  } else if (phase === "downloading" && !isMicrosoftStore) {
-    title = t("labels.downloadingTitle", { version: update.version });
-    body = hasKnownLength
-      ? t("labels.downloadedOf", { downloaded: formatBytes(downloadedBytes), total: formatBytes(contentLength) })
-      : t("labels.downloaded", { bytes: formatBytes(downloadedBytes) });
-  } else if (phase === "installing" && !isMicrosoftStore) {
-    title = t("labels.installingTitle", { version: update.version });
-    body = t("labels.installingBody");
+  } else if (phase === "downloading") {
+    title = isMicrosoftStore
+      ? t("labels.storeDownloadingTitle")
+      : t("labels.downloadingTitle", { version: update.version });
+    body = isMicrosoftStore
+      ? t("labels.storeDownloadingBody")
+      : hasKnownLength
+        ? t("labels.downloadedOf", { downloaded: formatBytes(downloadedBytes), total: formatBytes(contentLength) })
+        : t("labels.downloaded", { bytes: formatBytes(downloadedBytes) });
+  } else if (phase === "installing") {
+    title = isMicrosoftStore
+      ? t("labels.storeInstallingTitle")
+      : t("labels.installingTitle", { version: update.version });
+    body = isMicrosoftStore ? t("labels.storeInstallingBody") : t("labels.installingBody");
   } else if (isSuccess && !isMicrosoftStore) {
     title = t("labels.installedTitle", { version: update.version });
     body = t("labels.installedBody");
