@@ -11,6 +11,32 @@ export type RowStriping = "Off" | "Subtle" | "Strong";
 export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
 export type AppUpdateChannel = "SelfManaged" | "MicrosoftStore" | "SystemManaged";
 
+export type GitErrorCategory =
+    | "auth"
+    | "network"
+    | "non-fast-forward"
+    | "no-upstream"
+    | "upstream-missing"
+    | "conflict-in-progress"
+    | "index-lock"
+    | "repo-state"
+    | "invalid-input"
+    | "tool-unavailable"
+    | "permission"
+    | "other";
+
+export type GitBackendSource = "git-cli" | "gix";
+
+export type InterpretedGitError = {
+    category: GitErrorCategory;
+    summary: string;
+    suggestedActions: string[];
+    confidence: number;
+    backend: GitBackendSource;
+    rawMessage: string;
+    operation?: string | null;
+};
+
 export type Settings = {
     backendMode: BackendMode;
     showResultLog: boolean;
@@ -154,6 +180,16 @@ export type OperationResult = {
     output?: string | null;
     repoPath?: string | null;
     backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
+    interpretedError?: InterpretedGitError | null;
+};
+
+export type RepoOpenLocationKind = "fileExplorer" | "terminal" | "gitBash";
+
+export type RepoOpenLocation = {
+    kind: RepoOpenLocationKind;
+    label: string;
+    fallbackLabel: string;
+    iconDataUrl?: string | null;
 };
 
 export type RepoRequest = {
@@ -287,7 +323,7 @@ export type PushRejectionAnalysis = {
     upstreamBranch: string | null;
     kind: PushFailureKind;
     message: string;
-    suggestedNextActions: Array<"fetch" | "review" | "integrate" | "publish" | "repair-upstream" | "retry">;
+    suggestedNextActions: string[];
 };
 
 export type PushResult = {
@@ -297,6 +333,7 @@ export type PushResult = {
     backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
     success: boolean;
     rejection?: PushRejectionAnalysis | null;
+    interpretedError?: InterpretedGitError | null;
 };
 
 export type FileStatusItem = {
@@ -369,6 +406,7 @@ export type MergeResult = {
     output?: string | null;
     repoPath?: string | null;
     backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
+    interpretedError?: InterpretedGitError | null;
     success: boolean;
     hasConflicts: boolean;
     conflictedFiles: string[];
@@ -383,9 +421,11 @@ export type RebaseResult = {
     output?: string | null;
     repoPath?: string | null;
     backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
+    interpretedError?: InterpretedGitError | null;
     success: boolean;
     hasConflicts: boolean;
     conflictedFiles: string[];
+    rebaseInProgress: boolean;
 };
 
 export type CherryPickRequest = RepoRequest & {
@@ -397,6 +437,7 @@ export type CherryPickResult = {
     output?: string | null;
     repoPath?: string | null;
     backendUsed: "gix" | "git-cli" | "gix+cli-fallback";
+    interpretedError?: InterpretedGitError | null;
     success: boolean;
     hasConflicts: boolean;
     conflictedFiles: string[];

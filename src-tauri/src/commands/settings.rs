@@ -769,6 +769,7 @@ pub fn set_global_diff_tool(
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 
@@ -790,6 +791,7 @@ pub fn set_global_default_branch(default_branch: String) -> Result<OperationResu
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 
@@ -821,6 +823,7 @@ fn set_optional_global_config(
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 
@@ -935,6 +938,7 @@ pub fn set_global_file_mode(file_mode: bool) -> Result<OperationResult, String> 
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 
@@ -955,6 +959,7 @@ pub fn set_global_gpg_program(gpg_program: String) -> Result<OperationResult, St
         output: None,
         repo_path: None,
         backend_used: "git-cli".to_string(),
+        interpreted_error: None,
     })
 }
 

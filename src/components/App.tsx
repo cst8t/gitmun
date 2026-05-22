@@ -10,7 +10,7 @@ import {useToast} from "../hooks/useToast";
 import {useUpdateFlow} from "../hooks/useUpdateFlow";
 import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
-import type {AppAvailableUpdate, RepoOpenBehaviour, Settings, ShellStartupAction} from "../types";
+import type {AppAvailableUpdate, RepoOpenBehaviour, RepoOpenLocationKind, Settings, ShellStartupAction} from "../types";
 import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
 import {applyThemeMode} from "../utils/theme";
 import {applyUiTextScale} from "../utils/uiTextScale";
@@ -632,6 +632,18 @@ export function App() {
         await openRepoPath(path);
     }, [openRepoPath]);
 
+    const handleOpenRepoLocation = useCallback(async (kind: RepoOpenLocationKind) => {
+        if (!repoPath) return;
+        try {
+            const result = await api.openRepoLocation(repoPath, kind);
+            showToast(result.message, "success");
+            appendResultLog("info", result.message, result.backendUsed, repoPath);
+        } catch (e) {
+            showToast(String(e), "error");
+            appendResultLog("error", t("log.openRepoLocationFailed", {message: String(e)}), "unknown", repoPath);
+        }
+    }, [repoPath, showToast, t]);
+
     const isNative = true;
     const winRadius = 0;
 
@@ -655,6 +667,7 @@ export function App() {
                 identityOpen={identityOpen}
                 onIdentityToggle={() => setIdentityOpen(v => !v)}
                 onRepoSelect={handleRepoSelect}
+                onOpenRepoLocation={handleOpenRepoLocation}
                 onOpenExistingClick={handleOpenExistingClick}
                 onCloneClick={handleCloneClick}
                 onInitRepoClick={handleInitRepoClick}

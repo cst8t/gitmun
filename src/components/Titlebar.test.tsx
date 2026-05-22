@@ -1,10 +1,20 @@
 // @vitest-environment jsdom
 import React from "react";
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Titlebar } from "./Titlebar";
 import type { BranchInfo } from "../types";
 import "../i18n";
+
+vi.mock("../api/commands", () => ({
+  getRepoOpenLocations: vi.fn(async () => [
+    { kind: "fileExplorer", label: "Explorer App", fallbackLabel: "File Manager", iconDataUrl: null },
+    { kind: "terminal", label: "Terminal App", fallbackLabel: "Terminal", iconDataUrl: null },
+    { kind: "gitBash", label: "Git Bash", fallbackLabel: "Git Bash", iconDataUrl: null },
+  ]),
+}));
+
+import * as api from "../api/commands";
 
 function makeBranch(overrides: Partial<BranchInfo> = {}): BranchInfo {
   return {
@@ -19,13 +29,18 @@ function makeBranch(overrides: Partial<BranchInfo> = {}): BranchInfo {
   };
 }
 
-function renderTitlebar(branches: BranchInfo[], pushLabel = "Push") {
+function renderTitlebar(
+  branches: BranchInfo[],
+  pushLabel = "Push",
+  repoPath: string | null = "/repo",
+  onOpenRepoLocation = vi.fn(),
+) {
   render(
     <Titlebar
       platform="windows"
       native={false}
-      repoPath="/repo"
-      currentBranch="feature/demo"
+      repoPath={repoPath}
+      currentBranch={repoPath ? "feature/demo" : null}
       branches={branches}
       identityInitials="GM"
       identityAvatarUrl={null}
@@ -40,6 +55,7 @@ function renderTitlebar(branches: BranchInfo[], pushLabel = "Push") {
       onInitRepoClick={vi.fn()}
       onOpenExistingClick={vi.fn()}
       onRepoSelect={vi.fn()}
+      onOpenRepoLocation={onOpenRepoLocation}
       onFetch={vi.fn()}
       onPull={vi.fn()}
       onPush={vi.fn()}
@@ -52,6 +68,14 @@ function renderTitlebar(branches: BranchInfo[], pushLabel = "Push") {
 }
 
 describe("Titlebar", () => {
+  beforeEach(() => {
+    vi.mocked(api.getRepoOpenLocations).mockResolvedValue([
+      { kind: "fileExplorer", label: "Explorer App", fallbackLabel: "File Manager", iconDataUrl: null },
+      { kind: "terminal", label: "Terminal App", fallbackLabel: "Terminal", iconDataUrl: null },
+      { kind: "gitBash", label: "Git Bash", fallbackLabel: "Git Bash", iconDataUrl: null },
+    ]);
+  });
+
   it("shows Publish when the current branch has no upstream", () => {
     renderTitlebar([makeBranch()], "Publish");
     expect(screen.getByText("Publish")).toBeInTheDocument();
@@ -60,5 +84,60 @@ describe("Titlebar", () => {
   it("shows Push for tracked branches", () => {
     renderTitlebar([makeBranch({ upstream: "origin/feature/demo", upstreamStatus: "tracked" })], "Push");
     expect(screen.getByText("Push")).toBeInTheDocument();
+  });
+
+  it("disables Open in when no repository is open", () => {
+    renderTitlebar([], "Push", null);
+
+    const button = screen.getByText("Open in...").closest(".titlebar__icon-btn");
+    expect(button).toHaveAttribute("aria-disabled", "true");
+
+    fireEvent.click(screen.getByText("Open in..."));
+    expect(screen.queryByText("Explorer App")).not.toBeInTheDocument();
+    expect(screen.queryByText("Terminal App")).not.toBeInTheDocument();
+  });
+
+  it("shows file manager and terminal entries when a repository is open", async () => {
+    renderTitlebar([makeBranch()]);
+
+    fireEvent.click(screen.getByText("Open in..."));
+
+    expect(await screen.findByText("Explorer App")).toBeInTheDocument();
+    expect(screen.getByText("Terminal App")).toBeInTheDocument();
+    expect(screen.getByText("Git Bash")).toBeInTheDocument();
+  });
+
+  it("calls the open handler with the selected location", async () => {
+    const onOpenRepoLocation = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", onOpenRepoLocation);
+
+    fireEvent.click(screen.getByText("Open in..."));
+    fireEvent.click(await screen.findByText("Explorer App"));
+    expect(onOpenRepoLocation).toHaveBeenCalledWith("fileExplorer");
+
+    fireEvent.click(screen.getByText("Open in..."));
+    fireEvent.click(await screen.findByText("Terminal App"));
+    expect(onOpenRepoLocation).toHaveBeenCalledWith("terminal");
+
+    fireEvent.click(screen.getByText("Open in..."));
+    fireEvent.click(await screen.findByText("Git Bash"));
+    expect(onOpenRepoLocation).toHaveBeenCalledWith("gitBash");
+  });
+
+  it("renders fallback labels when native labels are empty", async () => {
+    vi.mocked(api.getRepoOpenLocations).mockResolvedValue([
+      { kind: "fileExplorer", label: "", fallbackLabel: "File Manager", iconDataUrl: null },
+      { kind: "terminal", label: "", fallbackLabel: "Terminal", iconDataUrl: null },
+      { kind: "gitBash", label: "", fallbackLabel: "Git Bash", iconDataUrl: null },
+    ]);
+
+    renderTitlebar([makeBranch()]);
+    fireEvent.click(screen.getByText("Open in..."));
+
+    await waitFor(() => {
+      expect(screen.getByText("File Manager")).toBeInTheDocument();
+      expect(screen.getByText("Terminal")).toBeInTheDocument();
+      expect(screen.getByText("Git Bash")).toBeInTheDocument();
+    });
   });
 });

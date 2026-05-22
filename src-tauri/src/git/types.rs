@@ -1,5 +1,7 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
+use super::error_interpretation::InterpretedGitError;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CommitDateMode {
     AuthorDate,
@@ -390,6 +392,8 @@ pub struct OperationResult {
     pub output: Option<String>,
     pub repo_path: Option<String>,
     pub backend_used: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreted_error: Option<InterpretedGitError>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -501,6 +505,8 @@ pub struct MergeResult {
     pub output: Option<String>,
     pub repo_path: Option<String>,
     pub backend_used: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreted_error: Option<InterpretedGitError>,
     /// True if the merge completed cleanly (fast-forward or auto-merge).
     pub success: bool,
     /// True if there are conflicts that require manual resolution.
@@ -523,9 +529,12 @@ pub struct RebaseResult {
     pub output: Option<String>,
     pub repo_path: Option<String>,
     pub backend_used: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreted_error: Option<InterpretedGitError>,
     pub success: bool,
     pub has_conflicts: bool,
     pub conflicted_files: Vec<String>,
+    pub rebase_in_progress: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -542,6 +551,8 @@ pub struct CherryPickResult {
     pub output: Option<String>,
     pub repo_path: Option<String>,
     pub backend_used: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreted_error: Option<InterpretedGitError>,
     pub success: bool,
     pub has_conflicts: bool,
     pub conflicted_files: Vec<String>,
@@ -870,6 +881,8 @@ pub struct PushResult {
     pub backend_used: String,
     pub success: bool,
     pub rejection: Option<PushRejectionAnalysis>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub interpreted_error: Option<InterpretedGitError>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

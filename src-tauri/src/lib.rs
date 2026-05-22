@@ -93,40 +93,63 @@ fn detect_git_backend() -> GitBackend {
 }
 
 pub(crate) fn git_command() -> std::process::Command {
-    if let Some(git_exe) = configured_git_executable_path() {
+    let mut command = if let Some(git_exe) = configured_git_executable_path() {
         #[cfg(windows)]
         {
             let mut command = std::process::Command::new(&git_exe);
             configure_bundled_git_environment(&mut command, &git_exe);
-            return command;
+            command
         }
 
         #[cfg(not(windows))]
         {
-            return std::process::Command::new(git_exe);
+            std::process::Command::new(git_exe)
         }
+    } else {
+        match git_backend() {
+            GitBackend::FlatpakHost => {
+                let mut cmd = std::process::Command::new("flatpak-spawn");
+                cmd.args(["--host", "--env=LC_ALL=C", "--env=LANG=C", "git"]);
+                cmd
+            }
+            GitBackend::FlatpakBundled => std::process::Command::new("/app/bin/git"),
+            GitBackend::System => {
+                #[cfg(windows)]
+                {
+                    let git_exe = resolve_git_exe();
+                    let mut command = std::process::Command::new(&git_exe);
+                    configure_bundled_git_environment(&mut command, Path::new(&git_exe));
+                    command
+                }
+                #[cfg(not(windows))]
+                {
+                    std::process::Command::new(resolve_git_exe())
+                }
+            }
+        }
+    };
+
+    command.env("LC_ALL", "C");
+    command.env("LANG", "C");
+    command
+}
+
+#[cfg(test)]
+mod git_command_tests {
+    fn command_env_is(command: &std::process::Command, key: &str, value: &str) -> bool {
+        command
+            .get_envs()
+            .any(|(env_key, env_value)| {
+                env_key == key && env_value == Some(std::ffi::OsStr::new(value))
+            })
     }
 
-    match git_backend() {
-        GitBackend::FlatpakHost => {
-            let mut cmd = std::process::Command::new("flatpak-spawn");
-            cmd.args(["--host", "git"]);
-            cmd
-        }
-        GitBackend::FlatpakBundled => std::process::Command::new("/app/bin/git"),
-        GitBackend::System => {
-            #[cfg(windows)]
-            {
-                let git_exe = resolve_git_exe();
-                let mut command = std::process::Command::new(&git_exe);
-                configure_bundled_git_environment(&mut command, Path::new(&git_exe));
-                command
-            }
-            #[cfg(not(windows))]
-            {
-                std::process::Command::new(resolve_git_exe())
-            }
-        }
+    #[test]
+    fn git_command_uses_stable_machine_locale() {
+        let command = crate::git_command();
+
+        assert!(command_env_is(&command, "LC_ALL", "C"));
+        assert!(command_env_is(&command, "LANG", "C"));
     }
 }
 
@@ -303,6 +326,76 @@ fn resolve_git_bash_exe() -> Option<std::path::PathBuf> {
     .iter()
     .map(std::path::PathBuf::from)
     .find(|candidate| candidate.exists())
+}
+
+#[cfg(windows)]
+pub(crate) fn resolve_system_git_bash_exe() -> Option<PathBuf> {
+    fn git_bash_exe_from_git_exe(git_exe: &Path) -> Option<PathBuf> {
+        let parent = git_exe.parent()?;
+        let root = if parent
+            .file_name()
+            .is_some_and(|name| name == "cmd" || name == "bin")
+        {
+            parent.parent()?
+        } else {
+            parent
+        };
+        let candidate = root.join("git-bash.exe");
+        if candidate.exists() {
+            Some(candidate)
+        } else {
+            None
+        }
+    }
+
+    fn is_bundled_path(candidate: &Path) -> bool {
+        let Some(bundled) = bundled_git_exe() else {
+            return false;
+        };
+        let Some(root) = bundled.parent().and_then(|path| path.parent()) else {
+            return false;
+        };
+        candidate.starts_with(root)
+    }
+
+    fn is_git_for_windows_bash(candidate: &Path) -> bool {
+        candidate.exists()
+            && !is_bundled_path(candidate)
+            && candidate
+                .parent()
+                .is_some_and(|root| root.join("cmd").join("git.exe").exists())
+    }
+
+    let active_git = active_windows_git_exe_path();
+    if active_git.is_absolute() && !is_bundled_path(&active_git) {
+        if let Some(candidate) = git_bash_exe_from_git_exe(&active_git) {
+            if is_git_for_windows_bash(&candidate) {
+                return Some(candidate);
+            }
+        }
+    }
+
+    for candidate in [
+        r"C:\Program Files\Git\git-bash.exe",
+        r"C:\Program Files (x86)\Git\git-bash.exe",
+    ] {
+        let candidate = PathBuf::from(candidate);
+        if is_git_for_windows_bash(&candidate) {
+            return Some(candidate);
+        }
+    }
+
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            if let Some(candidate) = git_bash_exe_from_git_exe(&dir.join("git.exe")) {
+                if is_git_for_windows_bash(&candidate) {
+                    return Some(candidate);
+                }
+            }
+        }
+    }
+
+    None
 }
 
 #[cfg(windows)]
@@ -1314,6 +1407,8 @@ pub fn run() {
             commands::repo::get_commit_details,
             commands::repo::validate_repo_path,
             commands::repo::init_repo,
+            commands::repo::get_repo_open_locations,
+            commands::repo::open_repo_location,
             commands::repo::clone_repo,
             commands::repo::cancel_clone,
             commands::repo::get_default_clone_dir,

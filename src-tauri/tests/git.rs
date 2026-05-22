@@ -4,12 +4,13 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use gitmun_lib::git::cli::CliGitHandler;
+use gitmun_lib::git::error_interpretation::GitErrorCategory;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    FileRequest, PushRequest, RepoRequest, SetBranchUpstreamRequest, StageFilesRequest,
-    SubmoduleActionRequest, SubmoduleState,
+    FileRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
+    StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
 };
 
 fn init_repo() -> TempDir {
@@ -947,11 +948,18 @@ fn push_changes_classifies_non_fast_forward() {
         .expect("push_changes");
 
     assert!(!result.success);
+    let interpreted = result.interpreted_error.expect("interpreted error");
+    assert_eq!(interpreted.category, GitErrorCategory::NonFastForward);
+    assert!(interpreted.confidence >= 0.9);
+    assert!(
+        result
+            .output
+            .as_deref()
+            .is_some_and(|output| output.contains("[rejected]") || output.contains("fetch first")),
+        "raw Git output is preserved"
+    );
     let rejection = result.rejection.expect("push rejection");
-    assert!(matches!(
-        rejection.kind,
-        gitmun_lib::git::types::PushFailureKind::NonFastForward
-    ));
+    assert!(matches!(rejection.kind, PushFailureKind::NonFastForward));
 }
 
 #[test]
@@ -1092,11 +1100,89 @@ fn push_without_upstream_returns_publish_guidance() {
         .expect("push_changes");
 
     assert!(!result.success);
+    let interpreted = result.interpreted_error.expect("interpreted error");
+    assert_eq!(interpreted.category, GitErrorCategory::NoUpstream);
+    assert_eq!(interpreted.suggested_actions, vec!["set-upstream"]);
+    assert!(
+        result
+            .output
+            .as_deref()
+            .is_some_and(|output| output.contains("no upstream branch")),
+        "raw Git output is preserved"
+    );
     let rejection = result.rejection.expect("push rejection");
-    assert!(matches!(
-        rejection.kind,
-        gitmun_lib::git::types::PushFailureKind::NoUpstream
-    ));
+    assert!(matches!(rejection.kind, PushFailureKind::NoUpstream));
+}
+
+#[test]
+fn push_with_mismatched_upstream_returns_repair_guidance() {
+    let (_remote, local) = init_remote_with_clone();
+    git(
+        local.path(),
+        &["config", "branch.main.merge", "refs/heads/missing"],
+    );
+
+    let result = handler()
+        .push_changes(&push_request(&local))
+        .expect("push_changes");
+
+    assert!(!result.success);
+    let interpreted = result.interpreted_error.expect("interpreted error");
+    assert_eq!(interpreted.category, GitErrorCategory::UpstreamMissing);
+    assert!(
+        interpreted
+            .suggested_actions
+            .contains(&"repair-upstream".to_string())
+    );
+    let rejection = result.rejection.expect("push rejection");
+    assert!(matches!(rejection.kind, PushFailureKind::UpstreamMissing));
+    assert!(
+        result
+            .output
+            .as_deref()
+            .is_some_and(|output| output.contains("upstream branch")),
+        "raw Git output is preserved"
+    );
+}
+
+#[test]
+fn push_to_unresolvable_remote_returns_network_guidance() {
+    let (_remote, local) = init_remote_with_clone();
+    write_file(local.path(), "network.txt", "network");
+    git(local.path(), &["add", "network.txt"]);
+    git(local.path(), &["commit", "-m", "network"]);
+    git(
+        local.path(),
+        &[
+            "config",
+            "core.sshCommand",
+            "sh -c 'echo \"ssh: Could not resolve hostname example.invalid: Name or service not known\" >&2; exit 255'",
+        ],
+    );
+    git(
+        local.path(),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "ssh://git@example.invalid/repo.git",
+        ],
+    );
+
+    let result = handler()
+        .push_changes(&push_request(&local))
+        .expect("push_changes");
+
+    assert!(!result.success);
+    let interpreted = result.interpreted_error.expect("interpreted error");
+    assert_eq!(interpreted.category, GitErrorCategory::Network);
+    assert!(
+        result
+            .output
+            .as_deref()
+            .is_some_and(|output| output.contains("Could not resolve hostname")),
+        "raw Git output is preserved"
+    );
 }
 
 #[test]

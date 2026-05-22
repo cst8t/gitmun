@@ -33,12 +33,21 @@ describe("getResultLogEntries", () => {
   });
 
   test("returns entries previously stored", () => {
-    appendResultLog("info", "hello", "gix");
+    appendResultLog("info", "hello", "gix", null, "raw output");
     const entries = getResultLogEntries();
     expect(entries).toHaveLength(1);
     expect(entries[0].message).toBe("hello");
+    expect(entries[0].details).toBe("raw output");
     expect(entries[0].level).toBe("info");
     expect(entries[0].backend).toBe("gix");
+  });
+
+  test("preserves old entries without details", () => {
+    localStorage.setItem(
+      RESULT_LOG_STORAGE_KEY,
+      JSON.stringify([{ message: "hi", level: "info" }]),
+    );
+    expect(getResultLogEntries()[0].details).toBeNull();
   });
 
   test("returns empty array for corrupt JSON", () => {
@@ -73,6 +82,14 @@ describe("getResultLogEntries", () => {
       JSON.stringify([{ message: "hi", backend: "some-other" }]),
     );
     expect(getResultLogEntries()[0].backend).toBe("unknown");
+  });
+
+  test("drops empty details", () => {
+    localStorage.setItem(
+      RESULT_LOG_STORAGE_KEY,
+      JSON.stringify([{ message: "hi", details: "   " }]),
+    );
+    expect(getResultLogEntries()[0].details).toBeNull();
   });
 
   test("preserves valid success and error levels", () => {
