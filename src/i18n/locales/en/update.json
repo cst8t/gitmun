@@ -21,8 +21,12 @@
     "promptTitle": "Update {{version}} is available",
     "storeDeferredBody": "The Microsoft Store update was not started.",
     "storeDeferredTitle": "Update deferred",
+    "storeDownloadingBody": "Microsoft Store is downloading the update.",
+    "storeDownloadingTitle": "Downloading Microsoft Store update",
     "storeFailedBody": "Microsoft Store could not start the update: {{message}}",
     "storeFailedTitle": "Microsoft Store update failed",
+    "storeInstallingBody": "Microsoft Store is installing the update. Gitmun may close while Windows applies it.",
+    "storeInstallingTitle": "Installing Microsoft Store update",
     "storeMandatory": "Microsoft Store marks this update as required.",
     "storeOpening": "Starting Microsoft Store update...",
     "storeOpeningBody": "Windows is preparing the update. Follow any Windows prompts to continue.",
@@ -41,6 +45,7 @@
     "storeCompleted": "Microsoft Store finished processing the update.",
     "storeDeferred": "Microsoft Store update deferred.",
     "storeFailed": "Microsoft Store update failed: {{message}}",
+    "storeInProgress": "Microsoft Store is processing the update.",
     "storeUpdateAvailable": "A Microsoft Store update is available.",
     "updateAvailable": "Update {{version}} is available."
   }

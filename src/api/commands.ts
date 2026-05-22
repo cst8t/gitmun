@@ -57,6 +57,7 @@ import type {
     AppUpdateChannel,
     AvailableUpdate,
     MicrosoftStoreUpdate,
+    MicrosoftStoreUpdateEvent,
     MicrosoftStoreUpdateResult,
     UpdateDownloadEvent,
     RemoveRemoteRequest,
@@ -473,7 +474,16 @@ export function checkMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdate | null
 }
 
 export function requestMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdateResult> {
-    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update");
+    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
+    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
+}
+
+export function requestMicrosoftStoreUpdateWithProgress(
+    onProgress: (event: MicrosoftStoreUpdateEvent) => void,
+): Promise<MicrosoftStoreUpdateResult> {
+    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
+    onEvent.onmessage = onProgress;
+    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {
