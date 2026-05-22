@@ -88,7 +88,7 @@ export function AboutWindow() {
         </button>
         <button
           className="about__link-btn"
-          disabled
+          onClick={() => void open("https://gitmun.org")}
           title={t("links.website")}
         >
           <GlobeIcon size={20} />
