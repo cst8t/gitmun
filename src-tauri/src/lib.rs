@@ -817,6 +817,20 @@ mod linux_config_tests {
         assert!(!linux_is_amd_graphics_device(0x1002, Some(0x04), true));
         assert!(!linux_is_amd_graphics_device(0x8086, Some(0x03), true));
     }
+
+    #[test]
+    fn appimage_x11_auto_forces_software_renderer() {
+        assert!(linux_should_force_software_renderer(
+            "auto", false, true, false, false, true,
+        ));
+    }
+
+    #[test]
+    fn package_x11_auto_keeps_hardware_renderer() {
+        assert!(!linux_should_force_software_renderer(
+            "auto", false, true, false, false, false,
+        ));
+    }
 }
 
 #[cfg(target_os = "linux")]
@@ -868,7 +882,9 @@ fn apply_linux_appimage_webkit_workarounds() {
         }
     }
 
-    let has_xwayland = std::env::var_os("DISPLAY").is_some();
+    let has_x11_display = std::env::var_os("DISPLAY").is_some();
+    let is_appimage =
+        std::env::var_os("APPIMAGE").is_some() || std::env::var_os("APPDIR").is_some();
 
     let is_kde = std::env::var("XDG_CURRENT_DESKTOP")
         .map(|v| v.to_lowercase())
@@ -881,21 +897,21 @@ fn apply_linux_appimage_webkit_workarounds() {
     // preserves GTK client-side decorations (CSD), which correctly show
     // the full window title (repo path / project name).
     let prefer_x11 =
-        graphics_mode == "safe" || (graphics_mode == "auto" && is_wayland && has_xwayland);
+        graphics_mode == "safe" || (graphics_mode == "auto" && is_wayland && has_x11_display);
     if prefer_x11 && std::env::var_os("GDK_BACKEND").is_none() {
         unsafe {
             std::env::set_var("GDK_BACKEND", "x11");
         }
     }
 
-    // On KDE Plasma with recent AMD/Mesa stacks (e.g. Mesa 26.1 + radeonsi),
-    // XWayland's GLX-to-EGL translation layer (glamor) can trigger heap
-    // corruption over time.  LIBGL_ALWAYS_SOFTWARE forces Mesa's llvmpipe
-    // software rasterizer, bypassing the GPU driver entirely, while keeping
-    // the X11 backend for correct title-bar rendering.
-    let force_software = graphics_mode == "safe"
-        || (graphics_mode == "auto" && is_wayland && !has_xwayland)
-        || (graphics_mode == "auto" && is_wayland && has_xwayland && is_kde && has_amd_graphics);
+    let force_software = linux_should_force_software_renderer(
+        &graphics_mode,
+        is_wayland,
+        has_x11_display,
+        is_kde,
+        has_amd_graphics,
+        is_appimage,
+    );
     if force_software && std::env::var_os("LIBGL_ALWAYS_SOFTWARE").is_none() {
         unsafe {
             std::env::set_var("LIBGL_ALWAYS_SOFTWARE", "1");
@@ -909,12 +925,31 @@ fn apply_linux_appimage_webkit_workarounds() {
     };
     eprintln!(
         "gitmun: graphics mode={graphics_mode} renderer={renderer} gtk_backend={} \
-         wayland={is_wayland} xwayland={has_xwayland} kde={is_kde} amd_graphics={has_amd_graphics} \
+         wayland={is_wayland} x11_display={has_x11_display} appimage={is_appimage} \
+         kde={is_kde} amd_graphics={has_amd_graphics} \
          disable_dmabuf={} disable_compositing={}",
         std::env::var("GDK_BACKEND").unwrap_or_else(|_| "default".to_string()),
         disabled_dmabuf_renderer || std::env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_some(),
         disabled_compositing || std::env::var_os("WEBKIT_DISABLE_COMPOSITING_MODE").is_some(),
     );
+}
+
+#[cfg(target_os = "linux")]
+fn linux_should_force_software_renderer(
+    graphics_mode: &str,
+    is_wayland: bool,
+    has_x11_display: bool,
+    is_kde: bool,
+    has_amd_graphics: bool,
+    is_appimage: bool,
+) -> bool {
+    graphics_mode == "safe"
+        // OBS AppImages can combine bundled WebKit/Mesa with host X11 drivers;
+        // llvmpipe avoids EGL startup failures on those hosts.
+        || (graphics_mode == "auto" && is_appimage && has_x11_display && !is_wayland)
+        || (graphics_mode == "auto" && is_wayland && !has_x11_display)
+        // KDE Plasma on recent AMD/Mesa stacks can hit XWayland GL issues.
+        || (graphics_mode == "auto" && is_wayland && has_x11_display && is_kde && has_amd_graphics)
 }
 
 #[cfg(target_os = "linux")]
