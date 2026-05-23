@@ -256,7 +256,7 @@ mod platform {
             Shell::{IInitializeWithWindow, ShellExecuteW},
             WindowsAndMessaging::SW_SHOWNORMAL,
         },
-        core::{Interface, w},
+        core::{Interface, Ref, w},
     };
     use windows_future::{
         AsyncOperationProgressHandler, AsyncOperationWithProgressCompletedHandler,
@@ -467,7 +467,7 @@ mod platform {
                     operation
                         .SetProgress(&AsyncOperationProgressHandler::new({
                             let on_event = on_event;
-                            move |_operation, progress| {
+                            move |_operation, progress: Ref<'_, StorePackageUpdateStatus>| {
                                 if let Some(progress) = progress.as_ref() {
                                     let _ = on_event.send(MicrosoftStoreUpdateEvent::Progress(
                                         progress_status(progress.clone()),
