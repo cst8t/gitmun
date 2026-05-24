@@ -3,6 +3,7 @@
     "about": "About Gitmun",
     "clone": "Clone",
     "cloneRepository": "Clone a repository",
+    "copyRepositoryPath": "Copy repository path",
     "fetch": "Fetch",
     "fileManager": "File Manager",
     "initialiseRepository": "Initialise a repository",
@@ -17,6 +18,7 @@
     "terminal": "Terminal"
   },
   "labels": {
+    "copied": "Copied",
     "noRepositoryOpen": "No repository open",
     "searchCommits": "Search commits..."
   }

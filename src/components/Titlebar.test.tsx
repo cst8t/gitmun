@@ -16,6 +16,8 @@ vi.mock("../api/commands", () => ({
 
 import * as api from "../api/commands";
 
+const writeText = vi.fn(async () => {});
+
 function makeBranch(overrides: Partial<BranchInfo> = {}): BranchInfo {
   return {
     name: "feature/demo",
@@ -69,6 +71,11 @@ function renderTitlebar(
 
 describe("Titlebar", () => {
   beforeEach(() => {
+    writeText.mockClear();
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: { writeText },
+    });
     vi.mocked(api.getRepoOpenLocations).mockResolvedValue([
       { kind: "fileExplorer", label: "Explorer App", fallbackLabel: "File Manager", iconDataUrl: null },
       { kind: "terminal", label: "Terminal App", fallbackLabel: "Terminal", iconDataUrl: null },
@@ -84,6 +91,25 @@ describe("Titlebar", () => {
   it("shows Push for tracked branches", () => {
     renderTitlebar([makeBranch({ upstream: "origin/feature/demo", upstreamStatus: "tracked" })], "Push");
     expect(screen.getByText("Push")).toBeInTheDocument();
+  });
+
+  it("copies the repository path from the titlebar", async () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun");
+
+    fireEvent.click(screen.getByLabelText("Copy repository path"));
+
+    expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
+    await screen.findByText("Copied");
+  });
+
+  it("shows copied feedback after copying the repository path", async () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun");
+
+    fireEvent.click(screen.getByLabelText("Copy repository path"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Copied")).toHaveClass("titlebar__repo-copied--visible");
+    });
   });
 
   it("disables Open in when no repository is open", () => {
