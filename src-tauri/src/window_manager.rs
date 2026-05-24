@@ -182,6 +182,8 @@ pub async fn open_sub_window(
 
     if let Some(existing) = app.get_webview_window(&label) {
         let _ = existing.set_background_color(Some(background_colour));
+        #[cfg(target_os = "linux")]
+        crate::configure_linux_webkit_text_input(&existing);
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
@@ -245,6 +247,9 @@ pub async fn open_sub_window(
     }
 
     let _window = builder.build().map_err(|e| e.to_string())?;
+
+    #[cfg(target_os = "linux")]
+    crate::configure_linux_webkit_text_input(&_window);
 
     crate::instance_coordinator::register_sub_window(&label);
     // WebView2 on Windows can fail to navigate when the window is created

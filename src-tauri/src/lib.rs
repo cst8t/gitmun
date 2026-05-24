@@ -1052,7 +1052,7 @@ fn sanitize_linux_xdg_env() {
 }
 
 #[cfg(target_os = "linux")]
-fn configure_linux_webkit_text_input(window: &tauri::WebviewWindow<tauri::Wry>) {
+pub(crate) fn configure_linux_webkit_text_input(window: &tauri::WebviewWindow<tauri::Wry>) {
     let _ = window.with_webview(|webview| {
         use webkit2gtk::{WebContextExt, WebViewExt};
 
