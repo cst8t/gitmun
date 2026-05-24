@@ -63,6 +63,8 @@ export function Titlebar({
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
   const [searchFocused, setSearchFocused] = useState(false);
+  const [repoPathCopied, setRepoPathCopied] = useState(false);
+  const repoPathCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushActionLabel = pushLabel ?? t("actions.push");
   const currentBranchInfo = branches.find(b => b.isCurrent);
   const ahead = currentBranchInfo?.ahead ?? 0;
@@ -71,6 +73,23 @@ export function Titlebar({
   const { repoDir, repoName } = repoPath
     ? splitRepoPath(repoPath)
     : { repoDir: "", repoName: "" };
+
+  const copyRepoPath = () => {
+    if (!repoPath) return;
+    setRepoPathCopied(true);
+    if (repoPathCopiedTimerRef.current) clearTimeout(repoPathCopiedTimerRef.current);
+    repoPathCopiedTimerRef.current = setTimeout(() => {
+      setRepoPathCopied(false);
+      repoPathCopiedTimerRef.current = null;
+    }, 1200);
+    navigator.clipboard?.writeText(repoPath).catch(() => {});
+  };
+
+  useEffect(() => {
+    return () => {
+      if (repoPathCopiedTimerRef.current) clearTimeout(repoPathCopiedTimerRef.current);
+    };
+  }, []);
 
   const dragRegionProps = native ? {} : { "data-tauri-drag-region": true };
 
@@ -89,9 +108,20 @@ export function Titlebar({
       {/* Repo + branch */}
       {repoPath ? (
         <>
-          <div className="titlebar__repo" {...dragRegionProps}>
-            <span className="titlebar__repo-dir">{repoDir}</span>
-            <span className="titlebar__repo-name">{repoName}</span>
+          <div className="titlebar__repo-wrap">
+            <button
+              type="button"
+              className="titlebar__repo"
+              onClick={copyRepoPath}
+              title={t("actions.copyRepositoryPath")}
+              aria-label={t("actions.copyRepositoryPath")}
+            >
+              <span className="titlebar__repo-dir">{repoDir}</span>
+              <span className="titlebar__repo-name">{repoName}</span>
+            </button>
+            <span className={`titlebar__repo-copied${repoPathCopied ? " titlebar__repo-copied--visible" : ""}`}>
+              {t("labels.copied")}
+            </span>
           </div>
           {currentBranch && (
             <div className="titlebar__branch-pill">

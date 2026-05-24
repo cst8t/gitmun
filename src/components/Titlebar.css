@@ -1,4 +1,6 @@
 .titlebar {
+  position: relative;
+  z-index: 30;
   height: var(--titlebar-height);
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
@@ -33,10 +35,26 @@
   margin: 0 4px;
 }
 
+.titlebar__repo-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
 .titlebar__repo {
   display: flex;
   align-items: center;
-  gap: 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  padding: 2px 4px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.titlebar__repo:hover {
+  background: var(--bg-hover);
 }
 
 .titlebar__repo-dir {
@@ -47,6 +65,28 @@
 .titlebar__repo-name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
+}
+
+.titlebar__repo-copied {
+  position: absolute;
+  top: calc(100% + 1px);
+  left: 50%;
+  opacity: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font-size: var(--font-size-xs);
+  box-shadow: var(--shadow-popover);
+  transition: opacity 0.16s ease;
+  z-index: 20;
+}
+
+.titlebar__repo-copied--visible {
+  opacity: 1;
 }
 
 .titlebar__branch-pill {
