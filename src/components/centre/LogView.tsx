@@ -1,4 +1,4 @@
-import React, { startTransition, useCallback, useEffect, useRef, useState } from "react";
+import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { useTranslation } from "react-i18next";
@@ -151,6 +151,7 @@ function SignatureBadge({ status, onOpen }: { status: SignatureStatus; onOpen: (
 
 type CommitRowProps = {
   commit: CommitHistoryItem;
+  index: number;
   effectiveSigStatus: SignatureStatus;
   signer: string | null | undefined;
   fingerprint: string | null | undefined;
@@ -160,13 +161,14 @@ type CommitRowProps = {
   upstreamRef: string | null | undefined;
   avatarUrl: string | null | undefined;
   striped?: "Subtle" | "Strong";
-  onSelectCommit: (hash: string) => void;
-  onContextMenu: (hash: string, x: number, y: number) => void;
+  onSelectCommit: (hash: string, index: number, event: React.MouseEvent) => void;
+  onContextMenu: (hash: string, index: number, x: number, y: number) => void;
   onBadgeClick: (rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
 };
 
 const CommitRow = React.memo(function CommitRow({
   commit: c,
+  index,
   effectiveSigStatus,
   signer,
   fingerprint,
@@ -183,18 +185,19 @@ const CommitRow = React.memo(function CommitRow({
   const { t } = useTranslation("centre");
   const colour = hashColour(c.author);
   const initials = getInitials(c.author);
-  const handleClick = useCallback(() => onSelectCommit(c.hash), [onSelectCommit, c.hash]);
+  const handleClick = useCallback((e: React.MouseEvent) => onSelectCommit(c.hash, index, e), [onSelectCommit, c.hash, index]);
   const stripingClass = striped ? ` log-view__row--striped-${striped.toLowerCase()}` : "";
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
-    onContextMenu(c.hash, e.clientX, e.clientY);
-  }, [onContextMenu, c.hash]);
+    onContextMenu(c.hash, index, e.clientX, e.clientY);
+  }, [onContextMenu, c.hash, index]);
 
   return (
     <div
       className={`log-view__row${stripingClass} ${isSelected ? "log-view__row--selected" : ""}`}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      aria-selected={isSelected}
     >
       {/* Initials are the base layer; the image fades in on top - no layout shift. */}
       <div className="log-view__avatar" style={{ background: `${colour}18`, color: colour }}>
@@ -254,6 +257,27 @@ type LogViewProps = {
 // Caps the burst of IPC calls on mount to avoid saturating the Tauri channel.
 const MAX_CONCURRENT_FETCHES = 3;
 
+function getCommitRangeHashes(commits: CommitHistoryItem[], fromHash: string, toIndex: number): string[] {
+  const fromIndex = commits.findIndex(c => c.hash === fromHash);
+  if (fromIndex === -1) {
+    const hash = commits[toIndex]?.hash;
+    return hash ? [hash] : [];
+  }
+  const start = Math.min(fromIndex, toIndex);
+  const end = Math.max(fromIndex, toIndex);
+  return commits.slice(start, end + 1).map(c => c.hash);
+}
+
+function formatCommitDetails(commits: CommitHistoryItem[]): string {
+  return commits.map(c => [
+    `commit ${c.hash}`,
+    `Author: ${c.author} <${c.authorEmail}>`,
+    `Date: ${c.date}`,
+    "",
+    c.message,
+  ].join("\n")).join("\n\n");
+}
+
 export function LogView({
   active,
   repoPath,
@@ -277,6 +301,11 @@ export function LogView({
   const { t } = useTranslation("centre");
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
   const [commitMenu, setCommitMenu] = useState<{ x: number; y: number; hash: string } | null>(null);
+  const [selectedCommitHashes, setSelectedCommitHashes] = useState<Set<string>>(() => {
+    const initialHash = selectedCommitHash ?? commits[0]?.hash;
+    return initialHash ? new Set([initialHash]) : new Set();
+  });
+  const [selectionAnchorHash, setSelectionAnchorHash] = useState<string | null>(selectedCommitHash ?? commits[0]?.hash ?? null);
   // Resolved verification results for commits that came in as "signed" (gix fast path).
   // Maps hash → { status, signer, fingerprint }.
   const [verified, setVerified] = useState<Record<string, { status: SignatureStatus; signer: string | null; fingerprint: string | null }>>({});
@@ -284,9 +313,21 @@ export function LogView({
   const [sigPopover, setSigPopover] = useState<SigPopoverData | null>(null);
 
   const prevRepoRef = useRef<string | null>(null);
+  const prevLogScopeRef = useRef<CommitLogScope>(logScope);
   const currentRepoRef = useRef(repoPath);
   currentRepoRef.current = repoPath;
   const verifyGenerationRef = useRef(0);
+  const commitHashes = useMemo(() => new Set(commits.map(c => c.hash)), [commits]);
+  const selectedCommits = useMemo(
+    () => commits.filter(c => selectedCommitHashes.has(c.hash)),
+    [commits, selectedCommitHashes],
+  );
+  const commitMenuCommits = useMemo(() => {
+    if (!commitMenu) return [];
+    if (selectedCommits.some(c => c.hash === commitMenu.hash)) return selectedCommits;
+    const target = commits.find(c => c.hash === commitMenu.hash);
+    return target ? [target] : [];
+  }, [commitMenu, selectedCommits, commits]);
 
   // A generation counter lets us abandon in-flight fetches on repo change
   // without needing to cancel the underlying Promises.
@@ -347,8 +388,9 @@ export function LogView({
   };
 
   useEffect(() => {
-    if (repoPath !== prevRepoRef.current) {
+    if (repoPath !== prevRepoRef.current || logScope !== prevLogScopeRef.current) {
       prevRepoRef.current = repoPath;
+      prevLogScopeRef.current = logScope;
       generationRef.current++;
       queueRef.current = [];
       queuedEmailsRef.current.clear();
@@ -357,10 +399,33 @@ export function LogView({
       fetchedRef.current.clear();
       setAvatars({});
       setVerified({});
+      setSelectedCommitHashes(() => {
+        const nextHash = selectedCommitHash && commits.some(c => c.hash === selectedCommitHash)
+          ? selectedCommitHash
+          : commits[0]?.hash;
+        return nextHash ? new Set([nextHash]) : new Set();
+      });
+      setSelectionAnchorHash(selectedCommitHash ?? commits[0]?.hash ?? null);
       verifyGenerationRef.current++;
       verifyingRef.current.clear();
     }
-  }, [repoPath]);
+  }, [repoPath, logScope]);
+
+  useEffect(() => {
+    setSelectedCommitHashes(prev => {
+      const next = new Set(Array.from(prev).filter(hash => commitHashes.has(hash)));
+      if (next.size > 0 && (!selectedCommitHash || next.has(selectedCommitHash))) return next;
+      if (selectedCommitHash && commitHashes.has(selectedCommitHash)) return new Set([selectedCommitHash]);
+      if (next.size > 0) return next;
+      const firstHash = commits[0]?.hash;
+      return firstHash ? new Set([firstHash]) : new Set();
+    });
+    setSelectionAnchorHash(prev => {
+      if (prev && commitHashes.has(prev)) return prev;
+      if (selectedCommitHash && commitHashes.has(selectedCommitHash)) return selectedCommitHash;
+      return commits[0]?.hash ?? null;
+    });
+  }, [commits, commitHashes, selectedCommitHash]);
 
   // Virtuoso's rangeChanged only fires when the container has dimensions. If the
   // Log tab is hidden (display:none) on load it never fires, so we eagerly
@@ -432,8 +497,38 @@ export function LogView({
     return () => { cancelled = true; unlisten?.(); };
   }, []);
 
-  const handleCommitContextMenu = useCallback((hash: string, x: number, y: number) => {
+  const handleSelectCommit = useCallback((hash: string, index: number, event: React.MouseEvent) => {
+    if (event.shiftKey && selectionAnchorHash) {
+      setSelectedCommitHashes(new Set(getCommitRangeHashes(commits, selectionAnchorHash, index)));
+    } else if (event.ctrlKey || event.metaKey) {
+      setSelectedCommitHashes(prev => {
+        const next = new Set(prev);
+        if (next.has(hash) && next.size > 1) {
+          next.delete(hash);
+        } else {
+          next.add(hash);
+        }
+        return next;
+      });
+      setSelectionAnchorHash(hash);
+    } else {
+      setSelectedCommitHashes(new Set([hash]));
+      setSelectionAnchorHash(hash);
+    }
+    onSelectCommit(hash);
+  }, [commits, selectionAnchorHash, onSelectCommit]);
+
+  const handleCommitContextMenu = useCallback((hash: string, index: number, x: number, y: number) => {
+    if (!selectedCommitHashes.has(hash)) {
+      setSelectedCommitHashes(new Set([hash]));
+      setSelectionAnchorHash(hash);
+      onSelectCommit(hash);
+    }
     setCommitMenu({ hash, x, y });
+  }, [selectedCommitHashes, onSelectCommit]);
+
+  const copyText = useCallback((text: string) => {
+    navigator.clipboard?.writeText(text).catch(() => {});
   }, []);
 
   const upstreamInList = commitMarkers.upstreamHead
@@ -475,16 +570,17 @@ export function LogView({
           return (
             <CommitRow
               commit={c}
+              index={index}
               effectiveSigStatus={effectiveSigStatus}
               signer={resolved?.signer}
               fingerprint={resolved?.fingerprint}
-              isSelected={selectedCommitHash ? selectedCommitHash === c.hash : index === 0}
+              isSelected={selectedCommitHashes.has(c.hash)}
               isHead={commitMarkers.localHead === c.hash}
               isUpstream={commitMarkers.upstreamHead === c.hash}
               upstreamRef={commitMarkers.upstreamRef}
               avatarUrl={c.authorEmail ? avatars[c.authorEmail] : undefined}
               striped={striped(index)}
-              onSelectCommit={onSelectCommit}
+              onSelectCommit={handleSelectCommit}
               onContextMenu={handleCommitContextMenu}
               onBadgeClick={(rect, status, signer, fp, keyType, date) =>
                 setSigPopover({ rect, status, signer, fingerprint: fp, keyType, date })
@@ -518,27 +614,49 @@ export function LogView({
         }}
       />
       {sigPopover && <SignaturePopover data={sigPopover} onClose={handleCloseSigPopover} />}
-      {commitMenu && (onCreateTagAtCommit || onCherryPickAtCommit || onRevertAtCommit || onResetToCommit) && (
+      {commitMenu && commitMenuCommits.length > 0 && (
         <ContextMenu
           x={commitMenu.x}
           y={commitMenu.y}
           onClose={() => setCommitMenu(null)}
           items={[
-            ...(onCherryPickAtCommit ? [{
-              label: t("log.cherryPickCommit"),
-              onClick: () => onCherryPickAtCommit(commitMenu.hash),
-            }] : []),
-            ...(onRevertAtCommit ? [{
-              label: t("log.revertCommit"),
-              onClick: () => onRevertAtCommit(commitMenu.hash),
-            }] : []),
-            ...(onResetToCommit ? [
-              { label: t("log.softReset"), onClick: () => onResetToCommit(commitMenu.hash, "soft") },
-              { label: t("log.mixedReset"), onClick: () => onResetToCommit(commitMenu.hash, "mixed") },
+            {
+              label: t("log.copyCommitHash"),
+              onClick: () => copyText(commitMenuCommits.map(c => c.hash).join("\n")),
+            },
+            {
+              label: t("log.copyShortHash"),
+              onClick: () => copyText(commitMenuCommits.map(c => c.shortHash).join("\n")),
+            },
+            {
+              label: t("log.copySubject"),
+              onClick: () => copyText(commitMenuCommits.map(c => c.message).join("\n")),
+            },
+            {
+              label: t("log.copyDetails"),
+              onClick: () => copyText(formatCommitDetails(commitMenuCommits)),
+            },
+            ...(commitMenuCommits.length === 1 && (onCherryPickAtCommit || onRevertAtCommit || onResetToCommit || onCreateTagAtCommit) ? [
+              { type: "separator" as const },
             ] : []),
-            ...(onCreateTagAtCommit ? [{
+            ...(commitMenuCommits.length === 1 && onCherryPickAtCommit ? [{
+              label: t("log.cherryPickCommit"),
+              onClick: () => onCherryPickAtCommit(commitMenuCommits[0].hash),
+            }] : []),
+            ...(commitMenuCommits.length === 1 && onRevertAtCommit ? [{
+              label: t("log.revertCommit"),
+              onClick: () => onRevertAtCommit(commitMenuCommits[0].hash),
+            }] : []),
+            ...(commitMenuCommits.length === 1 && onResetToCommit ? [
+              { label: t("log.softReset"), onClick: () => onResetToCommit(commitMenuCommits[0].hash, "soft") },
+              { label: t("log.mixedReset"), onClick: () => onResetToCommit(commitMenuCommits[0].hash, "mixed") },
+            ] : []),
+            ...(commitMenuCommits.length === 1 && onCreateTagAtCommit && (onCherryPickAtCommit || onRevertAtCommit || onResetToCommit) ? [
+              { type: "separator" as const },
+            ] : []),
+            ...(commitMenuCommits.length === 1 && onCreateTagAtCommit ? [{
               label: t("log.createTagHere"),
-              onClick: () => onCreateTagAtCommit(commitMenu.hash),
+              onClick: () => onCreateTagAtCommit(commitMenuCommits[0].hash),
             }] : []),
           ]}
         />
