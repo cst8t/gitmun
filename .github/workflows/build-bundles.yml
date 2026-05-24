@@ -110,17 +110,13 @@ jobs:
           OBS_PASSWORD: ${{ secrets.OBS_PASSWORD }}
         run: bash ./scripts/obs/configure-osc.sh
 
-      - name: Build Linux deb, rpm and AppImage packages in OBS
+      - name: Build Ubuntu deb package in OBS for AUR
         if: ${{ github.event_name == 'release' || inputs.publish-obs }}
         env:
           OBS_PROJECT: home:cst8t:gitmun
           OBS_PACKAGE: gitmun
-          OBS_RPM_REPOSITORY: openSUSE_Tumbleweed
-          OBS_RPM_ARCH: x86_64
           OBS_DEB_REPOSITORY: xUbuntu_26.04
           OBS_DEB_ARCH: x86_64
-          OBS_APPIMAGE_REPOSITORY: AppImage
-          OBS_APPIMAGE_ARCH: x86_64
         run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
       - name: Build Tauri Linux bundles and updater metadata
