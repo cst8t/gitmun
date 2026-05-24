@@ -1,12 +1,20 @@
 import React from "react";
-import { Menu, MenuItem } from "@tauri-apps/api/menu";
+import { Menu, MenuItem, PredefinedMenuItem } from "@tauri-apps/api/menu";
 import { LogicalPosition } from "@tauri-apps/api/dpi";
 
-export type ContextMenuItem = {
-  label: string;
-  onClick: () => void;
-  danger?: boolean;
-};
+export type ContextMenuItem =
+  | {
+    label: string;
+    onClick: () => void;
+    danger?: boolean;
+  }
+  | {
+    type: "separator";
+  };
+
+function isSeparator(item: ContextMenuItem): item is { type: "separator" } {
+  return "type" in item && item.type === "separator";
+}
 
 type ContextMenuProps = {
   x: number;
@@ -21,12 +29,16 @@ export function ContextMenu({ x, y, items, onClose }: ContextMenuProps) {
   React.useEffect(() => {
     async function show() {
       const menuItems = await Promise.all(
-        items.map((item) =>
-          MenuItem.new({
+        items.map((item) => {
+          if (isSeparator(item)) {
+            return PredefinedMenuItem.new({ item: "Separator" });
+          }
+
+          return MenuItem.new({
             text: item.label,
             action: item.onClick,
-          })
-        )
+          });
+        })
       );
       const menu = await Menu.new({ items: menuItems });
       await menu.popup(new LogicalPosition(x, y));
