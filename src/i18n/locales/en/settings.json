@@ -24,7 +24,7 @@
     "credentialHelper": "Credential helper",
     "defaultBranch": "Default branch name",
     "diffPanel": "Diff panel",
-    "diffTool": "External difftool",
+    "diffTool": "External diff and merge tool",
     "diffToolExecutable": "Diff tool executable",
     "fetchBehaviour": "Fetch behaviour",
     "fileMode": "File mode tracking",
@@ -61,7 +61,7 @@
   },
   "notes": {
     "autoUpdates": "Use About to check manually. Automatic checks only show the updater prompt on launch when this is enabled.",
-    "diffToolNotConfigured": "No known difftool is configured. Compare actions may not work unless you have configured one manually in your git config.",
+    "diffToolNotConfigured": "No known diff or merge tool is configured. Compare and merge-tool actions may not work unless you have configured one manually in your git config.",
     "diffToolSuggestion": " You can set one here (e.g. {{tools}}).",
     "gitConfiguration": "These options update your global Git configuration (equivalent to `git config --global ...`).",
     "gitExecutable": "This is the Git binary Gitmun is using. Saving it pins Gitmun to that executable; clear it to return to automatic lookup.",

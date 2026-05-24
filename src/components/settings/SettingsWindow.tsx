@@ -1241,7 +1241,7 @@ export function SettingsWindow() {
 
                         <div className="settings-window__row">
                             <label className="settings-window__label">
-                                <GitConfigLabel configKey="diff.tool">{t("labels.diffTool")}</GitConfigLabel>
+                                <GitConfigLabel configKey="diff.tool / merge.tool">{t("labels.diffTool")}</GitConfigLabel>
                             </label>
                             <select
                                 className="settings-window__select"
