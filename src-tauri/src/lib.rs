@@ -37,6 +37,7 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 use std::os::windows::process::CommandExt;
 #[cfg(target_os = "windows")]
 use windows::{
+    ApplicationModel::Package,
     Win32::System::Recovery::{REGISTER_APPLICATION_RESTART_FLAGS, RegisterApplicationRestart},
     core::w,
 };
@@ -79,8 +80,19 @@ pub(crate) fn is_msix_build() -> bool {
 }
 
 #[cfg(target_os = "windows")]
+pub(crate) fn has_package_identity() -> bool {
+    Package::Current().is_ok()
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn has_package_identity() -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
 fn register_msix_application_restart() {
-    if is_msix_build() {
+    if is_msix_build() && has_package_identity() {
         let _ =
             unsafe { RegisterApplicationRestart(w!(""), REGISTER_APPLICATION_RESTART_FLAGS(0)) };
     }
@@ -281,35 +293,62 @@ pub(crate) fn git_version_string() -> Result<String, String> {
 pub(crate) fn display_config_path(path: &Path) -> PathBuf {
     #[cfg(windows)]
     {
-        if is_msix_build() {
-            let normalised = path
-                .to_string_lossy()
-                .replace('/', "\\")
-                .to_ascii_lowercase();
-            let msix_roaming = format!(
-                "\\packages\\{}\\localcache\\roaming\\",
-                MSIX_PACKAGE_FAMILY_NAME.to_ascii_lowercase()
-            );
-            if normalised.contains(&msix_roaming) {
-                return path.to_path_buf();
+        if is_msix_build() && has_package_identity() {
+            if let Some(active_path) = active_windows_config_path(path) {
+                return active_path;
             }
-
-            if let Some(local_appdata) = std::env::var_os("LOCALAPPDATA") {
-                return PathBuf::from(local_appdata)
-                    .join("Packages")
-                    .join(MSIX_PACKAGE_FAMILY_NAME)
-                    .join("LocalCache")
-                    .join("Roaming")
-                    .join("com.cst8t.gitmun")
-                    .join(
-                        path.file_name()
-                            .unwrap_or_else(|| std::ffi::OsStr::new("config.toml")),
-                    );
+            if let Some(redirected_path) = redirected_msix_config_path(path) {
+                return redirected_path;
             }
         }
     }
 
     path.to_path_buf()
+}
+
+#[cfg(windows)]
+fn active_windows_config_path(path: &Path) -> Option<PathBuf> {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return Some(display_windows_path(canonical));
+    }
+
+    let parent = path.parent()?;
+    let canonical_parent = std::fs::canonicalize(parent).ok()?;
+    Some(
+        display_windows_path(canonical_parent).join(
+            path.file_name()
+                .unwrap_or_else(|| std::ffi::OsStr::new("config.toml")),
+        ),
+    )
+}
+
+#[cfg(windows)]
+fn redirected_msix_config_path(path: &Path) -> Option<PathBuf> {
+    let local_appdata = std::env::var_os("LOCALAPPDATA")?;
+    Some(
+        PathBuf::from(local_appdata)
+            .join("Packages")
+            .join(MSIX_PACKAGE_FAMILY_NAME)
+            .join("LocalCache")
+            .join("Roaming")
+            .join("com.cst8t.gitmun")
+            .join(
+                path.file_name()
+                    .unwrap_or_else(|| std::ffi::OsStr::new("config.toml")),
+            ),
+    )
+}
+
+#[cfg(windows)]
+fn display_windows_path(path: PathBuf) -> PathBuf {
+    let value = path.to_string_lossy();
+    if let Some(stripped) = value.strip_prefix(r"\\?\UNC\") {
+        return PathBuf::from(format!(r"\\{stripped}"));
+    }
+    if let Some(stripped) = value.strip_prefix(r"\\?\") {
+        return PathBuf::from(stripped);
+    }
+    path
 }
 
 #[cfg(windows)]
