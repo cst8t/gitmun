@@ -11,13 +11,9 @@ version="$1"
 input_dir="$2"
 project="${OBS_PROJECT:-home:cst8t:gitmun}"
 package="${OBS_PACKAGE:-gitmun}"
-rpm_repository="${OBS_RPM_REPOSITORY:-openSUSE_Tumbleweed}"
-rpm_arch="${OBS_RPM_ARCH:-x86_64}"
 deb_repository="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
 deb_arch="${OBS_DEB_ARCH:-x86_64}"
-appimage_repository="${OBS_APPIMAGE_REPOSITORY:-AppImage}"
-appimage_arch="${OBS_APPIMAGE_ARCH:-x86_64}"
-build_appimage="${OBS_BUILD_APPIMAGE:-true}"
+obs_poll_seconds="${OBS_POLL_SECONDS:-60}"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
@@ -26,6 +22,66 @@ release_root="gitmun-${version}"
 source_tarball="${tmp_dir}/${release_root}.tar.xz"
 render_dir="${tmp_dir}/rendered"
 checkout_dir="${tmp_dir}/checkout"
+
+read_obs_build_code() {
+  local results_file="$1"
+
+  OBS_PACKAGE_NAME="$package" python3 - "$results_file" <<'PY'
+import os
+import sys
+import xml.etree.ElementTree as ET
+
+package = os.environ["OBS_PACKAGE_NAME"]
+root = ET.parse(sys.argv[1]).getroot()
+
+for result in root.findall("result"):
+    result_dirty = result.get("dirty") is not None
+    result_code = result.get("code") or "unknown"
+    for status in result.findall("status"):
+        if status.get("package") == package:
+            print("dirty" if result_dirty else status.get("code", result_code))
+            raise SystemExit(0)
+
+print("missing")
+raise SystemExit(2)
+PY
+}
+
+wait_for_obs_build() {
+  local repository="$1"
+  local arch="$2"
+  local results_file="${tmp_dir}/obs-results.xml"
+  local build_code
+
+  echo "Waiting for OBS build: ${project}/${package} ${repository} ${arch}"
+
+  while true; do
+    osc results --xml --no-multibuild -r "$repository" -a "$arch" "$project" "$package" >"$results_file"
+    if ! build_code="$(read_obs_build_code "$results_file")"; then
+      build_code="${build_code:-missing}"
+    fi
+    echo "OBS build status for ${repository}/${arch}: ${build_code}"
+
+    case "$build_code" in
+      succeeded)
+        osc results --no-multibuild -r "$repository" -a "$arch" "$project" "$package"
+        return 0
+        ;;
+      failed|broken|unresolvable|missing)
+        osc results -v --no-multibuild -r "$repository" -a "$arch" "$project" "$package" || true
+        return 1
+        ;;
+      blocked|scheduled|dispatching|building|signing|finished|dirty|unknown)
+        sleep "$obs_poll_seconds"
+        ;;
+      *)
+        echo "Unexpected OBS build status for ${repository}/${arch}: ${build_code}" >&2
+        osc results -v --no-multibuild -r "$repository" -a "$arch" "$project" "$package" || true
+        return 1
+        ;;
+    esac
+  done
+}
 
 for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc package-lock.json ATTRIBUTIONS.html commit-hash.txt; do
   if [ ! -f "${input_dir}/${required_file}" ]; then
@@ -109,12 +165,5 @@ cp "${input_dir}/commit-hash.txt" "$checkout_dir"/
   osc commit --skip-local-service-run -m "Prepare OBS sources for ${version}"
 )
 
-osc rebuild "$project" "$package" "$rpm_repository" "$rpm_arch"
 osc rebuild "$project" "$package" "$deb_repository" "$deb_arch"
-osc results -w -F -r "$rpm_repository" -a "$rpm_arch" "$project" "$package"
-osc results -w -F -r "$deb_repository" -a "$deb_arch" "$project" "$package"
-
-if [ "$build_appimage" = "true" ]; then
-  osc rebuild "$project" "$package" "$appimage_repository" "$appimage_arch"
-  osc results -w -F -r "$appimage_repository" -a "$appimage_arch" "$project" "$package"
-fi
+wait_for_obs_build "$deb_repository" "$deb_arch"
