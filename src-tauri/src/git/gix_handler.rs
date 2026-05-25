@@ -61,6 +61,17 @@ impl GixGitHandler {
         String::from_utf8_lossy(value.as_ref()).to_string()
     }
 
+    fn mailmap_identity(
+        mailmap: &gix::mailmap::Snapshot,
+        signature: gix::actor::SignatureRef<'_>,
+    ) -> (String, String) {
+        let resolved = mailmap.resolve_cow(signature);
+        (
+            Self::bstr_to_string(resolved.name.as_ref()),
+            Self::bstr_to_string(resolved.email.as_ref()),
+        )
+    }
+
     fn gix_error<E>(operation: Option<&str>, error: E) -> GitError
     where
         E: std::error::Error + 'static,
@@ -476,6 +487,7 @@ impl GixGitHandler {
             .map_err(|e| Self::gix_error(None, e))?;
 
         let mut commits = Vec::with_capacity(limit.min(256));
+        let mailmap = repo.open_mailmap();
 
         for info in walk.skip(offset).take(limit) {
             let info = info.map_err(|e| Self::gix_error(None, e))?;
@@ -492,11 +504,8 @@ impl GixGitHandler {
             let short_hash = hash.chars().take(7).collect::<String>();
 
             // Author name and email from the author signature
-            let author_sig = commit
-                .author()
-                .map_err(|e| Self::gix_error(None, e))?;
-            let author = Self::bstr_to_string(author_sig.name);
-            let author_email = Self::bstr_to_string(author_sig.email);
+            let author_sig = commit.author().map_err(|e| Self::gix_error(None, e))?;
+            let (author, author_email) = Self::mailmap_identity(&mailmap, author_sig);
             // Date from author or committer signature depending on the setting
             let date_time = match commit_date_mode {
                 CommitDateMode::AuthorDate => author_sig.time,
@@ -994,20 +1003,15 @@ impl GitOperationHandler for GixGitHandler {
             .try_into_commit()
             .map_err(|e| Self::gix_error(None, e))?;
 
-        let author_sig = commit
-            .author()
-            .map_err(|e| Self::gix_error(None, e))?;
-        let author = Self::bstr_to_string(author_sig.name);
-        let author_email = Self::bstr_to_string(author_sig.email);
+        let author_sig = commit.author().map_err(|e| Self::gix_error(None, e))?;
+        let mailmap = repo.open_mailmap();
+        let (author, author_email) = Self::mailmap_identity(&mailmap, author_sig);
         let author_date = gix::date::parse_header(author_sig.time)
             .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
             .unwrap_or_else(|| author_sig.time.to_string());
 
-        let committer_sig = commit
-            .committer()
-            .map_err(|e| Self::gix_error(None, e))?;
-        let committer = Self::bstr_to_string(committer_sig.name);
-        let committer_email = Self::bstr_to_string(committer_sig.email);
+        let committer_sig = commit.committer().map_err(|e| Self::gix_error(None, e))?;
+        let (committer, committer_email) = Self::mailmap_identity(&mailmap, committer_sig);
         let committer_date = gix::date::parse_header(committer_sig.time)
             .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
             .unwrap_or_else(|| committer_sig.time.to_string());

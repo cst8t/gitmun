@@ -152,6 +152,39 @@ fn details_request(dir: &TempDir, hash: &str) -> CommitDetailsRequest {
     }
 }
 
+fn history_request(dir: &TempDir) -> CommitHistoryRequest {
+    CommitHistoryRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        limit: Some(10),
+        after_hash: None,
+        offset: None,
+        commit_date_mode: Default::default(),
+        scope: Default::default(),
+    }
+}
+
+fn commit_with_identities(
+    repo: &Path,
+    file_name: &str,
+    message: &str,
+    author: (&str, &str),
+    committer: (&str, &str),
+) -> String {
+    write_file(repo, file_name, message);
+    git(repo, &["add", file_name]);
+    git_with_env(
+        repo,
+        &["commit", "-m", message],
+        &[
+            ("GIT_AUTHOR_NAME", author.0),
+            ("GIT_AUTHOR_EMAIL", author.1),
+            ("GIT_COMMITTER_NAME", committer.0),
+            ("GIT_COMMITTER_EMAIL", committer.1),
+        ],
+    );
+    head_hash(repo)
+}
+
 fn push_request(repo: &TempDir) -> PushRequest {
     PushRequest {
         repo_path: repo.path().to_str().unwrap().to_string(),
@@ -696,6 +729,75 @@ fn commit_history_returns_commits_newest_first() {
     assert_eq!(commits[0].message, "third");
 }
 
+fn assert_commit_history_honours_mailmap<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    commit_with_identities(
+        dir.path(),
+        "mailmap-history.txt",
+        "mailmap history",
+        ("Old Name", "old@example.test"),
+        ("Old Name", "old@example.test"),
+    );
+    write_file(
+        dir.path(),
+        ".mailmap",
+        "Canonical Name <canonical@example.test> Old Name <old@example.test>\n",
+    );
+
+    let commits = handler
+        .get_commit_history(&history_request(&dir))
+        .expect("get_commit_history");
+    let commit = commits
+        .iter()
+        .find(|commit| commit.message == "mailmap history")
+        .expect("mailmap history commit");
+
+    assert_eq!(commit.author, "Canonical Name");
+    assert_eq!(commit.author_email, "canonical@example.test");
+}
+
+#[test]
+fn cli_commit_history_honours_mailmap() {
+    assert_commit_history_honours_mailmap(handler());
+}
+
+#[test]
+fn gix_commit_history_honours_mailmap() {
+    assert_commit_history_honours_mailmap(gix_handler());
+}
+
+fn assert_commit_history_without_mailmap_keeps_raw_identity<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    commit_with_identities(
+        dir.path(),
+        "raw-history.txt",
+        "raw history",
+        ("Old Name", "old@example.test"),
+        ("Old Name", "old@example.test"),
+    );
+
+    let commits = handler
+        .get_commit_history(&history_request(&dir))
+        .expect("get_commit_history");
+    let commit = commits
+        .iter()
+        .find(|commit| commit.message == "raw history")
+        .expect("raw history commit");
+
+    assert_eq!(commit.author, "Old Name");
+    assert_eq!(commit.author_email, "old@example.test");
+}
+
+#[test]
+fn cli_commit_history_without_mailmap_keeps_raw_identity() {
+    assert_commit_history_without_mailmap_keeps_raw_identity(handler());
+}
+
+#[test]
+fn gix_commit_history_without_mailmap_keeps_raw_identity() {
+    assert_commit_history_without_mailmap_keeps_raw_identity(gix_handler());
+}
+
 #[test]
 fn gix_commit_history_matches_git_log_order_for_merge_commits() {
     let dir = init_repo();
@@ -797,6 +899,72 @@ fn cli_commit_details_basic_fields() {
     assert!(!details.author_date.is_empty());
     assert!(details.trailers.is_empty());
     assert!(details.tags.is_empty());
+}
+
+fn assert_commit_details_honours_mailmap<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    let hash = commit_with_identities(
+        dir.path(),
+        "mailmap-details.txt",
+        "mailmap details",
+        ("Old Author", "old-author@example.test"),
+        ("Old Committer", "old-committer@example.test"),
+    );
+    write_file(
+        dir.path(),
+        ".mailmap",
+        "Canonical Author <canonical-author@example.test> <old-author@example.test>\n\
+         Canonical Committer <canonical-committer@example.test> Old Committer <old-committer@example.test>\n",
+    );
+
+    let details = handler
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.author, "Canonical Author");
+    assert_eq!(details.author_email, "canonical-author@example.test");
+    assert_eq!(details.committer, "Canonical Committer");
+    assert_eq!(details.committer_email, "canonical-committer@example.test");
+}
+
+#[test]
+fn cli_commit_details_honours_mailmap() {
+    assert_commit_details_honours_mailmap(handler());
+}
+
+#[test]
+fn gix_commit_details_honours_mailmap() {
+    assert_commit_details_honours_mailmap(gix_handler());
+}
+
+fn assert_commit_details_without_mailmap_keeps_raw_identity<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    let hash = commit_with_identities(
+        dir.path(),
+        "raw-details.txt",
+        "raw details",
+        ("Old Author", "old-author@example.test"),
+        ("Old Committer", "old-committer@example.test"),
+    );
+
+    let details = handler
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.author, "Old Author");
+    assert_eq!(details.author_email, "old-author@example.test");
+    assert_eq!(details.committer, "Old Committer");
+    assert_eq!(details.committer_email, "old-committer@example.test");
+}
+
+#[test]
+fn cli_commit_details_without_mailmap_keeps_raw_identity() {
+    assert_commit_details_without_mailmap_keeps_raw_identity(handler());
+}
+
+#[test]
+fn gix_commit_details_without_mailmap_keeps_raw_identity() {
+    assert_commit_details_without_mailmap_keeps_raw_identity(gix_handler());
 }
 
 #[test]

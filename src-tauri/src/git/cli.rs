@@ -2032,7 +2032,7 @@ impl GitOperationHandler for CliGitHandler {
             CommitDateMode::AuthorDate => "%ad",
             CommitDateMode::CommitterDate => "%cd",
         };
-        let log_format = format!("%H%x1f%h%x1f%an%x1f%ae%x1f{date_placeholder}%x1f%s");
+        let log_format = format!("%H%x1f%h%x1f%aN%x1f%aE%x1f{date_placeholder}%x1f%s");
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let limit = request.limit.unwrap_or(100).clamp(1, 5000).to_string();
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
@@ -2192,7 +2192,7 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         // Single call: fields separated by \x1f (unit separator), record ends with \x1e
-        let format = "%H\x1f%an\x1f%ae\x1f%aI\x1f%cn\x1f%ce\x1f%cI\x1f%P\x1f%b\x1e";
+        let format = "%H\x1f%aN\x1f%aE\x1f%aI\x1f%cN\x1f%cE\x1f%cI\x1f%P\x1f%b\x1e";
         let output = Self::run_git(
             &["log", "-1", &format!("--format={}", format), hash],
             Some(&repo_path),
