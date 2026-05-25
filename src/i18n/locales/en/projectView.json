@@ -88,6 +88,7 @@
     "clone": "Clone repository",
     "init": "Initialise repository",
     "openExisting": "Open existing",
+    "recentRepositories": "Recent repositories",
     "subtitle": "Clone a project, initialise a new repository, or open an existing one.",
     "title": "No repository open"
   },

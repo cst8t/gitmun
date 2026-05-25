@@ -69,6 +69,8 @@ export function Titlebar({
   const currentBranchInfo = branches.find(b => b.isCurrent);
   const ahead = currentBranchInfo?.ahead ?? 0;
   const behind = currentBranchInfo?.behind ?? 0;
+  const searchDisabled = !repoPath;
+  const searchShortcutLabel = platform === "macos" ? "\u2318F" : "Ctrl+F";
 
   const { repoDir, repoName } = repoPath
     ? splitRepoPath(repoPath)
@@ -175,8 +177,10 @@ export function Titlebar({
 
       {/* Search */}
       <div
-        className={`titlebar__search${searchQuery || searchFocused ? " titlebar__search--active" : ""}`}
-        onClick={() => searchInputRef.current?.focus()}
+        className={`titlebar__search${!searchDisabled && (searchQuery || searchFocused) ? " titlebar__search--active" : ""}${searchDisabled ? " titlebar__search--disabled" : ""}`}
+        onClick={searchDisabled ? undefined : () => searchInputRef.current?.focus()}
+        aria-disabled={searchDisabled}
+        title={searchDisabled ? undefined : t("labels.searchCommitsShortcut", { shortcut: searchShortcutLabel })}
       >
         <SearchIcon size={18} className="titlebar__toolbar-icon" />
         <input
@@ -184,6 +188,8 @@ export function Titlebar({
           className="titlebar__search-input"
           placeholder={t("labels.searchCommits")}
           value={searchQuery}
+          disabled={searchDisabled}
+          aria-label={t("labels.searchCommitsShortcut", { shortcut: searchShortcutLabel })}
           onChange={e => onSearchChange(e.target.value)}
           onFocus={() => setSearchFocused(true)}
           onBlur={() => setSearchFocused(false)}
@@ -191,11 +197,6 @@ export function Titlebar({
             if (e.key === "Escape") { onSearchChange(""); e.currentTarget.blur(); }
           }}
         />
-        {!searchQuery && (
-          <span className="titlebar__search-hint">
-            {platform === "macos" ? "\u2318F" : "Ctrl+F"}
-          </span>
-        )}
       </div>
 
       <div className="titlebar__icon-btn" onClick={onAboutClick} title={t("actions.about")}>

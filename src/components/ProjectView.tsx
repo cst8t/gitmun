@@ -197,6 +197,7 @@ export function ProjectView({
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
   const { t: tGitAdvice } = useTranslation("gitAdvice");
+  const emptyStateRecentRepos = !repoPath ? recentRepos.slice(0, 5) : [];
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
     : 0;
@@ -2254,19 +2255,43 @@ export function ProjectView({
                 <h1 className="app__empty-title">{t("emptyState.title")}</h1>
                 <p className="app__empty-subtitle">{t("emptyState.subtitle")}</p>
                 <div className="app__empty-actions">
-                  <button className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
                     <GitIcon size={14} />
                     <span>{t("emptyState.clone")}</span>
                   </button>
-                  <button className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
                     <GitIcon size={14} />
                     <span>{t("emptyState.init")}</span>
                   </button>
-                  <button className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
                     <FolderIcon size={14} />
                     <span>{t("emptyState.openExisting")}</span>
                   </button>
                 </div>
+                {emptyStateRecentRepos.length > 0 && (
+                  <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
+                    <div className="app__empty-recent-divider" />
+                    <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
+                    <div className="app__empty-recent-list">
+                      {emptyStateRecentRepos.map(path => {
+                        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+                        return (
+                          <button
+                            type="button"
+                            key={path}
+                            className="app__empty-recent-item"
+                            onClick={() => onRepoSelect(path)}
+                            title={path}
+                          >
+                            <FolderIcon size={15} />
+                            <span className="app__empty-recent-name">{name}</span>
+                            <span className="app__empty-recent-path">{path}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

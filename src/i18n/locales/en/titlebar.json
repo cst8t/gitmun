@@ -20,6 +20,7 @@
   "labels": {
     "copied": "Copied",
     "noRepositoryOpen": "No repository open",
-    "searchCommits": "Search commits..."
+    "searchCommits": "Search commits...",
+    "searchCommitsShortcut": "Search commits ({{shortcut}})"
   }
 }

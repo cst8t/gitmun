@@ -196,9 +196,8 @@
   border: 1px solid var(--border-subtle);
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
-  width: 190px;
-  /* Wide enough to show "Search commits  Ctrl+F" without clipping */
-  min-width: 180px;
+  width: 210px;
+  min-width: 190px;
   flex-shrink: 0;
   box-sizing: border-box;
   cursor: text;
@@ -207,7 +206,16 @@
 
 .titlebar__search--active {
   border-color: var(--accent);
-  width: 240px;
+  width: 260px;
+}
+
+.titlebar__search--disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.titlebar__search--disabled .titlebar__search-input {
+  cursor: default;
 }
 
 .titlebar__search-input {
@@ -224,14 +232,6 @@
 
 .titlebar__search-input::placeholder {
   color: var(--text-secondary);
-}
-
-.titlebar__search-hint {
-  margin-left: auto;
-  font-size: var(--font-size-xxs);
-  opacity: 0.5;
-  font-family: var(--font-mono);
-  white-space: nowrap;
 }
 
 .titlebar__icon-btn {
