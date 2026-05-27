@@ -16,8 +16,9 @@ use super::types::{
     CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
     CommitTrailer, ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffHunk, DiffLine,
-    DiffLineKind, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
-    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, LineEndingStyle,
+    DiffLineKind, DiffRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
+    HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle,
     MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
     PullAnalysis, PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest,
     PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest,
@@ -459,6 +460,208 @@ impl CliGitHandler {
             backend_used: "git-cli".to_string(),
             interpreted_error: None,
         }
+    }
+
+    fn validate_repo_relative_path(path: &str) -> GitResult<String> {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            return Err(GitError::InvalidInput(
+                "File path cannot be empty".to_string(),
+            ));
+        }
+        if trimmed.contains('\0') {
+            return Err(GitError::InvalidInput(
+                "File path contains an invalid character".to_string(),
+            ));
+        }
+
+        let candidate = Path::new(trimmed);
+        if candidate.is_absolute()
+            || candidate.components().any(|component| {
+                matches!(
+                    component,
+                    std::path::Component::ParentDir
+                        | std::path::Component::RootDir
+                        | std::path::Component::Prefix(_)
+                )
+            })
+        {
+            return Err(GitError::InvalidInput(format!(
+                "Invalid file path: {trimmed}"
+            )));
+        }
+
+        Ok(trimmed.replace('\\', "/"))
+    }
+
+    fn validate_patch_path(patch_path: &str) -> GitResult<PathBuf> {
+        let trimmed = patch_path.trim();
+        if trimmed.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Patch path cannot be empty".to_string(),
+            ));
+        }
+        if trimmed.contains('\0') {
+            return Err(GitError::InvalidInput(
+                "Patch path contains an invalid character".to_string(),
+            ));
+        }
+
+        Ok(PathBuf::from(trimmed))
+    }
+
+    fn git_diff_for_paths(repo_path: &Path, staged: bool, paths: &[String]) -> GitResult<String> {
+        if paths.is_empty() {
+            return Ok(String::new());
+        }
+
+        let mut args: Vec<&str> = vec!["diff"];
+        if staged {
+            args.push("--cached");
+        }
+        args.push("--binary");
+        args.push("--");
+        args.extend(paths.iter().map(String::as_str));
+        Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])
+    }
+
+    fn git_diff_for_all(repo_path: &Path, staged: bool) -> GitResult<String> {
+        let mut args = vec!["diff"];
+        if staged {
+            args.push("--cached");
+        }
+        args.push("--binary");
+        args.push("--");
+        Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])
+    }
+
+    fn git_untracked_patch(repo_path: &Path, path: &str) -> GitResult<String> {
+        let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
+        let output = Self::run_git_allow_exit_codes(
+            &["diff", "--no-index", "--binary", "--", null_device, path],
+            Some(repo_path),
+            &[1],
+        )?;
+
+        Ok(output
+            .replace("a/dev/null", "/dev/null")
+            .replace("a/NUL", "/dev/null"))
+    }
+
+    fn tracked_paths(repo_path: &Path, paths: &[String]) -> GitResult<HashSet<String>> {
+        if paths.is_empty() {
+            return Ok(HashSet::new());
+        }
+
+        let mut args: Vec<&str> = vec!["ls-files", "--"];
+        args.extend(paths.iter().map(String::as_str));
+        let output = Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])?;
+        Ok(output.lines().map(|line| line.to_string()).collect())
+    }
+
+    fn untracked_paths(repo_path: &Path) -> GitResult<Vec<String>> {
+        let output = Self::run_git_allow_exit_codes(
+            &["ls-files", "--others", "--exclude-standard"],
+            Some(repo_path),
+            &[1],
+        )?;
+        Ok(output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect())
+    }
+
+    fn changed_unstaged_paths(repo_path: &Path) -> GitResult<Vec<String>> {
+        let output =
+            Self::run_git_allow_exit_codes(&["diff", "--name-only", "--"], Some(repo_path), &[1])?;
+        Ok(output
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(ToString::to_string)
+            .collect())
+    }
+
+    fn append_patch(target: &mut String, patch: &str) {
+        let patch = patch.trim_end();
+        if patch.is_empty() {
+            return;
+        }
+        if !target.is_empty() {
+            target.push('\n');
+        }
+        target.push_str(patch);
+        target.push('\n');
+    }
+
+    fn selected_paths(files: &[ExportPatchFileSelection], staged: bool) -> GitResult<Vec<String>> {
+        let mut paths = Vec::new();
+        let mut seen = HashSet::new();
+        for file in files.iter().filter(|file| file.staged == staged) {
+            let path = Self::validate_repo_relative_path(&file.path)?;
+            if seen.insert(path.clone()) {
+                paths.push(path);
+            }
+        }
+        Ok(paths)
+    }
+
+    fn build_unstaged_patch(repo_path: &Path, paths: &[String]) -> GitResult<String> {
+        let mut output = String::new();
+        let tracked = Self::tracked_paths(repo_path, paths)?;
+        let tracked_paths: Vec<String> = paths
+            .iter()
+            .filter(|path| tracked.contains(*path))
+            .cloned()
+            .collect();
+
+        Self::append_patch(
+            &mut output,
+            &Self::git_diff_for_paths(repo_path, false, &tracked_paths)?,
+        );
+
+        for path in paths.iter().filter(|path| !tracked.contains(*path)) {
+            Self::append_patch(&mut output, &Self::git_untracked_patch(repo_path, path)?);
+        }
+
+        Ok(output)
+    }
+
+    fn build_patch(request: &ExportPatchRequest, repo_path: &Path) -> GitResult<String> {
+        let mut output = String::new();
+
+        match request.scope {
+            ExportPatchScope::Staged => {
+                Self::append_patch(&mut output, &Self::git_diff_for_all(repo_path, true)?);
+            }
+            ExportPatchScope::Unstaged => {
+                let mut paths = Self::changed_unstaged_paths(repo_path)?;
+                paths.extend(Self::untracked_paths(repo_path)?);
+                Self::append_patch(&mut output, &Self::build_unstaged_patch(repo_path, &paths)?);
+            }
+            ExportPatchScope::All => {
+                Self::append_patch(&mut output, &Self::git_diff_for_all(repo_path, true)?);
+                let mut paths = Self::changed_unstaged_paths(repo_path)?;
+                paths.extend(Self::untracked_paths(repo_path)?);
+                Self::append_patch(&mut output, &Self::build_unstaged_patch(repo_path, &paths)?);
+            }
+            ExportPatchScope::Selected => {
+                let staged_paths = Self::selected_paths(&request.files, true)?;
+                let unstaged_paths = Self::selected_paths(&request.files, false)?;
+                Self::append_patch(
+                    &mut output,
+                    &Self::git_diff_for_paths(repo_path, true, &staged_paths)?,
+                );
+                Self::append_patch(
+                    &mut output,
+                    &Self::build_unstaged_patch(repo_path, &unstaged_paths)?,
+                );
+            }
+        }
+
+        Ok(output)
     }
 
     fn submodule_index_commit(repo_path: &Path, path: &str) -> Option<String> {
@@ -1937,6 +2140,59 @@ impl GitOperationHandler for CliGitHandler {
 
         Ok(OperationResult {
             message: format!("Opened diff for {file_path}"),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+        })
+    }
+
+    fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let patch_path = Self::validate_patch_path(&request.patch_path)?;
+        let patch_path_string = patch_path.to_string_lossy().to_string();
+        let output = Self::run_git(
+            &["apply", "--check", "--binary", &patch_path_string],
+            Some(&repo_path),
+        )?;
+
+        Ok(Self::operation_result(
+            format!("Patch file can be applied to {}", repo_path.display()),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        self.check_patch_file(request)?;
+
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let patch_path = Self::validate_patch_path(&request.patch_path)?;
+        let patch_path_string = patch_path.to_string_lossy().to_string();
+        let output = Self::run_git(&["apply", "--binary", &patch_path_string], Some(&repo_path))?;
+
+        Ok(Self::operation_result(
+            format!("Applied patch file to {}", repo_path.display()),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let patch_path = Self::validate_patch_path(&request.patch_path)?;
+        let output = Self::build_patch(request, &repo_path)?;
+
+        if output.trim().is_empty() {
+            return Err(GitError::InvalidInput(
+                "No changes available for patch export".to_string(),
+            ));
+        }
+
+        fs::write(&patch_path, output.as_bytes())?;
+
+        Ok(OperationResult {
+            message: format!("Exported patch file to {}", patch_path.display()),
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),

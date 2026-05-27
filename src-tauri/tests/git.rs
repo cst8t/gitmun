@@ -9,7 +9,8 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    FileRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
+    ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, FileRequest,
+    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
     StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
 };
 
@@ -66,6 +67,10 @@ fn git_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) {
 
 fn write_file(repo: &Path, name: &str, content: &str) {
     fs::write(repo.join(name), content).expect("write file");
+}
+
+fn read_file(repo: &Path, name: &str) -> String {
+    fs::read_to_string(repo.join(name)).expect("read file")
 }
 
 fn repo_request(dir: &TempDir) -> RepoRequest {
@@ -204,6 +209,27 @@ fn submodule_action_request(repo: &TempDir, path: &str) -> SubmoduleActionReques
     }
 }
 
+fn import_patch_request(repo: &TempDir, patch_path: &Path) -> ImportPatchRequest {
+    ImportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+    }
+}
+
+fn export_patch_request(
+    repo: &TempDir,
+    patch_path: &Path,
+    scope: ExportPatchScope,
+    files: Vec<ExportPatchFileSelection>,
+) -> ExportPatchRequest {
+    ExportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        scope,
+        files,
+    }
+}
+
 #[test]
 fn status_clean_repo() {
     let dir = init_repo();
@@ -249,6 +275,189 @@ fn status_detects_modified_unstaged_file() {
         .get_repo_status(&repo_request(&dir))
         .expect("get_repo_status");
     assert!(status.changed_files.iter().any(|f| f.path == "file.txt"));
+}
+
+#[test]
+fn import_patch_applies_to_working_tree() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "before\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    handler()
+        .import_patch_file(&import_patch_request(&dir, &patch))
+        .expect("import patch");
+
+    assert_eq!(read_file(dir.path(), "file.txt"), "after\n");
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        ""
+    );
+}
+
+#[test]
+fn import_patch_rejects_non_applicable_patch_without_modifying_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "different\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    let result = handler().import_patch_file(&import_patch_request(&dir, &patch));
+
+    assert!(result.is_err());
+    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+}
+
+#[test]
+fn export_staged_patch_contains_only_staged_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "staged.txt", "old\n");
+    write_file(dir.path(), "unstaged.txt", "old\n");
+    git(dir.path(), &["add", "staged.txt", "unstaged.txt"]);
+    git(dir.path(), &["commit", "-m", "add files"]);
+    write_file(dir.path(), "staged.txt", "new\n");
+    write_file(dir.path(), "unstaged.txt", "new\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("staged.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Staged,
+            vec![],
+        ))
+        .expect("export staged patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(!output.contains("unstaged.txt"));
+}
+
+#[test]
+fn export_unstaged_patch_contains_tracked_unstaged_and_untracked_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "tracked.txt", "old\n");
+    git(dir.path(), &["add", "tracked.txt"]);
+    git(dir.path(), &["commit", "-m", "add tracked"]);
+    write_file(dir.path(), "tracked.txt", "new\n");
+    write_file(dir.path(), "new.txt", "new file\n");
+
+    let patch = dir.path().join("unstaged.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Unstaged,
+            vec![],
+        ))
+        .expect("export unstaged patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/tracked.txt b/tracked.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert!(output.contains("new file mode"));
+}
+
+#[test]
+fn export_all_concatenates_staged_unstaged_and_untracked_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "staged.txt", "old\n");
+    write_file(dir.path(), "unstaged.txt", "old\n");
+    git(dir.path(), &["add", "staged.txt", "unstaged.txt"]);
+    git(dir.path(), &["commit", "-m", "add files"]);
+    write_file(dir.path(), "staged.txt", "new\n");
+    write_file(dir.path(), "unstaged.txt", "new\n");
+    write_file(dir.path(), "new.txt", "new file\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("all.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::All,
+            vec![],
+        ))
+        .expect("export all patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+}
+
+#[test]
+fn export_selected_honours_staged_and_unstaged_file_selections() {
+    let dir = init_repo();
+    for name in ["staged.txt", "unstaged.txt", "ignored.txt"] {
+        write_file(dir.path(), name, "old\n");
+    }
+    git(
+        dir.path(),
+        &["add", "staged.txt", "unstaged.txt", "ignored.txt"],
+    );
+    git(dir.path(), &["commit", "-m", "add files"]);
+    for name in ["staged.txt", "unstaged.txt", "ignored.txt"] {
+        write_file(dir.path(), name, "new\n");
+    }
+    write_file(dir.path(), "new.txt", "new file\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("selected.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Selected,
+            vec![
+                ExportPatchFileSelection {
+                    path: "staged.txt".to_string(),
+                    staged: true,
+                },
+                ExportPatchFileSelection {
+                    path: "unstaged.txt".to_string(),
+                    staged: false,
+                },
+                ExportPatchFileSelection {
+                    path: "new.txt".to_string(),
+                    staged: false,
+                },
+            ],
+        ))
+        .expect("export selected patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert!(!output.contains("ignored.txt"));
 }
 
 #[test]

@@ -12,14 +12,14 @@ use super::types::{
     CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
     ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
-    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, TagInfo, UpstreamStatus,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
+    GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -943,6 +943,27 @@ impl GitOperationHandler for GixGitHandler {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
             .open_working_tree_diff(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .check_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .import_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .export_patch_file(request)
             .map(Self::with_cli_fallback_backend)
     }
 

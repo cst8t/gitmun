@@ -10,6 +10,7 @@ export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
 export type RowStriping = "Off" | "Subtle" | "Strong";
 export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
 export type AppUpdateChannel = "SelfManaged" | "MicrosoftStore" | "SystemManaged";
+export type ExportPatchScope = "staged" | "unstaged" | "all" | "selected";
 
 export type GitErrorCategory =
     | "auth"
@@ -228,6 +229,21 @@ export type RepoOpenLocation = {
 
 export type RepoRequest = {
     repoPath: string;
+};
+
+export type ImportPatchRequest = RepoRequest & {
+    patchPath: string;
+};
+
+export type ExportPatchFileSelection = {
+    path: string;
+    staged: boolean;
+};
+
+export type ExportPatchRequest = RepoRequest & {
+    patchPath: string;
+    scope: ExportPatchScope;
+    files?: ExportPatchFileSelection[];
 };
 
 export type CommitRequest = RepoRequest & {

@@ -6,6 +6,7 @@
     "delete": "Delete",
     "drop": "Drop",
     "forceDelete": "Force Delete",
+    "importPatch": "Apply Patch",
     "rebase": "Rebase",
     "remove": "Remove",
     "revert": "Revert",
@@ -58,6 +59,10 @@
     "forceDeleteBranch": {
       "message": "Force delete branch \"{{branch}}\"? This will delete it even if it has unmerged changes or is checked out in a worktree.",
       "title": "Force Delete Branch"
+    },
+    "importPatch": {
+      "message": "Apply patch file to the working tree?",
+      "title": "Import Patch"
     },
     "removeRemote": {
       "message": "Remove remote \"{{remote}}\"? This will also delete all remote-tracking branches for this remote.",
@@ -126,6 +131,9 @@
     "forceDeleteBranchFailed": "Force delete branch failed: {{message}}",
     "mergeAbortFailed": "Merge abort failed: {{message}}",
     "mergeFailed": "Merge failed: {{message}}",
+    "exportPatchFailed": "Export patch failed: {{message}}",
+    "importPatchFailed": "Import patch failed: {{message}}",
+    "noPatchChanges": "No changes available for patch export",
     "pruneRemoteFailed": "Prune remote failed: {{message}}",
     "pullAnalysisFailed": "Pull analysis failed: {{message}}",
     "pullFailed": "Pull failed: {{message}}",
@@ -213,6 +221,9 @@
     "noLocalChangesToStash": "No local changes to stash",
     "noRemotesConfigured": "No remotes configured",
     "openedDiffFor": "Opened diff for {{file}}",
+    "noPatchChanges": "No changes available for patch export",
+    "patchExported": "Exported {{file}}",
+    "patchImported": "Patch imported",
     "pullComplete": "Pull complete",
     "pushComplete": "Push complete",
     "pushDetached": "Push is unavailable while HEAD is detached.",
@@ -243,5 +254,10 @@
     "unstagedHunk": "Unstaged hunk",
     "upstreamChanged": "Upstream changed",
     "upstreamRepaired": "Upstream repaired"
+  },
+  "patch": {
+    "exportPickerTitle": "Export patch file",
+    "importPickerTitle": "Import patch file",
+    "patchFilesFilter": "Patch files"
   }
 }

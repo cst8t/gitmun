@@ -119,6 +119,15 @@ pub enum RepoOpenBehaviour {
     NewWindow,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum ExportPatchScope {
+    Staged,
+    Unstaged,
+    All,
+    Selected,
+}
+
 impl Default for RepoOpenBehaviour {
     fn default() -> Self {
         Self::Ask
@@ -225,6 +234,30 @@ pub struct Settings {
     pub repo_open_behaviour: RepoOpenBehaviour,
     #[serde(default)]
     pub git_executable_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportPatchRequest {
+    pub repo_path: String,
+    pub patch_path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPatchFileSelection {
+    pub path: String,
+    pub staged: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportPatchRequest {
+    pub repo_path: String,
+    pub patch_path: String,
+    pub scope: ExportPatchScope,
+    #[serde(default)]
+    pub files: Vec<ExportPatchFileSelection>,
 }
 
 impl Default for Settings {

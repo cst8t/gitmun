@@ -8,15 +8,15 @@ use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
     CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
     CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
-    CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
+    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
+    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
     SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
@@ -34,6 +34,9 @@ pub trait GitOperationHandler: Send + Sync {
     fn get_configured_diff_tool(&self, request: &RepoRequest) -> GitResult<Option<String>>;
     fn open_external_diff(&self, request: &ExternalDiffRequest) -> GitResult<OperationResult>;
     fn open_working_tree_diff(&self, request: &DiffRequest) -> GitResult<OperationResult>;
+    fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
+    fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
+    fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult>;
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus>;
     fn get_commit_history(
         &self,
@@ -158,26 +161,20 @@ impl GitService {
     }
 
     pub fn get_config_file_path(&self) -> Option<String> {
-        self.config_path
-            .read()
-            .ok()
-            .and_then(|path| {
-                path.as_ref()
-                    .map(|p| crate::display_config_path(p).to_string_lossy().to_string())
-            })
+        self.config_path.read().ok().and_then(|path| {
+            path.as_ref()
+                .map(|p| crate::display_config_path(p).to_string_lossy().to_string())
+        })
     }
 
     pub fn get_config_folder_path(&self) -> Option<String> {
-        self.config_path
-            .read()
-            .ok()
-            .and_then(|path| {
-                path.as_ref().and_then(|p| {
-                    crate::display_config_path(p)
-                        .parent()
-                        .map(|folder| folder.to_string_lossy().to_string())
-                })
+        self.config_path.read().ok().and_then(|path| {
+            path.as_ref().and_then(|p| {
+                crate::display_config_path(p)
+                    .parent()
+                    .map(|folder| folder.to_string_lossy().to_string())
             })
+        })
     }
 
     pub fn get_settings(&self) -> Settings {
@@ -427,6 +424,9 @@ impl GitService {
         fn conflict_accept_theirs(request: FileRequest) -> GitResult<OperationResult>;
         fn conflict_accept_ours(request: FileRequest) -> GitResult<OperationResult>;
         fn open_merge_tool(request: FileRequest) -> GitResult<OperationResult>;
+        fn check_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
+        fn import_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
+        fn export_patch_file(request: ExportPatchRequest) -> GitResult<OperationResult>;
     }
 
     forward_read_methods! {

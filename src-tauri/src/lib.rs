@@ -165,11 +165,9 @@ pub(crate) fn git_command() -> std::process::Command {
 #[cfg(test)]
 mod git_command_tests {
     fn command_env_is(command: &std::process::Command, key: &str, value: &str) -> bool {
-        command
-            .get_envs()
-            .any(|(env_key, env_value)| {
-                env_key == key && env_value == Some(std::ffi::OsStr::new(value))
-            })
+        command.get_envs().any(|(env_key, env_value)| {
+            env_key == key && env_value == Some(std::ffi::OsStr::new(value))
+        })
     }
 
     #[test]
@@ -1506,6 +1504,9 @@ pub fn run() {
             commands::repo::get_default_clone_dir,
             commands::repo::open_external_diff,
             commands::repo::open_working_tree_diff,
+            commands::repo::check_patch_file,
+            commands::repo::import_patch_file,
+            commands::repo::export_patch_file,
             commands::repo::get_repo_diff_tool,
             commands::repo::analyze_pull,
             commands::repo::pull_changes,

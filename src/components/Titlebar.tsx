@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import {
   GitIcon, BranchIcon, FetchIcon, PullIcon, PushIcon,
   StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon, InfoIcon, TerminalIcon, OpenExternalIcon,
+  MoreIcon,
 } from "./icons";
 import * as api from "../api/commands";
 import type { PlatformType } from "../hooks/usePlatform";
@@ -37,6 +38,9 @@ type TitlebarProps = {
   pushDisabled?: boolean;
   pushTitle?: string;
   onStash: () => void;
+  onImportPatch: () => void;
+  onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
+  selectedPatchExportEnabled: boolean;
   remoteOp?: "fetch" | "pull" | "push" | null;
   identityOpen: boolean;
 };
@@ -59,6 +63,7 @@ export function Titlebar({
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
+  onImportPatch, onExportPatch, selectedPatchExportEnabled,
   identityOpen, remoteOp,
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
@@ -152,6 +157,12 @@ export function Titlebar({
           title={pushTitle}
         />
         <ActionBtn icon={<StashIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath} />
+        <MoreDropdown
+          repoPath={repoPath}
+          onImportPatch={onImportPatch}
+          onExportPatch={onExportPatch}
+          selectedPatchExportEnabled={selectedPatchExportEnabled}
+        />
       </div>
       <div className="titlebar__sep" />
 
@@ -216,6 +227,85 @@ export function Titlebar({
           : identityInitials}
       </div>
 
+    </div>
+  );
+}
+
+function MoreDropdown({ repoPath, onImportPatch, onExportPatch, selectedPatchExportEnabled }: {
+  repoPath: string | null;
+  onImportPatch: () => void;
+  onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
+  selectedPatchExportEnabled: boolean;
+}) {
+  const { t } = useTranslation("titlebar");
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const disabled = !repoPath;
+
+  useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const run = (action: () => void) => {
+    setOpen(false);
+    action();
+  };
+
+  return (
+    <div className="titlebar__open-dropdown" ref={ref}>
+      <div
+        className={`titlebar__icon-btn titlebar__icon-btn--labeled${disabled ? " titlebar__icon-btn--disabled" : ""}`}
+        onClick={disabled ? undefined : () => setOpen(v => !v)}
+        title={t("actions.more")}
+        aria-disabled={disabled}
+      >
+        <MoreIcon size={18} className="titlebar__toolbar-icon" />
+        <span className="titlebar__btn-label">{t("actions.more")}</span>
+        <ChevDownIcon />
+      </div>
+      {open && !disabled && (
+        <div className="titlebar__open-menu">
+          <div className="titlebar__open-menu-heading">{t("patchFiles.heading")}</div>
+          <div className="titlebar__open-menu-item" onClick={() => run(onImportPatch)}>
+            <span>{t("patchFiles.import")}</span>
+          </div>
+          <div className="titlebar__open-menu-item titlebar__open-menu-item--submenu">
+            <span>{t("patchFiles.export")}</span>
+            <ChevDownIcon size={13} className="titlebar__submenu-chevron" />
+            <div className="titlebar__open-submenu">
+              <div className="titlebar__open-menu-item" onClick={() => run(() => onExportPatch("staged"))}>
+                <span>{t("patchFiles.exportStaged")}</span>
+              </div>
+              <div className="titlebar__open-menu-item" onClick={() => run(() => onExportPatch("unstaged"))}>
+                <span>{t("patchFiles.exportUnstaged")}</span>
+              </div>
+              <div className="titlebar__open-menu-item" onClick={() => run(() => onExportPatch("all"))}>
+                <span>{t("patchFiles.exportAll")}</span>
+              </div>
+              <div
+                className={`titlebar__open-menu-item${selectedPatchExportEnabled ? "" : " titlebar__open-menu-item--disabled"}`}
+                aria-disabled={!selectedPatchExportEnabled}
+                onClick={selectedPatchExportEnabled ? () => run(() => onExportPatch("selected")) : undefined}
+              >
+                <span>{t("patchFiles.exportSelected")}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

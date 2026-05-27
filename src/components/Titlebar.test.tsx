@@ -36,7 +36,14 @@ function renderTitlebar(
   pushLabel = "Push",
   repoPath: string | null = "/repo",
   onOpenRepoLocation = vi.fn(),
+  patchHandlers: {
+    onImportPatch?: () => void;
+    onExportPatch?: (scope: "staged" | "unstaged" | "all" | "selected") => void;
+    selectedPatchExportEnabled?: boolean;
+  } = {},
 ) {
+  const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
+  const onExportPatch = patchHandlers.onExportPatch ?? vi.fn();
   render(
     <Titlebar
       platform="windows"
@@ -63,6 +70,9 @@ function renderTitlebar(
       onPush={vi.fn()}
       pushLabel={pushLabel}
       onStash={vi.fn()}
+      onImportPatch={onImportPatch}
+      onExportPatch={onExportPatch}
+      selectedPatchExportEnabled={patchHandlers.selectedPatchExportEnabled ?? false}
       remoteOp={null}
       identityOpen={false}
     />,
@@ -165,5 +175,50 @@ describe("Titlebar", () => {
       expect(screen.getByText("Terminal")).toBeInTheDocument();
       expect(screen.getByText("Git Bash")).toBeInTheDocument();
     });
+  });
+
+  it("shows patch file actions when a repository is open", () => {
+    renderTitlebar([makeBranch()]);
+
+    fireEvent.click(screen.getByText("More"));
+
+    expect(screen.getByText("Patch files")).toBeInTheDocument();
+    expect(screen.getByText("Import patch...")).toBeInTheDocument();
+    expect(screen.getByText("Export patch")).toBeInTheDocument();
+    expect(screen.getByText("Export staged patch...")).toBeInTheDocument();
+    expect(screen.getByText("Export unstaged patch...")).toBeInTheDocument();
+    expect(screen.getByText("Export all changes patch...")).toBeInTheDocument();
+  });
+
+  it("disables selected patch export until files are checked", () => {
+    renderTitlebar([makeBranch()]);
+
+    fireEvent.click(screen.getByText("More"));
+
+    expect(screen.getByText("Export selected patch...").closest(".titlebar__open-menu-item"))
+      .toHaveAttribute("aria-disabled", "true");
+  });
+
+  it("enables selected patch export when files are checked", () => {
+    const onExportPatch = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), {
+      onExportPatch,
+      selectedPatchExportEnabled: true,
+    });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Export selected patch..."));
+
+    expect(onExportPatch).toHaveBeenCalledWith("selected");
+  });
+
+  it("calls export handlers from the export patch submenu", () => {
+    const onExportPatch = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), { onExportPatch });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Export staged patch..."));
+
+    expect(onExportPatch).toHaveBeenCalledWith("staged");
   });
 });
