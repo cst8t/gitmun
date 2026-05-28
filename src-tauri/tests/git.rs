@@ -21,6 +21,7 @@ fn init_repo() -> TempDir {
     git(path, &["config", "user.email", "test@gitmun.test"]);
     git(path, &["config", "user.name", "Gitmun Test"]);
     git(path, &["config", "commit.gpgsign", "false"]);
+    git(path, &["config", "core.autocrlf", "false"]);
     // Initial empty commit so HEAD exists
     git(path, &["commit", "--allow-empty", "-m", "init"]);
     dir
