@@ -1,10 +1,10 @@
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitRequest, DiffRequest, ExternalDiffRequest, FetchRequest, FileDiff,
-    FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, NumstatRequest, NumstatResult,
-    OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest,
-    RepoStatus, SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest,
+    CommitMarkers, CommitRequest, DiffRequest, ExportPatchRequest, ExternalDiffRequest,
+    FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest,
+    ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus, SetIdentityRequest,
+    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
@@ -290,7 +290,9 @@ pub async fn get_commit_markers(
     app: tauri::AppHandle,
 ) -> Result<CommitMarkers, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.get_commit_markers(request)
+        app.state::<AppState>()
+            .git_service
+            .get_commit_markers(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -303,7 +305,9 @@ pub async fn get_commit_files(
     app: tauri::AppHandle,
 ) -> Result<Vec<CommitFileItem>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.get_commit_files(request)
+        app.state::<AppState>()
+            .git_service
+            .get_commit_files(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -316,7 +320,9 @@ pub async fn get_commit_details(
     app: tauri::AppHandle,
 ) -> Result<CommitDetails, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.get_commit_details(request)
+        app.state::<AppState>()
+            .git_service
+            .get_commit_details(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -522,8 +528,7 @@ pub fn get_default_clone_dir() -> String {
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_else(|_| ".".to_string());
     #[cfg(not(windows))]
-    let home = std::env::var("HOME")
-        .unwrap_or_else(|_| ".".to_string());
+    let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
     std::path::PathBuf::from(home)
         .join("GitmunProjects")
         .to_string_lossy()
@@ -549,6 +554,39 @@ pub fn open_working_tree_diff(
     state
         .git_service
         .open_working_tree_diff(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn check_patch_file(
+    request: ImportPatchRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .check_patch_file(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn import_patch_file(
+    request: ImportPatchRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .import_patch_file(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn export_patch_file(
+    request: ExportPatchRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .export_patch_file(request)
         .map_err(|error| error.to_string())
 }
 
@@ -651,10 +689,7 @@ pub fn commit_changes(
 }
 
 #[tauri::command]
-pub async fn get_diff(
-    request: DiffRequest,
-    app: tauri::AppHandle,
-) -> Result<FileDiff, String> {
+pub async fn get_diff(request: DiffRequest, app: tauri::AppHandle) -> Result<FileDiff, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().git_service.get_diff(request)
     })

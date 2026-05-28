@@ -12,14 +12,14 @@ use super::types::{
     CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
     ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
-    HunkStageRequest, IdentityRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, TagInfo, UpstreamStatus,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
+    GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -59,6 +59,17 @@ impl GixGitHandler {
 
     fn bstr_to_string(value: &gix::bstr::BStr) -> String {
         String::from_utf8_lossy(value.as_ref()).to_string()
+    }
+
+    fn mailmap_identity(
+        mailmap: &gix::mailmap::Snapshot,
+        signature: gix::actor::SignatureRef<'_>,
+    ) -> (String, String) {
+        let resolved = mailmap.resolve_cow(signature);
+        (
+            Self::bstr_to_string(resolved.name.as_ref()),
+            Self::bstr_to_string(resolved.email.as_ref()),
+        )
     }
 
     fn gix_error<E>(operation: Option<&str>, error: E) -> GitError
@@ -476,6 +487,7 @@ impl GixGitHandler {
             .map_err(|e| Self::gix_error(None, e))?;
 
         let mut commits = Vec::with_capacity(limit.min(256));
+        let mailmap = repo.open_mailmap();
 
         for info in walk.skip(offset).take(limit) {
             let info = info.map_err(|e| Self::gix_error(None, e))?;
@@ -492,11 +504,8 @@ impl GixGitHandler {
             let short_hash = hash.chars().take(7).collect::<String>();
 
             // Author name and email from the author signature
-            let author_sig = commit
-                .author()
-                .map_err(|e| Self::gix_error(None, e))?;
-            let author = Self::bstr_to_string(author_sig.name);
-            let author_email = Self::bstr_to_string(author_sig.email);
+            let author_sig = commit.author().map_err(|e| Self::gix_error(None, e))?;
+            let (author, author_email) = Self::mailmap_identity(&mailmap, author_sig);
             // Date from author or committer signature depending on the setting
             let date_time = match commit_date_mode {
                 CommitDateMode::AuthorDate => author_sig.time,
@@ -937,6 +946,27 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
+    fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .check_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .import_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .export_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus> {
         let repo_path = Path::new(request.repo_path.trim());
         let repo = gix::discover(repo_path).map_err(|error| Self::gix_error(None, error));
@@ -994,20 +1024,15 @@ impl GitOperationHandler for GixGitHandler {
             .try_into_commit()
             .map_err(|e| Self::gix_error(None, e))?;
 
-        let author_sig = commit
-            .author()
-            .map_err(|e| Self::gix_error(None, e))?;
-        let author = Self::bstr_to_string(author_sig.name);
-        let author_email = Self::bstr_to_string(author_sig.email);
+        let author_sig = commit.author().map_err(|e| Self::gix_error(None, e))?;
+        let mailmap = repo.open_mailmap();
+        let (author, author_email) = Self::mailmap_identity(&mailmap, author_sig);
         let author_date = gix::date::parse_header(author_sig.time)
             .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
             .unwrap_or_else(|| author_sig.time.to_string());
 
-        let committer_sig = commit
-            .committer()
-            .map_err(|e| Self::gix_error(None, e))?;
-        let committer = Self::bstr_to_string(committer_sig.name);
-        let committer_email = Self::bstr_to_string(committer_sig.email);
+        let committer_sig = commit.committer().map_err(|e| Self::gix_error(None, e))?;
+        let (committer, committer_email) = Self::mailmap_identity(&mailmap, committer_sig);
         let committer_date = gix::date::parse_header(committer_sig.time)
             .and_then(|t: gix::date::Time| t.format(gix::date::time::format::ISO8601_STRICT).ok())
             .unwrap_or_else(|| committer_sig.time.to_string());

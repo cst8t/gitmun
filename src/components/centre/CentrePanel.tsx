@@ -58,6 +58,10 @@ type CentrePanelProps = {
   onResetToCommit?: (commitHash: string, mode: "soft" | "mixed") => void;
   selectedFile: string | null;
   selectedSubmodulePath: string | null;
+  selectedStagedFiles: Record<string, boolean>;
+  selectedUnstagedFiles: Record<string, boolean>;
+  onSelectedStagedFilesChange: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onSelectedUnstagedFilesChange: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onFileSelect: (path: string, staged: boolean) => void;
   onSubmoduleSelect: (path: string) => void;
   onSubmoduleInit: (path: string) => void;
@@ -208,6 +212,10 @@ export function CentrePanel(props: CentrePanelProps) {
           cherryPickInProgress={props.cherryPickInProgress}
           selectedFile={props.selectedFile}
           selectedSubmodulePath={props.selectedSubmodulePath}
+          selectedStaged={props.selectedStagedFiles}
+          selectedUnstaged={props.selectedUnstagedFiles}
+          onSelectedStagedChange={props.onSelectedStagedFilesChange}
+          onSelectedUnstagedChange={props.onSelectedUnstagedFilesChange}
           onFileSelect={props.onFileSelect}
           onSubmoduleSelect={props.onSubmoduleSelect}
           onSubmoduleInit={props.onSubmoduleInit}

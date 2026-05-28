@@ -8,7 +8,7 @@
  * new one.
  */
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { ask } from "@tauri-apps/plugin-dialog";
+import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -45,6 +45,8 @@ import type {
   CommitMarkers,
   CommitPrimaryAction,
   CreateBranchRequest,
+  ExportPatchFileSelection,
+  ExportPatchScope,
   GitIdentity,
   PullAnalysis,
   PullStrategy,
@@ -197,6 +199,7 @@ export function ProjectView({
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
   const { t: tGitAdvice } = useTranslation("gitAdvice");
+  const emptyStateRecentRepos = !repoPath ? recentRepos.slice(0, 5) : [];
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
     : 0;
@@ -211,6 +214,8 @@ export function ProjectView({
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
+  const [selectedUnstagedFiles, setSelectedUnstagedFiles] = useState<Record<string, boolean>>({});
+  const [selectedStagedFiles, setSelectedStagedFiles] = useState<Record<string, boolean>>({});
   const [selectedSubmodulePath, setSelectedSubmodulePath] = useState<string | null>(null);
   const [diffRefreshKey, setDiffRefreshKey] = useState(0);
   const [centreTab, setCentreTab] = useState<CentreTab>("changes");
@@ -286,6 +291,18 @@ export function ProjectView({
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
+  const selectedStagedPaths = stagedFiles
+    .filter(file => selectedStagedFiles[file.path])
+    .map(file => file.path);
+  const unstagedExportPaths = [
+    ...unstagedFiles.map(file => file.path),
+    ...unversionedFiles,
+  ];
+  const selectedUnstagedPaths = unstagedExportPaths.filter(path => selectedUnstagedFiles[path]);
+  const selectedPatchFiles: ExportPatchFileSelection[] = [
+    ...selectedStagedPaths.map(path => ({ path, staged: true })),
+    ...selectedUnstagedPaths.map(path => ({ path, staged: false })),
+  ];
   const submodules = status?.submodules ?? [];
   const selectedSubmodule = submodules.find(submodule => submodule.path === selectedSubmodulePath) ?? null;
   const conflictedFiles = status?.conflictedFiles ?? [];
@@ -366,6 +383,35 @@ export function ProjectView({
       setSelectedFileStaged(true);
     }
   }, [selectedFile, selectedFileStaged, status]);
+
+  useEffect(() => {
+    if (!status) {
+      setSelectedStagedFiles({});
+      setSelectedUnstagedFiles({});
+      return;
+    }
+
+    const staged = new Set(status.stagedFiles.map(file => file.path));
+    const unstaged = new Set([
+      ...status.changedFiles.map(file => file.path),
+      ...status.unversionedFiles,
+    ]);
+
+    setSelectedStagedFiles(prev => {
+      const next: Record<string, boolean> = {};
+      for (const path of Object.keys(prev)) {
+        if (prev[path] && staged.has(path)) next[path] = true;
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+    setSelectedUnstagedFiles(prev => {
+      const next: Record<string, boolean> = {};
+      for (const path of Object.keys(prev)) {
+        if (prev[path] && unstaged.has(path)) next[path] = true;
+      }
+      return Object.keys(next).length === Object.keys(prev).length ? prev : next;
+    });
+  }, [status]);
 
   useEffect(() => {
     if (!selectedSubmodulePath || !status) return;
@@ -1447,6 +1493,70 @@ export function ProjectView({
     } catch (e) { showToast(localiseExternalToolError(e, t), "error"); }
   }, [repoPath, showToast, t]);
 
+  const handleImportPatch = useCallback(async () => {
+    if (!repoPath) return;
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      title: t("patch.importPickerTitle"),
+      filters: [{ name: t("patch.patchFilesFilter"), extensions: ["patch", "diff"] }],
+    });
+    if (typeof selected !== "string") return;
+
+    const confirmed = await ask(t("ask.importPatch.message"), {
+      title: t("ask.importPatch.title"),
+      kind: "warning",
+      okLabel: t("actions.importPatch"),
+      cancelLabel: t("actions.cancel"),
+    });
+    if (!confirmed) return;
+
+    try {
+      await api.checkPatchFile({ repoPath, patchPath: selected });
+      const result = await api.importPatchFile({ repoPath, patchPath: selected });
+      showToast(t("toast.patchImported"), "success");
+      appendResultLog("success", result.message, result.backendUsed);
+      setCentreTab("changes");
+      await refreshAll();
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.importPatchFailed", { message: String(e) }), "unknown");
+    }
+  }, [repoPath, refreshAll, showToast, t]);
+
+  const handleExportPatch = useCallback(async (scope: ExportPatchScope) => {
+    if (!repoPath) return;
+
+    const files = scope === "selected" ? selectedPatchFiles : undefined;
+    if (scope === "selected" && (!files || files.length === 0)) {
+      showToast(t("toast.noPatchChanges"), "info");
+      return;
+    }
+
+    const selected = await save({
+      title: t("patch.exportPickerTitle"),
+      defaultPath: "changes.patch",
+      filters: [{ name: t("patch.patchFilesFilter"), extensions: ["patch"] }],
+    });
+    if (!selected) return;
+
+    try {
+      const result = await api.exportPatchFile({ repoPath, patchPath: selected, scope, files });
+      const patchName = getFileName(selected);
+      showToast(t("toast.patchExported", { file: patchName }), "success");
+      appendResultLog("success", result.message, result.backendUsed);
+    } catch (e) {
+      const message = String(e);
+      if (message.includes("No changes available for patch export")) {
+        showToast(t("toast.noPatchChanges"), "info");
+        appendResultLog("info", t("log.noPatchChanges"), "git-cli");
+        return;
+      }
+      showToast(message, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message }), "unknown");
+    }
+  }, [repoPath, selectedPatchFiles, showToast, t]);
+
   const runSubmoduleAction = useCallback(async (
     path: string,
     label: string,
@@ -2043,6 +2153,9 @@ export function ProjectView({
           pushDisabled={remoteActionState.disabled}
           pushTitle={remoteActionTitle}
           onStash={handleStash}
+          onImportPatch={handleImportPatch}
+          onExportPatch={handleExportPatch}
+          selectedPatchExportEnabled={selectedPatchFiles.length > 0}
           remoteOp={remoteOp}
           identityOpen={identityOpen}
         />
@@ -2169,6 +2282,10 @@ export function ProjectView({
                   onResetToCommit={handleResetToCommit}
                   selectedFile={selectedFile}
                   selectedSubmodulePath={selectedSubmodulePath}
+                  selectedStagedFiles={selectedStagedFiles}
+                  selectedUnstagedFiles={selectedUnstagedFiles}
+                  onSelectedStagedFilesChange={setSelectedStagedFiles}
+                  onSelectedUnstagedFilesChange={setSelectedUnstagedFiles}
                   onFileSelect={handleFileSelect}
                   onSubmoduleSelect={handleSubmoduleSelect}
                   onSubmoduleInit={handleSubmoduleInit}
@@ -2254,19 +2371,43 @@ export function ProjectView({
                 <h1 className="app__empty-title">{t("emptyState.title")}</h1>
                 <p className="app__empty-subtitle">{t("emptyState.subtitle")}</p>
                 <div className="app__empty-actions">
-                  <button className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--primary" onClick={onCloneClick}>
                     <GitIcon size={14} />
                     <span>{t("emptyState.clone")}</span>
                   </button>
-                  <button className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--secondary" onClick={onInitRepoClick}>
                     <GitIcon size={14} />
                     <span>{t("emptyState.init")}</span>
                   </button>
-                  <button className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
+                  <button type="button" className="app__empty-btn app__empty-btn--secondary" onClick={onOpenExistingClick}>
                     <FolderIcon size={14} />
                     <span>{t("emptyState.openExisting")}</span>
                   </button>
                 </div>
+                {emptyStateRecentRepos.length > 0 && (
+                  <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
+                    <div className="app__empty-recent-divider" />
+                    <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
+                    <div className="app__empty-recent-list">
+                      {emptyStateRecentRepos.map(path => {
+                        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+                        return (
+                          <button
+                            type="button"
+                            key={path}
+                            className="app__empty-recent-item"
+                            onClick={() => onRepoSelect(path)}
+                            title={path}
+                          >
+                            <FolderIcon size={15} />
+                            <span className="app__empty-recent-name">{name}</span>
+                            <span className="app__empty-recent-path">{path}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}

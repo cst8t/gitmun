@@ -12,6 +12,7 @@
     "core:window:allow-show",
     "core:window:allow-close",
     "dialog:allow-open",
+    "dialog:allow-save",
     "dialog:allow-ask",
     "os:default",
     "core:menu:allow-popup",

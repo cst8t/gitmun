@@ -102,7 +102,7 @@
 }
 
 .app__empty-card {
-  width: min(520px, calc(100% - 48px));
+  width: min(560px, calc(100% - 48px));
   border: 1px solid var(--border);
   background: var(--bg-surface);
   border-radius: var(--radius-2xl);
@@ -172,4 +172,69 @@
 
 .app__empty-btn--secondary:hover {
   background: var(--bg-hover);
+}
+
+.app__empty-recent {
+  margin-top: 22px;
+}
+
+.app__empty-recent-divider {
+  height: 1px;
+  background: var(--border-subtle);
+  margin-bottom: 16px;
+}
+
+.app__empty-recent-title {
+  margin-bottom: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
+}
+
+.app__empty-recent-list {
+  display: grid;
+  gap: 6px;
+}
+
+.app__empty-recent-item {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text-primary);
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 9px;
+  row-gap: 2px;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+
+.app__empty-recent-item:hover {
+  border-color: var(--border);
+  background: var(--bg-hover);
+}
+
+.app__empty-recent-item svg {
+  grid-row: 1 / 3;
+  color: var(--text-muted);
+}
+
+.app__empty-recent-name,
+.app__empty-recent-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app__empty-recent-name {
+  font-weight: var(--font-weight-medium);
+}
+
+.app__empty-recent-path {
+  color: var(--text-muted);
+  font-size: var(--font-size-sm);
 }

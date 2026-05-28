@@ -9,7 +9,8 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    FileRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
+    ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, FileRequest,
+    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
     StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
 };
 
@@ -66,6 +67,10 @@ fn git_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) {
 
 fn write_file(repo: &Path, name: &str, content: &str) {
     fs::write(repo.join(name), content).expect("write file");
+}
+
+fn read_file(repo: &Path, name: &str) -> String {
+    fs::read_to_string(repo.join(name)).expect("read file")
 }
 
 fn repo_request(dir: &TempDir) -> RepoRequest {
@@ -152,6 +157,39 @@ fn details_request(dir: &TempDir, hash: &str) -> CommitDetailsRequest {
     }
 }
 
+fn history_request(dir: &TempDir) -> CommitHistoryRequest {
+    CommitHistoryRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        limit: Some(10),
+        after_hash: None,
+        offset: None,
+        commit_date_mode: Default::default(),
+        scope: Default::default(),
+    }
+}
+
+fn commit_with_identities(
+    repo: &Path,
+    file_name: &str,
+    message: &str,
+    author: (&str, &str),
+    committer: (&str, &str),
+) -> String {
+    write_file(repo, file_name, message);
+    git(repo, &["add", file_name]);
+    git_with_env(
+        repo,
+        &["commit", "-m", message],
+        &[
+            ("GIT_AUTHOR_NAME", author.0),
+            ("GIT_AUTHOR_EMAIL", author.1),
+            ("GIT_COMMITTER_NAME", committer.0),
+            ("GIT_COMMITTER_EMAIL", committer.1),
+        ],
+    );
+    head_hash(repo)
+}
+
 fn push_request(repo: &TempDir) -> PushRequest {
     PushRequest {
         repo_path: repo.path().to_str().unwrap().to_string(),
@@ -168,6 +206,27 @@ fn submodule_action_request(repo: &TempDir, path: &str) -> SubmoduleActionReques
         repo_path: repo.path().to_str().unwrap().to_string(),
         path: path.to_string(),
         recursive: false,
+    }
+}
+
+fn import_patch_request(repo: &TempDir, patch_path: &Path) -> ImportPatchRequest {
+    ImportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+    }
+}
+
+fn export_patch_request(
+    repo: &TempDir,
+    patch_path: &Path,
+    scope: ExportPatchScope,
+    files: Vec<ExportPatchFileSelection>,
+) -> ExportPatchRequest {
+    ExportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        scope,
+        files,
     }
 }
 
@@ -216,6 +275,189 @@ fn status_detects_modified_unstaged_file() {
         .get_repo_status(&repo_request(&dir))
         .expect("get_repo_status");
     assert!(status.changed_files.iter().any(|f| f.path == "file.txt"));
+}
+
+#[test]
+fn import_patch_applies_to_working_tree() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "before\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    handler()
+        .import_patch_file(&import_patch_request(&dir, &patch))
+        .expect("import patch");
+
+    assert_eq!(read_file(dir.path(), "file.txt"), "after\n");
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        ""
+    );
+}
+
+#[test]
+fn import_patch_rejects_non_applicable_patch_without_modifying_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "different\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    let result = handler().import_patch_file(&import_patch_request(&dir, &patch));
+
+    assert!(result.is_err());
+    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+}
+
+#[test]
+fn export_staged_patch_contains_only_staged_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "staged.txt", "old\n");
+    write_file(dir.path(), "unstaged.txt", "old\n");
+    git(dir.path(), &["add", "staged.txt", "unstaged.txt"]);
+    git(dir.path(), &["commit", "-m", "add files"]);
+    write_file(dir.path(), "staged.txt", "new\n");
+    write_file(dir.path(), "unstaged.txt", "new\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("staged.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Staged,
+            vec![],
+        ))
+        .expect("export staged patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(!output.contains("unstaged.txt"));
+}
+
+#[test]
+fn export_unstaged_patch_contains_tracked_unstaged_and_untracked_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "tracked.txt", "old\n");
+    git(dir.path(), &["add", "tracked.txt"]);
+    git(dir.path(), &["commit", "-m", "add tracked"]);
+    write_file(dir.path(), "tracked.txt", "new\n");
+    write_file(dir.path(), "new.txt", "new file\n");
+
+    let patch = dir.path().join("unstaged.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Unstaged,
+            vec![],
+        ))
+        .expect("export unstaged patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/tracked.txt b/tracked.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert!(output.contains("new file mode"));
+}
+
+#[test]
+fn export_all_concatenates_staged_unstaged_and_untracked_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "staged.txt", "old\n");
+    write_file(dir.path(), "unstaged.txt", "old\n");
+    git(dir.path(), &["add", "staged.txt", "unstaged.txt"]);
+    git(dir.path(), &["commit", "-m", "add files"]);
+    write_file(dir.path(), "staged.txt", "new\n");
+    write_file(dir.path(), "unstaged.txt", "new\n");
+    write_file(dir.path(), "new.txt", "new file\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("all.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::All,
+            vec![],
+        ))
+        .expect("export all patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+}
+
+#[test]
+fn export_selected_honours_staged_and_unstaged_file_selections() {
+    let dir = init_repo();
+    for name in ["staged.txt", "unstaged.txt", "ignored.txt"] {
+        write_file(dir.path(), name, "old\n");
+    }
+    git(
+        dir.path(),
+        &["add", "staged.txt", "unstaged.txt", "ignored.txt"],
+    );
+    git(dir.path(), &["commit", "-m", "add files"]);
+    for name in ["staged.txt", "unstaged.txt", "ignored.txt"] {
+        write_file(dir.path(), name, "new\n");
+    }
+    write_file(dir.path(), "new.txt", "new file\n");
+    git(dir.path(), &["add", "staged.txt"]);
+
+    let patch = dir.path().join("selected.patch");
+    handler()
+        .export_patch_file(&export_patch_request(
+            &dir,
+            &patch,
+            ExportPatchScope::Selected,
+            vec![
+                ExportPatchFileSelection {
+                    path: "staged.txt".to_string(),
+                    staged: true,
+                },
+                ExportPatchFileSelection {
+                    path: "unstaged.txt".to_string(),
+                    staged: false,
+                },
+                ExportPatchFileSelection {
+                    path: "new.txt".to_string(),
+                    staged: false,
+                },
+            ],
+        ))
+        .expect("export selected patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
+    assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
+    assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert!(!output.contains("ignored.txt"));
 }
 
 #[test]
@@ -696,6 +938,75 @@ fn commit_history_returns_commits_newest_first() {
     assert_eq!(commits[0].message, "third");
 }
 
+fn assert_commit_history_honours_mailmap<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    commit_with_identities(
+        dir.path(),
+        "mailmap-history.txt",
+        "mailmap history",
+        ("Old Name", "old@example.test"),
+        ("Old Name", "old@example.test"),
+    );
+    write_file(
+        dir.path(),
+        ".mailmap",
+        "Canonical Name <canonical@example.test> Old Name <old@example.test>\n",
+    );
+
+    let commits = handler
+        .get_commit_history(&history_request(&dir))
+        .expect("get_commit_history");
+    let commit = commits
+        .iter()
+        .find(|commit| commit.message == "mailmap history")
+        .expect("mailmap history commit");
+
+    assert_eq!(commit.author, "Canonical Name");
+    assert_eq!(commit.author_email, "canonical@example.test");
+}
+
+#[test]
+fn cli_commit_history_honours_mailmap() {
+    assert_commit_history_honours_mailmap(handler());
+}
+
+#[test]
+fn gix_commit_history_honours_mailmap() {
+    assert_commit_history_honours_mailmap(gix_handler());
+}
+
+fn assert_commit_history_without_mailmap_keeps_raw_identity<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    commit_with_identities(
+        dir.path(),
+        "raw-history.txt",
+        "raw history",
+        ("Old Name", "old@example.test"),
+        ("Old Name", "old@example.test"),
+    );
+
+    let commits = handler
+        .get_commit_history(&history_request(&dir))
+        .expect("get_commit_history");
+    let commit = commits
+        .iter()
+        .find(|commit| commit.message == "raw history")
+        .expect("raw history commit");
+
+    assert_eq!(commit.author, "Old Name");
+    assert_eq!(commit.author_email, "old@example.test");
+}
+
+#[test]
+fn cli_commit_history_without_mailmap_keeps_raw_identity() {
+    assert_commit_history_without_mailmap_keeps_raw_identity(handler());
+}
+
+#[test]
+fn gix_commit_history_without_mailmap_keeps_raw_identity() {
+    assert_commit_history_without_mailmap_keeps_raw_identity(gix_handler());
+}
+
 #[test]
 fn gix_commit_history_matches_git_log_order_for_merge_commits() {
     let dir = init_repo();
@@ -797,6 +1108,72 @@ fn cli_commit_details_basic_fields() {
     assert!(!details.author_date.is_empty());
     assert!(details.trailers.is_empty());
     assert!(details.tags.is_empty());
+}
+
+fn assert_commit_details_honours_mailmap<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    let hash = commit_with_identities(
+        dir.path(),
+        "mailmap-details.txt",
+        "mailmap details",
+        ("Old Author", "old-author@example.test"),
+        ("Old Committer", "old-committer@example.test"),
+    );
+    write_file(
+        dir.path(),
+        ".mailmap",
+        "Canonical Author <canonical-author@example.test> <old-author@example.test>\n\
+         Canonical Committer <canonical-committer@example.test> Old Committer <old-committer@example.test>\n",
+    );
+
+    let details = handler
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.author, "Canonical Author");
+    assert_eq!(details.author_email, "canonical-author@example.test");
+    assert_eq!(details.committer, "Canonical Committer");
+    assert_eq!(details.committer_email, "canonical-committer@example.test");
+}
+
+#[test]
+fn cli_commit_details_honours_mailmap() {
+    assert_commit_details_honours_mailmap(handler());
+}
+
+#[test]
+fn gix_commit_details_honours_mailmap() {
+    assert_commit_details_honours_mailmap(gix_handler());
+}
+
+fn assert_commit_details_without_mailmap_keeps_raw_identity<H: GitOperationHandler>(handler: H) {
+    let dir = init_repo();
+    let hash = commit_with_identities(
+        dir.path(),
+        "raw-details.txt",
+        "raw details",
+        ("Old Author", "old-author@example.test"),
+        ("Old Committer", "old-committer@example.test"),
+    );
+
+    let details = handler
+        .get_commit_details(&details_request(&dir, &hash))
+        .expect("get_commit_details");
+
+    assert_eq!(details.author, "Old Author");
+    assert_eq!(details.author_email, "old-author@example.test");
+    assert_eq!(details.committer, "Old Committer");
+    assert_eq!(details.committer_email, "old-committer@example.test");
+}
+
+#[test]
+fn cli_commit_details_without_mailmap_keeps_raw_identity() {
+    assert_commit_details_without_mailmap_keeps_raw_identity(handler());
+}
+
+#[test]
+fn gix_commit_details_without_mailmap_keeps_raw_identity() {
+    assert_commit_details_without_mailmap_keeps_raw_identity(gix_handler());
 }
 
 #[test]
