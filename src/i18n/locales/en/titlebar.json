@@ -7,6 +7,7 @@
     "fetch": "Fetch",
     "fileManager": "File Manager",
     "initialiseRepository": "Initialise a repository",
+    "more": "More",
     "new": "New",
     "open": "Open",
     "openIn": "Open in...",
@@ -20,6 +21,16 @@
   "labels": {
     "copied": "Copied",
     "noRepositoryOpen": "No repository open",
-    "searchCommits": "Search commits..."
+    "searchCommits": "Search commits...",
+    "searchCommitsShortcut": "Search commits ({{shortcut}})"
+  },
+  "patchFiles": {
+    "export": "Export patch",
+    "exportAll": "Export all changes patch...",
+    "exportSelected": "Export selected patch...",
+    "exportStaged": "Export staged patch...",
+    "exportUnstaged": "Export unstaged patch...",
+    "heading": "Patch files",
+    "import": "Import patch..."
   }
 }

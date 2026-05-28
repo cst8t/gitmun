@@ -21,12 +21,14 @@ import type {
     PushTagRequest,
     DiffRequest,
     FetchRequest,
+    ExportPatchRequest,
     ExternalDiffTool,
     FileDiff,
     FileRequest,
     GitIdentity,
     HunkStageRequest,
     IdentityRequest,
+    ImportPatchRequest,
     MergeResult,
     RebaseRequest,
     RebaseResult,
@@ -160,6 +162,18 @@ export function openExternalDiff(repoPath: string, commitHash: string, filePath:
 
 export function openWorkingTreeDiff(repoPath: string, filePath: string, staged: boolean): Promise<OperationResult> {
     return invoke<OperationResult>("open_working_tree_diff", {request: {repoPath, filePath, staged}});
+}
+
+export function checkPatchFile(request: ImportPatchRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("check_patch_file", {request});
+}
+
+export function importPatchFile(request: ImportPatchRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("import_patch_file", {request});
+}
+
+export function exportPatchFile(request: ExportPatchRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("export_patch_file", {request});
 }
 
 export function getRepoDiffTool(repoPath: string): Promise<string | null> {

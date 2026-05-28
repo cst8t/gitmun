@@ -18,6 +18,10 @@ type StagingViewProps = {
   cherryPickInProgress: boolean;
   selectedFile: string | null;
   selectedSubmodulePath: string | null;
+  selectedUnstaged: Record<string, boolean>;
+  selectedStaged: Record<string, boolean>;
+  onSelectedUnstagedChange: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
+  onSelectedStagedChange: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
   onFileSelect: (path: string, staged: boolean) => void;
   onSubmoduleSelect: (path: string) => void;
   onSubmoduleInit: (path: string) => void;
@@ -145,7 +149,8 @@ function SubmoduleRow({
 export function StagingView({
   repoPath,
   stagedFiles, unstagedFiles, unversionedFiles, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
-  selectedFile, selectedSubmodulePath, onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
+  selectedFile, selectedSubmodulePath, selectedUnstaged, selectedStaged, onSelectedUnstagedChange, onSelectedStagedChange,
+  onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
@@ -153,8 +158,6 @@ export function StagingView({
   isCommitting, lastCommitMessage, rowStriping,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
-  const [selectedUnstaged, setSelectedUnstaged] = useState<Record<string, boolean>>({});
-  const [selectedStaged, setSelectedStaged] = useState<Record<string, boolean>>({});
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
   const [numstatLoading, setNumstatLoading] = useState<Record<string, boolean>>({});
 
@@ -277,23 +280,23 @@ export function StagingView({
   );
 
   const toggleUnstaged = (path: string) => {
-    setSelectedUnstaged(prev => ({ ...prev, [path]: !prev[path] }));
+    onSelectedUnstagedChange(prev => ({ ...prev, [path]: !prev[path] }));
   };
 
   const toggleStaged = (path: string) => {
-    setSelectedStaged(prev => ({ ...prev, [path]: !prev[path] }));
+    onSelectedStagedChange(prev => ({ ...prev, [path]: !prev[path] }));
   };
 
   const handleStageSelected = () => {
     if (selectedUnstagedPaths.length === 0) return;
     onStageFiles(selectedUnstagedPaths);
-    setSelectedUnstaged({});
+    onSelectedUnstagedChange({});
   };
 
   const handleUnstageSelected = () => {
     if (selectedStagedPaths.length === 0) return;
     onUnstageFiles(selectedStagedPaths);
-    setSelectedStaged({});
+    onSelectedStagedChange({});
   };
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;

@@ -28,6 +28,7 @@ import {
   Info,
   WarningCircle,
   GithubLogo,
+  DotsThree,
 } from "@phosphor-icons/react";
 
 type IconProps = { size?: number; className?: string };
@@ -56,6 +57,7 @@ export const GlobeIcon = ({ size = 16, className }: IconProps) => <Globe size={s
 export const InfoIcon = ({ size = 16, className }: IconProps) => <Info size={size} className={className} />;
 export const WarningIcon = ({ size = 16, className }: IconProps) => <WarningCircle size={size} className={className} />;
 export const GithubLogoIcon = ({ size = 16, className }: IconProps) => <GithubLogo size={size} className={className} />;
+export const MoreIcon = ({ size = 16, className }: IconProps) => <DotsThree size={size} weight="bold" className={className} />;
 export const FolderIcon = ({ size = 16, className }: IconProps) => <FolderOpen size={size} className={className} />;
 export const CopyIcon = ({ size = 16, className }: IconProps) => <Copy size={size} className={className} />;
 export const OpenExternalIcon = ({ size = 16, className }: IconProps) => <ArrowSquareOut size={size} className={className} />;
