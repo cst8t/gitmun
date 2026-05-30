@@ -6,5 +6,13 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub enum ContextAction {
     OpenRepo,
-    CloneHere,
+    CloneRepo,
+    InitialiseRepo,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowRouting {
+    NewWindow,
+    ReuseWindow,
 }

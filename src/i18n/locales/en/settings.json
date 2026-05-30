@@ -71,7 +71,7 @@
     "lineEndings": "Changing line ending conversion can make many files appear modified until the repository is renormalised.",
     "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
     "commitMessageRecommendedLength": "Recommended maximum for the first line of a commit message. Set to 0 to disable.",
-    "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches always open a new window.",
+    "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches open a new window unless the launcher asks to reuse one.",
     "rowStriping": "Alternates list row backgrounds in changes and commit views for easier scanning.",
     "toolPathMissing": "{{tool}} could not be found automatically. Saving will fail until you choose its executable.",
     "toolPathSearch": "Gitmun searches PATH first, then common Windows install folders. If that fails, choose the executable manually.",

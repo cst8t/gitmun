@@ -67,6 +67,7 @@ import type {
     SetRemoteUrlRequest,
     PruneRemoteRequest,
     StashEntry,
+    CloneStartupOptions,
     ShellStartupAction,
 } from "../types";
 
@@ -579,7 +580,7 @@ export function openSettingsWindow(): Promise<void> {
 }
 
 export function openCloneWindow(): Promise<void> {
-    return invoke("open_clone_window", {destination: null});
+    return openCloneWindowWithOptions();
 }
 
 export function openAboutWindow(): Promise<void> {
@@ -626,10 +627,14 @@ export function openRepoInNewWindow(path: string): Promise<void> {
     return invoke("open_repo_in_new_window", {path});
 }
 
-export function openCloneWindowWithDestination(destination?: string): Promise<void> {
-    return invoke("open_clone_window", {destination: destination ?? null});
+export function openCloneWindowWithOptions(options: CloneStartupOptions = {}): Promise<void> {
+    return invoke("open_clone_window", {
+        repoUrl: options.repoUrl ?? null,
+        destination: options.destination ?? null,
+        startClone: options.startClone ?? false,
+    });
 }
 
-export function takePendingCloneDestination(): Promise<string | null> {
-    return invoke<string | null>("take_pending_clone_destination");
+export function takePendingCloneOptions(): Promise<CloneStartupOptions | null> {
+    return invoke<CloneStartupOptions | null>("take_pending_clone_options");
 }

@@ -683,11 +683,22 @@ export type RemoteInfo = {
     url: string;
 };
 
-export type ContextAction = "openRepo" | "cloneHere";
+export type ContextAction = "openRepo" | "cloneRepo" | "initialiseRepo";
+export type WindowRouting = "newWindow" | "reuseWindow";
 
 export type ShellStartupAction = {
     action: ContextAction;
     path: string;
+    routing?: WindowRouting;
+    repoUrl?: string;
+    destination?: string;
+    startClone?: boolean;
+};
+
+export type CloneStartupOptions = {
+    repoUrl?: string;
+    destination?: string;
+    startClone?: boolean;
 };
 
 export type RepositorySelectedPayload = {
