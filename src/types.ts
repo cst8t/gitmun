@@ -6,6 +6,25 @@ export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
+export type LinuxTerminalEmulator =
+    | "Auto"
+    | "Konsole"
+    | "GnomeTerminal"
+    | "GnomeConsole"
+    | "Xfce4Terminal"
+    | "MateTerminal"
+    | "Lxterminal"
+    | "Alacritty"
+    | "Ghostty"
+    | "Kitty"
+    | "WezTerm"
+    | "Foot"
+    | "Xterm"
+    | "Custom";
+export type LinuxTerminalOption = {
+    emulator: LinuxTerminalEmulator;
+    label: string;
+};
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
 export type RowStriping = "Off" | "Subtle" | "Strong";
 export type UiTextScale = 0.9 | 1 | 1.1 | 1.2 | 1.3;
@@ -60,6 +79,8 @@ export type Settings = {
     updateEndpoint: string;
     enableUpdateWithMSStoreFlow?: boolean;
     linuxGraphicsMode: LinuxGraphicsMode;
+    linuxTerminalEmulator: LinuxTerminalEmulator;
+    linuxTerminalCustomCommand: string;
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
 };

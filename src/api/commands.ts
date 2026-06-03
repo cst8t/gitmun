@@ -50,6 +50,8 @@ import type {
     SubmoduleActionRequest,
     TagInfo,
     BackendMode,
+    LinuxTerminalOption,
+    LinuxTerminalEmulator,
     ThemeMode,
     ThemeBundle,
     UiTextScale,
@@ -458,6 +460,18 @@ export function setUpdateEndpoint(updateEndpoint: string): Promise<Settings> {
 
 export function setRepoOpenBehaviour(repoOpenBehaviour: RepoOpenBehaviour): Promise<Settings> {
     return invoke<Settings>("set_repo_open_behaviour", {repoOpenBehaviour});
+}
+
+export function getLinuxTerminalOptions(): Promise<LinuxTerminalOption[]> {
+    return invoke<LinuxTerminalOption[]>("get_linux_terminal_options");
+}
+
+export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalEmulator): Promise<Settings> {
+    return invoke<Settings>("set_linux_terminal_emulator", {linuxTerminalEmulator});
+}
+
+export function setLinuxTerminalCustomCommand(linuxTerminalCustomCommand: string): Promise<Settings> {
+    return invoke<Settings>("set_linux_terminal_custom_command", {linuxTerminalCustomCommand});
 }
 
 export function getConfigFilePath(): Promise<string | null> {

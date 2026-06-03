@@ -54,6 +54,7 @@
     "resultLog": "Result log",
     "rowStriping": "Row striping",
     "settings": "Settings",
+    "terminal": "Terminal",
     "textScale": "Text size",
     "theme": "Theme",
     "updateFeedUrl": "Update feed URL",
@@ -70,6 +71,7 @@
     "gpgProgram": "Leave blank to use Git's default GPG lookup. On Windows, Gitmun also searches common Git for Windows and GnuPG install folders.",
     "lineEndings": "Changing line ending conversion can make many files appear modified until the repository is renormalised.",
     "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
+    "linuxTerminal": "Custom commands can use {path}. If omitted, Gitmun still starts the terminal from the repository folder.",
     "commitMessageRecommendedLength": "Recommended maximum for the first line of a commit message. Set to 0 to disable.",
     "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches open a new window unless the launcher asks to reuse one.",
     "rowStriping": "Alternates list row backgrounds in changes and commit views for easier scanning.",
@@ -113,6 +115,12 @@
     "graphicsAuto": "Compatibility (default)",
     "graphicsNative": "Native (hardware acceleration)",
     "graphicsSafe": "Maximum compatibility",
+    "linuxTerminalAuto": "Auto-detect (default)",
+    "linuxTerminalCustom": "Custom command",
+    "linuxTerminalGnomeConsole": "GNOME Console",
+    "linuxTerminalGnomeTerminal": "GNOME Terminal",
+    "linuxTerminalMateTerminal": "MATE Terminal",
+    "linuxTerminalXfce4Terminal": "Xfce Terminal",
     "repoOpenAsk": "Ask each time (default)",
     "repoOpenExisting": "Reuse this window",
     "repoOpenNew": "Always open a new window",
@@ -142,7 +150,8 @@
     "credentialHelper": "Leave blank for Git's default helper lookup",
     "gitEditor": "e.g. code --wait, nano, vim",
     "gitExecutable": "Auto-detect Git or choose an executable",
-    "gpgProgram": "Leave blank for Git's default, or choose gpg"
+    "gpgProgram": "Leave blank for Git's default, or choose gpg",
+    "linuxTerminalCustomCommand": "my-terminal --working-directory {path}"
   },
   "picker": {
     "cloneDestination": "Select default clone destination",

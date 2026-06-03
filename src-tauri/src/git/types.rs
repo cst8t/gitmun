@@ -113,6 +113,30 @@ impl Default for LinuxGraphicsMode {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum LinuxTerminalEmulator {
+    Auto,
+    Konsole,
+    GnomeTerminal,
+    GnomeConsole,
+    Xfce4Terminal,
+    MateTerminal,
+    Lxterminal,
+    Alacritty,
+    Ghostty,
+    Kitty,
+    WezTerm,
+    Foot,
+    Xterm,
+    Custom,
+}
+
+impl Default for LinuxTerminalEmulator {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RepoOpenBehaviour {
     Ask,
     ExistingWindow,
@@ -231,6 +255,10 @@ pub struct Settings {
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
     #[serde(default)]
+    pub linux_terminal_emulator: LinuxTerminalEmulator,
+    #[serde(default)]
+    pub linux_terminal_custom_command: String,
+    #[serde(default)]
     pub repo_open_behaviour: RepoOpenBehaviour,
     #[serde(default)]
     pub git_executable_path: String,
@@ -284,6 +312,8 @@ impl Default for Settings {
             update_endpoint: Self::default_update_endpoint(),
             enable_update_with_ms_store_flow: false,
             linux_graphics_mode: LinuxGraphicsMode::Auto,
+            linux_terminal_emulator: LinuxTerminalEmulator::Auto,
+            linux_terminal_custom_command: String::new(),
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),
         }

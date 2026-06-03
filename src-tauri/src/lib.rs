@@ -122,7 +122,10 @@ fn forward_reuse_window_action(action: &ShellStartupAction) -> bool {
         ContextAction::CloneRepo => instance_coordinator::CoordinatorCommand::OpenCloneWindow {
             options: CloneStartupOptions {
                 repo_url: action.repo_url.clone(),
-                destination: action.destination.clone().or_else(|| Some(action.path.clone())),
+                destination: action
+                    .destination
+                    .clone()
+                    .or_else(|| Some(action.path.clone())),
                 start_clone: action.start_clone,
             },
         },
@@ -1528,6 +1531,9 @@ pub fn run() {
             commands::settings::set_auto_install_updates,
             commands::settings::set_update_endpoint,
             commands::settings::set_linux_graphics_mode,
+            commands::settings::get_linux_terminal_options,
+            commands::settings::set_linux_terminal_emulator,
+            commands::settings::set_linux_terminal_custom_command,
             commands::settings::set_repo_open_behaviour,
             commands::history::get_commit_history,
             commands::history::verify_commits,

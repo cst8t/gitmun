@@ -13,6 +13,8 @@ import type {
     CommitDateMode,
     ExternalDiffTool,
     LinuxGraphicsMode,
+    LinuxTerminalEmulator,
+    LinuxTerminalOption,
     RepoOpenBehaviour,
     RowStriping,
     Settings,
@@ -25,6 +27,7 @@ import {
     getConfigFolderPath,
     getGlobalDiffToolPath,
     getGlobalGpgProgramPath,
+    getLinuxTerminalOptions,
     openResultLogWindow,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
@@ -44,6 +47,10 @@ const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
 const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
 const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
+const DEFAULT_LINUX_TERMINAL_OPTIONS: LinuxTerminalOption[] = [
+    {emulator: "Auto", label: "Terminal"},
+    {emulator: "Custom", label: "Terminal"},
+];
 
 function normaliseOptionalGitConfig(value: string | null | undefined): string {
     return value?.trim() ?? "";
@@ -155,6 +162,9 @@ export function SettingsWindow() {
     const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
     const [updateEndpoint, setUpdateEndpointState] = useState(DEFAULT_UPDATE_ENDPOINT);
     const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
+    const [linuxTerminalOptions, setLinuxTerminalOptions] = useState<LinuxTerminalOption[]>(DEFAULT_LINUX_TERMINAL_OPTIONS);
+    const [linuxTerminalEmulator, setLinuxTerminalEmulator] = useState<LinuxTerminalEmulator>("Auto");
+    const [linuxTerminalCustomCommand, setLinuxTerminalCustomCommand] = useState("");
     const [repoOpenBehaviour, setRepoOpenBehaviour] = useState<RepoOpenBehaviour>("Ask");
     const [isLinux, setIsLinux] = useState(false);
     const [isWindows, setIsWindows] = useState(false);
@@ -185,6 +195,16 @@ export function SettingsWindow() {
                 return t("options.vsCodium");
             default:
                 return tool;
+        }
+    }, [t]);
+    const labelLinuxTerminal = useCallback((option: LinuxTerminalOption): string => {
+        switch (option.emulator) {
+            case "Auto":
+                return t("options.linuxTerminalAuto");
+            case "Custom":
+                return t("options.linuxTerminalCustom");
+            default:
+                return option.label;
         }
     }, [t]);
 
@@ -219,6 +239,9 @@ export function SettingsWindow() {
                 setUpdateChannel(await getAppUpdateChannel());
                 setIsLinux(os === "linux");
                 setIsWindows(os === "windows");
+                if (os === "linux") {
+                    setLinuxTerminalOptions(await getLinuxTerminalOptions());
+                }
 
                 const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
                 setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
@@ -309,6 +332,8 @@ export function SettingsWindow() {
                 setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
                 setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
                 setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
+                setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
+                setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
                 setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
                 await applyThemeMode(settings.themeMode);
                 applyUiTextScale(settings.uiTextScale);
@@ -449,7 +474,11 @@ export function SettingsWindow() {
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
             await invoke("set_auto_install_updates", {autoInstallUpdates});
             await setUpdateEndpoint(updateEndpoint);
-            if (isLinux) await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
+            if (isLinux) {
+                await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
+                await invoke("set_linux_terminal_emulator", {linuxTerminalEmulator});
+                await invoke("set_linux_terminal_custom_command", {linuxTerminalCustomCommand});
+            }
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
@@ -585,6 +614,8 @@ export function SettingsWindow() {
         isLinux,
         isWindows,
         linuxGraphicsMode,
+        linuxTerminalEmulator,
+        linuxTerminalCustomCommand,
         repoOpenBehaviour,
         externalDiffToolPath,
         globalGpgProgram,
@@ -769,6 +800,39 @@ export function SettingsWindow() {
                                 {t("notes.repoOpenBehaviour")}
                             </div>
                         </div>
+
+                        {isLinux && (
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-linux-terminal">
+                                    {t("labels.terminal")}
+                                </label>
+                                <select
+                                    id="settings-linux-terminal"
+                                    className="settings-window__select"
+                                    value={linuxTerminalEmulator}
+                                    onChange={e => setLinuxTerminalEmulator(e.target.value as LinuxTerminalEmulator)}
+                                >
+                                    {linuxTerminalOptions.map(option => (
+                                        <option key={option.emulator} value={option.emulator}>{labelLinuxTerminal(option)}</option>
+                                    ))}
+                                </select>
+                                {linuxTerminalEmulator === "Custom" && (
+                                    <input
+                                        className="settings-window__input"
+                                        type="text"
+                                        value={linuxTerminalCustomCommand}
+                                        onChange={e => setLinuxTerminalCustomCommand(e.target.value)}
+                                        placeholder={t("placeholders.linuxTerminalCustomCommand")}
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                    />
+                                )}
+                                <div className="settings-window__section-note">
+                                    {t("notes.linuxTerminal")}
+                                </div>
+                            </div>
+                        )}
 
                         <div className="settings-window__row">
                             <label className="settings-window__label">{t("labels.cloneDestination")}</label>
