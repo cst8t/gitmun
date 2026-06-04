@@ -820,6 +820,26 @@ fn commit_creates_entry_in_log() {
 }
 
 #[test]
+fn commit_preserves_description_and_trailer_like_lines() {
+    let dir = init_repo();
+    write_file(dir.path(), "body.txt", "data");
+    git(dir.path(), &["add", "body.txt"]);
+    let message =
+        "add body\n\nExplain the change\n\nCo-authored-by: Name <name@example.com>";
+
+    handler()
+        .commit_changes(&CommitRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            message: message.to_string(),
+            amend: None,
+        })
+        .expect("commit_changes");
+
+    let committed_message = git_stdout(dir.path(), &["log", "-1", "--format=%B"]);
+    assert_eq!(committed_message, message);
+}
+
+#[test]
 fn commit_history_all_refs_includes_branch_outside_detached_head() {
     let dir = init_repo();
     git(dir.path(), &["checkout", "-b", "side"]);
