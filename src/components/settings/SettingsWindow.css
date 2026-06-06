@@ -202,6 +202,13 @@
   box-shadow: 0 0 0 2px var(--focus-ring);
 }
 
+.settings-window__input:disabled {
+  background: var(--bg-subtle);
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+  cursor: not-allowed;
+}
+
 .settings-window__icon-btn {
   flex-shrink: 0;
   padding: 5px 8px;

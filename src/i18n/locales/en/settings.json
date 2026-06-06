@@ -45,6 +45,8 @@
     "lineEndings": "Line endings",
     "openAtLaunch": "Open at launch",
     "openRepositories": "Open repositories",
+    "errorMessages": "Error messages",
+    "errorToastClearDelayMs": "Error message auto-close delay (ms)",
     "pullAutostash": "Pull autostash",
     "pullFastForward": "Pull fast-forward",
     "pullRebase": "Pull strategy",
@@ -73,6 +75,8 @@
     "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
     "linuxTerminal": "Custom commands can use {path}. If omitted, Gitmun still starts the terminal from the repository folder.",
     "commitMessageRecommendedLength": "Recommended maximum for the first line of a commit message. Set to 0 to disable.",
+    "errorToastClearDelayMs": "Applies when error messages are not kept open. Minimum 1000 ms.",
+    "persistentErrorToasts": "Only error messages stay open. Success and information messages still close automatically.",
     "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches open a new window unless the launcher asks to reuse one.",
     "rowStriping": "Alternates list row backgrounds in changes and commit views for easier scanning.",
     "toolPathMissing": "{{tool}} could not be found automatically. Saving will fail until you choose its executable.",
@@ -183,6 +187,7 @@
   "switches": {
     "autoCheckUpdates": "Automatically check for updates on launch",
     "followTags": "Include annotated tags when pushing (`--follow-tags`)",
+    "persistentErrorToasts": "Keep error messages open until dismissed",
     "platformAvatars": "Try platform-specific avatars first (e.g. GitHub for github.com remotes)",
     "trackFilePermissions": "Track file permissions",
     "wrapDiffLines": "Wrap long lines in diff view"

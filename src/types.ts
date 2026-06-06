@@ -65,6 +65,8 @@ export type Settings = {
     uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
     rowStriping: RowStriping;
+    persistentErrorToasts: boolean;
+    errorToastClearDelayMs: number;
     leftPaneWidth: number;
     rightPaneWidth: number;
     confirmRevert: boolean;

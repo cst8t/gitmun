@@ -20,6 +20,8 @@ const settings: Settings = {
     uiTextScale: 1,
     wrapDiffLines: false,
     rowStriping: "Off",
+    persistentErrorToasts: false,
+    errorToastClearDelayMs: 8000,
     leftPaneWidth: 300,
     rightPaneWidth: 420,
     confirmRevert: true,
@@ -58,6 +60,8 @@ mocks.invoke.mockImplementation(async (command: string) => {
         case "set_ui_text_scale":
         case "set_wrap_diff_lines":
         case "set_row_striping":
+        case "set_persistent_error_toasts":
+        case "set_error_toast_clear_delay_ms":
         case "set_git_executable_path":
         case "set_linux_graphics_mode":
         case "set_linux_terminal_emulator":
@@ -150,6 +154,47 @@ describe("SettingsWindow", () => {
             });
             expect(mocks.invoke).toHaveBeenCalledWith("set_linux_terminal_custom_command", {
                 linuxTerminalCustomCommand: "kitty --directory {path}",
+            });
+        });
+    });
+
+    it("loads persistent error messages off by default and saves changes", async () => {
+        render(<SettingsWindow/>);
+
+        const toggle = await screen.findByLabelText("Keep error messages open until dismissed");
+        const delayInput = screen.getByLabelText("Error message auto-close delay (ms)");
+        expect(toggle).not.toBeChecked();
+        expect(delayInput).toHaveValue(8000);
+        expect(delayInput).not.toBeDisabled();
+
+        fireEvent.change(delayInput, {
+            target: {value: "12000"},
+        });
+
+        fireEvent.click(toggle);
+        expect(delayInput).toBeDisabled();
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.invoke).toHaveBeenCalledWith("set_persistent_error_toasts", {
+                persistentErrorToasts: true,
+            });
+            expect(mocks.invoke).toHaveBeenCalledWith("set_error_toast_clear_delay_ms", {
+                errorToastClearDelayMs: 12000,
+            });
+        });
+    });
+
+    it("clamps the error message auto-close delay before saving", async () => {
+        render(<SettingsWindow/>);
+
+        const input = await screen.findByLabelText("Error message auto-close delay (ms)");
+        fireEvent.change(input, {target: {value: "500"}});
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.invoke).toHaveBeenCalledWith("set_error_toast_clear_delay_ms", {
+                errorToastClearDelayMs: 1000,
             });
         });
     });

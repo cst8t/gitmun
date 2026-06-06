@@ -20,6 +20,13 @@ uiTextScale = 1.0
 # Whether to wrap long lines in diff views.
 wrapDiffLines = false
 
+# Whether error messages stay open until dismissed.
+persistentErrorToasts = false
+
+# Error message auto-close delay in milliseconds when errors are not kept open.
+# Minimum: 1000.
+errorToastClearDelayMs = 8000
+
 # Width of the left pane in pixels.
 leftPaneWidth = 300
 

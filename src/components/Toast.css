@@ -20,6 +20,7 @@
 .toast--visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
 }
 
 .toast--success {
@@ -38,4 +39,25 @@
   background: var(--toast-info-bg);
   color: var(--toast-info-text);
   border: 1px solid var(--toast-info-border);
+}
+
+.toast__message {
+  overflow-wrap: anywhere;
+}
+
+.toast__dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: currentColor;
+  cursor: pointer;
+}
+
+.toast__dismiss:hover {
+  background: rgb(255 255 255 / 0.14);
 }

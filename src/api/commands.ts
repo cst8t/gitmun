@@ -428,6 +428,14 @@ export function setRowStriping(rowStriping: RowStriping): Promise<Settings> {
     return invoke<Settings>("set_row_striping", {rowStriping});
 }
 
+export function setPersistentErrorToasts(persistentErrorToasts: boolean): Promise<Settings> {
+    return invoke<Settings>("set_persistent_error_toasts", {persistentErrorToasts});
+}
+
+export function setErrorToastClearDelayMs(errorToastClearDelayMs: number): Promise<Settings> {
+    return invoke<Settings>("set_error_toast_clear_delay_ms", {errorToastClearDelayMs});
+}
+
 export function setPanelLayout(leftPaneWidth: number, rightPaneWidth: number): Promise<Settings> {
     return invoke<Settings>("set_panel_layout", {leftPaneWidth, rightPaneWidth});
 }

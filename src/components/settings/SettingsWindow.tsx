@@ -47,6 +47,8 @@ const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
 const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
 const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
+const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
+const MIN_ERROR_TOAST_CLEAR_DELAY_MS = 1000;
 const DEFAULT_LINUX_TERMINAL_OPTIONS: LinuxTerminalOption[] = [
     {emulator: "Auto", label: "Terminal"},
     {emulator: "Custom", label: "Terminal"},
@@ -127,6 +129,8 @@ export function SettingsWindow() {
     const [uiTextScale, setUiTextScale] = useState<UiTextScale>(1);
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
     const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
+    const [persistentErrorToasts, setPersistentErrorToasts] = useState(false);
+    const [errorToastClearDelayMs, setErrorToastClearDelayMs] = useState(String(DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
     const [avatarProvider, setAvatarProvider] = useState<AvatarProviderMode>("Libravatar");
     const [tryPlatformFirst, setTryPlatformFirst] = useState(true);
@@ -321,6 +325,8 @@ export function SettingsWindow() {
                 setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
                 setWrapDiffLines(settings.wrapDiffLines ?? false);
                 setRowStriping(settings.rowStriping ?? "Off");
+                setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
+                setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
                 setOpenResultLogOnLaunch(settings.showResultLog);
                 setAvatarProvider(settings.avatarProvider);
                 setTryPlatformFirst(settings.tryPlatformFirst);
@@ -398,6 +404,12 @@ export function SettingsWindow() {
             await invoke<Settings>("set_ui_text_scale", {uiTextScale});
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
             await invoke<Settings>("set_row_striping", {rowStriping});
+            await invoke<Settings>("set_persistent_error_toasts", {persistentErrorToasts});
+            const parsedErrorToastClearDelayMs = Number.parseInt(errorToastClearDelayMs, 10);
+            const savedErrorToastClearDelayMs = Number.isFinite(parsedErrorToastClearDelayMs)
+                ? Math.max(MIN_ERROR_TOAST_CLEAR_DELAY_MS, parsedErrorToastClearDelayMs)
+                : DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS;
+            await invoke<Settings>("set_error_toast_clear_delay_ms", {errorToastClearDelayMs: savedErrorToastClearDelayMs});
             await invoke("set_avatar_provider", {avatarProvider});
             await invoke("set_try_platform_first", {tryPlatformFirst: avatarProvider !== "Off" && tryPlatformFirst});
             await invoke("set_default_clone_dir", {defaultCloneDir});
@@ -482,6 +494,7 @@ export function SettingsWindow() {
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
             const settings = await invoke<Settings>("get_settings");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+            setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
             setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
@@ -574,6 +587,8 @@ export function SettingsWindow() {
         openResultLogOnLaunch,
         wrapDiffLines,
         rowStriping,
+        persistentErrorToasts,
+        errorToastClearDelayMs,
         avatarProvider,
         tryPlatformFirst,
         defaultCloneDir,
@@ -798,6 +813,53 @@ export function SettingsWindow() {
                             </select>
                             <div className="settings-window__section-note">
                                 {t("notes.repoOpenBehaviour")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.errorMessages")}</label>
+                            <label className="settings-window__switch-row">
+                  <span className="settings-window__switch">
+                    <input
+                        type="checkbox"
+                        checked={persistentErrorToasts}
+                        onChange={e => setPersistentErrorToasts(e.target.checked)}
+                    />
+                    <span className="settings-window__switch-track"/>
+                  </span>
+                                <span className="settings-window__switch-label">{t("switches.persistentErrorToasts")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {t("notes.persistentErrorToasts")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label" htmlFor="settings-error-toast-delay">
+                                {t("labels.errorToastClearDelayMs")}
+                            </label>
+                            <input
+                                id="settings-error-toast-delay"
+                                className="settings-window__input"
+                                type="number"
+                                min={MIN_ERROR_TOAST_CLEAR_DELAY_MS}
+                                step={500}
+                                disabled={persistentErrorToasts}
+                                value={errorToastClearDelayMs}
+                                onChange={e => {
+                                    if (/^\d*$/.test(e.target.value)) {
+                                        setErrorToastClearDelayMs(e.target.value);
+                                    }
+                                }}
+                                onBlur={() => {
+                                    const next = Number.parseInt(errorToastClearDelayMs, 10);
+                                    setErrorToastClearDelayMs(String(Number.isFinite(next)
+                                        ? Math.max(MIN_ERROR_TOAST_CLEAR_DELAY_MS, next)
+                                        : DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
+                                }}
+                            />
+                            <div className="settings-window__section-note">
+                                {t("notes.errorToastClearDelayMs")}
                             </div>
                         </div>
 
