@@ -9,9 +9,10 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, FileRequest,
-    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, ResetMode, ResetRequest,
-    SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
+    DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
+    FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, ResetMode,
+    ResetRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
+    SubmoduleState,
 };
 
 fn init_repo() -> TempDir {
@@ -942,6 +943,28 @@ fn create_branch_appears_in_branch_list() {
         .get_branches(&repo_request(&dir))
         .expect("get_branches");
     assert!(branches.iter().any(|b| b.name == "feature/test"));
+}
+
+#[test]
+fn delete_unmerged_branch_suggests_force_delete() {
+    let dir = init_repo();
+    git(dir.path(), &["switch", "-c", "feature/unmerged"]);
+    write_file(dir.path(), "feature.txt", "feature");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature commit"]);
+    git(dir.path(), &["switch", "main"]);
+
+    let error = handler()
+        .delete_branch(&DeleteBranchRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            branch_name: "feature/unmerged".to_string(),
+            force: None,
+        })
+        .expect_err("delete unmerged branch");
+    let message = error.to_string();
+
+    assert!(message.contains("GITMUN_ERROR_UNMERGED_BRANCH_DELETE"));
+    assert!(message.contains("feature/unmerged"));
 }
 
 #[test]

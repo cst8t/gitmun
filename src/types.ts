@@ -40,6 +40,7 @@ export type GitErrorCategory =
     | "conflict-in-progress"
     | "index-lock"
     | "repo-state"
+    | "unmerged-branch-delete"
     | "invalid-input"
     | "tool-unavailable"
     | "permission"

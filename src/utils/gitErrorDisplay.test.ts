@@ -48,6 +48,15 @@ describe("formatInterpretedGitError", () => {
     }), tGitAdvice))
       .toBe("Git failed before the operation could complete. Try: review Git output, retry.");
   });
+
+  it("localises known interpreted summaries by category", () => {
+    expect(formatInterpretedGitError(interpretedError({
+      category: "unmerged-branch-delete",
+      summary: "GITMUN_ERROR_UNMERGED_BRANCH_DELETE",
+      suggestedActions: ["force-delete-branch"],
+    }), tGitAdvice))
+      .toBe("Branch is not fully merged locally. This can still happen after merging through a remote service such as GitHub pull requests or GitLab merge requests. Use Force Delete if you are sure you want to delete it. Try: force delete the branch.");
+  });
 });
 
 describe("buildPushFailureDisplay", () => {

@@ -103,6 +103,7 @@ function getFileName(path: string): string {
 }
 
 const BUNDLED_GIT_EXTERNAL_TOOL_ERROR = "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::";
+const UNMERGED_BRANCH_DELETE_ERROR = "GITMUN_ERROR_UNMERGED_BRANCH_DELETE";
 
 function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
   const message = String(error);
@@ -1157,10 +1158,18 @@ export function ProjectView({
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
     } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.deleteBranchFailed", { message: String(e) }), "unknown");
+      const message = String(e);
+      const firstLine = message.split("\n", 1)[0] || message;
+      const summary = firstLine === UNMERGED_BRANCH_DELETE_ERROR
+        ? tGitAdvice("summaries.unmerged-branch-delete")
+        : firstLine;
+      const logMessage = firstLine === UNMERGED_BRANCH_DELETE_ERROR
+        ? `${summary}${message.slice(UNMERGED_BRANCH_DELETE_ERROR.length)}`
+        : message;
+      showToast(summary, "error");
+      appendResultLog("error", t("log.deleteBranchFailed", { message: logMessage }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast, t]);
+  }, [repoPath, refreshAll, showToast, t, tGitAdvice]);
 
   const handleBeginRenameBranch = useCallback((branchName: string) => {
     setRenamePendingBranch(branchName);

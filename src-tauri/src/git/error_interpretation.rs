@@ -21,6 +21,7 @@ pub enum GitErrorCategory {
     ConflictInProgress,
     IndexLock,
     RepoState,
+    UnmergedBranchDelete,
     InvalidInput,
     ToolUnavailable,
     Permission,
@@ -94,6 +95,10 @@ fn advice_for(category: GitErrorCategory, operation: Option<&str>) -> Advice {
             summary: "The repository state blocks this operation.",
             actions: &["review"],
         },
+        (GitErrorCategory::UnmergedBranchDelete, _) => Advice {
+            summary: "GITMUN_ERROR_UNMERGED_BRANCH_DELETE",
+            actions: &["force-delete-branch"],
+        },
         (GitErrorCategory::InvalidInput, _) => Advice {
             summary: "Git rejected the supplied input.",
             actions: &["review"],
@@ -140,8 +145,12 @@ fn contains_any(haystack: &str, needles: &[&str]) -> bool {
     needles.iter().any(|needle| haystack.contains(needle))
 }
 
-fn classify_message(message: &str) -> (GitErrorCategory, f32) {
+fn classify_message(operation: Option<&str>, message: &str) -> (GitErrorCategory, f32) {
     let lower = message.to_ascii_lowercase();
+
+    if matches!(operation, Some("delete-branch")) && lower.contains("not fully merged") {
+        return (GitErrorCategory::UnmergedBranchDelete, 0.95);
+    }
 
     if contains_any(
         &lower,
@@ -282,7 +291,7 @@ pub fn interpret_cli_error(
         Some(code) => format!("{stderr}\n(exit status {code})"),
         None => stderr.to_string(),
     };
-    let (category, confidence) = classify_message(stderr);
+    let (category, confidence) = classify_message(operation, stderr);
     build_interpretation(
         category,
         GitBackendSource::GitCli,
@@ -315,7 +324,7 @@ where
     };
 
     let (category, confidence) = typed.unwrap_or_else(|| {
-        let (category, confidence) = classify_message(&message);
+        let (category, confidence) = classify_message(operation, &message);
         (category, (confidence - 0.15).max(0.1))
     });
 
@@ -485,6 +494,31 @@ mod tests {
                 .suggested_actions
                 .contains(&"resolve-conflicts".to_string())
         );
+    }
+
+    #[test]
+    fn cli_delete_branch_not_fully_merged_suggests_force_delete() {
+        let interpreted = interpret_cli_error(
+            Some("delete-branch"),
+            "error: the branch 'feature/test' is not fully merged",
+            Some(1),
+        );
+
+        assert_eq!(interpreted.category, GitErrorCategory::UnmergedBranchDelete);
+        assert_eq!(interpreted.summary, "GITMUN_ERROR_UNMERGED_BRANCH_DELETE");
+        assert_eq!(interpreted.suggested_actions, vec!["force-delete-branch"]);
+        assert!(interpreted.confidence >= 0.9);
+    }
+
+    #[test]
+    fn cli_not_fully_merged_without_branch_delete_stays_generic() {
+        let interpreted = interpret_cli_error(
+            Some("status"),
+            "error: the branch 'feature/test' is not fully merged",
+            Some(1),
+        );
+
+        assert_ne!(interpreted.category, GitErrorCategory::UnmergedBranchDelete);
     }
 
     #[test]
