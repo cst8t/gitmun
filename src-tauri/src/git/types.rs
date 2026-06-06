@@ -1102,6 +1102,7 @@ pub struct StashPushRequest {
 pub enum ResetMode {
     Soft,
     Mixed,
+    Hard,
 }
 
 #[derive(Debug, Clone, Deserialize)]

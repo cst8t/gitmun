@@ -342,7 +342,9 @@ export function revertAbort(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("revert_abort", {request: {repoPath}});
 }
 
-export function resetTo(repoPath: string, target: string, mode: "soft" | "mixed"): Promise<OperationResult> {
+export type ResetMode = "soft" | "mixed" | "hard";
+
+export function resetTo(repoPath: string, target: string, mode: ResetMode): Promise<OperationResult> {
     return invoke<OperationResult>("reset", {request: {repoPath, target, mode}});
 }
 

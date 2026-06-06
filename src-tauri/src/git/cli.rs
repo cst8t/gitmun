@@ -4331,6 +4331,7 @@ impl GitOperationHandler for CliGitHandler {
         let mode_flag = match request.mode {
             ResetMode::Soft => "--soft",
             ResetMode::Mixed => "--mixed",
+            ResetMode::Hard => "--hard",
         };
         Self::run_git(
             &["reset", mode_flag, request.target.trim()],
@@ -4339,6 +4340,7 @@ impl GitOperationHandler for CliGitHandler {
         let mode_label = match request.mode {
             ResetMode::Soft => "soft",
             ResetMode::Mixed => "mixed",
+            ResetMode::Hard => "hard",
         };
         Ok(OperationResult {
             message: format!("Reset ({mode_label}) to {}", request.target.trim()),
@@ -5271,6 +5273,15 @@ mod tests {
         assert_eq!(
             CliGitHandler::parse_hunk_header("@@ -20,4 +20,5 @@ fn my_func() {"),
             (20, 20)
+        );
+    }
+
+    #[test]
+    fn reset_mode_hard_serialises_as_hard() {
+        assert_eq!(serde_json::to_string(&ResetMode::Hard).unwrap(), "\"hard\"");
+        assert_eq!(
+            serde_json::from_str::<ResetMode>("\"hard\"").unwrap(),
+            ResetMode::Hard
         );
     }
 

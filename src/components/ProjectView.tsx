@@ -40,6 +40,7 @@ import { useGitTags } from "../hooks/useGitTags";
 import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
+import type { ResetMode } from "../api/commands";
 import type {
   CommitLogScope,
   CommitMarkers,
@@ -1875,6 +1876,29 @@ export function ProjectView({
     }
   }, [repoPath, refreshAll, showToast, t]);
 
+  const handleResetHead = useCallback(async (mode: Extract<ResetMode, "mixed" | "hard">) => {
+    if (!repoPath) return;
+    const confirmed = await ask(
+      mode === "hard" ? t("ask.resetHead.hardMessage") : t("ask.resetHead.mixedMessage"),
+      {
+        title: mode === "hard" ? t("ask.resetHead.hardTitle") : t("ask.resetHead.mixedTitle"),
+        kind: "warning",
+        okLabel: t("actions.reset"),
+        cancelLabel: t("actions.cancel"),
+      },
+    );
+    if (!confirmed) return;
+    try {
+      const result = await api.resetTo(repoPath, "HEAD", mode);
+      showToast(result.message, "success");
+      appendResultLog("success", result.message, result.backendUsed);
+      await refreshAll();
+    } catch (e) {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.resetFailed", { message: String(e) }), "unknown");
+    }
+  }, [repoPath, refreshAll, showToast, t]);
+
   const handleMergeConfirm = useCallback(async (strategy: MergeStrategy) => {
     if (!repoPath || !mergePendingBranch) return;
     setMergePendingBranch(null);
@@ -2153,6 +2177,7 @@ export function ProjectView({
           pushDisabled={remoteActionState.disabled}
           pushTitle={remoteActionTitle}
           onStash={handleStash}
+          onReset={handleResetHead}
           onImportPatch={handleImportPatch}
           onExportPatch={handleExportPatch}
           selectedPatchExportEnabled={selectedPatchFiles.length > 0}
