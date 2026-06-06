@@ -27,6 +27,8 @@ reqwest = { version = "0.13", features = ["blocking", "rustls"], default-feature
 url = "2"
 md5 = "0.8"
 base64 = "0.22"
+clap = { version = "4.5", features = ["derive"] }
+clap_complete = "4.5"
 notify = "8"
 mime_guess = "2.0"
 infer = "0.19"
@@ -39,6 +41,7 @@ tempfile = "3"
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gtk = { version = "0.18", features = ["v3_24"] }
+linux-terminal-launch = { git = "https://github.com/cst8t/linux-terminal-launch" }
 pci-info = { version = "0.3.4", default-features = false }
 webkit2gtk = "2.0.2"
 

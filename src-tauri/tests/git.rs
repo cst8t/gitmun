@@ -10,8 +10,8 @@ use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, FileRequest,
-    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, SetBranchUpstreamRequest,
-    StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
+    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, ResetMode, ResetRequest,
+    SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
 };
 
 fn init_repo() -> TempDir {
@@ -603,6 +603,33 @@ fn unstage_file_in_repo_with_head_keeps_change_unstaged() {
 }
 
 #[test]
+fn hard_reset_to_head_discards_tracked_changes_and_keeps_untracked_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "tracked.txt", "v1");
+    git(dir.path(), &["add", "tracked.txt"]);
+    git(dir.path(), &["commit", "-m", "add tracked file"]);
+    write_file(dir.path(), "tracked.txt", "v2");
+    git(dir.path(), &["add", "tracked.txt"]);
+    write_file(dir.path(), "untracked.txt", "new");
+
+    let result = handler()
+        .reset(&ResetRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            target: "HEAD".to_string(),
+            mode: ResetMode::Hard,
+        })
+        .expect("hard reset");
+
+    assert_eq!(result.message, "Reset (hard) to HEAD");
+    assert_eq!(read_file(dir.path(), "tracked.txt"), "v1");
+    assert_eq!(read_file(dir.path(), "untracked.txt"), "new");
+    assert_eq!(
+        git_stdout(dir.path(), &["status", "--porcelain"]),
+        "?? untracked.txt"
+    );
+}
+
+#[test]
 fn status_detects_clean_submodule() {
     let (parent, _submodule) = repo_with_submodule();
     let status = handler()
@@ -817,6 +844,26 @@ fn commit_creates_entry_in_log() {
         })
         .expect("get_commit_history");
     assert!(commits.iter().any(|c| c.message == "add b.txt"));
+}
+
+#[test]
+fn commit_preserves_description_and_trailer_like_lines() {
+    let dir = init_repo();
+    write_file(dir.path(), "body.txt", "data");
+    git(dir.path(), &["add", "body.txt"]);
+    let message =
+        "add body\n\nExplain the change\n\nCo-authored-by: Name <name@example.com>";
+
+    handler()
+        .commit_changes(&CommitRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            message: message.to_string(),
+            amend: None,
+        })
+        .expect("commit_changes");
+
+    let committed_message = git_stdout(dir.path(), &["log", "-1", "--format=%B"]);
+    assert_eq!(committed_message, message);
 }
 
 #[test]

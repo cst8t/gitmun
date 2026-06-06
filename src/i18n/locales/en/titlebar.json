@@ -32,5 +32,10 @@
     "exportUnstaged": "Export unstaged patch...",
     "heading": "Patch files",
     "import": "Import patch..."
+  },
+  "reset": {
+    "hard": "Discard tracked changes...",
+    "heading": "Reset",
+    "mixed": "Unstage all changes..."
   }
 }

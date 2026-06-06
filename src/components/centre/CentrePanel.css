@@ -318,14 +318,43 @@
   border-top: 1px solid var(--border);
   padding: 14px;
   flex-shrink: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: var(--commit-box-height, auto);
+  min-height: 214px;
+}
+
+.commit-box__resize-handle {
+  position: absolute;
+  top: -5px;
+  left: 0;
+  right: 0;
+  height: 10px;
+  cursor: row-resize;
+}
+
+.commit-box__resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: transparent;
+}
+
+.commit-box__resize-handle:hover::after,
+.commit-box--resizing .commit-box__resize-handle::after {
+  background: var(--accent);
 }
 
 .commit-box__amend {
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-bottom: 8px;
   cursor: pointer;
+  min-width: 0;
 }
 
 .commit-box__checkbox {
@@ -349,10 +378,12 @@
 .commit-box__amend-label {
   font-size: var(--font-size-sm);
   color: var(--text-muted);
+  white-space: nowrap;
 }
 
 .commit-box__amend-label--active { color: var(--accent); }
 
+.commit-box__subject,
 .commit-box__textarea {
   width: 100%;
   background: var(--bg-elevated);
@@ -362,26 +393,54 @@
   padding: 10px 12px;
   font-size: var(--font-size-base);
   font-family: var(--font-ui);
-  resize: none;
-  min-height: 60px;
   outline: none;
   box-sizing: border-box;
   transition: border-color 0.2s;
 }
 
+.commit-box__subject {
+  flex: 0 0 auto;
+  height: 38px;
+  margin-bottom: 6px;
+}
+
+.commit-box__textarea {
+  flex: 1 1 auto;
+  resize: none;
+  min-height: 72px;
+}
+
+.commit-box__subject:focus,
 .commit-box__textarea:focus { border-color: var(--accent); }
-.commit-box__textarea--warn { border-color: var(--diff-del-border); }
+
+.commit-box__subject::placeholder,
+.commit-box__textarea::placeholder { color: var(--text-muted); }
+
+.commit-box__subject--warn { border-color: var(--diff-del-border); }
+
+.commit-box__meta {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  margin-bottom: 8px;
+}
 
 .commit-box__hints {
   display: flex;
-  justify-content: space-between;
-  margin-top: 4px;
-  margin-bottom: 8px;
+  justify-content: flex-end;
+  gap: 8px;
+  min-width: 0;
 }
 
 .commit-box__hint {
   font-size: var(--font-size-xxs);
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .commit-box__hint--error { color: var(--red); }
@@ -393,6 +452,7 @@
 }
 
 .commit-box__actions {
+  flex: 0 0 auto;
   position: relative;
   display: flex;
 }

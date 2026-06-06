@@ -80,6 +80,12 @@
       "softMode": "Soft",
       "title": "{{mode}} Reset"
     },
+    "resetHead": {
+      "hardMessage": "Discard all tracked working tree changes and staged changes? Untracked files will be kept. This cannot be undone from Gitmun.",
+      "hardTitle": "Discard Tracked Changes",
+      "mixedMessage": "Unstage all staged changes? Working tree files will be kept.",
+      "mixedTitle": "Unstage All Changes"
+    },
     "startRebase": {
       "message": "Rebase \"{{branch}}\" onto \"{{onto}}\"?",
       "title": "Start Rebase"

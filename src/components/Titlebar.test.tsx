@@ -40,6 +40,7 @@ function renderTitlebar(
     onImportPatch?: () => void;
     onExportPatch?: (scope: "staged" | "unstaged" | "all" | "selected") => void;
     selectedPatchExportEnabled?: boolean;
+    onReset?: (mode: "mixed" | "hard") => void;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -70,6 +71,7 @@ function renderTitlebar(
       onPush={vi.fn()}
       pushLabel={pushLabel}
       onStash={vi.fn()}
+      onReset={patchHandlers.onReset ?? vi.fn()}
       onImportPatch={onImportPatch}
       onExportPatch={onExportPatch}
       selectedPatchExportEnabled={patchHandlers.selectedPatchExportEnabled ?? false}
@@ -188,6 +190,46 @@ describe("Titlebar", () => {
     expect(screen.getByText("Export staged patch...")).toBeInTheDocument();
     expect(screen.getByText("Export unstaged patch...")).toBeInTheDocument();
     expect(screen.getByText("Export all changes patch...")).toBeInTheDocument();
+  });
+
+  it("shows reset actions when a repository is open", () => {
+    renderTitlebar([makeBranch()]);
+
+    fireEvent.click(screen.getByText("More"));
+
+    expect(screen.getByText("Reset")).toBeInTheDocument();
+    expect(screen.getByText("Unstage all changes...")).toBeInTheDocument();
+    expect(screen.getByText("Discard tracked changes...")).toBeInTheDocument();
+  });
+
+  it("calls reset with mixed mode from the more menu", () => {
+    const onReset = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), { onReset });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Unstage all changes..."));
+
+    expect(onReset).toHaveBeenCalledWith("mixed");
+  });
+
+  it("calls reset with hard mode from the more menu", () => {
+    const onReset = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), { onReset });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Discard tracked changes..."));
+
+    expect(onReset).toHaveBeenCalledWith("hard");
+  });
+
+  it("does not show reset actions when no repository is open", () => {
+    renderTitlebar([], "Push", null);
+
+    fireEvent.click(screen.getByText("More"));
+
+    expect(screen.queryByText("Reset")).not.toBeInTheDocument();
+    expect(screen.queryByText("Unstage all changes...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Discard tracked changes...")).not.toBeInTheDocument();
   });
 
   it("disables selected patch export until files are checked", () => {

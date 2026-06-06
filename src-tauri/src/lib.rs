@@ -10,7 +10,8 @@ mod window_manager;
 use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use shell::cli::ShellStartupAction;
+use shell::cli::{CliOutcome, CloneStartupOptions, ShellStartupAction};
+use shell::{ContextAction, WindowRouting};
 use std::path::{Path, PathBuf};
 #[cfg(windows)]
 use std::process::Command;
@@ -28,7 +29,7 @@ struct FsWatcherState(Mutex<Option<RecommendedWatcher>>);
 
 struct StartupState(Mutex<Option<ShellStartupAction>>);
 
-pub(crate) struct PendingCloneDestination(Mutex<Option<String>>);
+pub(crate) struct PendingCloneOptions(Mutex<Option<CloneStartupOptions>>);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -103,6 +104,37 @@ fn register_msix_application_restart() {}
 
 fn git_backend() -> GitBackend {
     *GIT_BACKEND.get_or_init(detect_git_backend)
+}
+
+fn forward_reuse_window_action(action: &ShellStartupAction) -> bool {
+    if action.routing != Some(WindowRouting::ReuseWindow) {
+        return false;
+    }
+
+    let Some(target) = instance_coordinator::find_recent_instance() else {
+        return false;
+    };
+
+    let command = match action.action {
+        ContextAction::OpenRepo => instance_coordinator::CoordinatorCommand::OpenRepo {
+            path: action.path.clone(),
+        },
+        ContextAction::CloneRepo => instance_coordinator::CoordinatorCommand::OpenCloneWindow {
+            options: CloneStartupOptions {
+                repo_url: action.repo_url.clone(),
+                destination: action
+                    .destination
+                    .clone()
+                    .or_else(|| Some(action.path.clone())),
+                start_clone: action.start_clone,
+            },
+        },
+        ContextAction::InitialiseRepo => instance_coordinator::CoordinatorCommand::InitialiseRepo {
+            path: action.path.clone(),
+        },
+    };
+
+    instance_coordinator::send_command(target.port, &command).is_ok()
 }
 
 fn detect_git_backend() -> GitBackend {
@@ -1260,9 +1292,9 @@ fn get_startup_action(state: tauri::State<'_, StartupState>) -> Option<ShellStar
 }
 
 #[tauri::command]
-fn take_pending_clone_destination(
-    state: tauri::State<'_, PendingCloneDestination>,
-) -> Option<String> {
+fn take_pending_clone_options(
+    state: tauri::State<'_, PendingCloneOptions>,
+) -> Option<CloneStartupOptions> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
@@ -1273,19 +1305,27 @@ fn open_repo_in_new_window(path: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn open_clone_window(
+    repo_url: Option<String>,
     destination: Option<String>,
+    start_clone: Option<bool>,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    pending: tauri::State<'_, PendingCloneDestination>,
+    pending: tauri::State<'_, PendingCloneOptions>,
 ) -> Result<(), String> {
+    let options = CloneStartupOptions {
+        repo_url,
+        destination,
+        start_clone: start_clone.unwrap_or(false),
+    };
+
     if let Some(existing) = app.get_webview_window("clone-repository") {
-        if let Some(path) = destination {
+        if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
             let mut guard = pending
                 .0
                 .lock()
-                .map_err(|_| "Internal clone destination state error".to_string())?;
-            *guard = Some(path.clone());
-            let _ = app.emit("clone-destination-updated", path);
+                .map_err(|_| "Internal clone options state error".to_string())?;
+            *guard = Some(options.clone());
+            let _ = app.emit("clone-options-updated", options);
         }
         let _ = existing.show();
         let _ = existing.set_focus();
@@ -1296,7 +1336,7 @@ async fn open_clone_window(
         if instance_coordinator::send_command(
             owner.port,
             &instance_coordinator::CoordinatorCommand::OpenCloneWindow {
-                destination: destination.clone(),
+                options: options.clone(),
             },
         )
         .is_ok()
@@ -1305,12 +1345,12 @@ async fn open_clone_window(
         }
     }
 
-    if let Some(path) = destination {
+    if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
         let mut guard = pending
             .0
             .lock()
-            .map_err(|_| "Internal clone destination state error".to_string())?;
-        *guard = Some(path);
+            .map_err(|_| "Internal clone options state error".to_string())?;
+        *guard = Some(options);
     }
 
     window_manager::open_sub_window(
@@ -1328,13 +1368,24 @@ async fn open_clone_window(
 }
 
 pub fn run() {
+    let startup_action = match shell::cli::parse_cli(std::env::args_os()) {
+        CliOutcome::Launch(action) => action,
+        CliOutcome::Print(output) => {
+            print!("{output}");
+            return;
+        }
+        CliOutcome::Error(output) => {
+            eprint!("{output}");
+            std::process::exit(2);
+        }
+    };
+    let startup_action_for_setup = startup_action.clone();
+
     #[cfg(target_os = "linux")]
     sanitize_linux_xdg_env();
 
     #[cfg(target_os = "linux")]
     apply_linux_appimage_webkit_workarounds();
-
-    let startup_action = shell::cli::parse_shell_action(&std::env::args().collect::<Vec<String>>());
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
@@ -1351,8 +1402,8 @@ pub fn run() {
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
-        .manage(PendingCloneDestination(Mutex::new(None)))
-        .setup(|app| {
+        .manage(PendingCloneOptions(Mutex::new(None)))
+        .setup(move |app| {
             register_msix_application_restart();
 
             #[cfg(windows)]
@@ -1393,6 +1444,12 @@ pub fn run() {
             }
 
             instance_coordinator::init(&app.handle())?;
+
+            if let Some(action) = startup_action_for_setup.as_ref() {
+                if forward_reuse_window_action(action) {
+                    std::process::exit(0);
+                }
+            }
 
             Ok(())
         })
@@ -1474,6 +1531,9 @@ pub fn run() {
             commands::settings::set_auto_install_updates,
             commands::settings::set_update_endpoint,
             commands::settings::set_linux_graphics_mode,
+            commands::settings::get_linux_terminal_options,
+            commands::settings::set_linux_terminal_emulator,
+            commands::settings::set_linux_terminal_custom_command,
             commands::settings::set_repo_open_behaviour,
             commands::history::get_commit_history,
             commands::history::verify_commits,
@@ -1564,7 +1624,7 @@ pub fn run() {
             get_startup_action,
             open_clone_window,
             open_repo_in_new_window,
-            take_pending_clone_destination,
+            take_pending_clone_options,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

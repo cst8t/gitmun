@@ -50,6 +50,8 @@ import type {
     SubmoduleActionRequest,
     TagInfo,
     BackendMode,
+    LinuxTerminalOption,
+    LinuxTerminalEmulator,
     ThemeMode,
     ThemeBundle,
     UiTextScale,
@@ -67,6 +69,7 @@ import type {
     SetRemoteUrlRequest,
     PruneRemoteRequest,
     StashEntry,
+    CloneStartupOptions,
     ShellStartupAction,
 } from "../types";
 
@@ -339,7 +342,9 @@ export function revertAbort(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("revert_abort", {request: {repoPath}});
 }
 
-export function resetTo(repoPath: string, target: string, mode: "soft" | "mixed"): Promise<OperationResult> {
+export type ResetMode = "soft" | "mixed" | "hard";
+
+export function resetTo(repoPath: string, target: string, mode: ResetMode): Promise<OperationResult> {
     return invoke<OperationResult>("reset", {request: {repoPath, target, mode}});
 }
 
@@ -457,6 +462,18 @@ export function setUpdateEndpoint(updateEndpoint: string): Promise<Settings> {
 
 export function setRepoOpenBehaviour(repoOpenBehaviour: RepoOpenBehaviour): Promise<Settings> {
     return invoke<Settings>("set_repo_open_behaviour", {repoOpenBehaviour});
+}
+
+export function getLinuxTerminalOptions(): Promise<LinuxTerminalOption[]> {
+    return invoke<LinuxTerminalOption[]>("get_linux_terminal_options");
+}
+
+export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalEmulator): Promise<Settings> {
+    return invoke<Settings>("set_linux_terminal_emulator", {linuxTerminalEmulator});
+}
+
+export function setLinuxTerminalCustomCommand(linuxTerminalCustomCommand: string): Promise<Settings> {
+    return invoke<Settings>("set_linux_terminal_custom_command", {linuxTerminalCustomCommand});
 }
 
 export function getConfigFilePath(): Promise<string | null> {
@@ -579,7 +596,7 @@ export function openSettingsWindow(): Promise<void> {
 }
 
 export function openCloneWindow(): Promise<void> {
-    return invoke("open_clone_window", {destination: null});
+    return openCloneWindowWithOptions();
 }
 
 export function openAboutWindow(): Promise<void> {
@@ -626,10 +643,14 @@ export function openRepoInNewWindow(path: string): Promise<void> {
     return invoke("open_repo_in_new_window", {path});
 }
 
-export function openCloneWindowWithDestination(destination?: string): Promise<void> {
-    return invoke("open_clone_window", {destination: destination ?? null});
+export function openCloneWindowWithOptions(options: CloneStartupOptions = {}): Promise<void> {
+    return invoke("open_clone_window", {
+        repoUrl: options.repoUrl ?? null,
+        destination: options.destination ?? null,
+        startClone: options.startClone ?? false,
+    });
 }
 
-export function takePendingCloneDestination(): Promise<string | null> {
-    return invoke<string | null>("take_pending_clone_destination");
+export function takePendingCloneOptions(): Promise<CloneStartupOptions | null> {
+    return invoke<CloneStartupOptions | null>("take_pending_clone_options");
 }
