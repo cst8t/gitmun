@@ -77,10 +77,7 @@ pub fn rename_branch(
 }
 
 #[tauri::command]
-pub async fn get_tags(
-    request: RepoRequest,
-    app: tauri::AppHandle,
-) -> Result<Vec<TagInfo>, String> {
+pub async fn get_tags(request: RepoRequest, app: tauri::AppHandle) -> Result<Vec<TagInfo>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>().git_service.get_tags(request)
     })
@@ -105,7 +102,10 @@ pub fn create_tag(
     request: CreateTagRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.create_tag(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .create_tag(request)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -113,7 +113,10 @@ pub fn push_tag(
     request: PushTagRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.push_tag(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .push_tag(request)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -156,7 +159,10 @@ pub fn add_remote(
     request: AddRemoteRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.add_remote(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .add_remote(request)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -175,7 +181,10 @@ pub fn rename_remote(
     request: RenameRemoteRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.rename_remote(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .rename_remote(request)
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -194,5 +203,8 @@ pub fn prune_remote(
     request: PruneRemoteRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
-    state.git_service.prune_remote(request).map_err(|e| e.to_string())
+    state
+        .git_service
+        .prune_remote(request)
+        .map_err(|e| e.to_string())
 }

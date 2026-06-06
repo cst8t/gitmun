@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use super::error_interpretation::{interpret_cli_error, interpret_gix_error, InterpretedGitError};
+use super::error_interpretation::{InterpretedGitError, interpret_cli_error, interpret_gix_error};
 
 #[derive(Debug)]
 pub enum GitError {

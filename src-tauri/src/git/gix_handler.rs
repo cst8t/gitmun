@@ -132,9 +132,7 @@ impl GixGitHandler {
         };
 
         let config = repo.config_snapshot();
-        let refs = repo
-            .references()
-            .map_err(|e| Self::gix_error(None, e))?;
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
 
         let mut branches = Vec::new();
 
@@ -291,9 +289,7 @@ impl GixGitHandler {
         repo: &gix::Repository,
         target: &gix::ObjectId,
     ) -> GitResult<Vec<String>> {
-        let refs = repo
-            .references()
-            .map_err(|e| Self::gix_error(None, e))?;
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
         let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
 
         let mut matching = Vec::new();
@@ -321,9 +317,7 @@ impl GixGitHandler {
     }
 
     fn collect_tags_with_gix(repo: &gix::Repository) -> GitResult<Vec<TagInfo>> {
-        let refs = repo
-            .references()
-            .map_err(|e| Self::gix_error(None, e))?;
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
 
         let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
 
@@ -530,9 +524,7 @@ impl GixGitHandler {
 
             // Detect signature presence cheaply - no subprocess, no crypto.
             // Verification happens lazily via verify_commits.
-            let decoded = commit
-                .decode()
-                .map_err(|e| Self::gix_error(None, e))?;
+            let decoded = commit.decode().map_err(|e| Self::gix_error(None, e))?;
             let sig_value = decoded
                 .extra_headers
                 .iter()

@@ -1433,7 +1433,8 @@ impl CliGitHandler {
 
         let mut stdin_data = hashes.join("\n").into_bytes();
         stdin_data.push(b'\n');
-        let output = Self::run_git_bytes_with_stdin(&["cat-file", "--batch"], repo_path, &stdin_data)?;
+        let output =
+            Self::run_git_bytes_with_stdin(&["cat-file", "--batch"], repo_path, &stdin_data)?;
 
         let mut signatures = HashMap::new();
         let mut cursor = 0usize;
@@ -1442,7 +1443,9 @@ impl CliGitHandler {
                 .iter()
                 .position(|b| *b == b'\n')
                 .map(|offset| cursor + offset)
-                .ok_or_else(|| GitError::IoError("Invalid git cat-file batch output".to_string()))?;
+                .ok_or_else(|| {
+                    GitError::IoError("Invalid git cat-file batch output".to_string())
+                })?;
             let header = std::str::from_utf8(&output[cursor..header_end])
                 .map_err(|e| GitError::IoError(e.to_string()))?;
             cursor = header_end + 1;
@@ -1464,7 +1467,9 @@ impl CliGitHandler {
                 continue;
             }
             if cursor + size > output.len() {
-                return Err(GitError::IoError("Invalid git cat-file batch object payload".to_string()));
+                return Err(GitError::IoError(
+                    "Invalid git cat-file batch object payload".to_string(),
+                ));
             }
 
             let payload = &output[cursor..cursor + size];
@@ -1480,7 +1485,8 @@ impl CliGitHandler {
             let header_block = &payload[..headers_end];
             for line in header_block.split(|b| *b == b'\n') {
                 if let Some(signature_start) = line.strip_prefix(b"gpgsig ") {
-                    let key_type = if signature_start.starts_with(b"-----BEGIN SSH SIGNATURE-----") {
+                    let key_type = if signature_start.starts_with(b"-----BEGIN SSH SIGNATURE-----")
+                    {
                         "ssh"
                     } else {
                         "gpg"
@@ -2387,7 +2393,8 @@ impl GitOperationHandler for CliGitHandler {
         // Avoid eager signature verification in the history list. The UI already
         // upgrades visible `signed` commits lazily via `verify_commits`, which
         // keeps `All refs` responsive even when signature verification is slow.
-        let signature_headers = Self::detect_commit_signature_headers(&repo_path, &hashes).unwrap_or_default();
+        let signature_headers =
+            Self::detect_commit_signature_headers(&repo_path, &hashes).unwrap_or_default();
         for commit in &mut commits {
             if let Some(key_type) = signature_headers.get(&commit.hash) {
                 commit.signature_status = SignatureStatus::Signed;
@@ -2862,8 +2869,7 @@ impl GitOperationHandler for CliGitHandler {
                 let tracked_files =
                     Self::run_git(&["ls-files", "--", file_path], Some(&repo_path))?;
                 if tracked_files.trim().is_empty() {
-                    fs::remove_dir_all(&full_path)
-                        .map_err(|e| GitError::IoError(e.to_string()))?;
+                    fs::remove_dir_all(&full_path).map_err(|e| GitError::IoError(e.to_string()))?;
                 } else {
                     Self::run_git(&["checkout", "--", file_path], Some(&repo_path))?;
                 }

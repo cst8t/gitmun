@@ -852,8 +852,7 @@ fn commit_preserves_description_and_trailer_like_lines() {
     let dir = init_repo();
     write_file(dir.path(), "body.txt", "data");
     git(dir.path(), &["add", "body.txt"]);
-    let message =
-        "add body\n\nExplain the change\n\nCo-authored-by: Name <name@example.com>";
+    let message = "add body\n\nExplain the change\n\nCo-authored-by: Name <name@example.com>";
 
     handler()
         .commit_changes(&CommitRequest {

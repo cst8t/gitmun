@@ -320,7 +320,12 @@ mod tests {
     #[test]
     fn parses_clone_start_flag() {
         assert_eq!(
-            parse(&["gitmun", "clone", "https://example.test/repo.git", "--start"]),
+            parse(&[
+                "gitmun",
+                "clone",
+                "https://example.test/repo.git",
+                "--start"
+            ]),
             CliOutcome::Launch(Some(ShellStartupAction {
                 action: ContextAction::CloneRepo,
                 path: current_dir_path().to_string_lossy().into_owned(),
