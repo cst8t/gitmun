@@ -172,6 +172,8 @@ impl Default for RowStriping {
 }
 
 const UI_TEXT_SCALE_VALUES: [f64; 5] = [0.9, 1.0, 1.1, 1.2, 1.3];
+const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS: u32 = 8000;
+const MIN_ERROR_TOAST_CLEAR_DELAY_MS: u32 = 1000;
 
 fn default_ui_text_scale() -> f64 {
     1.0
@@ -183,6 +185,22 @@ fn normalise_ui_text_scale(value: f64) -> f64 {
     } else {
         default_ui_text_scale()
     }
+}
+
+fn default_error_toast_clear_delay_ms() -> u32 {
+    DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS
+}
+
+fn normalise_error_toast_clear_delay_ms(value: u32) -> u32 {
+    value.max(MIN_ERROR_TOAST_CLEAR_DELAY_MS)
+}
+
+fn deserialise_error_toast_clear_delay_ms<'de, D>(deserialiser: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = u32::deserialize(deserialiser)?;
+    Ok(normalise_error_toast_clear_delay_ms(value))
 }
 
 #[derive(Deserialize)]
@@ -224,6 +242,13 @@ pub struct Settings {
     pub wrap_diff_lines: bool,
     #[serde(default)]
     pub row_striping: RowStriping,
+    #[serde(default)]
+    pub persistent_error_toasts: bool,
+    #[serde(
+        default = "default_error_toast_clear_delay_ms",
+        deserialize_with = "deserialise_error_toast_clear_delay_ms"
+    )]
+    pub error_toast_clear_delay_ms: u32,
     pub left_pane_width: u32,
     pub right_pane_width: u32,
     #[serde(default = "Settings::default_confirm_revert")]
@@ -297,6 +322,8 @@ impl Default for Settings {
             ui_text_scale: default_ui_text_scale(),
             wrap_diff_lines: false,
             row_striping: RowStriping::Off,
+            persistent_error_toasts: false,
+            error_toast_clear_delay_ms: DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS,
             left_pane_width: 300,
             right_pane_width: 420,
             confirm_revert: true,
@@ -323,6 +350,10 @@ impl Default for Settings {
 impl Settings {
     pub fn normalised_ui_text_scale(value: f64) -> f64 {
         normalise_ui_text_scale(value)
+    }
+
+    pub fn normalised_error_toast_clear_delay_ms(value: u32) -> u32 {
+        normalise_error_toast_clear_delay_ms(value)
     }
 
     fn default_confirm_revert() -> bool {

@@ -159,7 +159,7 @@ mod tests {
         let toml_path = dir.path().join("config.toml");
         let json_path = dir.path().join("config.json");
 
-        let contents = "backendMode = \"GitCliOnly\"\nshowResultLog = true\nthemeMode = \"Dark\"\nleftPaneWidth = 300\nrightPaneWidth = 420\ncommitMessageRecommendedLength = 50\n";
+        let contents = "backendMode = \"GitCliOnly\"\nshowResultLog = true\nthemeMode = \"Dark\"\nerrorToastClearDelayMs = 12000\nleftPaneWidth = 300\nrightPaneWidth = 420\ncommitMessageRecommendedLength = 50\n";
         write_file(&toml_path, contents);
 
         let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
@@ -170,6 +170,7 @@ mod tests {
         );
         assert!(settings.show_result_log);
         assert_eq!(settings.theme_mode, crate::git::types::ThemeMode::Dark);
+        assert_eq!(settings.error_toast_clear_delay_ms, 12000);
         assert_eq!(settings.commit_message_recommended_length, 50);
         assert_eq!(settings.ui_text_scale, 1.0);
     }
@@ -191,6 +192,7 @@ mod tests {
         );
         assert_eq!(settings.left_pane_width, 300);
         assert_eq!(settings.right_pane_width, 420);
+        assert_eq!(settings.error_toast_clear_delay_ms, 8000);
         assert_eq!(settings.commit_message_recommended_length, 72);
         assert_eq!(settings.ui_text_scale, 1.0);
     }
@@ -305,6 +307,8 @@ mod tests {
         assert!(toml_text.contains("showResultLog = true"));
         assert!(toml_text.contains("# Recommended maximum length"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
+        assert!(toml_text.contains("# Error message auto-close delay"));
+        assert!(toml_text.contains("errorToastClearDelayMs = 8000"));
         assert!(toml_text.contains("# UI text scale."));
         assert!(toml_text.contains("uiTextScale = 1.0"));
         assert!(!json_path.exists());
@@ -327,6 +331,7 @@ mod tests {
         assert!(toml_text.contains("# Backend used for Git operations"));
         assert!(toml_text.contains("backendMode = \"Default\""));
         assert!(toml_text.contains("uiTextScale = 1.0"));
+        assert!(toml_text.contains("errorToastClearDelayMs = 8000"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
         assert!(!toml_text.contains("enableUpdateWithMSStoreFlow"));
     }
@@ -392,6 +397,11 @@ mod tests {
             "missing key gained its template comment"
         );
         assert!(updated.contains("commitMessageRecommendedLength = 72"));
+        assert!(
+            updated.contains("# Error message auto-close delay"),
+            "missing key gained its template comment"
+        );
+        assert!(updated.contains("errorToastClearDelayMs = 8000"));
         assert!(
             updated.contains("# UI text scale."),
             "missing key gained its template comment"

@@ -232,6 +232,19 @@ impl GitService {
         })
     }
 
+    pub fn set_persistent_error_toasts(&self, persistent_error_toasts: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.persistent_error_toasts = persistent_error_toasts;
+        })
+    }
+
+    pub fn set_error_toast_clear_delay_ms(&self, delay_ms: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.error_toast_clear_delay_ms =
+                Settings::normalised_error_toast_clear_delay_ms(delay_ms);
+        })
+    }
+
     pub fn set_confirm_revert(&self, confirm_revert: bool) -> Settings {
         self.update_settings(|settings| {
             settings.confirm_revert = confirm_revert;

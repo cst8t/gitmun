@@ -35,6 +35,7 @@ const BACKEND_MODE_KEY = "gitmun.backendMode";
 const SHOW_RESULT_LOG_KEY = "gitmun.showResultLog";
 const THEME_MODE_KEY = "gitmun.themeMode";
 const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
+const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
 
 function savePaneRatios(totalWidth: number, left: number, right: number): void {
     if (!Number.isFinite(totalWidth) || totalWidth <= 0) return;
@@ -58,7 +59,9 @@ function repoNameFromPath(path: string): string {
 export function App() {
     const {t} = useTranslation("app");
     const platform = usePlatform();
-    const {toast, showToast} = useToast();
+    const [persistentErrorToasts, setPersistentErrorToasts] = useState(false);
+    const [errorToastClearDelayMs, setErrorToastClearDelayMs] = useState(DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
+    const {toast, showToast, dismissToast} = useToast(persistentErrorToasts, errorToastClearDelayMs);
     const {
         dialog: updateDialog,
         checkForUpdatesOnLaunch,
@@ -174,6 +177,8 @@ export function App() {
                 paneRatioRef.current = next.ratios;
                 if (totalWidth > 0) savePaneRatios(totalWidth, next.layout.left, next.layout.right);
                 setConfirmRevert(settings.confirmRevert ?? true);
+                setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
+                setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
                 if (settings.showResultLog) {
                     api.openResultLogWindow().catch(e => {
                         appendResultLog("error", t("log.resultLogWindowFailed", {message: String(e)}), "unknown");
@@ -314,6 +319,8 @@ export function App() {
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
                 localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
+                setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
+                setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const storedRatios = {
                     left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
@@ -351,6 +358,8 @@ export function App() {
                 localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
                 localStorage.setItem(SHOW_RESULT_LOG_KEY, String(settings.showResultLog));
                 localStorage.setItem(THEME_MODE_KEY, settings.themeMode);
+                setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
+                setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const storedRatios = {
                     left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
@@ -594,7 +603,7 @@ export function App() {
 
     return (
         <div className="app" style={{padding: 0}}>
-            <Toast {...toast} />
+            <Toast {...toast} onDismiss={dismissToast} />
             <UpdateDialog
                 dialog={updateDialog}
                 onClose={closeUpdateDialog}
