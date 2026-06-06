@@ -4,6 +4,7 @@
     "check-network": "check the network connection",
     "continue-sequencer": "continue the in-progress operation",
     "fetch": "fetch",
+    "force-delete-branch": "force delete the branch",
     "fix-auth-https": "check HTTPS credentials",
     "fix-auth-ssh": "check SSH access",
     "integrate": "integrate remote changes",
@@ -14,6 +15,9 @@
     "review": "review Git output",
     "set-upstream": "set an upstream branch",
     "unlock-index": "clear the stale index lock"
+  },
+  "summaries": {
+    "unmerged-branch-delete": "Branch is not fully merged locally. This can still happen after merging through a remote service such as GitHub pull requests or GitLab merge requests. Use Force Delete if you are sure you want to delete it."
   },
   "withActions": "{{summary}} Try: {{actions}}."
 }

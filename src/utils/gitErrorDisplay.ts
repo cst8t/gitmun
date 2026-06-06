@@ -26,11 +26,14 @@ export function formatInterpretedGitError(
   interpretedError: InterpretedGitError,
   tGitAdvice: GitAdviceTranslator,
 ): string {
+  const summary = tGitAdvice(`summaries.${interpretedError.category}`, {
+    defaultValue: interpretedError.summary,
+  });
   const actions = localisedActionLabels(interpretedError.suggestedActions, tGitAdvice);
 
   return actions
-    ? tGitAdvice("withActions", { summary: interpretedError.summary, actions })
-    : interpretedError.summary;
+    ? tGitAdvice("withActions", { summary, actions })
+    : summary;
 }
 
 function rawGitDetails(result: PushResult): string | null {

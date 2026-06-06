@@ -28,8 +28,8 @@ impl Display for GitError {
                 stderr,
                 exit_code,
             } => {
-                let operation = command.split_whitespace().nth(1);
-                let interpreted = interpret_cli_error(operation, stderr, *exit_code);
+                let operation = command_operation(command);
+                let interpreted = interpret_cli_error(operation.as_deref(), stderr, *exit_code);
                 if stderr.is_empty() {
                     write!(f, "{}\nGit command failed: {command}", interpreted.summary)
                 } else {
@@ -60,7 +60,69 @@ impl Display for GitError {
     }
 }
 
+fn command_operation(command: &str) -> Option<String> {
+    let parts = command.split_whitespace().collect::<Vec<_>>();
+    if parts.len() < 2 || parts[0] != "git" {
+        return None;
+    }
+
+    if parts[1] == "branch" {
+        return match parts.get(2).copied() {
+            Some("-d" | "--delete") => Some("delete-branch".to_string()),
+            Some("-D") => Some("force-delete-branch".to_string()),
+            _ => Some("branch".to_string()),
+        };
+    }
+
+    Some(parts[1].to_string())
+}
+
 impl std::error::Error for GitError {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn command_operation_detects_branch_delete() {
+        assert_eq!(
+            command_operation("git branch -d feature/test").as_deref(),
+            Some("delete-branch")
+        );
+        assert_eq!(
+            command_operation("git branch --delete feature/test").as_deref(),
+            Some("delete-branch")
+        );
+        assert_eq!(
+            command_operation("git branch -D feature/test").as_deref(),
+            Some("force-delete-branch")
+        );
+    }
+
+    #[test]
+    fn display_interprets_unmerged_branch_delete() {
+        let error = GitError::CommandFailed {
+            command: "git branch -d feature/test".to_string(),
+            stderr: "error: the branch 'feature/test' is not fully merged".to_string(),
+            exit_code: Some(1),
+        };
+        let message = error.to_string();
+
+        assert!(message.contains("GITMUN_ERROR_UNMERGED_BRANCH_DELETE"));
+    }
+
+    #[test]
+    fn display_does_not_interpret_force_delete_as_unmerged_delete() {
+        let error = GitError::CommandFailed {
+            command: "git branch -D feature/test".to_string(),
+            stderr: "error: the branch 'feature/test' is not fully merged".to_string(),
+            exit_code: Some(1),
+        };
+        let message = error.to_string();
+
+        assert!(!message.contains("GITMUN_ERROR_UNMERGED_BRANCH_DELETE"));
+    }
+}
 
 impl From<std::io::Error> for GitError {
     fn from(value: std::io::Error) -> Self {
