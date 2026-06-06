@@ -1,9 +1,9 @@
+use crate::AppState;
 use crate::git::types::{
     CherryPickRequest, CherryPickResult, CommitHistoryItem, CommitHistoryRequest,
     CommitVerification, FileRequest, MergeRequest, MergeResult, OperationResult, RebaseRequest,
     RebaseResult, RepoRequest, ResetRequest, RevertCommitRequest, SignatureStatus,
 };
-use crate::AppState;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -66,27 +66,28 @@ pub async fn verify_commits(
         // exists, otherwise create a temporary empty file so git doesn't error
         // out entirely when SSH signatures are present.
         let mut temp_signers: Option<std::path::PathBuf> = None;
-        let signers_override: Option<std::path::PathBuf> = if let Some(ref path) = configured_signers {
-            let pb = std::path::PathBuf::from(path);
-            if pb.exists() {
-                Some(pb)
+        let signers_override: Option<std::path::PathBuf> =
+            if let Some(ref path) = configured_signers {
+                let pb = std::path::PathBuf::from(path);
+                if pb.exists() {
+                    Some(pb)
+                } else {
+                    // Configured but missing - fall back to empty to get status chars.
+                    let tmp = std::env::temp_dir().join(format!(
+                        "gitmun-empty-signers-{}-{}",
+                        std::process::id(),
+                        SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .map_err(|e| e.to_string())?
+                            .as_nanos()
+                    ));
+                    std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
+                    temp_signers = Some(tmp.clone());
+                    Some(tmp)
+                }
             } else {
-                // Configured but missing - fall back to empty to get status chars.
-                let tmp = std::env::temp_dir().join(format!(
-                    "gitmun-empty-signers-{}-{}",
-                    std::process::id(),
-                    SystemTime::now()
-                        .duration_since(UNIX_EPOCH)
-                        .map_err(|e| e.to_string())?
-                        .as_nanos()
-                ));
-                std::fs::File::create(&tmp).map_err(|e| e.to_string())?;
-                temp_signers = Some(tmp.clone());
-                Some(tmp)
-            }
-        } else {
-            None
-        };
+                None
+            };
 
         let mut cmd = crate::configured_git_command();
         cmd.current_dir(&repo_path);
@@ -133,9 +134,18 @@ pub async fn verify_commits(
                 "U" | "E" => SignatureStatus::UnknownKey,
                 _ => SignatureStatus::None,
             };
-            let signer = if signer_raw.is_empty() { None } else { Some(signer_raw.to_string()) };
+            let signer = if signer_raw.is_empty() {
+                None
+            } else {
+                Some(signer_raw.to_string())
+            };
 
-            results.push(CommitVerification { hash, status, signer, fingerprint });
+            results.push(CommitVerification {
+                hash,
+                status,
+                signer,
+                fingerprint,
+            });
         }
         Ok(results)
     })
@@ -214,7 +224,9 @@ pub async fn cherry_pick_start(
     app: tauri::AppHandle,
 ) -> Result<CherryPickResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.cherry_pick_start(request)
+        app.state::<AppState>()
+            .git_service
+            .cherry_pick_start(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -227,7 +239,9 @@ pub async fn cherry_pick_continue(
     app: tauri::AppHandle,
 ) -> Result<CherryPickResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.cherry_pick_continue(request)
+        app.state::<AppState>()
+            .git_service
+            .cherry_pick_continue(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -240,7 +254,9 @@ pub async fn cherry_pick_abort(
     app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.cherry_pick_abort(request)
+        app.state::<AppState>()
+            .git_service
+            .cherry_pick_abort(request)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -253,7 +269,9 @@ pub async fn revert_commit_start(
     app: tauri::AppHandle,
 ) -> Result<CherryPickResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.revert_commit_start(request)
+        app.state::<AppState>()
+            .git_service
+            .revert_commit_start(request)
     })
     .await
     .map_err(|e| e.to_string())?

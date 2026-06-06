@@ -52,12 +52,18 @@ struct InstanceRegistry {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum CoordinatorCommand {
-    OpenRepo { path: String },
-    InitialiseRepo { path: String },
+    OpenRepo {
+        path: String,
+    },
+    InitialiseRepo {
+        path: String,
+    },
     OpenCloneWindow {
         options: crate::shell::cli::CloneStartupOptions,
     },
-    FocusWindow { label: String },
+    FocusWindow {
+        label: String,
+    },
     SettingsUpdated,
     Ping,
 }

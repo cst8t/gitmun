@@ -1,5 +1,5 @@
 use super::conditional::ConditionalProvider;
-use base64::{engine::general_purpose::STANDARD, Engine};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fs;
 use std::path::Path;
 use url::Url;
@@ -108,21 +108,14 @@ impl ForgejoProvider {
     }
 
     fn host_from_base_url(base_url: &str) -> Option<String> {
-        Url::parse(base_url)
-            .ok()?
-            .host_str()
-            .map(|h| h.to_string())
+        Url::parse(base_url).ok()?.host_str().map(|h| h.to_string())
     }
 
     fn base_domain(host: &str) -> &str {
         host.find('.')
             .map(|i| {
                 let rest = &host[i + 1..];
-                if rest.contains('.') {
-                    rest
-                } else {
-                    host
-                }
+                if rest.contains('.') { rest } else { host }
             })
             .unwrap_or(host)
     }

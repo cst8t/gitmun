@@ -1,5 +1,5 @@
-use super::conditional::{remote_matches_host, ConditionalProvider};
-use base64::{engine::general_purpose::STANDARD, Engine};
+use super::conditional::{ConditionalProvider, remote_matches_host};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use std::fs;
 use std::path::Path;
 
