@@ -34,6 +34,7 @@ import {
     setUpdateEndpoint,
 } from "../../api/commands";
 import {CloseIcon, FileIcon, FolderIcon} from "../icons";
+import {SettingsSkeleton} from "./SettingsSkeleton";
 import {applyThemeMode} from "../../utils/theme";
 import {UI_TEXT_SCALE_VALUES, applyUiTextScale, normaliseUiTextScale} from "../../utils/uiTextScale";
 import "./SettingsWindow.css";
@@ -83,6 +84,10 @@ type PullRebaseMode = "" | "false" | "true" | "merges" | "interactive";
 type PullFastForwardMode = "" | "true" | "false" | "only";
 type PushDefaultMode = "" | "nothing" | "current" | "upstream" | "simple" | "matching";
 type LineEndingMode = "" | "false" | "true" | "input";
+type SettingsLoadState =
+    | {status: "loading"}
+    | {status: "loaded"}
+    | {status: "error"; message: string};
 
 function GitConfigLabel({children, configKey}: {children: React.ReactNode; configKey: string}) {
     return (
@@ -90,6 +95,22 @@ function GitConfigLabel({children, configKey}: {children: React.ReactNode; confi
             <span>{children}</span>
             <code className="settings-window__git-config-key">{configKey}</code>
         </span>
+    );
+}
+
+function SettingsLoadError({message, onRetry}: {message: string; onRetry: () => void}) {
+    const {t} = useTranslation("settings");
+
+    return (
+        <div className="settings-window__load-error" role="alert">
+            <h2 className="settings-window__load-error-title">{t("labels.loadErrorTitle")}</h2>
+            <p className="settings-window__load-error-message">{message}</p>
+            <div className="settings-window__load-error-actions">
+                <button className="settings-window__btn settings-window__btn--secondary" type="button" onClick={onRetry}>
+                    {t("actions.retry")}
+                </button>
+            </div>
+        </div>
     );
 }
 
@@ -116,6 +137,7 @@ function normaliseChoice<T extends string>(value: string | null, allowed: readon
 
 export function SettingsWindow() {
     const {t} = useTranslation("settings");
+    const [loadState, setLoadState] = useState<SettingsLoadState>({status: "loading"});
     const [tab, setTab] = useState<SettingsTab>("application");
     const useNativeWindowBar = true;
     const os = safePlatform();
@@ -219,144 +241,153 @@ export function SettingsWindow() {
         setGitVersion(activeGitVersion);
     }, []);
 
-    useEffect(() => {
-        (async () => {
-            try {
-                const persistedMode = localStorage.getItem(BACKEND_MODE_KEY);
-                if (persistedMode === "Default" || persistedMode === "GitCliOnly") {
-                    await invoke("set_backend_mode", {mode: persistedMode});
-                }
+    const loadSettings = useCallback(async () => {
+        setLoadState({status: "loading"});
+        setStatus(t("status.ready"));
 
-                const persistedLog = localStorage.getItem(SHOW_RESULT_LOG_KEY);
-                if (persistedLog === "true" || persistedLog === "false") {
-                    await invoke("set_show_result_log", {showResultLog: persistedLog === "true"});
-                }
-
-                const persistedTheme = localStorage.getItem(THEME_MODE_KEY);
-                if (persistedTheme === "System" || persistedTheme === "Light" || persistedTheme === "Dark") {
-                    await invoke("set_theme_mode", {themeMode: persistedTheme});
-                }
-
-                const os = safePlatform();
-                const supported = supportedDiffTools(os);
-                setAllowedDiffTools(supported);
-                setUpdateChannel(await getAppUpdateChannel());
-                setIsLinux(os === "linux");
-                setIsWindows(os === "windows");
-                if (os === "linux") {
-                    setLinuxTerminalOptions(await getLinuxTerminalOptions());
-                }
-
-                const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
-                setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
-                setLoadedExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
-                const defaultBranch = await invoke<string | null>("get_global_default_branch");
-                setGlobalDefaultBranch(defaultBranch ?? "");
-                setLoadedGlobalDefaultBranch(defaultBranch ?? "");
-
-                const fileMode = await invoke<boolean | null>("get_global_file_mode");
-                setGlobalFileMode(fileMode ?? true);
-                setLoadedGlobalFileMode(fileMode ?? true);
-
-                const pullRebase = normaliseChoice<PullRebaseMode>(
-                    await invoke<string | null>("get_global_pull_rebase"),
-                    ["", "false", "true", "merges", "interactive"],
-                );
-                setGlobalPullRebase(pullRebase);
-                setLoadedGlobalPullRebase(pullRebase);
-                const pullFastForward = normaliseChoice<PullFastForwardMode>(
-                    await invoke<string | null>("get_global_pull_ff"),
-                    ["", "true", "false", "only"],
-                );
-                setGlobalPullFastForward(pullFastForward);
-                setLoadedGlobalPullFastForward(pullFastForward);
-                const pullAutostash = normaliseChoice<GitBooleanConfig>(
-                    await invoke<string | null>("get_global_pull_autostash"),
-                    ["", "true", "false"],
-                );
-                setGlobalPullAutostash(pullAutostash);
-                setLoadedGlobalPullAutostash(pullAutostash);
-                const fetchPrune = normaliseChoice<GitBooleanConfig>(
-                    await invoke<string | null>("get_global_fetch_prune"),
-                    ["", "true", "false"],
-                );
-                setGlobalFetchPrune(fetchPrune);
-                setLoadedGlobalFetchPrune(fetchPrune);
-                const pushDefault = normaliseChoice<PushDefaultMode>(
-                    await invoke<string | null>("get_global_push_default"),
-                    ["", "nothing", "current", "upstream", "simple", "matching"],
-                );
-                setGlobalPushDefault(pushDefault);
-                setLoadedGlobalPushDefault(pushDefault);
-                const pushAutoSetupRemote = normaliseChoice<GitBooleanConfig>(
-                    await invoke<string | null>("get_global_push_auto_setup_remote"),
-                    ["", "true", "false"],
-                );
-                setGlobalPushAutoSetupRemote(pushAutoSetupRemote);
-                setLoadedGlobalPushAutoSetupRemote(pushAutoSetupRemote);
-                const coreEditor = await invoke<string | null>("get_global_core_editor");
-                setGlobalCoreEditor(coreEditor ?? "");
-                setLoadedGlobalCoreEditor(coreEditor ?? "");
-                const lineEndings = normaliseChoice<LineEndingMode>(
-                    await invoke<string | null>("get_global_core_autocrlf"),
-                    ["", "false", "true", "input"],
-                );
-                setGlobalLineEndings(lineEndings);
-                setLoadedGlobalLineEndings(lineEndings);
-                const credentialHelper = await invoke<string | null>("get_global_credential_helper");
-                setGlobalCredentialHelper(credentialHelper ?? "");
-                setLoadedGlobalCredentialHelper(credentialHelper ?? "");
-
-                const configuredGpgProgram = await invoke<string | null>("get_global_gpg_program");
-                setGlobalGpgProgramConfigured(configuredGpgProgram ?? "");
-                setGlobalGpgProgramEdited(false);
-                const gpgProgram = await getGlobalGpgProgramPath();
-                setGlobalGpgProgram(gpgProgram ?? "");
-
-                const settings = await invoke<Settings>("get_settings");
-                const activeGitPath = await invoke<string>("get_active_git_executable_path");
-                setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
-                setGitExecutablePath(settings.gitExecutablePath || activeGitPath);
-                setGitExecutableEdited(false);
-                const activeGitVersion = await invoke<string>("get_active_git_version");
-                setGitVersion(activeGitVersion);
-                setBackendMode(settings.backendMode);
-                setThemeMode(settings.themeMode);
-                setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
-                setWrapDiffLines(settings.wrapDiffLines ?? false);
-                setRowStriping(settings.rowStriping ?? "Off");
-                setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
-                setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
-                setOpenResultLogOnLaunch(settings.showResultLog);
-                setAvatarProvider(settings.avatarProvider);
-                setTryPlatformFirst(settings.tryPlatformFirst);
-                setDefaultCloneDir(settings.defaultCloneDir);
-                setCommitDateMode(settings.commitDateMode ?? "AuthorDate");
-                setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
-                setPushFollowTags(settings.pushFollowTags ?? false);
-                setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
-                setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
-                setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
-                setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
-                setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
-                setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
-                setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
-                await applyThemeMode(settings.themeMode);
-                applyUiTextScale(settings.uiTextScale);
-
-                const cfgPath = await getConfigFilePath();
-                setConfigFilePath(cfgPath ?? "");
-                const cfgFolderPath = await getConfigFolderPath();
-                setConfigFolderPath(cfgFolderPath ?? "");
-
-                const version = await invoke<string>("get_build_version");
-                setBuildVersion(version);
-                setStatus(t("status.loaded"));
-            } catch (e) {
-                setStatus(t("status.loadFailed", {message: String(e)}));
+        try {
+            const persistedMode = localStorage.getItem(BACKEND_MODE_KEY);
+            if (persistedMode === "Default" || persistedMode === "GitCliOnly") {
+                await invoke("set_backend_mode", {mode: persistedMode});
             }
-        })();
-    }, [refreshGitExecutable, t]);
+
+            const persistedLog = localStorage.getItem(SHOW_RESULT_LOG_KEY);
+            if (persistedLog === "true" || persistedLog === "false") {
+                await invoke("set_show_result_log", {showResultLog: persistedLog === "true"});
+            }
+
+            const persistedTheme = localStorage.getItem(THEME_MODE_KEY);
+            if (persistedTheme === "System" || persistedTheme === "Light" || persistedTheme === "Dark") {
+                await invoke("set_theme_mode", {themeMode: persistedTheme});
+            }
+
+            const os = safePlatform();
+            const supported = supportedDiffTools(os);
+            setAllowedDiffTools(supported);
+            setUpdateChannel(await getAppUpdateChannel());
+            setIsLinux(os === "linux");
+            setIsWindows(os === "windows");
+            if (os === "linux") {
+                setLinuxTerminalOptions(await getLinuxTerminalOptions());
+            }
+
+            const globalDiffTool = await invoke<ExternalDiffTool>("get_global_diff_tool");
+            setExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
+            setLoadedExternalDiffTool(supported.includes(globalDiffTool) ? globalDiffTool : "Other");
+            const defaultBranch = await invoke<string | null>("get_global_default_branch");
+            setGlobalDefaultBranch(defaultBranch ?? "");
+            setLoadedGlobalDefaultBranch(defaultBranch ?? "");
+
+            const fileMode = await invoke<boolean | null>("get_global_file_mode");
+            setGlobalFileMode(fileMode ?? true);
+            setLoadedGlobalFileMode(fileMode ?? true);
+
+            const pullRebase = normaliseChoice<PullRebaseMode>(
+                await invoke<string | null>("get_global_pull_rebase"),
+                ["", "false", "true", "merges", "interactive"],
+            );
+            setGlobalPullRebase(pullRebase);
+            setLoadedGlobalPullRebase(pullRebase);
+            const pullFastForward = normaliseChoice<PullFastForwardMode>(
+                await invoke<string | null>("get_global_pull_ff"),
+                ["", "true", "false", "only"],
+            );
+            setGlobalPullFastForward(pullFastForward);
+            setLoadedGlobalPullFastForward(pullFastForward);
+            const pullAutostash = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_pull_autostash"),
+                ["", "true", "false"],
+            );
+            setGlobalPullAutostash(pullAutostash);
+            setLoadedGlobalPullAutostash(pullAutostash);
+            const fetchPrune = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_fetch_prune"),
+                ["", "true", "false"],
+            );
+            setGlobalFetchPrune(fetchPrune);
+            setLoadedGlobalFetchPrune(fetchPrune);
+            const pushDefault = normaliseChoice<PushDefaultMode>(
+                await invoke<string | null>("get_global_push_default"),
+                ["", "nothing", "current", "upstream", "simple", "matching"],
+            );
+            setGlobalPushDefault(pushDefault);
+            setLoadedGlobalPushDefault(pushDefault);
+            const pushAutoSetupRemote = normaliseChoice<GitBooleanConfig>(
+                await invoke<string | null>("get_global_push_auto_setup_remote"),
+                ["", "true", "false"],
+            );
+            setGlobalPushAutoSetupRemote(pushAutoSetupRemote);
+            setLoadedGlobalPushAutoSetupRemote(pushAutoSetupRemote);
+            const coreEditor = await invoke<string | null>("get_global_core_editor");
+            setGlobalCoreEditor(coreEditor ?? "");
+            setLoadedGlobalCoreEditor(coreEditor ?? "");
+            const lineEndings = normaliseChoice<LineEndingMode>(
+                await invoke<string | null>("get_global_core_autocrlf"),
+                ["", "false", "true", "input"],
+            );
+            setGlobalLineEndings(lineEndings);
+            setLoadedGlobalLineEndings(lineEndings);
+            const credentialHelper = await invoke<string | null>("get_global_credential_helper");
+            setGlobalCredentialHelper(credentialHelper ?? "");
+            setLoadedGlobalCredentialHelper(credentialHelper ?? "");
+
+            const configuredGpgProgram = await invoke<string | null>("get_global_gpg_program");
+            setGlobalGpgProgramConfigured(configuredGpgProgram ?? "");
+            setGlobalGpgProgramEdited(false);
+            const gpgProgram = await getGlobalGpgProgramPath();
+            setGlobalGpgProgram(gpgProgram ?? "");
+
+            const settings = await invoke<Settings>("get_settings");
+            const activeGitPath = await invoke<string>("get_active_git_executable_path");
+            setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
+            setGitExecutablePath(settings.gitExecutablePath || activeGitPath);
+            setGitExecutableEdited(false);
+            const activeGitVersion = await invoke<string>("get_active_git_version");
+            setGitVersion(activeGitVersion);
+            setBackendMode(settings.backendMode);
+            setThemeMode(settings.themeMode);
+            setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
+            setWrapDiffLines(settings.wrapDiffLines ?? false);
+            setRowStriping(settings.rowStriping ?? "Off");
+            setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
+            setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
+            setOpenResultLogOnLaunch(settings.showResultLog);
+            setAvatarProvider(settings.avatarProvider);
+            setTryPlatformFirst(settings.tryPlatformFirst);
+            setDefaultCloneDir(settings.defaultCloneDir);
+            setCommitDateMode(settings.commitDateMode ?? "AuthorDate");
+            setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
+            setPushFollowTags(settings.pushFollowTags ?? false);
+            setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
+            setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
+            setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
+            setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
+            setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
+            setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
+            setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
+            await applyThemeMode(settings.themeMode);
+            applyUiTextScale(settings.uiTextScale);
+
+            const cfgPath = await getConfigFilePath();
+            setConfigFilePath(cfgPath ?? "");
+            const cfgFolderPath = await getConfigFolderPath();
+            setConfigFolderPath(cfgFolderPath ?? "");
+
+            const version = await invoke<string>("get_build_version");
+            setBuildVersion(version);
+            setStatus(t("status.loaded"));
+            setLoadState({status: "loaded"});
+        } catch (e) {
+            const message = t("status.loadFailed", {message: String(e)});
+            console.error("Failed to load settings", e);
+            setStatus(message);
+            setLoadState({status: "error", message});
+        }
+    }, [t]);
+
+    useEffect(() => {
+        void loadSettings();
+    }, [loadSettings]);
 
     useEffect(() => {
         if (!isWindows || !requiresWindowsDiffToolPath(externalDiffTool)) {
@@ -778,7 +809,7 @@ export function SettingsWindow() {
                 </div>
             )}
 
-            <div className="settings-window__body">
+            <div className="settings-window__body" aria-busy={loadState.status === "loading"}>
 
                 <div className="settings-window__tabs">
                     <button
@@ -795,7 +826,18 @@ export function SettingsWindow() {
                     </button>
                 </div>
 
-                {tab === "application" && (
+                {loadState.status === "loading" && (
+                    <SettingsSkeleton
+                        tab={tab}
+                        isLinux={os === "linux"}
+                    />
+                )}
+
+                {loadState.status === "error" && (
+                    <SettingsLoadError message={loadState.message} onRetry={loadSettings}/>
+                )}
+
+                {loadState.status === "loaded" && tab === "application" && (
                 <div className="settings-window__column">
                     <section className="settings-window__section">
                         <div className="settings-window__section-title">{t("labels.appGroupGeneral")}</div>
@@ -1166,7 +1208,7 @@ export function SettingsWindow() {
                 </div>
                 )}
 
-                {tab === "git" && (
+                {loadState.status === "loaded" && tab === "git" && (
                 <div className="settings-window__column">
                     <section className="settings-window__section">
                         <div className="settings-window__section-title">{t("labels.gitGroupRuntime")}</div>
@@ -1563,7 +1605,7 @@ export function SettingsWindow() {
             <div className="settings-window__footer">
                 <div className="settings-window__actions">
                     <button className="settings-window__btn settings-window__btn--primary" onClick={handleSave}
-                            disabled={saving}>
+                            disabled={saving || loadState.status !== "loaded"}>
                         {saving ? t("actions.saving") : t("actions.save")}
                     </button>
                     <button className="settings-window__btn settings-window__btn--secondary" onClick={handleClose}>

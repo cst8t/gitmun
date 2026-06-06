@@ -42,7 +42,7 @@ const settings: Settings = {
     gitExecutablePath: "",
 };
 
-mocks.invoke.mockImplementation(async (command: string) => {
+const defaultInvoke = async (command: string) => {
     switch (command) {
         case "get_settings":
             return settings;
@@ -71,7 +71,9 @@ mocks.invoke.mockImplementation(async (command: string) => {
         default:
             return null;
     }
-});
+};
+
+mocks.invoke.mockImplementation(defaultInvoke);
 
 vi.mock("@tauri-apps/api/core", () => ({invoke: mocks.invoke}));
 vi.mock("@tauri-apps/api/event", () => ({emit: mocks.emit}));
@@ -103,6 +105,7 @@ import {SettingsWindow} from "./SettingsWindow";
 describe("SettingsWindow", () => {
     beforeEach(() => {
         mocks.invoke.mockClear();
+        mocks.invoke.mockImplementation(defaultInvoke);
         mocks.emit.mockClear();
         mocks.close.mockClear();
         const store = new Map<string, string>();
@@ -126,6 +129,68 @@ describe("SettingsWindow", () => {
             removeEventListener: vi.fn(),
             removeListener: vi.fn(),
         });
+    });
+
+    it("shows a skeleton while settings are loading", () => {
+        mocks.invoke.mockImplementation((command: string) => {
+            if (command === "get_settings") {
+                return new Promise(() => {});
+            }
+
+            return defaultInvoke(command);
+        });
+
+        render(<SettingsWindow/>);
+
+        expect(screen.getByText("Application")).toBeInTheDocument();
+        expect(screen.getByText("Git")).toBeInTheDocument();
+        expect(screen.getByTestId("settings-skeleton")).toBeInTheDocument();
+        expect(screen.queryByLabelText("Terminal")).not.toBeInTheDocument();
+    });
+
+    it("renders settings once config has loaded", async () => {
+        render(<SettingsWindow/>);
+
+        expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
+        expect(screen.queryByTestId("settings-skeleton")).not.toBeInTheDocument();
+    });
+
+    it("shows an error when settings fail to load", async () => {
+        mocks.invoke.mockImplementation((command: string) => {
+            if (command === "get_settings") {
+                return Promise.reject(new Error("config unavailable"));
+            }
+
+            return defaultInvoke(command);
+        });
+
+        render(<SettingsWindow/>);
+
+        expect(await screen.findByRole("alert")).toHaveTextContent("Settings could not be loaded");
+        expect(screen.getByRole("button", {name: "Retry"})).toBeInTheDocument();
+        expect(screen.queryByTestId("settings-skeleton")).not.toBeInTheDocument();
+    });
+
+    it("retries loading settings when retry is clicked", async () => {
+        let getSettingsCalls = 0;
+        mocks.invoke.mockImplementation((command: string) => {
+            if (command === "get_settings") {
+                getSettingsCalls += 1;
+                if (getSettingsCalls === 1) {
+                    return Promise.reject(new Error("config unavailable"));
+                }
+            }
+
+            return defaultInvoke(command);
+        });
+
+        render(<SettingsWindow/>);
+
+        fireEvent.click(await screen.findByRole("button", {name: "Retry"}));
+
+        expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
+        expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+        expect(getSettingsCalls).toBe(2);
     });
 
     it("shows the Linux custom terminal command only for Custom", async () => {

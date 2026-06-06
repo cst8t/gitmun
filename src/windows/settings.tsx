@@ -1,10 +1,12 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import { invoke } from "@tauri-apps/api/core";
+import { SkeletonTheme } from "react-loading-skeleton";
 import { SettingsWindow } from "../components/settings/SettingsWindow";
 import "../styles/tokens.css";
 import "../styles/animations.css";
 import "../styles/global.css";
+import "react-loading-skeleton/dist/skeleton.css";
 import "../i18n";
 
 window.addEventListener("error", (event) => {
@@ -70,7 +72,13 @@ const root = document.getElementById("root");
 if (root) {
   createRoot(root).render(
     <SettingsErrorBoundary>
-      <SettingsWindow />
+      <SkeletonTheme
+        baseColor="var(--gitmun-skeleton-base)"
+        highlightColor="var(--gitmun-skeleton-highlight)"
+        duration={1.4}
+      >
+        <SettingsWindow />
+      </SkeletonTheme>
     </SettingsErrorBoundary>,
   );
   setTimeout(() => void invoke("show_window", { label: "settings" }), 0);

@@ -46,6 +46,8 @@
   /* Shadows */
   --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.45);
   --shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --gitmun-skeleton-base: rgba(255, 255, 255, 0.08);
+  --gitmun-skeleton-highlight: rgba(255, 255, 255, 0.14);
 
   /* Toast */
   --toast-success-bg: #065f46;
@@ -130,6 +132,8 @@
 
   --shadow-popover: 0 12px 32px rgba(31, 35, 40, 0.16);
   --shadow-dialog: 0 24px 60px rgba(31, 35, 40, 0.18);
+  --gitmun-skeleton-base: rgba(0, 0, 0, 0.08);
+  --gitmun-skeleton-highlight: rgba(0, 0, 0, 0.04);
 
   --toast-success-bg: #dcfce7;
   --toast-success-border: #86efac;
@@ -181,6 +185,8 @@
 
   --shadow-popover: 0 8px 32px rgba(0, 0, 0, 0.45);
   --shadow-dialog: 0 20px 60px rgba(0, 0, 0, 0.6);
+  --gitmun-skeleton-base: rgba(255, 255, 255, 0.08);
+  --gitmun-skeleton-highlight: rgba(255, 255, 255, 0.14);
 
   --toast-success-bg: #065f46;
   --toast-success-border: #059669;
