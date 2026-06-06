@@ -316,6 +316,21 @@ impl GitService {
         })
     }
 
+    pub fn set_linux_terminal_emulator(
+        &self,
+        emulator: super::types::LinuxTerminalEmulator,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            settings.linux_terminal_emulator = emulator;
+        })
+    }
+
+    pub fn set_linux_terminal_custom_command(&self, command: String) -> Settings {
+        self.update_settings(|settings| {
+            settings.linux_terminal_custom_command = command;
+        })
+    }
+
     pub fn set_repo_open_behaviour(&self, behaviour: super::types::RepoOpenBehaviour) -> Settings {
         self.update_settings(|settings| {
             settings.repo_open_behaviour = behaviour;

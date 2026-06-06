@@ -240,10 +240,25 @@ export function App() {
                     showToast(String(e), "error");
                 }
             });
-        } else if (action.action === "cloneHere") {
-            api.openCloneWindowWithDestination(action.path).catch(e => {
+        } else if (action.action === "cloneRepo") {
+            api.openCloneWindowWithOptions({
+                repoUrl: action.repoUrl,
+                destination: action.destination ?? action.path,
+                startClone: action.startClone,
+            }).catch(e => {
                 showToast(String(e), "error");
                 appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
+            });
+        } else if (action.action === "initialiseRepo") {
+            api.initRepo(action.path).then(async (result) => {
+                await api.validateRepoPath(action.path);
+                setRepoPath(action.path);
+                pushRecentRepo(action.path);
+                showToast(t("toast.repositoryInitialised"), "success");
+                appendResultLog("success", result.message, result.backendUsed, action.path);
+            }).catch(e => {
+                showToast(String(e), "error");
+                appendResultLog("error", String(e), "unknown", action.path);
             });
         }
     }, [pushRecentRepo, showToast, t]);
@@ -252,6 +267,23 @@ export function App() {
         api.getStartupAction().then((action) => {
             if (action) handleShellAction(action);
         }).catch(() => {});
+    }, [handleShellAction]);
+
+    useEffect(() => {
+        let cancelled = false;
+        let unlisten: (() => void) | null = null;
+        (async () => {
+            const fn = await listen<string>("instance-initialise-repo", (event) => {
+                const path = event.payload;
+                if (!path) return;
+                handleShellAction({action: "initialiseRepo", path});
+            });
+            if (cancelled) fn(); else unlisten = fn;
+        })();
+        return () => {
+            cancelled = true;
+            unlisten?.();
+        };
     }, [handleShellAction]);
 
     useEffect(() => {
@@ -441,10 +473,10 @@ export function App() {
     }, [showToast, t]);
 
     const handleCloneClick = useCallback(() => {
-        api.openCloneWindow().catch(e => {
-            showToast(String(e), "error");
-            appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
-        });
+            api.openCloneWindow().catch(e => {
+                showToast(String(e), "error");
+                appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
+            });
     }, [showToast, t]);
 
     const maybeInitialiseRepo = useCallback(async (path: string, error: unknown): Promise<boolean> => {

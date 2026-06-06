@@ -1,6 +1,7 @@
 use crate::git::types::{
     AvatarProviderMode, BackendMode, CommitDateMode, CommitPrimaryAction, ExternalDiffTool,
-    LinuxGraphicsMode, OperationResult, RepoOpenBehaviour, RowStriping, Settings, ThemeMode,
+    LinuxGraphicsMode, LinuxTerminalEmulator, OperationResult, RepoOpenBehaviour, RowStriping,
+    Settings, ThemeMode,
 };
 use crate::{AppState, configure_command, git_command};
 use reqwest::header::{ACCEPT, HeaderValue, RANGE};
@@ -1090,6 +1091,100 @@ pub fn set_linux_graphics_mode(
     state: tauri::State<'_, AppState>,
 ) -> Settings {
     state.git_service.set_linux_graphics_mode(mode)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxTerminalOption {
+    pub emulator: LinuxTerminalEmulator,
+    pub label: &'static str,
+}
+
+#[tauri::command]
+pub fn get_linux_terminal_options() -> Vec<LinuxTerminalOption> {
+    linux_terminal_options()
+}
+
+#[cfg(target_os = "linux")]
+fn linux_terminal_options() -> Vec<LinuxTerminalOption> {
+    let mut options = vec![LinuxTerminalOption {
+        emulator: LinuxTerminalEmulator::Auto,
+        label: linux_terminal_launch::terminal_label(
+            linux_terminal_launch::TerminalPreference::Auto,
+        ),
+    }];
+
+    options.extend(
+        linux_terminal_launch::known_terminals()
+            .iter()
+            .map(|terminal| LinuxTerminalOption {
+                emulator: linux_terminal_emulator(terminal.terminal),
+                label: terminal.label,
+            }),
+    );
+
+    options.push(LinuxTerminalOption {
+        emulator: LinuxTerminalEmulator::Custom,
+        label: linux_terminal_launch::terminal_label(
+            linux_terminal_launch::TerminalPreference::Custom,
+        ),
+    });
+
+    options
+}
+
+#[cfg(target_os = "linux")]
+fn linux_terminal_emulator(
+    terminal: linux_terminal_launch::KnownTerminal,
+) -> LinuxTerminalEmulator {
+    match terminal {
+        linux_terminal_launch::KnownTerminal::Konsole => LinuxTerminalEmulator::Konsole,
+        linux_terminal_launch::KnownTerminal::GnomeTerminal => LinuxTerminalEmulator::GnomeTerminal,
+        linux_terminal_launch::KnownTerminal::GnomeConsole => LinuxTerminalEmulator::GnomeConsole,
+        linux_terminal_launch::KnownTerminal::Xfce4Terminal => LinuxTerminalEmulator::Xfce4Terminal,
+        linux_terminal_launch::KnownTerminal::MateTerminal => LinuxTerminalEmulator::MateTerminal,
+        linux_terminal_launch::KnownTerminal::Lxterminal => LinuxTerminalEmulator::Lxterminal,
+        linux_terminal_launch::KnownTerminal::Alacritty => LinuxTerminalEmulator::Alacritty,
+        linux_terminal_launch::KnownTerminal::Ghostty => LinuxTerminalEmulator::Ghostty,
+        linux_terminal_launch::KnownTerminal::Kitty => LinuxTerminalEmulator::Kitty,
+        linux_terminal_launch::KnownTerminal::WezTerm => LinuxTerminalEmulator::WezTerm,
+        linux_terminal_launch::KnownTerminal::Foot => LinuxTerminalEmulator::Foot,
+        linux_terminal_launch::KnownTerminal::Xterm => LinuxTerminalEmulator::Xterm,
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn linux_terminal_options() -> Vec<LinuxTerminalOption> {
+    vec![
+        LinuxTerminalOption {
+            emulator: LinuxTerminalEmulator::Auto,
+            label: "Terminal",
+        },
+        LinuxTerminalOption {
+            emulator: LinuxTerminalEmulator::Custom,
+            label: "Terminal",
+        },
+    ]
+}
+
+#[tauri::command]
+pub fn set_linux_terminal_emulator(
+    linux_terminal_emulator: LinuxTerminalEmulator,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_linux_terminal_emulator(linux_terminal_emulator)
+}
+
+#[tauri::command]
+pub fn set_linux_terminal_custom_command(
+    linux_terminal_custom_command: String,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_linux_terminal_custom_command(linux_terminal_custom_command)
 }
 
 #[tauri::command]

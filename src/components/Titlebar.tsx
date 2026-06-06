@@ -6,6 +6,7 @@ import {
   MoreIcon,
 } from "./icons";
 import * as api from "../api/commands";
+import type { ResetMode } from "../api/commands";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { BranchInfo, RepoOpenLocation, RepoOpenLocationKind } from "../types";
 import "./Titlebar.css";
@@ -38,6 +39,7 @@ type TitlebarProps = {
   pushDisabled?: boolean;
   pushTitle?: string;
   onStash: () => void;
+  onReset: (mode: Extract<ResetMode, "mixed" | "hard">) => void;
   onImportPatch: () => void;
   onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
   selectedPatchExportEnabled: boolean;
@@ -63,7 +65,7 @@ export function Titlebar({
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
-  onImportPatch, onExportPatch, selectedPatchExportEnabled,
+  onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled,
   identityOpen, remoteOp,
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
@@ -159,6 +161,7 @@ export function Titlebar({
         <ActionBtn icon={<StashIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath} />
         <MoreDropdown
           repoPath={repoPath}
+          onReset={onReset}
           onImportPatch={onImportPatch}
           onExportPatch={onExportPatch}
           selectedPatchExportEnabled={selectedPatchExportEnabled}
@@ -231,8 +234,9 @@ export function Titlebar({
   );
 }
 
-function MoreDropdown({ repoPath, onImportPatch, onExportPatch, selectedPatchExportEnabled }: {
+function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled }: {
   repoPath: string | null;
+  onReset: (mode: Extract<ResetMode, "mixed" | "hard">) => void;
   onImportPatch: () => void;
   onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
   selectedPatchExportEnabled: boolean;
@@ -303,6 +307,13 @@ function MoreDropdown({ repoPath, onImportPatch, onExportPatch, selectedPatchExp
                 <span>{t("patchFiles.exportSelected")}</span>
               </div>
             </div>
+          </div>
+          <div className="titlebar__open-menu-heading">{t("reset.heading")}</div>
+          <div className="titlebar__open-menu-item" onClick={() => run(() => onReset("mixed"))}>
+            <span>{t("reset.mixed")}</span>
+          </div>
+          <div className="titlebar__open-menu-item" onClick={() => run(() => onReset("hard"))}>
+            <span>{t("reset.hard")}</span>
           </div>
         </div>
       )}

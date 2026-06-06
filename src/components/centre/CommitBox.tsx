@@ -19,6 +19,16 @@ type CommitBoxProps = {
   cherryPickInProgress?: boolean;
 };
 
+type CommitBoxDragState = {
+  startY: number;
+  startHeight: number;
+  totalHeight: number;
+};
+
+const MIN_COMMIT_BOX_HEIGHT = 214;
+const MIN_STAGING_FILES_HEIGHT = 120;
+const COMMIT_BOX_RATIO_KEY = "gitmun.commitBoxRatio";
+
 function getCommitButtonLabel(
   action: CommitPrimaryAction,
   stagedCount: number,
@@ -47,6 +57,45 @@ function getCommitButtonLabel(
     : translate("commitBox.commitButton", {count: stagedCount});
 }
 
+function splitCommitMessage(message: string) {
+  const newlineIndex = message.indexOf("\n");
+  if (newlineIndex === -1) return { subject: message, body: "" };
+
+  const subject = message.slice(0, newlineIndex);
+  const rest = message.slice(newlineIndex + 1);
+  const body = rest.startsWith("\n") ? rest.slice(1) : rest;
+  return { subject, body };
+}
+
+function parseCommitBoxRatio(value: string | null): number | null {
+  if (!value) return null;
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed)) return null;
+  if (parsed <= 0 || parsed >= 1) return null;
+  return parsed;
+}
+
+function clampCommitBoxHeight(totalHeight: number, desiredHeight: number): number {
+  if (!Number.isFinite(totalHeight) || totalHeight <= 0) return MIN_COMMIT_BOX_HEIGHT;
+
+  const maxHeight = Math.max(MIN_COMMIT_BOX_HEIGHT, totalHeight - MIN_STAGING_FILES_HEIGHT);
+  return Math.round(Math.min(Math.max(desiredHeight, MIN_COMMIT_BOX_HEIGHT), maxHeight));
+}
+
+function commitBoxRatioFromHeight(totalHeight: number, height: number): number | null {
+  if (!Number.isFinite(totalHeight) || totalHeight <= 0) return null;
+  const ratio = height / totalHeight;
+  return ratio > 0 && ratio < 1 ? ratio : null;
+}
+
+function getCommitBoxStorage(): Storage | null {
+  try {
+    return typeof localStorage === "undefined" ? null : localStorage;
+  } catch {
+    return null;
+  }
+}
+
 export function CommitBox({
   stagedCount,
   selectedAction,
@@ -62,22 +111,29 @@ export function CommitBox({
   cherryPickInProgress,
 }: CommitBoxProps) {
   const { t } = useTranslation("centre");
-  const [message, setMessage] = useState("");
+  const [subject, setSubject] = useState("");
+  const [body, setBody] = useState("");
   const [amend, setAmend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [commitBoxHeight, setCommitBoxHeight] = useState<number | null>(null);
+  const [dragState, setDragState] = useState<CommitBoxDragState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const commitBoxRef = useRef<HTMLDivElement>(null);
+  const commitBoxHeightRef = useRef<number>(MIN_COMMIT_BOX_HEIGHT);
+  const commitBoxRatioRef = useRef<number | null>(parseCommitBoxRatio(getCommitBoxStorage()?.getItem(COMMIT_BOX_RATIO_KEY) ?? null));
   const activeAction = allowCommitAndPush ? selectedAction : "commit";
 
   useEffect(() => {
     if (mergeInProgress && mergeMessage) {
       const cleaned = mergeMessage.split("\n").filter(l => !l.startsWith("#")).join("\n").trim();
-      setMessage(cleaned);
+      const nextMessage = splitCommitMessage(cleaned);
+      setSubject(nextMessage.subject);
+      setBody(nextMessage.body);
     } else if (!mergeInProgress) {
-      setMessage("");
+      setSubject("");
+      setBody("");
     }
-  // Only re-run when merge state transitions
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mergeInProgress]);
+  }, [mergeInProgress, mergeMessage]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -96,59 +152,174 @@ export function CommitBox({
     }
   }, [allowCommitAndPush]);
 
-  const subjectLine = message.split("\n")[0] ?? "";
-  const subjectLength = subjectLine.length;
+  useEffect(() => {
+    const root = commitBoxRef.current?.parentElement;
+    if (!root) return;
+
+    const applyLayout = () => {
+      const ratio = commitBoxRatioRef.current;
+      if (ratio == null) return;
+
+      const totalHeight = root.getBoundingClientRect().height;
+      if (totalHeight <= 0) return;
+      const nextHeight = clampCommitBoxHeight(totalHeight, totalHeight * ratio);
+      commitBoxHeightRef.current = nextHeight;
+      setCommitBoxHeight(nextHeight);
+    };
+
+    applyLayout();
+    const observer = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(applyLayout);
+    observer?.observe(root);
+    window.addEventListener("resize", applyLayout);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", applyLayout);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!dragState) return;
+
+    const handleMouseMove = (event: MouseEvent) => {
+      const nextHeight = dragState.startHeight + dragState.startY - event.clientY;
+      const clampedHeight = clampCommitBoxHeight(dragState.totalHeight, nextHeight);
+      commitBoxHeightRef.current = clampedHeight;
+      setCommitBoxHeight(clampedHeight);
+    };
+    const handleMouseUp = () => {
+      setDragState(null);
+      const totalHeight = commitBoxRef.current?.parentElement?.getBoundingClientRect().height ?? 0;
+      const ratio = commitBoxRatioFromHeight(totalHeight, commitBoxHeightRef.current);
+      const storage = getCommitBoxStorage();
+      commitBoxRatioRef.current = ratio;
+      if (ratio == null) {
+        storage?.removeItem(COMMIT_BOX_RATIO_KEY);
+      } else {
+        storage?.setItem(COMMIT_BOX_RATIO_KEY, ratio.toFixed(6));
+      }
+    };
+
+    document.body.style.cursor = "row-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [dragState]);
+
+  const trimmedSubject = subject.trim();
+  const trimmedBody = body.trim();
+  const subjectLength = subject.length;
   const hasRecommendedLength = commitMessageRecommendedLength > 0;
   const subjectOverflow = hasRecommendedLength && subjectLength > commitMessageRecommendedLength;
   const actionDisabled =
-    stagedCount === 0 || message.trim() === "" || isCommitting || rebaseInProgress || cherryPickInProgress;
+    stagedCount === 0 || trimmedSubject === "" || isCommitting || rebaseInProgress || cherryPickInProgress;
 
   const handleAmendToggle = () => {
     const next = !amend;
     setAmend(next);
-    if (next && lastCommitMessage) setMessage(lastCommitMessage);
+    if (next && lastCommitMessage) {
+      const nextMessage = splitCommitMessage(lastCommitMessage);
+      setSubject(nextMessage.subject);
+      setBody(nextMessage.body);
+    }
   };
 
   const handleCommit = () => {
     if (actionDisabled) return;
-    onCommit(message.trim(), amend, activeAction);
-    setMessage("");
+    const message = trimmedBody === "" ? trimmedSubject : `${trimmedSubject}\n\n${trimmedBody}`;
+    onCommit(message, amend, activeAction);
+    setSubject("");
+    setBody("");
     setAmend(false);
     setMenuOpen(false);
   };
 
-  return (
-    <div className="commit-box">
-      <div className="commit-box__amend" onClick={handleAmendToggle}>
-        <div className={`commit-box__checkbox ${amend ? "commit-box__checkbox--active" : ""}`}>
-          {amend && <CheckIcon size={10} />}
-        </div>
-        <span className={`commit-box__amend-label ${amend ? "commit-box__amend-label--active" : ""}`}>
-          {t("commitBox.amend")}
-        </span>
-      </div>
+  const handleCommitKeyDown = (
+    event: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
+    if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+      event.preventDefault();
+      handleCommit();
+    }
+  };
 
-      <textarea
-        className={`commit-box__textarea ${message.trim() === "" && stagedCount > 0 ? "commit-box__textarea--warn" : ""}`}
-        value={message}
-        onChange={e => setMessage(e.target.value)}
-        placeholder={amend ? t("commitBox.amendMessage") : t("commitBox.commitMessage")}
-        rows={3}
+  const handleResizeMouseDown = (event: React.MouseEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    const commitBoxRect = commitBoxRef.current?.getBoundingClientRect();
+    const stagingRect = commitBoxRef.current?.parentElement?.getBoundingClientRect();
+    if (!commitBoxRect || !stagingRect) return;
+
+    setCommitBoxHeight(commitBoxRect.height);
+    commitBoxHeightRef.current = commitBoxRect.height;
+    setDragState({
+      startY: event.clientY,
+      startHeight: commitBoxRect.height,
+      totalHeight: stagingRect.height,
+    });
+  };
+
+  return (
+    <div
+      className={`commit-box ${dragState ? "commit-box--resizing" : ""}`}
+      ref={commitBoxRef}
+      style={commitBoxHeight ? {"--commit-box-height": `${commitBoxHeight}px`} as React.CSSProperties : undefined}
+    >
+      <div
+        className="commit-box__resize-handle"
+        onMouseDown={handleResizeMouseDown}
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label={t("commitBox.resizeEditor")}
+      />
+
+      <input
+        className={`commit-box__subject ${trimmedSubject === "" && stagedCount > 0 ? "commit-box__subject--warn" : ""}`}
+        value={subject}
+        onChange={e => setSubject(e.target.value)}
+        onKeyDown={handleCommitKeyDown}
+        placeholder={amend ? t("commitBox.amendSubject") : t("commitBox.commitSubject")}
         spellCheck="true"
         data-allow-native-context-menu="true"
       />
 
-      <div className="commit-box__hints">
-        <span className={`commit-box__hint ${subjectOverflow ? "commit-box__hint--error" : ""}`}>
-          {subjectOverflow
-            ? t("commitBox.subjectTooLong", {count: commitMessageRecommendedLength})
-            : message.trim() === "" && stagedCount > 0
-              ? t("commitBox.messageRequired")
-              : ""}
-        </span>
-        {hasRecommendedLength && (
-          <span className="commit-box__counter">{subjectLength}/{commitMessageRecommendedLength}</span>
-        )}
+      <textarea
+        className="commit-box__textarea"
+        value={body}
+        onChange={e => setBody(e.target.value)}
+        onKeyDown={handleCommitKeyDown}
+        placeholder={amend ? t("commitBox.amendBody") : t("commitBox.commitBody")}
+        rows={2}
+        spellCheck="true"
+        data-allow-native-context-menu="true"
+      />
+
+      <div className="commit-box__meta">
+        <div className="commit-box__amend" onClick={handleAmendToggle}>
+          <div className={`commit-box__checkbox ${amend ? "commit-box__checkbox--active" : ""}`}>
+            {amend && <CheckIcon size={10} />}
+          </div>
+          <span className={`commit-box__amend-label ${amend ? "commit-box__amend-label--active" : ""}`}>
+            {t("commitBox.amend")}
+          </span>
+        </div>
+
+        <div className="commit-box__hints">
+          <span className={`commit-box__hint ${subjectOverflow ? "commit-box__hint--error" : ""}`}>
+            {subjectOverflow
+              ? t("commitBox.subjectTooLong", {count: commitMessageRecommendedLength})
+              : trimmedSubject === "" && stagedCount > 0
+                ? t("commitBox.messageRequired")
+                : ""}
+          </span>
+          {hasRecommendedLength && (
+            <span className="commit-box__counter">{subjectLength}/{commitMessageRecommendedLength}</span>
+          )}
+        </div>
       </div>
 
       <div className="commit-box__actions" ref={menuRef}>

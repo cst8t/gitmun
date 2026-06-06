@@ -6,11 +6,13 @@ use crate::git::types::{
     PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus, SetIdentityRequest,
     StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
 };
+#[cfg(target_os = "linux")]
+use crate::git::types::LinuxTerminalEmulator;
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Stdio;
 use std::sync::atomic::Ordering;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -33,7 +35,8 @@ pub struct RepoOpenLocation {
 }
 
 #[tauri::command]
-pub fn get_repo_open_locations() -> Vec<RepoOpenLocation> {
+pub fn get_repo_open_locations(state: tauri::State<'_, AppState>) -> Vec<RepoOpenLocation> {
+    let terminal_label = default_terminal_label(&state.git_service.get_settings());
     let locations = vec![
         RepoOpenLocation {
             kind: RepoOpenLocationKind::FileExplorer,
@@ -43,7 +46,7 @@ pub fn get_repo_open_locations() -> Vec<RepoOpenLocation> {
         },
         RepoOpenLocation {
             kind: RepoOpenLocationKind::Terminal,
-            label: default_terminal_label().to_string(),
+            label: terminal_label,
             fallback_label: "Terminal".to_string(),
             icon_data_url: None,
         },
@@ -71,6 +74,7 @@ pub fn open_repo_location(
     repo_path: String,
     kind: RepoOpenLocationKind,
     app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
 ) -> Result<OperationResult, String> {
     let path = validate_repo_open_path(&repo_path)?;
 
@@ -85,7 +89,7 @@ pub fn open_repo_location(
             ))
         }
         RepoOpenLocationKind::Terminal => {
-            open_terminal_at(&path)?;
+            open_terminal_at(&path, &state.git_service.get_settings())?;
             Ok(repo_open_result(
                 "Opened repository in Terminal".to_string(),
                 path,
@@ -143,29 +147,41 @@ fn default_file_manager_label() -> &'static str {
     }
 }
 
-fn default_terminal_label() -> &'static str {
-    "Terminal"
+fn default_terminal_label(settings: &crate::git::types::Settings) -> String {
+    #[cfg(target_os = "linux")]
+    {
+        return linux_terminal_label(settings).to_string();
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = settings;
+        "Terminal".to_string()
+    }
 }
 
-fn open_terminal_at(path: &Path) -> Result<(), String> {
+fn open_terminal_at(path: &Path, settings: &crate::git::types::Settings) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        let _ = settings;
         return open_terminal_at_windows(path);
     }
 
     #[cfg(target_os = "macos")]
     {
+        let _ = settings;
         return open_terminal_at_macos(path);
     }
 
     #[cfg(target_os = "linux")]
     {
-        return open_terminal_at_linux(path);
+        return open_terminal_at_linux(path, settings);
     }
 
     #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "linux")))]
     {
         let _ = path;
+        let _ = settings;
         Err("Opening a terminal is not supported on this platform".to_string())
     }
 }
@@ -187,7 +203,7 @@ fn open_git_bash_at(path: &Path) -> Result<(), String> {
 fn open_git_bash_at_windows(path: &Path) -> Result<(), String> {
     let git_bash = crate::resolve_system_git_bash_exe()
         .ok_or_else(|| "Git Bash from Git for Windows was not found".to_string())?;
-    Command::new(git_bash)
+    std::process::Command::new(git_bash)
         .arg(format!("--cd={}", path.display()))
         .spawn()
         .map(|_| ())
@@ -196,13 +212,13 @@ fn open_git_bash_at_windows(path: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "windows")]
 fn open_terminal_at_windows(path: &Path) -> Result<(), String> {
-    let mut wt = Command::new("wt.exe");
+    let mut wt = std::process::Command::new("wt.exe");
     wt.arg("-d").arg(path);
     if wt.spawn().is_ok() {
         return Ok(());
     }
 
-    Command::new("cmd.exe")
+    std::process::Command::new("cmd.exe")
         .arg("/C")
         .arg("start")
         .arg("")
@@ -216,7 +232,7 @@ fn open_terminal_at_windows(path: &Path) -> Result<(), String> {
 
 #[cfg(target_os = "macos")]
 fn open_terminal_at_macos(path: &Path) -> Result<(), String> {
-    Command::new("open")
+    std::process::Command::new("open")
         .arg("-a")
         .arg("Terminal")
         .arg(path)
@@ -226,61 +242,63 @@ fn open_terminal_at_macos(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn open_terminal_at_linux(path: &Path) -> Result<(), String> {
-    let mut errors = Vec::new();
-
-    if let Some(terminal) = std::env::var_os("TERMINAL").and_then(|value| value.into_string().ok())
-    {
-        if !terminal.trim().is_empty() && spawn_terminal_command(&terminal, path, &mut errors) {
-            return Ok(());
-        }
-    }
-
-    for command in [
-        "x-terminal-emulator",
-        "gnome-terminal",
-        "kgx",
-        "konsole",
-        "xfce4-terminal",
-        "mate-terminal",
-        "lxterminal",
-        "alacritty",
-        "kitty",
-        "wezterm",
-        "foot",
-        "xterm",
-    ] {
-        if spawn_terminal_command(command, path, &mut errors) {
-            return Ok(());
-        }
-    }
-
-    Err(if errors.is_empty() {
-        "No supported terminal emulator was found".to_string()
-    } else {
-        format!(
-            "No supported terminal emulator was found ({})",
-            errors.join("; ")
-        )
-    })
+fn open_terminal_at_linux(
+    path: &Path,
+    settings: &crate::git::types::Settings,
+) -> Result<(), String> {
+    linux_terminal_launcher(settings, path)
+        .spawn()
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(target_os = "linux")]
-fn spawn_terminal_command(command_spec: &str, path: &Path, errors: &mut Vec<String>) -> bool {
-    let mut parts = command_spec.split_whitespace();
-    let Some(command_name) = parts.next() else {
-        return false;
-    };
+fn linux_terminal_label(settings: &crate::git::types::Settings) -> &'static str {
+    linux_terminal_launch::terminal_label(linux_terminal_preference(
+        settings.linux_terminal_emulator,
+    ))
+}
 
-    let mut command = Command::new(command_name);
-    command.args(parts).current_dir(path);
+#[cfg(target_os = "linux")]
+fn linux_terminal_launcher(
+    settings: &crate::git::types::Settings,
+    path: &Path,
+) -> linux_terminal_launch::TerminalLauncher {
+    linux_terminal_launch::TerminalLauncher::new()
+        .working_dir(path)
+        .preference(linux_terminal_preference(settings.linux_terminal_emulator))
+        .custom_command(settings.linux_terminal_custom_command.clone())
+        .detach_from_parent(true)
+}
 
-    match command.spawn() {
-        Ok(_) => true,
-        Err(error) => {
-            errors.push(format!("{command_name}: {error}"));
-            false
+#[cfg(target_os = "linux")]
+fn linux_terminal_preference(
+    emulator: LinuxTerminalEmulator,
+) -> linux_terminal_launch::TerminalPreference {
+    use linux_terminal_launch::{KnownTerminal, TerminalPreference};
+
+    match emulator {
+        LinuxTerminalEmulator::Auto => TerminalPreference::Auto,
+        LinuxTerminalEmulator::Konsole => TerminalPreference::Known(KnownTerminal::Konsole),
+        LinuxTerminalEmulator::GnomeTerminal => {
+            TerminalPreference::Known(KnownTerminal::GnomeTerminal)
         }
+        LinuxTerminalEmulator::GnomeConsole => {
+            TerminalPreference::Known(KnownTerminal::GnomeConsole)
+        }
+        LinuxTerminalEmulator::Xfce4Terminal => {
+            TerminalPreference::Known(KnownTerminal::Xfce4Terminal)
+        }
+        LinuxTerminalEmulator::MateTerminal => {
+            TerminalPreference::Known(KnownTerminal::MateTerminal)
+        }
+        LinuxTerminalEmulator::Lxterminal => TerminalPreference::Known(KnownTerminal::Lxterminal),
+        LinuxTerminalEmulator::Alacritty => TerminalPreference::Known(KnownTerminal::Alacritty),
+        LinuxTerminalEmulator::Ghostty => TerminalPreference::Known(KnownTerminal::Ghostty),
+        LinuxTerminalEmulator::Kitty => TerminalPreference::Known(KnownTerminal::Kitty),
+        LinuxTerminalEmulator::WezTerm => TerminalPreference::Known(KnownTerminal::WezTerm),
+        LinuxTerminalEmulator::Foot => TerminalPreference::Known(KnownTerminal::Foot),
+        LinuxTerminalEmulator::Xterm => TerminalPreference::Known(KnownTerminal::Xterm),
+        LinuxTerminalEmulator::Custom => TerminalPreference::Custom,
     }
 }
 

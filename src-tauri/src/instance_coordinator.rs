@@ -53,7 +53,10 @@ struct InstanceRegistry {
 #[serde(tag = "kind", content = "data", rename_all = "camelCase")]
 pub enum CoordinatorCommand {
     OpenRepo { path: String },
-    OpenCloneWindow { destination: Option<String> },
+    InitialiseRepo { path: String },
+    OpenCloneWindow {
+        options: crate::shell::cli::CloneStartupOptions,
+    },
     FocusWindow { label: String },
     SettingsUpdated,
     Ping,
@@ -278,14 +281,18 @@ fn process_command(cmd: CoordinatorCommand, app: &tauri::AppHandle) -> (bool, St
             let _ = app.emit("instance-open-repo", path.clone());
             (true, path)
         }
-        CoordinatorCommand::OpenCloneWindow { destination } => {
-            if let Some(path) = destination.clone() {
-                if let Some(state) = app.try_state::<crate::PendingCloneDestination>() {
+        CoordinatorCommand::InitialiseRepo { path } => {
+            let _ = app.emit("instance-initialise-repo", path.clone());
+            (true, path)
+        }
+        CoordinatorCommand::OpenCloneWindow { options } => {
+            if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
+                if let Some(state) = app.try_state::<crate::PendingCloneOptions>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        *guard = Some(path.clone());
+                        *guard = Some(options.clone());
                     }
                 }
-                let _ = app.emit("clone-destination-updated", path);
+                let _ = app.emit("clone-options-updated", options);
             }
             if let Some(w) = app.get_webview_window("clone-repository") {
                 let _ = w.show();
@@ -377,6 +384,19 @@ pub fn find_sub_window_owner(label: &str) -> Option<InstanceInfo> {
     None
 }
 
+pub fn find_recent_instance() -> Option<InstanceInfo> {
+    let path = with_handle(|h| Ok(h.registry_path.clone())).ok()?;
+    let own_id = with_handle(|h| Ok(h.instance_id.clone())).ok()?;
+    let reg = read_registry(&path);
+    let cutoff = now_millis().saturating_sub(STALE_SECS * 1000);
+
+    reg.instances
+        .values()
+        .filter(|info| info.instance_id != own_id && info.last_seen_at() >= cutoff)
+        .max_by_key(|info| info.last_focused)
+        .cloned()
+}
+
 pub fn send_command(target_port: u16, cmd: &CoordinatorCommand) -> Result<(), String> {
     let json = serde_json::to_string(cmd).map_err(|e| e.to_string())?;
     let req = format!(
@@ -441,7 +461,7 @@ pub fn broadcast_settings_updated() {
 pub fn spawn_new_instance_open_repo(path: &str) -> Result<(), String> {
     let exe = std::env::current_exe().map_err(|e| format!("exe path: {e}"))?;
     std::process::Command::new(exe)
-        .arg("--open")
+        .arg("open")
         .arg(path)
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;

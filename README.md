@@ -50,6 +50,24 @@ Build desktop bundles:
 npm run tauri build
 ```
 
+## Command line launcher
+
+Gitmun can be launched from a terminal or shell integration:
+
+```bash
+gitmun
+gitmun .
+gitmun open /path/to/repo
+gitmun clone git@github.com:owner/repo.git /path/to/destination
+gitmun clone --to /path/to/destination
+gitmun clone https://github.com/owner/repo.git --start
+gitmun init /path/to/folder
+gitmun --reuse-window open .
+gitmun completions bash
+```
+
+`gitmun <path>` is the shorthand for opening a repository. `clone` accepts an optional repository URL or SSH path, an optional destination, and `--start` to begin cloning after the window opens. Use `--to` to set only the destination. `init` defaults to the current directory when no path is supplied. Use `--help` for the full command reference.
+
 Linux-only helper setup (if needed):
 
 ```bash

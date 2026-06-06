@@ -462,6 +462,37 @@ impl CliGitHandler {
         }
     }
 
+    fn write_commit_message_file(message: &str) -> GitResult<PathBuf> {
+        let temp_dir = std::env::temp_dir();
+        let process_id = std::process::id();
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|duration| duration.as_nanos())
+            .unwrap_or(0);
+
+        for attempt in 0..100 {
+            let path = temp_dir.join(format!(
+                "gitmun-commit-message-{process_id}-{timestamp}-{attempt}.txt"
+            ));
+            let mut file = match fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&path)
+            {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error.into()),
+            };
+            file.write_all(message.as_bytes())?;
+            file.write_all(b"\n")?;
+            return Ok(path);
+        }
+
+        Err(GitError::IoError(
+            "Could not create a temporary commit message file".to_string(),
+        ))
+    }
+
     fn validate_repo_relative_path(path: &str) -> GitResult<String> {
         let trimmed = path.trim();
         if trimmed.is_empty() {
@@ -1942,7 +1973,9 @@ impl GitOperationHandler for CliGitHandler {
             ));
         }
 
-        let mut args = vec!["commit", "-m", message];
+        let message_file_path = Self::write_commit_message_file(message)?;
+        let message_file = Self::path_to_string(&message_file_path);
+        let mut args = vec!["commit", "--file", message_file.as_str()];
         let commit_gpgsign = Self::run_git_allow_exit_codes(
             &["config", "--get", "commit.gpgsign"],
             Some(&repo_path),
@@ -1980,7 +2013,9 @@ impl GitOperationHandler for CliGitHandler {
         if request.amend == Some(true) {
             args.push("--amend");
         }
-        let output = Self::run_git(&args, Some(&repo_path))?;
+        let output = Self::run_git(&args, Some(&repo_path));
+        let _ = fs::remove_file(&message_file_path);
+        let output = output?;
 
         Ok(OperationResult {
             message: format!("Committed changes in {}", repo_path.display()),
@@ -4296,6 +4331,7 @@ impl GitOperationHandler for CliGitHandler {
         let mode_flag = match request.mode {
             ResetMode::Soft => "--soft",
             ResetMode::Mixed => "--mixed",
+            ResetMode::Hard => "--hard",
         };
         Self::run_git(
             &["reset", mode_flag, request.target.trim()],
@@ -4304,6 +4340,7 @@ impl GitOperationHandler for CliGitHandler {
         let mode_label = match request.mode {
             ResetMode::Soft => "soft",
             ResetMode::Mixed => "mixed",
+            ResetMode::Hard => "hard",
         };
         Ok(OperationResult {
             message: format!("Reset ({mode_label}) to {}", request.target.trim()),
@@ -5236,6 +5273,15 @@ mod tests {
         assert_eq!(
             CliGitHandler::parse_hunk_header("@@ -20,4 +20,5 @@ fn my_func() {"),
             (20, 20)
+        );
+    }
+
+    #[test]
+    fn reset_mode_hard_serialises_as_hard() {
+        assert_eq!(serde_json::to_string(&ResetMode::Hard).unwrap(), "\"hard\"");
+        assert_eq!(
+            serde_json::from_str::<ResetMode>("\"hard\"").unwrap(),
+            ResetMode::Hard
         );
     }
 

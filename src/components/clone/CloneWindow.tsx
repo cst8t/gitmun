@@ -5,11 +5,11 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
-import type { OperationResult, Settings } from "../../types";
+import type { CloneStartupOptions, OperationResult, Settings } from "../../types";
 import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
 import { getCloneRepoUrlError } from "../../utils/gitInputValidation";
-import { takePendingCloneDestination } from "../../api/commands";
+import { takePendingCloneOptions } from "../../api/commands";
 import { applyThemeMode } from "../../utils/theme";
 import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./CloneWindow.css";
@@ -36,6 +36,14 @@ function getBaseDir(path: string): string {
   return lastSep > 0 ? path.slice(0, lastSep) : path;
 }
 
+function destinationForRepo(base: string, repoUrl: string): string {
+  const name = parseRepoName(repoUrl);
+  if (!name) return base;
+  if (!base) return name;
+  const sep = base.includes("\\") ? "\\" : "/";
+  return base + sep + name;
+}
+
 export function CloneWindow() {
   const { t } = useTranslation("clone");
   const useNativeWindowBar = true;
@@ -60,6 +68,78 @@ export function CloneWindow() {
       ? t("placeholders.destinationMac")
       : t("placeholders.destinationLinux");
 
+  const cloneWithValues = useCallback(async (repoUrlValue: string, destinationValue: string) => {
+    if (!repoUrlValue.trim()) {
+      setStatus(t("log.repoUrlRequired"));
+      return;
+    }
+    const inputError = getCloneRepoUrlError(repoUrlValue);
+    if (inputError) {
+      setStatus(t(inputError, { ns: "git", defaultValue: inputError }));
+      return;
+    }
+    setCloning(true);
+    setStatus(t("log.cloning"));
+    setProgressLines([]);
+
+    const onProgress = new Channel<string>();
+    onProgress.onmessage = line => {
+      setProgressLines(prev => [...prev.slice(-99), line]);
+    };
+
+    try {
+      const result = await invoke<OperationResult>("clone_repo", {
+        request: { repoUrl: repoUrlValue, destination: destinationValue },
+        onProgress,
+      });
+
+      // Persist the base dir (parent of what was cloned into) for next time.
+      const lastSep = Math.max(destinationValue.lastIndexOf("/"), destinationValue.lastIndexOf("\\"));
+      if (lastSep > 0) {
+        localStorage.setItem(CLONE_BASE_KEY, destinationValue.slice(0, lastSep));
+      }
+
+      if (result.repoPath) {
+        await emit("repository-selected", { repoPath: result.repoPath });
+      }
+
+      const outputDetails = result.output ? ` (${result.output})` : "";
+      setStatus(`${result.message}${outputDetails}`);
+      appendResultLog("success", result.message, result.backendUsed, result.repoPath ?? destinationValue);
+      await getCurrentWindow().close();
+    } catch (e) {
+      const msg = String(e);
+      if (msg.includes("cancelled")) {
+        setStatus(t("log.cloneCancelled"));
+      } else {
+        const message = t("log.cloneFailed", { message: msg });
+        setStatus(message);
+        appendResultLog("error", message, "unknown", destinationValue);
+      }
+    } finally {
+      setCloning(false);
+    }
+  }, [t]);
+
+  const applyCloneOptions = useCallback((options: CloneStartupOptions, fallbackDestination: string) => {
+    const nextRepoUrl = options.repoUrl ?? "";
+    const nextDestination = options.destination
+      ?? (nextRepoUrl ? destinationForRepo(fallbackDestination, nextRepoUrl) : fallbackDestination);
+
+    if (options.repoUrl != null) {
+      setRepoUrl(options.repoUrl);
+    }
+    if (nextDestination) {
+      baseDirRef.current = options.destination ?? fallbackDestination;
+      setDestination(nextDestination);
+      isAutoRef.current = options.destination == null;
+    }
+
+    if (options.startClone) {
+      void cloneWithValues(nextRepoUrl, nextDestination);
+    }
+  }, [cloneWithValues]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -71,42 +151,27 @@ export function CloneWindow() {
         await applyThemeMode(settings.themeMode);
         applyUiTextScale(settings.uiTextScale);
 
-        // Initialise destination: pending shell destination > last-used dir > settings default > OS default.
-        const pendingDestination = await takePendingCloneDestination();
-        if (pendingDestination) {
-          baseDirRef.current = pendingDestination;
-          setDestination(pendingDestination);
-          isAutoRef.current = false;
-        } else {
-          const lastUsed = localStorage.getItem(CLONE_BASE_KEY);
-          if (lastUsed) {
-            baseDirRef.current = lastUsed;
-            setDestination(lastUsed);
-          } else if (settings.defaultCloneDir) {
-            baseDirRef.current = settings.defaultCloneDir;
-            setDestination(settings.defaultCloneDir);
-          } else {
-            const dir = await invoke<string>("get_default_clone_dir");
-            baseDirRef.current = dir;
-            setDestination(dir);
-          }
+        const lastUsed = localStorage.getItem(CLONE_BASE_KEY);
+        const fallbackDestination = lastUsed || settings.defaultCloneDir || await invoke<string>("get_default_clone_dir");
+        baseDirRef.current = fallbackDestination;
+        setDestination(fallbackDestination);
+
+        const pendingOptions = await takePendingCloneOptions();
+        if (pendingOptions) {
+          applyCloneOptions(pendingOptions, fallbackDestination);
         }
       } catch (e) {
         setStatus(t("log.loadFailed", { message: String(e) }));
       }
     })();
-  }, [t]);
+  }, [applyCloneOptions, t]);
 
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
-      const fn = await listen<string>("clone-destination-updated", (event) => {
-        const path = event.payload;
-        if (!path) return;
-        baseDirRef.current = path;
-        setDestination(path);
-        isAutoRef.current = false;
+      const fn = await listen<CloneStartupOptions>("clone-options-updated", (event) => {
+        applyCloneOptions(event.payload, destination || baseDirRef.current);
       });
       if (cancelled) fn(); else unlisten = fn;
     })();
@@ -114,7 +179,7 @@ export function CloneWindow() {
       cancelled = true;
       unlisten?.();
     };
-  }, []);
+  }, [applyCloneOptions, destination]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -145,8 +210,7 @@ export function CloneWindow() {
       setDestination(name);
       return;
     }
-    const sep = base.includes("\\") ? "\\" : "/";
-    setDestination(base + sep + name);
+    setDestination(destinationForRepo(base, name));
   }, [repoUrl]);
 
   const handleRepoUrlChange = useCallback((val: string) => {
@@ -169,8 +233,7 @@ export function CloneWindow() {
       });
       if (typeof selected === "string") {
         const repoName = parseRepoName(repoUrl);
-        const sep = selected.includes("\\") ? "\\" : "/";
-        const newDest = repoName ? selected + sep + repoName : selected;
+        const newDest = repoName ? destinationForRepo(selected, repoUrl) : selected;
         baseDirRef.current = selected;
         setDestination(newDest);
         isAutoRef.current = true;
@@ -183,57 +246,8 @@ export function CloneWindow() {
   }, [destination, repoUrl, t]);
 
   const handleClone = useCallback(async () => {
-    if (!repoUrl.trim()) {
-      setStatus(t("log.repoUrlRequired"));
-      return;
-    }
-    const inputError = getCloneRepoUrlError(repoUrl);
-    if (inputError) {
-      setStatus(t(inputError, { ns: "git", defaultValue: inputError }));
-      return;
-    }
-    setCloning(true);
-    setStatus(t("log.cloning"));
-    setProgressLines([]);
-
-    const onProgress = new Channel<string>();
-    onProgress.onmessage = line => {
-      setProgressLines(prev => [...prev.slice(-99), line]);
-    };
-
-    try {
-      const result = await invoke<OperationResult>("clone_repo", {
-        request: { repoUrl, destination },
-        onProgress,
-      });
-
-      // Persist the base dir (parent of what was cloned into) for next time.
-      const lastSep = Math.max(destination.lastIndexOf("/"), destination.lastIndexOf("\\"));
-      if (lastSep > 0) {
-        localStorage.setItem(CLONE_BASE_KEY, destination.slice(0, lastSep));
-      }
-
-      if (result.repoPath) {
-        await emit("repository-selected", { repoPath: result.repoPath });
-      }
-
-      const outputDetails = result.output ? ` (${result.output})` : "";
-      setStatus(`${result.message}${outputDetails}`);
-      appendResultLog("success", result.message, result.backendUsed, result.repoPath ?? destination);
-      await getCurrentWindow().close();
-    } catch (e) {
-      const msg = String(e);
-      if (msg.includes("cancelled")) {
-        setStatus(t("log.cloneCancelled"));
-      } else {
-        const message = t("log.cloneFailed", { message: msg });
-        setStatus(message);
-        appendResultLog("error", message, "unknown", destination);
-      }
-    } finally {
-      setCloning(false);
-    }
-  }, [repoUrl, destination, t]);
+    await cloneWithValues(repoUrl, destination);
+  }, [cloneWithValues, destination, repoUrl]);
 
   const handleCancel = useCallback(async () => {
     await invoke("cancel_clone");
