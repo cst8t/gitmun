@@ -2,11 +2,12 @@ use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
     CommitMarkers, CommitRequest, DiffRequest, ExportPatchRequest, ExternalDiffRequest,
     FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest,
-    ImportPatchRequest, LinuxTerminalEmulator, NumstatRequest, NumstatResult, OperationResult,
-    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
-    SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest,
+    ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus, SetIdentityRequest,
+    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
 };
+#[cfg(target_os = "linux")]
+use crate::git::types::LinuxTerminalEmulator;
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
 use std::io::Read;

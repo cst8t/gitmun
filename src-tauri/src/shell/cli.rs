@@ -248,11 +248,13 @@ mod tests {
 
     #[test]
     fn parses_open_command() {
+        let path = cwd_path("project");
+
         assert_eq!(
-            parse(&["gitmun", "open", "/home/user/project"]),
+            parse(&["gitmun", "open", &path]),
             CliOutcome::Launch(Some(ShellStartupAction {
                 action: ContextAction::OpenRepo,
-                path: "/home/user/project".to_string(),
+                path,
                 routing: None,
                 repo_url: None,
                 destination: None,
@@ -278,19 +280,21 @@ mod tests {
 
     #[test]
     fn parses_clone_repo_and_destination() {
+        let destination = cwd_path("projects/repo");
+
         assert_eq!(
             parse(&[
                 "gitmun",
                 "clone",
                 "git@github.com:owner/repo.git",
-                "/home/user/projects/repo"
+                &destination,
             ]),
             CliOutcome::Launch(Some(ShellStartupAction {
                 action: ContextAction::CloneRepo,
-                path: "/home/user/projects/repo".to_string(),
+                path: destination.clone(),
                 routing: None,
                 repo_url: Some("git@github.com:owner/repo.git".to_string()),
-                destination: Some("/home/user/projects/repo".to_string()),
+                destination: Some(destination),
                 start_clone: false,
             }))
         );
@@ -298,14 +302,16 @@ mod tests {
 
     #[test]
     fn parses_clone_destination_option() {
+        let destination = cwd_path("projects");
+
         assert_eq!(
-            parse(&["gitmun", "clone", "--to", "/home/user/projects"]),
+            parse(&["gitmun", "clone", "--to", &destination]),
             CliOutcome::Launch(Some(ShellStartupAction {
                 action: ContextAction::CloneRepo,
-                path: "/home/user/projects".to_string(),
+                path: destination.clone(),
                 routing: None,
                 repo_url: None,
-                destination: Some("/home/user/projects".to_string()),
+                destination: Some(destination),
                 start_clone: false,
             }))
         );
