@@ -916,13 +916,8 @@ fn branches_includes_default_branch() {
     let branches = handler()
         .get_branches(&repo_request(&dir))
         .expect("get_branches");
-    // git init uses "master" or "main" depending on config; accept either
     let names: Vec<&str> = branches.iter().map(|b| b.name.as_str()).collect();
-    assert!(
-        names.contains(&"main") || names.contains(&"master"),
-        "expected main or master, got {:?}",
-        names
-    );
+    assert!(names.contains(&"main"), "expected main, got {:?}", names);
 }
 
 #[test]
