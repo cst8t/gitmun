@@ -1,33 +1,33 @@
-export const DEFAULT_LEFT_PANE_WIDTH = 300;
-export const DEFAULT_RIGHT_PANE_WIDTH = 480;
-export const LEGACY_DEFAULT_RIGHT_PANE_WIDTH = 420;
-export const DEFAULT_LEFT_PANE_RATIO = 0.13;
-export const DEFAULT_RIGHT_PANE_RATIO = 0.54;
-export const MIN_LEFT_PANE_WIDTH = 260;
-export const MIN_RIGHT_PANE_WIDTH = 360;
-export const MIN_CENTRE_PANE_WIDTH = 420;
-export const MIN_VISIBLE_RIGHT_PANE_WIDTH = 120;
-export const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
-export const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
+export const DEFAULT_LEFT_PANEL_WIDTH = 300;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 480;
+export const LEGACY_DEFAULT_RIGHT_PANEL_WIDTH = 420;
+export const DEFAULT_LEFT_PANEL_RATIO = 0.13;
+export const DEFAULT_RIGHT_PANEL_RATIO = 0.54;
+export const MIN_LEFT_PANEL_WIDTH = 260;
+export const MIN_RIGHT_PANEL_WIDTH = 360;
+export const MIN_CENTRE_PANEL_WIDTH = 420;
+export const MIN_VISIBLE_RIGHT_PANEL_WIDTH = 120;
+export const LEFT_PANEL_RATIO_KEY = "gitmun.leftPaneRatio";
+export const RIGHT_PANEL_RATIO_KEY = "gitmun.rightPaneRatio";
 export const SPLITTER_WIDTH = 6;
-export const LEFT_PANE_TOGGLE_WIDTH = 22;
+export const LEFT_PANEL_TOGGLE_WIDTH = 22;
 export const SPLITTER_SPACE = 12;
 
-export type PaneLayout = {
+export type PanelLayout = {
     left: number;
     right: number;
 };
 
-export type PaneRatios = {
+export type PanelRatios = {
     left: number | null;
     right: number | null;
 };
 
-export function isValidPaneWidth(value: number): boolean {
+export function isValidPanelWidth(value: number): boolean {
     return Number.isFinite(value) && value > 0;
 }
 
-export function parsePaneRatio(value: string | null): number | null {
+export function parsePanelRatio(value: string | null): number | null {
     if (!value) return null;
     const parsed = Number.parseFloat(value);
     if (!Number.isFinite(parsed)) return null;
@@ -35,33 +35,33 @@ export function parsePaneRatio(value: string | null): number | null {
     return parsed;
 }
 
-export function areDefaultPaneWidths(left: number, right: number): boolean {
-    return left === DEFAULT_LEFT_PANE_WIDTH
-        && (right === DEFAULT_RIGHT_PANE_WIDTH || right === LEGACY_DEFAULT_RIGHT_PANE_WIDTH);
+export function areDefaultPanelWidths(left: number, right: number): boolean {
+    return left === DEFAULT_LEFT_PANEL_WIDTH
+        && (right === DEFAULT_RIGHT_PANEL_WIDTH || right === LEGACY_DEFAULT_RIGHT_PANEL_WIDTH);
 }
 
-export function clampPaneLayout(totalWidth: number, desiredLeft: number, desiredRight: number): PaneLayout {
+export function clampPanelLayout(totalWidth: number, desiredLeft: number, desiredRight: number): PanelLayout {
     if (!Number.isFinite(totalWidth) || totalWidth <= 0) {
-        return {left: DEFAULT_LEFT_PANE_WIDTH, right: DEFAULT_RIGHT_PANE_WIDTH};
+        return {left: DEFAULT_LEFT_PANEL_WIDTH, right: DEFAULT_RIGHT_PANEL_WIDTH};
     }
 
-    const defaultLeft = Math.round(totalWidth * DEFAULT_LEFT_PANE_RATIO);
-    const defaultRight = Math.round(totalWidth * DEFAULT_RIGHT_PANE_RATIO);
-    let left = isValidPaneWidth(desiredLeft) ? desiredLeft : defaultLeft;
-    let right = isValidPaneWidth(desiredRight) ? desiredRight : defaultRight;
+    const defaultLeft = Math.round(totalWidth * DEFAULT_LEFT_PANEL_RATIO);
+    const defaultRight = Math.round(totalWidth * DEFAULT_RIGHT_PANEL_RATIO);
+    let left = isValidPanelWidth(desiredLeft) ? desiredLeft : defaultLeft;
+    let right = isValidPanelWidth(desiredRight) ? desiredRight : defaultRight;
 
-    const targetSides = Math.max(0, totalWidth - MIN_CENTRE_PANE_WIDTH - SPLITTER_SPACE);
+    const targetSides = Math.max(0, totalWidth - MIN_CENTRE_PANEL_WIDTH - SPLITTER_SPACE);
     if (targetSides <= 0) {
         const half = Math.max(0, Math.floor((totalWidth - SPLITTER_SPACE) / 2));
         return {left: half, right: Math.max(0, totalWidth - SPLITTER_SPACE - half)};
     }
 
-    const minVisibleRight = Math.min(MIN_VISIBLE_RIGHT_PANE_WIDTH, targetSides);
-    const minLeft = targetSides >= MIN_LEFT_PANE_WIDTH + minVisibleRight
-        ? MIN_LEFT_PANE_WIDTH
+    const minVisibleRight = Math.min(MIN_VISIBLE_RIGHT_PANEL_WIDTH, targetSides);
+    const minLeft = targetSides >= MIN_LEFT_PANEL_WIDTH + minVisibleRight
+        ? MIN_LEFT_PANEL_WIDTH
         : Math.max(0, targetSides - minVisibleRight);
     const minRight = Math.min(minVisibleRight, Math.max(0, targetSides - minLeft));
-    const preferredMinRight = Math.min(MIN_RIGHT_PANE_WIDTH, Math.max(0, targetSides - minLeft));
+    const preferredMinRight = Math.min(MIN_RIGHT_PANEL_WIDTH, Math.max(0, targetSides - minLeft));
 
     left = Math.max(left, minLeft);
     right = Math.max(right, preferredMinRight);
@@ -93,7 +93,7 @@ export function clampPaneLayout(totalWidth: number, desiredLeft: number, desired
     return {left: Math.round(left), right: Math.round(right)};
 }
 
-export function paneRatiosFromLayout(totalWidth: number, layout: PaneLayout): PaneRatios {
+export function panelRatiosFromLayout(totalWidth: number, layout: PanelLayout): PanelRatios {
     if (!Number.isFinite(totalWidth) || totalWidth <= 0) {
         return {left: null, right: null};
     }
@@ -106,58 +106,58 @@ export function paneRatiosFromLayout(totalWidth: number, layout: PaneLayout): Pa
     };
 }
 
-export function resolvePaneLayout(
+export function resolvePanelLayout(
     totalWidth: number,
-    ratios: PaneRatios,
-    settingsLayout: PaneLayout,
-): { layout: PaneLayout; ratios: PaneRatios } {
-    const desiredLeft = isValidPaneWidth(settingsLayout.left)
+    ratios: PanelRatios,
+    settingsLayout: PanelLayout,
+): { layout: PanelLayout; ratios: PanelRatios } {
+    const desiredLeft = isValidPanelWidth(settingsLayout.left)
         ? settingsLayout.left
-        : DEFAULT_LEFT_PANE_WIDTH;
-    const desiredRight = isValidPaneWidth(settingsLayout.right)
+        : DEFAULT_LEFT_PANEL_WIDTH;
+    const desiredRight = isValidPanelWidth(settingsLayout.right)
         ? settingsLayout.right
-        : DEFAULT_RIGHT_PANE_WIDTH;
+        : DEFAULT_RIGHT_PANEL_WIDTH;
     const useDefaultRatios = ratios.left == null
         && ratios.right == null
-        && areDefaultPaneWidths(desiredLeft, desiredRight);
+        && areDefaultPanelWidths(desiredLeft, desiredRight);
 
     const left = totalWidth > 0 && ratios.left != null
         ? totalWidth * ratios.left
         : totalWidth > 0 && useDefaultRatios
-            ? totalWidth * DEFAULT_LEFT_PANE_RATIO
+            ? totalWidth * DEFAULT_LEFT_PANEL_RATIO
             : desiredLeft;
     const right = totalWidth > 0 && ratios.right != null
         ? totalWidth * ratios.right
         : totalWidth > 0 && useDefaultRatios
-            ? totalWidth * DEFAULT_RIGHT_PANE_RATIO
+            ? totalWidth * DEFAULT_RIGHT_PANEL_RATIO
             : desiredRight;
 
     const layout = totalWidth > 0
-        ? clampPaneLayout(totalWidth, left, right)
+        ? clampPanelLayout(totalWidth, left, right)
         : {left: desiredLeft, right: desiredRight};
     const nextRatios = totalWidth > 0
         ? {
-            left: ratios.left ?? (useDefaultRatios ? DEFAULT_LEFT_PANE_RATIO : paneRatiosFromLayout(totalWidth, layout).left),
-            right: ratios.right ?? (useDefaultRatios ? DEFAULT_RIGHT_PANE_RATIO : paneRatiosFromLayout(totalWidth, layout).right),
+            left: ratios.left ?? (useDefaultRatios ? DEFAULT_LEFT_PANEL_RATIO : panelRatiosFromLayout(totalWidth, layout).left),
+            right: ratios.right ?? (useDefaultRatios ? DEFAULT_RIGHT_PANEL_RATIO : panelRatiosFromLayout(totalWidth, layout).right),
         }
         : ratios;
 
     return {layout, ratios: nextRatios};
 }
 
-export function resizePaneLayout(
+export function resizePanelLayout(
     totalWidth: number,
-    ratios: PaneRatios,
-    fallbackLayout: PaneLayout,
-): { layout: PaneLayout; ratios: PaneRatios } {
+    ratios: PanelRatios,
+    fallbackLayout: PanelLayout,
+): { layout: PanelLayout; ratios: PanelRatios } {
     const left = totalWidth > 0 && ratios.left != null
         ? totalWidth * ratios.left
         : fallbackLayout.left;
     const right = totalWidth > 0 && ratios.right != null
         ? totalWidth * ratios.right
         : fallbackLayout.right;
-    const layout = clampPaneLayout(totalWidth, left, right);
-    const fallbackRatios = paneRatiosFromLayout(totalWidth, layout);
+    const layout = clampPanelLayout(totalWidth, left, right);
+    const fallbackRatios = panelRatiosFromLayout(totalWidth, layout);
     const nextRatios = {
         left: ratios.left ?? fallbackRatios.left,
         right: ratios.right ?? fallbackRatios.right,
