@@ -3,9 +3,10 @@ export const DEFAULT_RIGHT_PANE_WIDTH = 480;
 export const LEGACY_DEFAULT_RIGHT_PANE_WIDTH = 420;
 export const DEFAULT_LEFT_PANE_RATIO = 0.13;
 export const DEFAULT_RIGHT_PANE_RATIO = 0.54;
-export const MIN_LEFT_PANE_WIDTH = 220;
+export const MIN_LEFT_PANE_WIDTH = 260;
 export const MIN_RIGHT_PANE_WIDTH = 360;
 export const MIN_CENTRE_PANE_WIDTH = 420;
+export const MIN_VISIBLE_RIGHT_PANE_WIDTH = 120;
 export const LEFT_PANE_RATIO_KEY = "gitmun.leftPaneRatio";
 export const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 export const SPLITTER_WIDTH = 6;
@@ -55,20 +56,24 @@ export function clampPaneLayout(totalWidth: number, desiredLeft: number, desired
         return {left: half, right: Math.max(0, totalWidth - SPLITTER_SPACE - half)};
     }
 
-    const preferredMinLeft = Math.min(MIN_LEFT_PANE_WIDTH, targetSides);
-    const preferredMinRight = Math.min(MIN_RIGHT_PANE_WIDTH, targetSides);
+    const minVisibleRight = Math.min(MIN_VISIBLE_RIGHT_PANE_WIDTH, targetSides);
+    const minLeft = targetSides >= MIN_LEFT_PANE_WIDTH + minVisibleRight
+        ? MIN_LEFT_PANE_WIDTH
+        : Math.max(0, targetSides - minVisibleRight);
+    const minRight = Math.min(minVisibleRight, Math.max(0, targetSides - minLeft));
+    const preferredMinRight = Math.min(MIN_RIGHT_PANE_WIDTH, Math.max(0, targetSides - minLeft));
 
-    left = Math.max(left, preferredMinLeft);
+    left = Math.max(left, minLeft);
     right = Math.max(right, preferredMinRight);
 
     const sidesTotal = left + right;
     if (sidesTotal > targetSides) {
         let deficit = sidesTotal - targetSides;
-        const rightShrink = Math.min(deficit, Math.max(0, right - preferredMinRight));
+        const rightShrink = Math.min(deficit, Math.max(0, right - minRight));
         right -= rightShrink;
         deficit -= rightShrink;
 
-        const leftShrink = Math.min(deficit, Math.max(0, left - preferredMinLeft));
+        const leftShrink = Math.min(deficit, Math.max(0, left - minLeft));
         left -= leftShrink;
         deficit -= leftShrink;
 
@@ -82,11 +87,8 @@ export function clampPaneLayout(totalWidth: number, desiredLeft: number, desired
         }
     }
 
-    const rightMinVisible = Math.min(120, targetSides);
-    const leftMax = Math.max(0, targetSides - rightMinVisible);
-    left = Math.min(Math.max(0, left), leftMax);
+    left = Math.min(Math.max(0, left), targetSides);
     right = Math.min(Math.max(0, right), Math.max(0, targetSides - left));
-    left = Math.min(Math.max(0, left), Math.max(0, targetSides - right));
 
     return {left: Math.round(left), right: Math.round(right)};
 }

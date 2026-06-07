@@ -3,6 +3,8 @@ import {
     DEFAULT_LEFT_PANE_WIDTH,
     DEFAULT_RIGHT_PANE_WIDTH,
     LEGACY_DEFAULT_RIGHT_PANE_WIDTH,
+    MIN_LEFT_PANE_WIDTH,
+    clampPaneLayout,
     paneRatiosFromLayout,
     resizePaneLayout,
     resolvePaneLayout,
@@ -26,7 +28,8 @@ describe("pane layout", () => {
 
         const wide = resizePaneLayout(2000, small.ratios, small.layout);
 
-        expect(small.layout.right).toBe(530);
+        expect(small.layout.left).toBe(MIN_LEFT_PANE_WIDTH);
+        expect(small.layout.right).toBe(490);
         expect(wide.layout.right).toBe(1080);
         expect(wide.layout.right).toBeGreaterThan(small.layout.right);
     });
@@ -43,7 +46,23 @@ describe("pane layout", () => {
         const narrow = resizePaneLayout(900, ratios, { left: 300, right: 1000 });
         const wide = resizePaneLayout(2000, narrow.ratios, narrow.layout);
 
+        expect(narrow.layout.left).toBe(MIN_LEFT_PANE_WIDTH);
         expect(wide.layout).toEqual({ left: 300, right: 1000 });
+    });
+
+    it("keeps manual left pane drags above the sidebar usable minimum", () => {
+        const layout = clampPaneLayout(1400, 80, 480);
+
+        expect(layout.left).toBe(MIN_LEFT_PANE_WIDTH);
+    });
+
+    it("corrects a persisted left pane that is too narrow", () => {
+        const { layout } = resolvePaneLayout(1400, { left: 0.08, right: 0.34 }, {
+            left: 112,
+            right: 476,
+        });
+
+        expect(layout.left).toBe(MIN_LEFT_PANE_WIDTH);
     });
 
     it("keeps the centre panel usable when the window shrinks", () => {
@@ -51,6 +70,7 @@ describe("pane layout", () => {
         const { layout } = resizePaneLayout(900, ratios, { left: 260, right: 1080 });
 
         expect(layout.left + layout.right).toBeLessThanOrEqual(468);
+        expect(layout.left).toBe(MIN_LEFT_PANE_WIDTH);
         expect(layout.right).toBeGreaterThanOrEqual(120);
     });
 
