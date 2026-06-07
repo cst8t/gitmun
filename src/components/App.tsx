@@ -15,20 +15,20 @@ import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
 import {applyThemeMode} from "../utils/theme";
 import {applyUiTextScale} from "../utils/uiTextScale";
 import {
-    DEFAULT_LEFT_PANE_WIDTH,
-    DEFAULT_RIGHT_PANE_WIDTH,
-    LEFT_PANE_RATIO_KEY,
-    LEFT_PANE_TOGGLE_WIDTH,
-    RIGHT_PANE_RATIO_KEY,
+    DEFAULT_LEFT_PANEL_WIDTH,
+    DEFAULT_RIGHT_PANEL_WIDTH,
+    LEFT_PANEL_RATIO_KEY,
+    LEFT_PANEL_TOGGLE_WIDTH,
+    RIGHT_PANEL_RATIO_KEY,
     SPLITTER_WIDTH,
-    clampPaneLayout,
-    paneRatiosFromLayout,
-    parsePaneRatio,
-    resizePaneLayout,
-    resolvePaneLayout,
-    type PaneLayout,
-    type PaneRatios,
-} from "../utils/paneLayout";
+    clampPanelLayout,
+    panelRatiosFromLayout,
+    parsePanelRatio,
+    resizePanelLayout,
+    resolvePanelLayout,
+    type PanelLayout,
+    type PanelRatios,
+} from "../utils/panelLayout";
 import "./App.css";
 
 const BACKEND_MODE_KEY = "gitmun.backendMode";
@@ -37,14 +37,14 @@ const THEME_MODE_KEY = "gitmun.themeMode";
 const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
 const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
 
-function savePaneRatios(totalWidth: number, left: number, right: number): void {
+function savePanelRatios(totalWidth: number, left: number, right: number): void {
     if (!Number.isFinite(totalWidth) || totalWidth <= 0) return;
-    const ratios = paneRatiosFromLayout(totalWidth, {left, right});
+    const ratios = panelRatiosFromLayout(totalWidth, {left, right});
     if (ratios.left != null) {
-        localStorage.setItem(LEFT_PANE_RATIO_KEY, ratios.left.toFixed(6));
+        localStorage.setItem(LEFT_PANEL_RATIO_KEY, ratios.left.toFixed(6));
     }
     if (ratios.right != null) {
-        localStorage.setItem(RIGHT_PANE_RATIO_KEY, ratios.right.toFixed(6));
+        localStorage.setItem(RIGHT_PANEL_RATIO_KEY, ratios.right.toFixed(6));
     }
 }
 
@@ -85,20 +85,20 @@ export function App() {
     const [confirmRevert, setConfirmRevert] = useState(true);
     const [settingsRevision, setSettingsRevision] = useState(0);
 
-    const [leftPaneWidth, setLeftPaneWidth] = useState<number>(DEFAULT_LEFT_PANE_WIDTH);
-    const [rightPaneWidth, setRightPaneWidth] = useState<number>(DEFAULT_RIGHT_PANE_WIDTH);
+    const [leftPaneWidth, setLeftPaneWidth] = useState<number>(DEFAULT_LEFT_PANEL_WIDTH);
+    const [rightPaneWidth, setRightPaneWidth] = useState<number>(DEFAULT_RIGHT_PANEL_WIDTH);
     const [leftPaneCollapsed, setLeftPaneCollapsed] = useState<boolean>(() => {
         return localStorage.getItem(LEFT_PANE_COLLAPSED_KEY) === "true";
     });
     const [draggingPane, setDraggingPane] = useState<"left" | "right" | null>(null);
     const appBodyRef = useRef<HTMLDivElement | null>(null);
-    const paneLayoutRef = useRef<PaneLayout>({
-        left: DEFAULT_LEFT_PANE_WIDTH,
-        right: DEFAULT_RIGHT_PANE_WIDTH,
+    const panelLayoutRef = useRef<PanelLayout>({
+        left: DEFAULT_LEFT_PANEL_WIDTH,
+        right: DEFAULT_RIGHT_PANEL_WIDTH,
     });
-    const paneRatioRef = useRef<PaneRatios>({
-        left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
-        right: parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY)),
+    const panelRatioRef = useRef<PanelRatios>({
+        left: parsePanelRatio(localStorage.getItem(LEFT_PANEL_RATIO_KEY)),
+        right: parsePanelRatio(localStorage.getItem(RIGHT_PANEL_RATIO_KEY)),
     });
 
     const pushRecentRepo = useCallback((path: string) => {
@@ -110,7 +110,7 @@ export function App() {
     }, []);
 
     useEffect(() => {
-        paneLayoutRef.current = {left: leftPaneWidth, right: rightPaneWidth};
+        panelLayoutRef.current = {left: leftPaneWidth, right: rightPaneWidth};
     }, [leftPaneWidth, rightPaneWidth]);
 
     useEffect(() => {
@@ -124,11 +124,11 @@ export function App() {
         const applyLayout = () => {
             const totalWidth = root.getBoundingClientRect().width;
             if (totalWidth <= 0) return;
-            const next = resizePaneLayout(totalWidth, paneRatioRef.current, paneLayoutRef.current);
-            paneRatioRef.current = next.ratios;
-            if (next.layout.left !== paneLayoutRef.current.left) setLeftPaneWidth(next.layout.left);
-            if (next.layout.right !== paneLayoutRef.current.right) setRightPaneWidth(next.layout.right);
-            paneLayoutRef.current = next.layout;
+            const next = resizePanelLayout(totalWidth, panelRatioRef.current, panelLayoutRef.current);
+            panelRatioRef.current = next.ratios;
+            if (next.layout.left !== panelLayoutRef.current.left) setLeftPaneWidth(next.layout.left);
+            if (next.layout.right !== panelLayoutRef.current.right) setRightPaneWidth(next.layout.right);
+            panelLayoutRef.current = next.layout;
         };
 
         applyLayout();
@@ -164,18 +164,18 @@ export function App() {
                 applyUiTextScale(settings.uiTextScale);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const storedRatios = {
-                    left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
-                    right: parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY)),
+                    left: parsePanelRatio(localStorage.getItem(LEFT_PANEL_RATIO_KEY)),
+                    right: parsePanelRatio(localStorage.getItem(RIGHT_PANEL_RATIO_KEY)),
                 };
-                const next = resolvePaneLayout(totalWidth, storedRatios, {
+                const next = resolvePanelLayout(totalWidth, storedRatios, {
                     left: settings.leftPaneWidth,
                     right: settings.rightPaneWidth,
                 });
                 setLeftPaneWidth(next.layout.left);
                 setRightPaneWidth(next.layout.right);
-                paneLayoutRef.current = next.layout;
-                paneRatioRef.current = next.ratios;
-                if (totalWidth > 0) savePaneRatios(totalWidth, next.layout.left, next.layout.right);
+                panelLayoutRef.current = next.layout;
+                panelRatioRef.current = next.ratios;
+                if (totalWidth > 0) savePanelRatios(totalWidth, next.layout.left, next.layout.right);
                 setConfirmRevert(settings.confirmRevert ?? true);
                 setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
                 setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
@@ -323,18 +323,18 @@ export function App() {
                 setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const storedRatios = {
-                    left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
-                    right: parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY)),
+                    left: parsePanelRatio(localStorage.getItem(LEFT_PANEL_RATIO_KEY)),
+                    right: parsePanelRatio(localStorage.getItem(RIGHT_PANEL_RATIO_KEY)),
                 };
-                const next = resolvePaneLayout(totalWidth, storedRatios, {
+                const next = resolvePanelLayout(totalWidth, storedRatios, {
                     left: settings.leftPaneWidth,
                     right: settings.rightPaneWidth,
                 });
                 setLeftPaneWidth(next.layout.left);
                 setRightPaneWidth(next.layout.right);
-                paneLayoutRef.current = next.layout;
-                paneRatioRef.current = next.ratios;
-                if (totalWidth > 0) savePaneRatios(totalWidth, next.layout.left, next.layout.right);
+                panelLayoutRef.current = next.layout;
+                panelRatioRef.current = next.ratios;
+                if (totalWidth > 0) savePanelRatios(totalWidth, next.layout.left, next.layout.right);
                 setSettingsRevision(r => r + 1);
                 showToast(t("toast.settingsUpdated"));
                 appendResultLog("info", t("log.settingsUpdated"), "unknown");
@@ -362,18 +362,18 @@ export function App() {
                 setErrorToastClearDelayMs(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS);
                 const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
                 const storedRatios = {
-                    left: parsePaneRatio(localStorage.getItem(LEFT_PANE_RATIO_KEY)),
-                    right: parsePaneRatio(localStorage.getItem(RIGHT_PANE_RATIO_KEY)),
+                    left: parsePanelRatio(localStorage.getItem(LEFT_PANEL_RATIO_KEY)),
+                    right: parsePanelRatio(localStorage.getItem(RIGHT_PANEL_RATIO_KEY)),
                 };
-                const next = resolvePaneLayout(totalWidth, storedRatios, {
+                const next = resolvePanelLayout(totalWidth, storedRatios, {
                     left: settings.leftPaneWidth,
                     right: settings.rightPaneWidth,
                 });
                 setLeftPaneWidth(next.layout.left);
                 setRightPaneWidth(next.layout.right);
-                paneLayoutRef.current = next.layout;
-                paneRatioRef.current = next.ratios;
-                if (totalWidth > 0) savePaneRatios(totalWidth, next.layout.left, next.layout.right);
+                panelLayoutRef.current = next.layout;
+                panelRatioRef.current = next.ratios;
+                if (totalWidth > 0) savePanelRatios(totalWidth, next.layout.left, next.layout.right);
                 setSettingsRevision(r => r + 1);
             });
             if (cancelled) fn(); else unlisten = fn;
@@ -412,14 +412,14 @@ export function App() {
             const rect = root.getBoundingClientRect();
             const totalWidth = rect.width;
             const collapseBonus = leftPaneCollapsed
-                ? Math.max(0, paneLayoutRef.current.left + SPLITTER_WIDTH - LEFT_PANE_TOGGLE_WIDTH)
+                ? Math.max(0, panelLayoutRef.current.left + SPLITTER_WIDTH - LEFT_PANEL_TOGGLE_WIDTH)
                 : 0;
-            const desiredLeft = draggingPane === "left" ? event.clientX - rect.left : paneLayoutRef.current.left;
+            const desiredLeft = draggingPane === "left" ? event.clientX - rect.left : panelLayoutRef.current.left;
             const desiredRight = draggingPane === "right"
                 ? Math.max(0, (rect.right - event.clientX) - collapseBonus)
-                : paneLayoutRef.current.right;
-            const next = clampPaneLayout(totalWidth, desiredLeft, desiredRight);
-            paneLayoutRef.current = next;
+                : panelLayoutRef.current.right;
+            const next = clampPanelLayout(totalWidth, desiredLeft, desiredRight);
+            panelLayoutRef.current = next;
             setLeftPaneWidth(next.left);
             setRightPaneWidth(next.right);
         };
@@ -428,13 +428,13 @@ export function App() {
             setDraggingPane(null);
             document.body.style.cursor = "";
             document.body.style.userSelect = "";
-            const {left, right} = paneLayoutRef.current;
+            const {left, right} = panelLayoutRef.current;
             api.setPanelLayout(Math.round(left), Math.round(right)).catch(() => {
             });
             const totalWidth = appBodyRef.current?.getBoundingClientRect().width ?? 0;
             if (totalWidth > 0) {
-                paneRatioRef.current = paneRatiosFromLayout(totalWidth, {left, right});
-                savePaneRatios(totalWidth, left, right);
+                panelRatioRef.current = panelRatiosFromLayout(totalWidth, {left, right});
+                savePanelRatios(totalWidth, left, right);
             }
         };
 
