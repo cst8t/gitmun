@@ -41,6 +41,7 @@
     "gitGroupTools": "Tools and signing",
     "gitVersion": "Git version: ",
     "graphicsMode": "Graphics mode",
+    "gpgKeyserverVerification": "GPG keyserver verification",
     "gpgProgram": "GPG executable",
     "layout": "Layout",
     "loadErrorTitle": "Settings could not be loaded",
@@ -72,6 +73,7 @@
     "gitExecutable": "This is the Git binary Gitmun is using. Saving it pins Gitmun to that executable; clear it to return to automatic lookup.",
     "gitOptions": "These options control Git behaviour in Gitmun.",
     "credentialHelper": "Leave blank to use Git's existing helper lookup. Use values such as `manager`, `manager-core`, `cache`, or `store`.",
+    "gpgKeyserverVerification": "When a GPG-signed commit uses a missing public key, Gitmun runs GnuPG with your configured keyservers to fetch it and then retries verification. This can reveal key lookup activity to keyserver or WKD operators and imports fetched keys into your GPG keyring.",
     "gpgProgram": "Leave blank to use Git's default GPG lookup. On Windows, Gitmun also searches common Git for Windows and GnuPG install folders.",
     "lineEndings": "Changing line ending conversion can make many files appear modified until the repository is renormalised.",
     "linuxGraphics": "Takes effect on next launch. Use \"Maximum compatibility\" if you see rendering crashes or a blank window.",
@@ -189,6 +191,7 @@
   "switches": {
     "autoCheckUpdates": "Automatically check for updates on launch",
     "followTags": "Include annotated tags when pushing (`--follow-tags`)",
+    "gpgKeyserverVerification": "Fetch missing GPG public keys during verification",
     "persistentErrorToasts": "Keep error messages open until dismissed",
     "platformAvatars": "Try platform-specific avatars first (e.g. GitHub for github.com remotes)",
     "trackFilePermissions": "Track file permissions",

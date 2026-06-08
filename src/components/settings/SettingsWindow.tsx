@@ -208,6 +208,7 @@ export function SettingsWindow() {
     const [globalGpgProgram, setGlobalGpgProgram] = useState("");
     const [globalGpgProgramConfigured, setGlobalGpgProgramConfigured] = useState("");
     const [globalGpgProgramEdited, setGlobalGpgProgramEdited] = useState(false);
+    const [gpgKeyserverVerificationEnabled, setGpgKeyserverVerificationEnabledState] = useState(false);
     const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
@@ -365,6 +366,7 @@ export function SettingsWindow() {
             setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
             setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
             setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
+            setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
             await applyThemeMode(settings.themeMode);
             applyUiTextScale(settings.uiTextScale);
 
@@ -517,6 +519,9 @@ export function SettingsWindow() {
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
             await invoke("set_auto_install_updates", {autoInstallUpdates});
             await setUpdateEndpoint(updateEndpoint);
+            await invoke<Settings>("set_gpg_keyserver_verification_enabled", {
+                enabled: gpgKeyserverVerificationEnabled,
+            });
             if (isLinux) {
                 await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
                 await invoke("set_linux_terminal_emulator", {linuxTerminalEmulator});
@@ -663,6 +668,7 @@ export function SettingsWindow() {
         linuxTerminalEmulator,
         linuxTerminalCustomCommand,
         repoOpenBehaviour,
+        gpgKeyserverVerificationEnabled,
         externalDiffToolPath,
         globalGpgProgram,
         globalGpgProgramConfigured,
@@ -1494,6 +1500,24 @@ export function SettingsWindow() {
                             </div>
                             <div className="settings-window__section-note">
                                 {t("notes.gpgProgram")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.gpgKeyserverVerification")}</label>
+                            <label className="settings-window__switch-row">
+                                <span className="settings-window__switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={gpgKeyserverVerificationEnabled}
+                                        onChange={e => setGpgKeyserverVerificationEnabledState(e.target.checked)}
+                                    />
+                                    <span className="settings-window__switch-track"/>
+                                </span>
+                                <span className="settings-window__switch-label">{t("switches.gpgKeyserverVerification")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {t("notes.gpgKeyserverVerification")}
                             </div>
                         </div>
                     </section>
