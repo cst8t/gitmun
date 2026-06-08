@@ -287,6 +287,8 @@ pub struct Settings {
     pub repo_open_behaviour: RepoOpenBehaviour,
     #[serde(default)]
     pub git_executable_path: String,
+    #[serde(default)]
+    pub gpg_keyserver_verification_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,6 +345,7 @@ impl Default for Settings {
             linux_terminal_custom_command: String::new(),
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),
+            gpg_keyserver_verification_enabled: false,
         }
     }
 }

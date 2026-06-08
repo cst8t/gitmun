@@ -86,6 +86,7 @@ export type Settings = {
     linuxTerminalCustomCommand: string;
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
+    gpgKeyserverVerificationEnabled: boolean;
 };
 
 export type ThemeBundle = {

@@ -472,6 +472,10 @@ export function setRepoOpenBehaviour(repoOpenBehaviour: RepoOpenBehaviour): Prom
     return invoke<Settings>("set_repo_open_behaviour", {repoOpenBehaviour});
 }
 
+export function setGpgKeyserverVerificationEnabled(enabled: boolean): Promise<Settings> {
+    return invoke<Settings>("set_gpg_keyserver_verification_enabled", {enabled});
+}
+
 export function getLinuxTerminalOptions(): Promise<LinuxTerminalOption[]> {
     return invoke<LinuxTerminalOption[]>("get_linux_terminal_options");
 }

@@ -357,6 +357,12 @@ impl GitService {
         })
     }
 
+    pub fn set_gpg_keyserver_verification_enabled(&self, enabled: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.gpg_keyserver_verification_enabled = enabled;
+        })
+    }
+
     pub fn set_panel_layout(&self, left_pane_width: u32, right_pane_width: u32) -> Settings {
         self.update_settings(|settings| {
             settings.left_pane_width = left_pane_width;

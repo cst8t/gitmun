@@ -40,6 +40,7 @@ const settings: Settings = {
     linuxTerminalCustomCommand: "",
     repoOpenBehaviour: "Ask",
     gitExecutablePath: "",
+    gpgKeyserverVerificationEnabled: false,
 };
 
 const defaultInvoke = async (command: string) => {
@@ -63,6 +64,7 @@ const defaultInvoke = async (command: string) => {
         case "set_persistent_error_toasts":
         case "set_error_toast_clear_delay_ms":
         case "set_git_executable_path":
+        case "set_gpg_keyserver_verification_enabled":
         case "set_linux_graphics_mode":
         case "set_linux_terminal_emulator":
         case "set_linux_terminal_custom_command":
@@ -260,6 +262,23 @@ describe("SettingsWindow", () => {
         await waitFor(() => {
             expect(mocks.invoke).toHaveBeenCalledWith("set_error_toast_clear_delay_ms", {
                 errorToastClearDelayMs: 1000,
+            });
+        });
+    });
+
+    it("loads and saves GPG keyserver verification", async () => {
+        render(<SettingsWindow/>);
+
+        fireEvent.click(screen.getByText("Git"));
+        const toggle = await screen.findByLabelText("Fetch missing GPG public keys during verification");
+        expect(toggle).not.toBeChecked();
+
+        fireEvent.click(toggle);
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.invoke).toHaveBeenCalledWith("set_gpg_keyserver_verification_enabled", {
+                enabled: true,
             });
         });
     });
