@@ -29,7 +29,7 @@ import { CreateBranchDialog } from "./sidebar/CreateBranchDialog";
 import { RenameBranchDialog } from "./sidebar/RenameBranchDialog";
 import { StashPushDialog } from "./sidebar/StashPushDialog";
 import { UpstreamDialog, type UpstreamDialogMode } from "./sidebar/UpstreamDialog";
-import { FolderIcon, GitIcon } from "./icons";
+import { ChevLeftIcon, ChevRightIcon, FolderIcon, GitIcon } from "./icons";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
 import { useGitLog } from "../hooks/useGitLog";
@@ -2235,38 +2235,40 @@ export function ProjectView({
                         stashBusy={stashBusy}
                       />
                     </div>
+                  </div>
+
+                  <div
+                    className={`app__left-divider ${draggingPane === "left" ? "app__left-divider--active" : ""}`}
+                  >
+                    <div
+                      className="app__splitter"
+                      onMouseDown={() => onSetDraggingPane("left")}
+                      role="separator"
+                      aria-label={t("labels.resizeLeftPanel")}
+                    />
                     <button
-                      className="app__left-pane-toggle app__left-pane-toggle--hide"
+                      className="app__left-pane-toggle"
                       type="button"
                       onClick={() => {
                         onSetDraggingPane(null);
                         onSetLeftPaneCollapsed(true);
                       }}
-                      title={t("labels.hideSidebar")}
                       aria-label={t("labels.hideSidebar")}
                     >
-                      &lt;
+                      <ChevLeftIcon size={14} />
                     </button>
                   </div>
-
-                  <div
-                    className={`app__splitter ${draggingPane === "left" ? "app__splitter--active" : ""}`}
-                    onMouseDown={() => onSetDraggingPane("left")}
-                    role="separator"
-                    aria-label={t("labels.resizeLeftPanel")}
-                  />
                 </>
               )}
 
               {leftPaneCollapsed && (
                 <button
-                  className="app__left-pane-toggle"
+                  className="app__left-divider app__left-divider--collapsed"
                   type="button"
                   onClick={() => onSetLeftPaneCollapsed(false)}
-                  title={t("labels.showSidebar")}
                   aria-label={t("labels.showSidebar")}
                 >
-                  &gt;
+                  <ChevRightIcon size={14} />
                 </button>
               )}
 
