@@ -145,28 +145,29 @@ describe("CentrePanel commit graph toggle", () => {
     vi.unstubAllGlobals();
   });
 
-  it("shows the commit graph by default and persists toggle changes", () => {
+  it("hides the commit graph by default and persists toggle changes", () => {
     const { container } = renderCentrePanel();
 
-    expect(container.querySelector(".log-view__graph")).not.toBeNull();
-
-    fireEvent.click(screen.getByLabelText("Hide commit graph"));
-
     expect(container.querySelector(".log-view__graph")).toBeNull();
-    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("false");
+    expect(screen.getByLabelText("Show commit graph")).toBeInTheDocument();
 
     fireEvent.click(screen.getByLabelText("Show commit graph"));
 
     expect(container.querySelector(".log-view__graph")).not.toBeNull();
     expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+
+    fireEvent.click(screen.getByLabelText("Hide commit graph"));
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("false");
   });
 
   it("initialises the commit graph toggle from local storage", () => {
-    localStorage.setItem("gitmun.showCommitGraph", "false");
+    localStorage.setItem("gitmun.showCommitGraph", "true");
 
     const { container } = renderCentrePanel();
 
-    expect(container.querySelector(".log-view__graph")).toBeNull();
-    expect(screen.getByLabelText("Show commit graph")).toBeInTheDocument();
+    expect(container.querySelector(".log-view__graph")).not.toBeNull();
+    expect(screen.getByLabelText("Hide commit graph")).toBeInTheDocument();
   });
 });

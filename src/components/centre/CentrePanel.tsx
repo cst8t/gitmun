@@ -25,9 +25,9 @@ const SHOW_COMMIT_GRAPH_KEY = "gitmun.showCommitGraph";
 
 function readShowCommitGraphPreference(): boolean {
   try {
-    return localStorage.getItem(SHOW_COMMIT_GRAPH_KEY) !== "false";
+    return localStorage.getItem(SHOW_COMMIT_GRAPH_KEY) === "true";
   } catch {
-    return true;
+    return false;
   }
 }
 
