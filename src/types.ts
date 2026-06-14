@@ -526,6 +526,13 @@ export type NumstatResult = {
 
 export type SignatureStatus = "none" | "signed" | "verified" | "unknownKey" | "bad";
 
+export type CommitRefKind = "localBranch" | "remoteBranch" | "tag";
+
+export type CommitRefDecoration = {
+    name: string;
+    kind: CommitRefKind;
+};
+
 export type CommitHistoryItem = {
     hash: string;
     shortHash: string;
@@ -533,6 +540,8 @@ export type CommitHistoryItem = {
     authorEmail: string;
     date: string;
     message: string;
+    parentHashes: string[];
+    refDecorations: CommitRefDecoration[];
     signatureStatus: SignatureStatus;
     keyType: string | null;
 };

@@ -13,20 +13,20 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
-    CommitTrailer, ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
-    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffHunk, DiffLine,
-    DiffLineKind, DiffRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
-    HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle,
-    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
-    PullAnalysis, PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest,
-    PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest,
-    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
-    RepoRequest, RepoStatus, ResetMode, ResetRequest, RevertCommitRequest,
-    SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
-    SubmoduleState, SubmoduleStatus, TagInfo, UpstreamStatus,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
+    CommitRefKind, CommitRequest, CommitTrailer, ConflictFileItem, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportPatchFileSelection,
+    ExportPatchRequest, ExportPatchScope, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
+    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope,
+    ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
+    OperationResult, PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState,
+    PullStrategy, PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest,
+    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
+    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -1500,6 +1500,83 @@ impl CliGitHandler {
         Ok(signatures)
     }
 
+    fn collect_commit_ref_decorations(
+        repo_path: &Path,
+    ) -> GitResult<HashMap<String, Vec<CommitRefDecoration>>> {
+        let output = Self::run_git(
+            &[
+                "for-each-ref",
+                "--format=%(objectname)%1f%(*objectname)%1f%(refname)",
+                "refs/heads",
+                "refs/remotes",
+                "refs/tags",
+            ],
+            Some(repo_path),
+        )?;
+
+        let mut decorations: HashMap<String, Vec<CommitRefDecoration>> = HashMap::new();
+        for line in output.lines().filter(|line| !line.trim().is_empty()) {
+            let mut parts = line.splitn(3, '\u{1f}');
+            let object_hash = parts.next().unwrap_or_default().trim();
+            let peeled_hash = parts.next().unwrap_or_default().trim();
+            let ref_name = parts.next().unwrap_or_default().trim();
+
+            let Some((kind, name)) = Self::commit_ref_decoration(ref_name) else {
+                continue;
+            };
+            let target_hash = if matches!(kind, CommitRefKind::Tag) && !peeled_hash.is_empty() {
+                peeled_hash
+            } else {
+                object_hash
+            };
+            if target_hash.is_empty() {
+                continue;
+            }
+
+            decorations
+                .entry(target_hash.to_string())
+                .or_default()
+                .push(CommitRefDecoration { name, kind });
+        }
+
+        for refs in decorations.values_mut() {
+            Self::sort_commit_ref_decorations(refs);
+        }
+
+        Ok(decorations)
+    }
+
+    fn commit_ref_decoration(ref_name: &str) -> Option<(CommitRefKind, String)> {
+        if let Some(name) = ref_name.strip_prefix("refs/heads/") {
+            return Some((CommitRefKind::LocalBranch, name.to_string()));
+        }
+        if let Some(name) = ref_name.strip_prefix("refs/remotes/") {
+            if name.ends_with("/HEAD") {
+                return None;
+            }
+            return Some((CommitRefKind::RemoteBranch, name.to_string()));
+        }
+        ref_name
+            .strip_prefix("refs/tags/")
+            .map(|name| (CommitRefKind::Tag, name.to_string()))
+    }
+
+    fn sort_commit_ref_decorations(refs: &mut [CommitRefDecoration]) {
+        refs.sort_by(|a, b| {
+            Self::commit_ref_kind_order(&a.kind)
+                .cmp(&Self::commit_ref_kind_order(&b.kind))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+    }
+
+    fn commit_ref_kind_order(kind: &CommitRefKind) -> u8 {
+        match kind {
+            CommitRefKind::LocalBranch => 0,
+            CommitRefKind::RemoteBranch => 1,
+            CommitRefKind::Tag => 2,
+        }
+    }
+
     fn append_auth_help(stderr: String) -> String {
         let lower = stderr.to_lowercase();
 
@@ -2329,7 +2406,7 @@ impl GitOperationHandler for CliGitHandler {
             CommitDateMode::AuthorDate => "%ad",
             CommitDateMode::CommitterDate => "%cd",
         };
-        let log_format = format!("%H%x1f%h%x1f%aN%x1f%aE%x1f{date_placeholder}%x1f%s");
+        let log_format = format!("%H%x1f%h%x1f%aN%x1f%aE%x1f{date_placeholder}%x1f%P%x1f%s");
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let limit = request.limit.unwrap_or(100).clamp(1, 5000).to_string();
         let skip = format!("--skip={}", request.offset.unwrap_or(0));
@@ -2344,8 +2421,10 @@ impl GitOperationHandler for CliGitHandler {
             pretty.as_str(),
         ];
         if request.scope == CommitLogScope::AllRefs {
-            args.push("--all");
-            args.push("--date-order");
+            args.push("--branches");
+            args.push("--tags");
+            args.push("--remotes");
+            args.push("--topo-order");
         }
 
         let output = match Self::run_git(args.as_slice(), Some(&repo_path)) {
@@ -2364,12 +2443,18 @@ impl GitOperationHandler for CliGitHandler {
         let mut hashes = Vec::new();
 
         for line in output.lines().filter(|line| !line.trim().is_empty()) {
-            let mut parts = line.splitn(6, '\u{1f}');
+            let mut parts = line.splitn(7, '\u{1f}');
             let hash = parts.next().unwrap_or_default().trim().to_string();
             let short_hash = parts.next().unwrap_or_default().trim().to_string();
             let author = parts.next().unwrap_or_default().trim().to_string();
             let author_email = parts.next().unwrap_or_default().trim().to_string();
             let date = parts.next().unwrap_or_default().trim().to_string();
+            let parent_hashes = parts
+                .next()
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(str::to_string)
+                .collect();
             let message = parts.next().unwrap_or_default().trim().to_string();
 
             if hash.is_empty() || short_hash.is_empty() {
@@ -2385,6 +2470,8 @@ impl GitOperationHandler for CliGitHandler {
                 author_email,
                 date,
                 message,
+                parent_hashes,
+                ref_decorations: Vec::new(),
                 signature_status: SignatureStatus::None,
                 key_type: None,
             });
@@ -2400,6 +2487,12 @@ impl GitOperationHandler for CliGitHandler {
                 commit.signature_status = SignatureStatus::Signed;
                 commit.key_type = Some(key_type.clone());
             }
+        }
+
+        let mut ref_decorations =
+            Self::collect_commit_ref_decorations(&repo_path).unwrap_or_default();
+        for commit in &mut commits {
+            commit.ref_decorations = ref_decorations.remove(&commit.hash).unwrap_or_default();
         }
 
         Ok(commits)

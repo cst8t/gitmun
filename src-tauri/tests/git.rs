@@ -8,10 +8,10 @@ use gitmun_lib::git::error_interpretation::GitErrorCategory;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRequest, CreateBranchRequest,
-    DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
-    FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, ResetMode,
-    ResetRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
+    CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
+    CreateBranchRequest, DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest,
+    ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest,
+    ResetMode, ResetRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
     SubmoduleState,
 };
 
@@ -869,11 +869,14 @@ fn commit_preserves_description_and_trailer_like_lines() {
 #[test]
 fn commit_history_all_refs_includes_branch_outside_detached_head() {
     let dir = init_repo();
+    let init_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
     git(dir.path(), &["checkout", "-b", "side"]);
     write_file(dir.path(), "side.txt", "side");
     git(dir.path(), &["add", "side.txt"]);
     git(dir.path(), &["commit", "-m", "side branch commit"]);
     git(dir.path(), &["checkout", "main"]);
+    write_file(dir.path(), "scratch.txt", "stash me");
+    git(dir.path(), &["stash", "push", "-u", "-m", "hidden stash"]);
     git(dir.path(), &["checkout", "--detach"]);
 
     let current_commits = handler()
@@ -908,6 +911,140 @@ fn commit_history_all_refs_includes_branch_outside_detached_head() {
             .iter()
             .any(|c| c.message == "side branch commit")
     );
+    assert!(
+        !all_ref_commits
+            .iter()
+            .any(|c| c.message.contains("hidden stash")),
+        "All refs history should not include refs/stash"
+    );
+
+    let side_commit = all_ref_commits
+        .iter()
+        .find(|c| c.message == "side branch commit")
+        .expect("side branch commit in all refs");
+    assert_eq!(side_commit.parent_hashes, vec![init_hash]);
+}
+
+fn assert_commit_history_includes_merge_parents(handler: impl GitOperationHandler) {
+    let dir = init_repo();
+    git(dir.path(), &["checkout", "-b", "side"]);
+    write_file(dir.path(), "side.txt", "side");
+    git(dir.path(), &["add", "side.txt"]);
+    git(dir.path(), &["commit", "-m", "side commit"]);
+    let side_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+
+    git(dir.path(), &["checkout", "main"]);
+    write_file(dir.path(), "main.txt", "main");
+    git(dir.path(), &["add", "main.txt"]);
+    git(dir.path(), &["commit", "-m", "main commit"]);
+    let main_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+
+    git(
+        dir.path(),
+        &["merge", "--no-ff", "side", "-m", "merge side"],
+    );
+    let merge_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+
+    let commits = handler
+        .get_commit_history(&CommitHistoryRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            limit: Some(10),
+            after_hash: None,
+            offset: None,
+            commit_date_mode: Default::default(),
+            scope: CommitLogScope::CurrentCheckout,
+        })
+        .expect("get commit history");
+
+    let merge_commit = commits
+        .iter()
+        .find(|commit| commit.hash == merge_hash)
+        .expect("merge commit in history");
+    assert_eq!(merge_commit.parent_hashes, vec![main_hash, side_hash]);
+}
+
+#[test]
+fn cli_commit_history_includes_merge_parents() {
+    assert_commit_history_includes_merge_parents(handler());
+}
+
+#[test]
+fn gix_commit_history_includes_merge_parents() {
+    assert_commit_history_includes_merge_parents(gix_handler());
+}
+
+fn assert_commit_history_includes_ref_decorations(handler: impl GitOperationHandler) {
+    let dir = init_repo();
+    let head_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);
+    git(dir.path(), &["branch", "topic"]);
+    git(dir.path(), &["tag", "v-test"]);
+    git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/main", "HEAD"],
+    );
+    git(
+        dir.path(),
+        &["update-ref", "refs/remotes/origin/HEAD", "HEAD"],
+    );
+
+    let commits = handler
+        .get_commit_history(&CommitHistoryRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            limit: Some(10),
+            after_hash: None,
+            offset: None,
+            commit_date_mode: Default::default(),
+            scope: CommitLogScope::CurrentCheckout,
+        })
+        .expect("get commit history");
+
+    let head_commit = commits
+        .iter()
+        .find(|commit| commit.hash == head_hash)
+        .expect("head commit in history");
+    assert!(
+        head_commit
+            .ref_decorations
+            .iter()
+            .any(|decoration| decoration.kind == CommitRefKind::LocalBranch
+                && decoration.name == "main")
+    );
+    assert!(
+        head_commit
+            .ref_decorations
+            .iter()
+            .any(|decoration| decoration.kind == CommitRefKind::LocalBranch
+                && decoration.name == "topic")
+    );
+    assert!(
+        head_commit
+            .ref_decorations
+            .iter()
+            .any(|decoration| decoration.kind == CommitRefKind::RemoteBranch
+                && decoration.name == "origin/main")
+    );
+    assert!(
+        head_commit
+            .ref_decorations
+            .iter()
+            .any(|decoration| decoration.kind == CommitRefKind::Tag && decoration.name == "v-test")
+    );
+    assert!(
+        !head_commit
+            .ref_decorations
+            .iter()
+            .any(|decoration| decoration.name == "origin/HEAD")
+    );
+}
+
+#[test]
+fn cli_commit_history_includes_ref_decorations() {
+    assert_commit_history_includes_ref_decorations(handler());
+}
+
+#[test]
+fn gix_commit_history_includes_ref_decorations() {
+    assert_commit_history_includes_ref_decorations(gix_handler());
 }
 
 #[test]

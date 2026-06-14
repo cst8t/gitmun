@@ -9,17 +9,17 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRequest,
-    ConflictFileItem, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
-    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
-    GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
-    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
+    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
+    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
+    DiffRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
+    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
+    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
+    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
+    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
+    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -316,6 +316,115 @@ impl GixGitHandler {
         Ok(matching)
     }
 
+    fn collect_commit_ref_decorations_with_gix(
+        repo: &gix::Repository,
+    ) -> GitResult<HashMap<String, Vec<CommitRefDecoration>>> {
+        let mut decorations = HashMap::new();
+
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
+        let local_iter = refs
+            .local_branches()
+            .map_err(|e| Self::gix_error(None, e))?;
+        for reference in local_iter {
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
+            let hash = reference.id().detach().to_hex().to_string();
+            let name = Self::bstr_to_string(reference.name().shorten());
+            Self::push_commit_ref_decoration(
+                &mut decorations,
+                hash,
+                CommitRefDecoration {
+                    name,
+                    kind: CommitRefKind::LocalBranch,
+                },
+            );
+        }
+
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
+        let remote_iter = refs
+            .remote_branches()
+            .map_err(|e| Self::gix_error(None, e))?;
+        for reference in remote_iter {
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
+            let name = Self::bstr_to_string(reference.name().shorten());
+            if name.ends_with("/HEAD") {
+                continue;
+            }
+            let hash = reference.id().detach().to_hex().to_string();
+            Self::push_commit_ref_decoration(
+                &mut decorations,
+                hash,
+                CommitRefDecoration {
+                    name,
+                    kind: CommitRefKind::RemoteBranch,
+                },
+            );
+        }
+
+        let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
+        let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
+        for reference in tag_iter {
+            let reference = reference.map_err(|e| GitError::GixError {
+                message: e.to_string(),
+                interpreted: None,
+            })?;
+            let raw_oid = reference.id().detach();
+            let hash = repo
+                .find_object(raw_oid)
+                .ok()
+                .and_then(|obj| obj.peel_to_kind(gix::object::Kind::Commit).ok())
+                .map(|obj| obj.id.to_hex().to_string())
+                .unwrap_or_else(|| raw_oid.to_hex().to_string());
+            let name = Self::bstr_to_string(reference.name().shorten());
+            Self::push_commit_ref_decoration(
+                &mut decorations,
+                hash,
+                CommitRefDecoration {
+                    name,
+                    kind: CommitRefKind::Tag,
+                },
+            );
+        }
+
+        for refs in decorations.values_mut() {
+            Self::sort_commit_ref_decorations(refs);
+        }
+
+        Ok(decorations)
+    }
+
+    fn push_commit_ref_decoration(
+        decorations: &mut HashMap<String, Vec<CommitRefDecoration>>,
+        hash: String,
+        decoration: CommitRefDecoration,
+    ) {
+        let refs = decorations.entry(hash).or_default();
+        if !refs.contains(&decoration) {
+            refs.push(decoration);
+        }
+    }
+
+    fn sort_commit_ref_decorations(refs: &mut [CommitRefDecoration]) {
+        refs.sort_by(|a, b| {
+            Self::commit_ref_kind_order(&a.kind)
+                .cmp(&Self::commit_ref_kind_order(&b.kind))
+                .then_with(|| a.name.cmp(&b.name))
+        });
+    }
+
+    fn commit_ref_kind_order(kind: &CommitRefKind) -> u8 {
+        match kind {
+            CommitRefKind::LocalBranch => 0,
+            CommitRefKind::RemoteBranch => 1,
+            CommitRefKind::Tag => 2,
+        }
+    }
+
     fn collect_tags_with_gix(repo: &gix::Repository) -> GitResult<Vec<TagInfo>> {
         let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
 
@@ -482,9 +591,15 @@ impl GixGitHandler {
 
         let mut commits = Vec::with_capacity(limit.min(256));
         let mailmap = repo.open_mailmap();
+        let mut ref_decorations =
+            Self::collect_commit_ref_decorations_with_gix(repo).unwrap_or_default();
 
         for info in walk.skip(offset).take(limit) {
             let info = info.map_err(|e| Self::gix_error(None, e))?;
+            let parent_hashes = info
+                .parent_ids()
+                .map(|id| id.detach().to_hex().to_string())
+                .collect();
             let oid = info.id();
             let commit = repo
                 .find_object(oid)
@@ -540,6 +655,7 @@ impl GixGitHandler {
             } else {
                 (SignatureStatus::None, None)
             };
+            let commit_ref_decorations = ref_decorations.remove(&hash).unwrap_or_default();
 
             commits.push(CommitHistoryItem {
                 hash,
@@ -548,6 +664,8 @@ impl GixGitHandler {
                 author_email,
                 date,
                 message,
+                parent_hashes,
+                ref_decorations: commit_ref_decorations,
                 signature_status,
                 key_type,
             });
