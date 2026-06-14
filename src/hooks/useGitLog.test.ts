@@ -19,9 +19,21 @@ function makeCommits(count: number, startHash = 0) {
     author: "Test User",
     authorEmail: "test@example.com",
     date: "2024-01-01T00:00:00Z",
+    parentHashes: [],
+    refDecorations: [],
     signatureStatus: "none" as const,
     keyType: null,
   }));
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((r, j) => {
+    resolve = r;
+    reject = j;
+  });
+  return { promise, resolve, reject };
 }
 
 beforeEach(() => {
@@ -49,6 +61,7 @@ describe("useGitLog", () => {
     const { result } = renderHook(() => useGitLog("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.hasMore).toBe(true);
+    expect(result.current.pageSize).toBe(100);
   });
 
   test("loadMore appends next page", async () => {
@@ -63,6 +76,57 @@ describe("useGitLog", () => {
     await waitFor(() => expect(result.current.loadingMore).toBe(false));
     expect(result.current.commits).toHaveLength(150);
     expect(result.current.hasMore).toBe(false);
+    expect(result.current.loadMoreError).toBeNull();
+  });
+
+  test("loadMore records a retryable error without clearing commits", async () => {
+    mockGetCommitHistory
+      .mockResolvedValueOnce(makeCommits(100))
+      .mockRejectedValueOnce(new Error("next page failed"))
+      .mockResolvedValueOnce(makeCommits(1, 100));
+    const { result } = renderHook(() => useGitLog("/repo"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => { result.current.loadMore(); });
+
+    await waitFor(() => expect(result.current.loadMoreError).toContain("next page failed"));
+    expect(result.current.loadingMore).toBe(false);
+    expect(result.current.commits).toHaveLength(100);
+    expect(result.current.hasMore).toBe(true);
+
+    act(() => { result.current.loadMore(); });
+
+    await waitFor(() => expect(result.current.commits).toHaveLength(101));
+    expect(result.current.loadMoreError).toBeNull();
+  });
+
+  test("loadMore appends when a refresh overlaps the request", async () => {
+    const nextPage = deferred<ReturnType<typeof makeCommits>>();
+    const refreshPage = deferred<ReturnType<typeof makeCommits>>();
+    mockGetCommitHistory
+      .mockResolvedValueOnce(makeCommits(100))
+      .mockReturnValueOnce(nextPage.promise)
+      .mockReturnValueOnce(refreshPage.promise);
+    const { result } = renderHook(() => useGitLog("/repo"));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => { result.current.loadMore(); });
+    await waitFor(() => expect(result.current.loadingMore).toBe(true));
+    act(() => { result.current.refresh(); });
+
+    await act(async () => {
+      refreshPage.resolve(makeCommits(100));
+      await refreshPage.promise;
+    });
+    expect(result.current.commits).toHaveLength(100);
+
+    await act(async () => {
+      nextPage.resolve(makeCommits(100, 100));
+      await nextPage.promise;
+    });
+
+    await waitFor(() => expect(result.current.commits).toHaveLength(200));
+    expect(result.current.commits[100].hash).toBe("hash100");
   });
 
   test("loadMore does nothing when hasMore is false", async () => {
@@ -89,6 +153,7 @@ describe("useGitLog", () => {
     // Should reset immediately
     expect(result.current.commits).toHaveLength(0);
     expect(result.current.hasMore).toBe(true);
+    expect(result.current.loadMoreError).toBeNull();
     await waitFor(() => expect(result.current.commits).toHaveLength(2));
   });
 
@@ -113,6 +178,28 @@ describe("useGitLog", () => {
     const { result } = renderHook(() => useGitLog("/repo"));
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(result.current.error).toContain("git error");
+  });
+
+  test("defers refreshes while the window is not focused", async () => {
+    mockGetCommitHistory
+      .mockResolvedValueOnce(makeCommits(1))
+      .mockResolvedValueOnce(makeCommits(2, 10));
+    const { result, rerender } = renderHook(
+      ({ focused }) => useGitLog("/repo", "currentCheckout", focused),
+      { initialProps: { focused: true } },
+    );
+    await waitFor(() => expect(result.current.commits).toHaveLength(1));
+
+    rerender({ focused: false });
+    act(() => { result.current.refresh(); });
+
+    expect(mockGetCommitHistory).toHaveBeenCalledTimes(1);
+    expect(result.current.commits).toHaveLength(1);
+
+    rerender({ focused: true });
+
+    await waitFor(() => expect(result.current.commits).toHaveLength(2));
+    expect(mockGetCommitHistory).toHaveBeenCalledTimes(2);
   });
 
   test("returns empty commits for null repoPath", async () => {
