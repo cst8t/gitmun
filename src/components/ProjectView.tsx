@@ -262,6 +262,9 @@ export function ProjectView({
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [searchQuery, setSearchQuery] = useState("");
+  const [windowFocused, setWindowFocused] = useState(() => (
+    typeof document === "undefined" ? true : document.hasFocus()
+  ));
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity } =
@@ -287,9 +290,12 @@ export function ProjectView({
     loadMore,
     hasMore,
     loading: logLoading,
+    loadingMore: logLoadingMore,
     error: logError,
+    loadMoreError: logLoadMoreError,
+    pageSize: logPageSize,
     refresh: refreshLog,
-  } = useGitLog(repoPath, logScope);
+  } = useGitLog(repoPath, logScope, windowFocused);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -516,6 +522,44 @@ export function ProjectView({
   // needing to re-subscribe when its dependencies change.
   const refreshAllRef = useRef(refreshAll);
   refreshAllRef.current = refreshAll;
+  const windowFocusedRef = useRef(windowFocused);
+  windowFocusedRef.current = windowFocused;
+  const pendingFocusRefreshRef = useRef(false);
+  useEffect(() => {
+    const setFocused = (focused: boolean) => {
+      setWindowFocused(focused);
+      windowFocusedRef.current = focused;
+      if (focused && pendingFocusRefreshRef.current) {
+        pendingFocusRefreshRef.current = false;
+        refreshAllRef.current();
+      }
+    };
+    const handleFocus = () => setFocused(true);
+    const handleBlur = () => setFocused(false);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("blur", handleBlur);
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    import("@tauri-apps/api/window").then(({ getCurrentWindow }) => {
+      if (cancelled) return;
+      const currentWindow = getCurrentWindow();
+      currentWindow.isFocused().then(focused => {
+        if (!cancelled) setFocused(focused);
+      }).catch(() => {});
+      currentWindow.onFocusChanged(({ payload }) => {
+        setFocused(payload);
+      }).then(fn => {
+        if (cancelled) fn();
+        else unlisten = fn;
+      }).catch(() => {});
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("blur", handleBlur);
+      unlisten?.();
+    };
+  }, []);
   useEffect(() => {
     if (!repoPath) return;
     let cancelled = false;
@@ -524,6 +568,10 @@ export function ProjectView({
     api.watchRepo(repoPath).catch(() => {/* ignore - watcher is best-effort */});
 
     listen("git-fs-changed", () => {
+      if (!windowFocusedRef.current) {
+        pendingFocusRefreshRef.current = true;
+        return;
+      }
       refreshAllRef.current();
     }).then(fn => { if (cancelled) fn(); else unlisten = fn; });
 
@@ -2300,6 +2348,9 @@ export function ProjectView({
                     : commits}
                   loadMore={searchQuery ? () => {} : loadMore}
                   hasMore={searchQuery ? false : hasMore}
+                  loadingMore={searchQuery ? false : logLoadingMore}
+                  loadMoreError={searchQuery ? null : logLoadMoreError}
+                  pageSize={logPageSize}
                   logLoading={logLoading}
                   logError={logError}
                   commitMarkers={commitMarkers}

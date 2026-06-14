@@ -1,5 +1,6 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { BranchIcon } from "../icons";
 import { StagingView } from "./StagingView";
 import { LogView } from "./LogView";
 import { MergeBanner } from "./MergeBanner";
@@ -19,6 +20,16 @@ import type {
 import "./CentrePanel.css";
 
 export type CentreTab = "changes" | "log";
+
+const SHOW_COMMIT_GRAPH_KEY = "gitmun.showCommitGraph";
+
+function readShowCommitGraphPreference(): boolean {
+  try {
+    return localStorage.getItem(SHOW_COMMIT_GRAPH_KEY) !== "false";
+  } catch {
+    return true;
+  }
+}
 
 type CentrePanelProps = {
   repoPath: string | null;
@@ -41,6 +52,9 @@ type CentrePanelProps = {
   commits: CommitHistoryItem[];
   loadMore: () => void;
   hasMore: boolean;
+  loadingMore: boolean;
+  loadMoreError: string | null;
+  pageSize: number;
   logLoading: boolean;
   logError: string | null;
   commitMarkers: CommitMarkers;
@@ -104,9 +118,22 @@ type CentrePanelProps = {
 
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
+  const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
   const tab = props.activeTab;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
+
+  const handleToggleCommitGraph = () => {
+    setShowCommitGraph(previous => {
+      const next = !previous;
+      try {
+        localStorage.setItem(SHOW_COMMIT_GRAPH_KEY, String(next));
+      } catch {
+        // Keep the in-memory preference when storage is unavailable.
+      }
+      return next;
+    });
+  };
 
   const handleCommitMerge = () => {
     const message = props.mergeMessage?.split("\n").find(l => !l.startsWith("#"))?.trim()
@@ -172,6 +199,16 @@ export function CentrePanel(props: CentrePanelProps) {
         <div className="centre__tabs-spacer" />
         {tab === "log" && (
           <div className="centre__tabs-actions">
+            <button
+              type="button"
+              className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
+              title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-pressed={showCommitGraph}
+              onClick={handleToggleCommitGraph}
+            >
+              <BranchIcon size={15} />
+            </button>
             <div className="log-view__scope-actions" role="group" aria-label={t("log.commitLogScope")}>
               <button
                 type="button"
@@ -254,11 +291,15 @@ export function CentrePanel(props: CentrePanelProps) {
           commits={props.commits}
           loadMore={props.loadMore}
           hasMore={props.hasMore}
+          loadingMore={props.loadingMore}
+          loadMoreError={props.loadMoreError}
+          pageSize={props.pageSize}
           logLoading={props.logLoading}
           logError={props.logError}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
           rowStriping={props.rowStriping}
+          showCommitGraph={showCommitGraph}
           detachedHead={props.detachedHead}
           shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}

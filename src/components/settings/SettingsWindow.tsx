@@ -209,6 +209,7 @@ export function SettingsWindow() {
     const [globalGpgProgramConfigured, setGlobalGpgProgramConfigured] = useState("");
     const [globalGpgProgramEdited, setGlobalGpgProgramEdited] = useState(false);
     const [gpgKeyserverVerificationEnabled, setGpgKeyserverVerificationEnabledState] = useState(false);
+    const [loadedGpgKeyserverVerificationEnabled, setLoadedGpgKeyserverVerificationEnabled] = useState(false);
     const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
@@ -367,6 +368,7 @@ export function SettingsWindow() {
             setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
             setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
             setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
+            setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
             await applyThemeMode(settings.themeMode);
             applyUiTextScale(settings.uiTextScale);
 
@@ -430,6 +432,10 @@ export function SettingsWindow() {
         setSaving(true);
         try {
             const gitConfigMessages: string[] = [];
+            const desiredGpgProgram = globalGpgProgram.trim();
+            const signatureSettingsChanged = (gitExecutableEdited && gitExecutablePath !== gitExecutableConfiguredPath)
+                || (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured)
+                || gpgKeyserverVerificationEnabled !== loadedGpgKeyserverVerificationEnabled;
 
             await invoke("set_backend_mode", {mode: backendMode});
             await invoke("set_show_result_log", {showResultLog: openResultLogOnLaunch});
@@ -500,7 +506,6 @@ export function SettingsWindow() {
             ];
             gitConfigMessages.push(...optionalGitConfigSaves.filter((message): message is string => message != null));
 
-            const desiredGpgProgram = globalGpgProgram.trim();
             if (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured) {
                 const currentGpgProgram = await invoke<string | null>("get_global_gpg_program");
                 if (normaliseOptionalGitConfig(currentGpgProgram) !== desiredGpgProgram) {
@@ -604,8 +609,12 @@ export function SettingsWindow() {
             setGlobalGpgProgramConfigured(savedGpgProgram ?? "");
             setGlobalGpgProgramEdited(false);
             setGlobalGpgProgram(await getGlobalGpgProgramPath() ?? "");
+            setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
 
             await emit("settings-updated", settings);
+            if (signatureSettingsChanged) {
+                await emit("signature-settings-updated");
+            }
             setStatus(t("status.saved", {
                 message: gitConfigMessages.length > 0
                     ? gitConfigMessages.join("; ")
@@ -673,6 +682,7 @@ export function SettingsWindow() {
         globalGpgProgram,
         globalGpgProgramConfigured,
         globalGpgProgramEdited,
+        loadedGpgKeyserverVerificationEnabled,
         refreshGitExecutable,
         saveGlobalGpgProgram,
         t,
@@ -765,6 +775,7 @@ export function SettingsWindow() {
             setGitExecutableEdited(false);
             await refreshGitExecutable();
             await emit("settings-updated", settings);
+            await emit("signature-settings-updated");
             setStatus(t("status.gitExecutableReset"));
         } catch (e) {
             setStatus(t("status.gitExecutableResetFailed", {message: String(e)}));
