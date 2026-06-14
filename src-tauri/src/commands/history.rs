@@ -4,6 +4,7 @@ use crate::git::types::{
     CommitVerification, FileRequest, MergeRequest, MergeResult, OperationResult, RebaseRequest,
     RebaseResult, RepoRequest, ResetRequest, RevertCommitRequest, SignatureStatus,
 };
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -66,9 +67,15 @@ trait VerificationRunner {
         repo_path: &str,
         hashes: &[String],
         signers_override: Option<&Path>,
-    ) -> Result<String, String>;
+    ) -> Result<VerificationCommandOutput, String>;
     fn recv_gpg_key(&self, repo_path: &str, gpg_program: &str, key: &str) -> Result<(), String>;
     fn commit_key_type(&self, repo_path: &str, hash: &str) -> Result<Option<String>, String>;
+}
+
+struct VerificationCommandOutput {
+    stdout: String,
+    stderr: String,
+    success: bool,
 }
 
 struct ProcessVerificationRunner;
@@ -104,7 +111,7 @@ impl VerificationRunner for ProcessVerificationRunner {
         repo_path: &str,
         hashes: &[String],
         signers_override: Option<&Path>,
-    ) -> Result<String, String> {
+    ) -> Result<VerificationCommandOutput, String> {
         let mut cmd = crate::configured_git_command();
         cmd.current_dir(repo_path);
         if let Some(path) = signers_override {
@@ -118,7 +125,11 @@ impl VerificationRunner for ProcessVerificationRunner {
             cmd.arg(hash);
         }
         let output = cmd.output().map_err(|e| e.to_string())?;
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+        Ok(VerificationCommandOutput {
+            stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+            success: output.status.success(),
+        })
     }
 
     fn recv_gpg_key(&self, repo_path: &str, gpg_program: &str, key: &str) -> Result<(), String> {
@@ -252,12 +263,20 @@ fn verify_with_git(
         let _ = std::fs::remove_file(tmp);
     }
 
-    let stdout = verification_result?;
-    Ok(parse_verification_output(&stdout))
+    let output = verification_result?;
+    if !output.success {
+        return Err(if output.stderr.is_empty() {
+            "git log --no-walk failed while verifying commit signatures".to_string()
+        } else {
+            output.stderr
+        });
+    }
+
+    Ok(parse_verification_output(&output.stdout, hashes))
 }
 
-fn parse_verification_output(stdout: &str) -> Vec<CommitVerification> {
-    let mut results = Vec::new();
+fn parse_verification_output(stdout: &str, requested_hashes: &[String]) -> Vec<CommitVerification> {
+    let mut parsed = HashMap::new();
     for line in stdout.lines().filter(|l| !l.trim().is_empty()) {
         let mut parts = line.splitn(5, '\x1f');
         let hash = parts.next().unwrap_or_default().trim().to_string();
@@ -288,7 +307,7 @@ fn parse_verification_output(stdout: &str) -> Vec<CommitVerification> {
             Some(signer_raw.to_string())
         };
 
-        results.push(CommitVerification {
+        parsed.insert(hash.clone(), CommitVerification {
             hash,
             status,
             signer,
@@ -296,7 +315,20 @@ fn parse_verification_output(stdout: &str) -> Vec<CommitVerification> {
         });
     }
 
-    results
+    requested_hashes
+        .iter()
+        .map(|hash| {
+            parsed.remove(hash).unwrap_or_else(|| {
+                eprintln!("Missing verification output for requested commit {hash}");
+                CommitVerification {
+                    hash: hash.clone(),
+                    status: SignatureStatus::None,
+                    signer: None,
+                    fingerprint: None,
+                }
+            })
+        })
+        .collect()
 }
 
 fn expand_home_path(path: Option<String>) -> Option<String> {
@@ -349,6 +381,8 @@ mod tests {
         fetched_keys: RefCell<Vec<String>>,
         verified_hashes: RefCell<Vec<Vec<String>>>,
         fetch_succeeds: bool,
+        verification_succeeds: bool,
+        verification_stderr: Option<String>,
         key_types: HashMap<String, String>,
         gpg_program: Option<String>,
     }
@@ -362,6 +396,8 @@ mod tests {
                 fetched_keys: RefCell::new(Vec::new()),
                 verified_hashes: RefCell::new(Vec::new()),
                 fetch_succeeds: true,
+                verification_succeeds: true,
+                verification_stderr: None,
                 key_types: HashMap::new(),
                 gpg_program: None,
             }
@@ -375,6 +411,12 @@ mod tests {
 
         fn with_fetch_failure(mut self) -> Self {
             self.fetch_succeeds = false;
+            self
+        }
+
+        fn with_verification_failure(mut self, stderr: &str) -> Self {
+            self.verification_succeeds = false;
+            self.verification_stderr = Some(stderr.to_string());
             self
         }
 
@@ -397,12 +439,17 @@ mod tests {
             _repo_path: &str,
             hashes: &[String],
             _signers_override: Option<&Path>,
-        ) -> Result<String, String> {
+        ) -> Result<VerificationCommandOutput, String> {
             self.verified_hashes.borrow_mut().push(hashes.to_vec());
-            self.verification_outputs
+            let stdout = self.verification_outputs
                 .borrow_mut()
                 .pop()
-                .ok_or_else(|| "missing fake verification output".to_string())
+                .ok_or_else(|| "missing fake verification output".to_string())?;
+            Ok(VerificationCommandOutput {
+                stdout,
+                stderr: self.verification_stderr.clone().unwrap_or_default(),
+                success: self.verification_succeeds,
+            })
         }
 
         fn recv_gpg_key(
@@ -435,7 +482,10 @@ mod tests {
             "d\x1fN\x1f\x1f\x1f",
         ]
         .join("\n");
-        let results = parse_verification_output(&output);
+        let results = parse_verification_output(
+            &output,
+            &["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()],
+        );
 
         assert_eq!(results[0].status, SignatureStatus::Verified);
         assert_eq!(results[0].fingerprint.as_deref(), Some("FINGERPRINT"));
@@ -516,6 +566,29 @@ mod tests {
             Some("ssh".to_string())
         );
         assert_eq!(signature_key_type("tree abc"), None);
+    }
+
+    #[test]
+    fn missing_verification_rows_return_none_for_requested_hashes() {
+        let results = parse_verification_output(
+            "a\x1fG\x1fAlice\x1fFINGERPRINT\x1fKEY",
+            &["a".to_string(), "b".to_string()],
+        );
+
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0].hash, "a");
+        assert_eq!(results[0].status, SignatureStatus::Verified);
+        assert_eq!(results[1].hash, "b");
+        assert_eq!(results[1].status, SignatureStatus::None);
+    }
+
+    #[test]
+    fn git_log_failure_returns_error() {
+        let runner = FakeRunner::new(vec![""]).with_verification_failure("fatal: bad revision");
+        let error = verify_commit_signatures("/repo", &["a".to_string()], false, &runner)
+            .expect_err("git log failure should be returned");
+
+        assert_eq!(error, "fatal: bad revision");
     }
 }
 
