@@ -1137,7 +1137,7 @@ export function LogView({
     }
   }, [commits.length, hasMore, loadingMore, loadMoreError]);
   const Footer = useCallback(() => {
-    if (!hasMore || logLoading || commits.length === 0) return null;
+    if (!hasMore || commits.length === 0) return null;
     return (
       <div className="log-view__load-more">
         {loadMoreError && (
@@ -1155,7 +1155,7 @@ export function LogView({
         </button>
       </div>
     );
-  }, [commits.length, handleLoadMore, hasMore, loadMoreError, loadingMore, logLoading, pageSize, t]);
+  }, [commits.length, handleLoadMore, hasMore, loadMoreError, loadingMore, pageSize, t]);
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
