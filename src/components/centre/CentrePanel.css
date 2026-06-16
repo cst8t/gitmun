@@ -126,6 +126,55 @@
   animation: slideIn 0.2s ease;
 }
 
+.staging__folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: var(--radius-md);
+  min-height: 32px;
+  color: var(--text-secondary-strong);
+}
+
+.staging__folder-row--striped-subtle { background: var(--row-alternate-bg); }
+.staging__folder-row--striped-strong { background: var(--row-alternate-strong-bg); }
+
+.staging__folder-toggle {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.staging__folder-icon {
+  display: flex;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.staging__folder-name {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.staging__folder-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
 /* File row */
 .file-row {
   display: flex;
