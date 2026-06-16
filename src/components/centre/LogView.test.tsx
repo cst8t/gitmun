@@ -407,6 +407,12 @@ describe("LogView commit selection", () => {
     expect(screen.queryByRole("button", { name: "View next 100 commits" })).not.toBeInTheDocument();
   });
 
+  it("keeps the load more footer mounted while refreshing existing commits", () => {
+    renderLog({ hasMore: true, logLoading: true });
+
+    expect(screen.getByRole("button", { name: "View next 100 commits" })).toBeInTheDocument();
+  });
+
   it("shows load more loading and error states", () => {
     const loadMore = vi.fn();
     renderLog({
