@@ -15,6 +15,9 @@ type FileRowProps = {
   onUnstage?: () => void;
   onDiscard?: () => void;
   striped?: "Subtle" | "Strong";
+  displayPath?: string;
+  titlePath?: string;
+  depth?: number;
 };
 
 const STATUS_MAP: Record<string, { bg: string; text: string; label: string }> = {
@@ -37,6 +40,9 @@ export function FileRow({
   onUnstage,
   onDiscard,
   striped,
+  displayPath,
+  titlePath,
+  depth = 0,
 }: FileRowProps) {
   const { t } = useTranslation("centre");
   const [hovered, setHovered] = useState(false);
@@ -47,10 +53,12 @@ export function FileRow({
   return (
     <div
       className={`file-row${stripingClass} ${isSelected ? "file-row--selected" : ""} ${hovered ? "file-row--hovered" : ""}`}
+      style={depth > 0 ? { paddingLeft: 8 + depth * 18 } : undefined}
       onClick={onSelect}
       onDoubleClick={onDoubleClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
+      title={titlePath}
     >
       <input
         className="file-row__check"
@@ -66,7 +74,7 @@ export function FileRow({
         {isStaged ? <CheckIcon /> : <FileIcon />}
       </span>
       <span className="file-row__badge" style={{ background: s.bg, color: s.text }}>{s.label}</span>
-      <span className="file-row__path">{file.path}</span>
+      <span className="file-row__path">{displayPath ?? file.path}</span>
 
       {hovered ? (
         <div className="file-row__actions" onClick={e => e.stopPropagation()}>

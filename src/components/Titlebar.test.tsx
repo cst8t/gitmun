@@ -41,6 +41,7 @@ function renderTitlebar(
     onExportPatch?: (scope: "staged" | "unstaged" | "all" | "selected") => void;
     selectedPatchExportEnabled?: boolean;
     onReset?: (mode: "mixed" | "hard") => void;
+    currentBranch?: string;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -50,7 +51,7 @@ function renderTitlebar(
       platform="windows"
       native={false}
       repoPath={repoPath}
-      currentBranch={repoPath ? "feature/demo" : null}
+      currentBranch={repoPath ? patchHandlers.currentBranch ?? "feature/demo" : null}
       branches={branches}
       identityInitials="GM"
       identityAvatarUrl={null}
@@ -103,6 +104,13 @@ describe("Titlebar", () => {
   it("shows Push for tracked branches", () => {
     renderTitlebar([makeBranch({ upstream: "origin/feature/demo", upstreamStatus: "tracked" })], "Push");
     expect(screen.getByText("Push")).toBeInTheDocument();
+  });
+
+  it("keeps the full long branch name available from the titlebar pill", () => {
+    const longBranch = "feature/this-is-a-very-long-branch-name-that-should-not-crowd-toolbar-actions";
+    renderTitlebar([makeBranch({ name: longBranch })], "Push", "/repo", vi.fn(), { currentBranch: longBranch });
+
+    expect(screen.getByText(longBranch).closest(".titlebar__branch-pill")).toHaveAttribute("title", longBranch);
   });
 
   it("copies the repository path from the titlebar", async () => {

@@ -10,7 +10,7 @@ export const MIN_VISIBLE_RIGHT_PANEL_WIDTH = 120;
 export const LEFT_PANEL_RATIO_KEY = "gitmun.leftPaneRatio";
 export const RIGHT_PANEL_RATIO_KEY = "gitmun.rightPaneRatio";
 export const SPLITTER_WIDTH = 6;
-export const LEFT_PANEL_TOGGLE_WIDTH = 22;
+export const LEFT_PANEL_TOGGLE_WIDTH = 24;
 export const SPLITTER_SPACE = 12;
 
 export type PanelLayout = {

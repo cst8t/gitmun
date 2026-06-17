@@ -1521,6 +1521,7 @@ pub fn run() {
             commands::settings::set_global_credential_helper,
             commands::settings::set_global_file_mode,
             commands::settings::set_git_executable_path,
+            commands::settings::set_gpg_keyserver_verification_enabled,
             commands::settings::set_global_gpg_program,
             commands::settings::set_avatar_provider,
             commands::settings::set_try_platform_first,

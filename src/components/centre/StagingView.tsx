@@ -4,6 +4,8 @@ import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, RowStriping, SubmoduleStatus } from "../../types";
 import { getNumstat } from "../../api/commands";
+import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
+import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
 type StagingViewProps = {
   repoPath: string | null;
@@ -59,6 +61,12 @@ type CachedNumstat = {
   updatedAt: number;
 };
 
+type TreeSection = "staged" | "unstaged";
+
+type VisibleTreeRow =
+  | { type: "directory"; node: FileTreeDirectoryNode; depth: number }
+  | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number };
+
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
 
@@ -74,6 +82,27 @@ const SUBMODULE_STATE_LABELS: Record<SubmoduleStatus["state"], string> = {
 
 function cacheKey(path: string, staged: boolean): string {
   return `${staged ? "s" : "u"}:${path}`;
+}
+
+function folderStateKey(section: TreeSection, path: string): string {
+  return `${section}:${path}`;
+}
+
+function visibleTreeRows(
+  nodes: FileTreeNode[],
+  section: TreeSection,
+  expandedFolders: Record<string, boolean>,
+  depth = 0,
+): VisibleTreeRow[] {
+  return nodes.flatMap((node): VisibleTreeRow[] => {
+    if (node.type === "file") {
+      return [{ type: "file", node, depth }];
+    }
+
+    const expanded = expandedFolders[folderStateKey(section, node.path)] ?? true;
+    const children = expanded ? visibleTreeRows(node.children, section, expandedFolders, depth + 1) : [];
+    return [{ type: "directory", node, depth }, ...children];
+  });
 }
 
 function shortHash(hash: string | null): string {
@@ -146,6 +175,84 @@ function SubmoduleRow({
   );
 }
 
+type DirectoryRowProps = {
+  directory: FileTreeDirectoryNode;
+  depth: number;
+  expanded: boolean;
+  checked: boolean;
+  indeterminate: boolean;
+  striped?: "Subtle" | "Strong";
+  onToggleExpanded: () => void;
+  onToggleChecked: () => void;
+};
+
+function DirectoryRow({
+  directory,
+  depth,
+  expanded,
+  checked,
+  indeterminate,
+  striped,
+  onToggleExpanded,
+  onToggleChecked,
+}: DirectoryRowProps) {
+  const { t } = useTranslation("centre");
+  const checkRef = React.useRef<HTMLInputElement>(null);
+  const stripingClass = striped ? ` staging__folder-row--striped-${striped.toLowerCase()}` : "";
+
+  useEffect(() => {
+    if (checkRef.current) {
+      checkRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+
+  return (
+    <div
+      className={`staging__folder-row${stripingClass}`}
+      style={depth > 0 ? { paddingLeft: 8 + depth * 18 } : undefined}
+      title={directory.path}
+    >
+      <input
+        ref={checkRef}
+        className="file-row__check"
+        type="checkbox"
+        checked={checked}
+        aria-label={t(checked ? "staging.deselectFolderFiles" : "staging.selectFolderFiles", {
+          path: directory.path,
+        })}
+        onChange={(e) => {
+          e.stopPropagation();
+          onToggleChecked();
+        }}
+        onClick={e => e.stopPropagation()}
+      />
+      <button
+        className="staging__folder-toggle"
+        type="button"
+        aria-label={t(expanded ? "staging.collapseFolder" : "staging.expandFolder", {
+          path: directory.path,
+        })}
+        onClick={onToggleExpanded}
+      >
+        {expanded ? <ChevDownIcon size={13} /> : <ChevRightIcon size={13} />}
+      </button>
+      <span className="staging__folder-icon">
+        <FolderIcon size={15} />
+      </span>
+      <span className="staging__folder-name">{directory.name}</span>
+      <span className="staging__folder-count">{t("fileCount", { ns: "common", count: directory.fileCount })}</span>
+      <span className="file-row__stats">
+        {directory.additions > 0 && (
+          <span className="file-row__stat-add">+{directory.additions}</span>
+        )}
+        {directory.deletions > 0 && (
+          <span className="file-row__stat-del">-{directory.deletions}</span>
+        )}
+      </span>
+    </div>
+  );
+}
+
 export function StagingView({
   repoPath,
   stagedFiles, unstagedFiles, unversionedFiles, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
@@ -160,10 +267,12 @@ export function StagingView({
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
   const [numstatLoading, setNumstatLoading] = useState<Record<string, boolean>>({});
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     setNumstatCache({});
     setNumstatLoading({});
+    setExpandedFolders({});
   }, [repoPath]);
 
   const mergedStaged = useMemo(
@@ -186,10 +295,13 @@ export function StagingView({
     [unstagedFiles, numstatCache],
   );
 
-  const allUnstaged: FileStatusItem[] = [
-    ...mergedUnstaged,
-    ...unversionedFiles.map(path => ({ path, status: "new", additions: null, deletions: null })),
-  ];
+  const allUnstaged: FileStatusItem[] = useMemo(
+    () => [
+      ...mergedUnstaged,
+      ...unversionedFiles.map(path => ({ path, status: "new", additions: null, deletions: null })),
+    ],
+    [mergedUnstaged, unversionedFiles],
+  );
 
   useEffect(() => {
     if (!repoPath) return;
@@ -278,6 +390,16 @@ export function StagingView({
     () => mergedStaged.filter(f => selectedStaged[f.path]).map(f => f.path),
     [mergedStaged, selectedStaged],
   );
+  const stagedTree = useMemo(() => buildFileTree(mergedStaged), [mergedStaged]);
+  const unstagedTree = useMemo(() => buildFileTree(allUnstaged), [allUnstaged]);
+  const stagedTreeRows = useMemo(
+    () => visibleTreeRows(stagedTree, "staged", expandedFolders),
+    [stagedTree, expandedFolders],
+  );
+  const unstagedTreeRows = useMemo(
+    () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders),
+    [unstagedTree, expandedFolders],
+  );
 
   const toggleUnstaged = (path: string) => {
     onSelectedUnstagedChange(prev => ({ ...prev, [path]: !prev[path] }));
@@ -298,9 +420,72 @@ export function StagingView({
     onUnstageFiles(selectedStagedPaths);
     onSelectedStagedChange({});
   };
+  const toggleFolderExpanded = (section: TreeSection, path: string) => {
+    const key = folderStateKey(section, path);
+    setExpandedFolders(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
+  };
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
+  };
+  const renderTreeRow = (row: VisibleTreeRow, index: number, section: TreeSection) => {
+    const isStaged = section === "staged";
+    const selectedMap = isStaged ? selectedStaged : selectedUnstaged;
+    const onSelectedChange = isStaged ? onSelectedStagedChange : onSelectedUnstagedChange;
+
+    if (row.type === "directory") {
+      const paths = descendantFilePaths(row.node);
+      const checked = paths.length > 0 && paths.every(path => selectedMap[path]);
+      const someChecked = paths.some(path => selectedMap[path]);
+      return (
+        <div key={`${section}:${row.node.path}`} className="staging__row-anim">
+          <DirectoryRow
+            directory={row.node}
+            depth={row.depth}
+            expanded={expandedFolders[folderStateKey(section, row.node.path)] ?? true}
+            checked={checked}
+            indeterminate={!checked && someChecked}
+            striped={striped(index)}
+            onToggleExpanded={() => toggleFolderExpanded(section, row.node.path)}
+            onToggleChecked={() => {
+              onSelectedChange(prev => {
+                const next = { ...prev };
+                for (const path of paths) {
+                  if (checked) {
+                    delete next[path];
+                  } else {
+                    next[path] = true;
+                  }
+                }
+                return next;
+              });
+            }}
+          />
+        </div>
+      );
+    }
+
+    const f = row.node.file;
+    return (
+      <div key={`${section}:${f.path}`} className="staging__row-anim">
+        <FileRow
+          file={f}
+          isStaged={isStaged}
+          isSelected={selectedFile === f.path}
+          striped={striped(index)}
+          checked={selectedMap[f.path] ?? false}
+          displayPath={row.depth > 0 ? row.node.name : undefined}
+          titlePath={row.depth > 0 ? f.path : undefined}
+          depth={row.depth}
+          onToggleChecked={() => isStaged ? toggleStaged(f.path) : toggleUnstaged(f.path)}
+          onSelect={() => onFileSelect(f.path, isStaged)}
+          onDoubleClick={() => onExternalDiff(f.path, isStaged)}
+          onStage={isStaged ? undefined : () => onStageFile(f.path)}
+          onUnstage={isStaged ? () => onUnstageFile(f.path) : undefined}
+          onDiscard={isStaged ? undefined : () => onDiscardFile(f.path)}
+        />
+      </div>
+    );
   };
 
   return (
@@ -413,21 +598,7 @@ export function StagingView({
           {mergedStaged.length === 0 ? (
             <div className="staging__empty">{t("staging.noStagedChanges")}</div>
           ) : (
-            mergedStaged.map((f, index) => (
-              <div key={f.path} className="staging__row-anim">
-                <FileRow
-                  file={f}
-                  isStaged
-                  isSelected={selectedFile === f.path}
-                  striped={striped(index)}
-                  checked={selectedStaged[f.path] ?? false}
-                  onToggleChecked={() => toggleStaged(f.path)}
-                  onSelect={() => onFileSelect(f.path, true)}
-                  onDoubleClick={() => onExternalDiff(f.path, true)}
-                  onUnstage={() => onUnstageFile(f.path)}
-                />
-              </div>
-            ))
+            stagedTreeRows.map((row, index) => renderTreeRow(row, index, "staged"))
           )}
         </div>
 
@@ -468,22 +639,7 @@ export function StagingView({
           {allUnstaged.length === 0 ? (
             <div className="staging__empty">{t("staging.workingTreeClean")}</div>
           ) : (
-            allUnstaged.map((f, index) => (
-              <div key={f.path} className="staging__row-anim">
-                <FileRow
-                  file={f}
-                  isStaged={false}
-                  isSelected={selectedFile === f.path}
-                  striped={striped(index)}
-                  checked={selectedUnstaged[f.path] ?? false}
-                  onToggleChecked={() => toggleUnstaged(f.path)}
-                  onSelect={() => onFileSelect(f.path, false)}
-                  onDoubleClick={() => onExternalDiff(f.path, false)}
-                  onStage={() => onStageFile(f.path)}
-                  onDiscard={() => onDiscardFile(f.path)}
-                />
-              </div>
-            ))
+            unstagedTreeRows.map((row, index) => renderTreeRow(row, index, "unstaged"))
           )}
         </div>
       </div>

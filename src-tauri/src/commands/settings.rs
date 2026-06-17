@@ -1016,6 +1016,16 @@ pub fn set_git_executable_path(
 }
 
 #[tauri::command]
+pub fn set_gpg_keyserver_verification_enabled(
+    enabled: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_gpg_keyserver_verification_enabled(enabled)
+}
+
+#[tauri::command]
 pub fn set_avatar_provider(
     avatar_provider: AvatarProviderMode,
     state: tauri::State<'_, AppState>,

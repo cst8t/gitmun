@@ -208,6 +208,8 @@ export function SettingsWindow() {
     const [globalGpgProgram, setGlobalGpgProgram] = useState("");
     const [globalGpgProgramConfigured, setGlobalGpgProgramConfigured] = useState("");
     const [globalGpgProgramEdited, setGlobalGpgProgramEdited] = useState(false);
+    const [gpgKeyserverVerificationEnabled, setGpgKeyserverVerificationEnabledState] = useState(false);
+    const [loadedGpgKeyserverVerificationEnabled, setLoadedGpgKeyserverVerificationEnabled] = useState(false);
     const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
@@ -365,6 +367,8 @@ export function SettingsWindow() {
             setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
             setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
             setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
+            setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
+            setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
             await applyThemeMode(settings.themeMode);
             applyUiTextScale(settings.uiTextScale);
 
@@ -428,6 +432,10 @@ export function SettingsWindow() {
         setSaving(true);
         try {
             const gitConfigMessages: string[] = [];
+            const desiredGpgProgram = globalGpgProgram.trim();
+            const signatureSettingsChanged = (gitExecutableEdited && gitExecutablePath !== gitExecutableConfiguredPath)
+                || (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured)
+                || gpgKeyserverVerificationEnabled !== loadedGpgKeyserverVerificationEnabled;
 
             await invoke("set_backend_mode", {mode: backendMode});
             await invoke("set_show_result_log", {showResultLog: openResultLogOnLaunch});
@@ -498,7 +506,6 @@ export function SettingsWindow() {
             ];
             gitConfigMessages.push(...optionalGitConfigSaves.filter((message): message is string => message != null));
 
-            const desiredGpgProgram = globalGpgProgram.trim();
             if (globalGpgProgramEdited && desiredGpgProgram !== globalGpgProgramConfigured) {
                 const currentGpgProgram = await invoke<string | null>("get_global_gpg_program");
                 if (normaliseOptionalGitConfig(currentGpgProgram) !== desiredGpgProgram) {
@@ -517,6 +524,9 @@ export function SettingsWindow() {
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
             await invoke("set_auto_install_updates", {autoInstallUpdates});
             await setUpdateEndpoint(updateEndpoint);
+            await invoke<Settings>("set_gpg_keyserver_verification_enabled", {
+                enabled: gpgKeyserverVerificationEnabled,
+            });
             if (isLinux) {
                 await invoke("set_linux_graphics_mode", {mode: linuxGraphicsMode});
                 await invoke("set_linux_terminal_emulator", {linuxTerminalEmulator});
@@ -599,8 +609,12 @@ export function SettingsWindow() {
             setGlobalGpgProgramConfigured(savedGpgProgram ?? "");
             setGlobalGpgProgramEdited(false);
             setGlobalGpgProgram(await getGlobalGpgProgramPath() ?? "");
+            setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
 
             await emit("settings-updated", settings);
+            if (signatureSettingsChanged) {
+                await emit("signature-settings-updated");
+            }
             setStatus(t("status.saved", {
                 message: gitConfigMessages.length > 0
                     ? gitConfigMessages.join("; ")
@@ -663,10 +677,12 @@ export function SettingsWindow() {
         linuxTerminalEmulator,
         linuxTerminalCustomCommand,
         repoOpenBehaviour,
+        gpgKeyserverVerificationEnabled,
         externalDiffToolPath,
         globalGpgProgram,
         globalGpgProgramConfigured,
         globalGpgProgramEdited,
+        loadedGpgKeyserverVerificationEnabled,
         refreshGitExecutable,
         saveGlobalGpgProgram,
         t,
@@ -759,6 +775,7 @@ export function SettingsWindow() {
             setGitExecutableEdited(false);
             await refreshGitExecutable();
             await emit("settings-updated", settings);
+            await emit("signature-settings-updated");
             setStatus(t("status.gitExecutableReset"));
         } catch (e) {
             setStatus(t("status.gitExecutableResetFailed", {message: String(e)}));
@@ -1494,6 +1511,24 @@ export function SettingsWindow() {
                             </div>
                             <div className="settings-window__section-note">
                                 {t("notes.gpgProgram")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.gpgKeyserverVerification")}</label>
+                            <label className="settings-window__switch-row">
+                                <span className="settings-window__switch">
+                                    <input
+                                        type="checkbox"
+                                        checked={gpgKeyserverVerificationEnabled}
+                                        onChange={e => setGpgKeyserverVerificationEnabledState(e.target.checked)}
+                                    />
+                                    <span className="settings-window__switch-track"/>
+                                </span>
+                                <span className="settings-window__switch-label">{t("switches.gpgKeyserverVerification")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {t("notes.gpgKeyserverVerification")}
                             </div>
                         </div>
                     </section>
