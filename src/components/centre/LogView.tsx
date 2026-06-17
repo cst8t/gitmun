@@ -264,6 +264,15 @@ function CommitGraphGutter({
     if (!highlightedHashes) return null;
     return highlightedHashes.has(hash);
   };
+  const topLaneKeys = new Set(row.topLanes.map(lane => `${lane.lane}:${lane.hash}`));
+  const connectedParentLaneKeys = new Set(
+    row.parentLanes
+      .filter(parent => (
+        parent.sourceLane !== undefined
+        || (parent.lane !== row.commitLane && !topLaneKeys.has(`${parent.lane}:${parent.hash}`))
+      ))
+      .map(parent => `${parent.lane}:${parent.hash}`),
+  );
 
   return (
     <div className="log-view__graph" style={{ width }} title={graphTitleText} aria-label={graphTitleText}>
@@ -283,6 +292,20 @@ function CommitGraphGutter({
       <svg className="log-view__graph-connectors" width={width} height="100%" viewBox={`0 0 ${width} 100`} preserveAspectRatio="none">
         {row.parentLanes.map(parent => {
           const x = graphX(parent.lane, laneCount);
+          const sourceLane = parent.sourceLane;
+          const sourceX = sourceLane === undefined ? null : graphX(sourceLane, laneCount);
+          if (sourceLane !== undefined && sourceX !== null && sourceX !== x) {
+            return (
+              <polyline
+                key={`parent-${parent.lane}-${parent.hash}`}
+                points={`${sourceX},50 ${commitX},50 ${x},100`}
+                stroke={graphLaneColour(sourceLane)}
+                className={graphPieceClass("log-view__graph-connector", isActiveHash(parent.hash))}
+                vectorEffect="non-scaling-stroke"
+                fill="none"
+              />
+            );
+          }
           if (x === commitX) return null;
           return (
             <line
@@ -298,7 +321,7 @@ function CommitGraphGutter({
           );
         })}
       </svg>
-      {row.bottomLanes.map(lane => {
+      {row.bottomLanes.filter(lane => !connectedParentLaneKeys.has(`${lane.lane}:${lane.hash}`)).map(lane => {
         const x = graphX(lane.lane, laneCount);
         return (
           <span
@@ -355,28 +378,81 @@ function compactRefDecorations(decorations: CommitRefDecoration[]): CommitRefDec
   ));
 }
 
-function CommitRefChips({ decorations }: { decorations: CommitRefDecoration[] }) {
+type CommitRefChip = {
+  key: string;
+  label: string;
+  title: string;
+  className: string;
+  compact: boolean;
+};
+
+function CommitRefChips({
+  decorations,
+  isHead,
+  isUpstream,
+  upstreamRef,
+}: {
+  decorations: CommitRefDecoration[];
+  isHead: boolean;
+  isUpstream: boolean;
+  upstreamRef: string | null | undefined;
+}) {
   const { t } = useTranslation("centre");
-  if (decorations.length === 0) return null;
-  const sorted = compactRefDecorations(decorations);
-  const visible = sorted.slice(0, MAX_VISIBLE_REF_CHIPS);
-  const hidden = sorted.slice(MAX_VISIBLE_REF_CHIPS);
+  const markerNames = new Set<string>();
+  const chips: CommitRefChip[] = [];
+
+  if (isHead) {
+    chips.push({
+      key: "head",
+      label: "HEAD",
+      title: "HEAD",
+      className: "log-view__ref log-view__marker log-view__marker--head",
+      compact: false,
+    });
+  }
+
+  if (isUpstream) {
+    const label = upstreamRef ?? "UPSTREAM";
+    if (upstreamRef) markerNames.add(upstreamRef);
+    chips.push({
+      key: "upstream",
+      label,
+      title: label,
+      className: "log-view__ref log-view__marker log-view__marker--upstream",
+      compact: true,
+    });
+  }
+
+  for (const decoration of compactRefDecorations(decorations)) {
+    if (markerNames.has(decoration.name)) continue;
+    chips.push({
+      key: `${decoration.kind}-${decoration.name}`,
+      label: decoration.name,
+      title: refTitle(decoration, t),
+      className: refClass(decoration.kind),
+      compact: true,
+    });
+  }
+
+  if (chips.length === 0) return null;
+  const visible = chips.slice(0, MAX_VISIBLE_REF_CHIPS);
+  const hidden = chips.slice(MAX_VISIBLE_REF_CHIPS);
 
   return (
     <div className="log-view__refs" aria-label={t("log.commitRefs")}>
-      {visible.map(decoration => (
+      {visible.map(chip => (
         <span
-          key={`${decoration.kind}-${decoration.name}`}
-          className={refClass(decoration.kind)}
-          title={refTitle(decoration, t)}
+          key={chip.key}
+          className={chip.className}
+          title={chip.title}
         >
-          {compactRefName(decoration.name)}
+          {chip.compact ? compactRefName(chip.label) : chip.label}
         </span>
       ))}
       {hidden.length > 0 && (
         <span
           className="log-view__ref log-view__ref--more"
-          title={t("log.moreRefs", { count: hidden.length, refs: hidden.map(ref => ref.name).join(", ") })}
+          title={t("log.moreRefs", { count: hidden.length, refs: hidden.map(chip => chip.label).join(", ") })}
         >
           {t("log.moreRefsLabel", { count: hidden.length })}
         </span>
@@ -427,6 +503,7 @@ const CommitRow = React.memo(function CommitRow({
       onContextMenu={handleContextMenu}
       onMouseEnter={() => { if (showCommitGraph) onHoverCommit(c.hash); }}
       onMouseLeave={() => { if (showCommitGraph) onHoverCommit(null); }}
+      role="option"
       aria-selected={isSelected}
     >
       {showCommitGraph && (
@@ -455,13 +532,12 @@ const CommitRow = React.memo(function CommitRow({
         </div>
         <div className="log-view__meta">
           <span className="log-view__hash">{c.shortHash}</span>
-          {isHead && <span className="log-view__marker log-view__marker--head">HEAD</span>}
-          {isUpstream && (
-            <span className="log-view__marker log-view__marker--upstream">
-              {upstreamRef ?? "UPSTREAM"}
-            </span>
-          )}
-          <CommitRefChips decorations={c.refDecorations} />
+          <CommitRefChips
+            decorations={c.refDecorations}
+            isHead={isHead}
+            isUpstream={isUpstream}
+            upstreamRef={upstreamRef}
+          />
           <SignatureBadge
             status={effectiveSigStatus}
             onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
@@ -558,6 +634,11 @@ function verificationKey(repoPath: string, hash: string): string {
   return `${repoPath}\u0000${hash}`;
 }
 
+function isInteractiveTarget(target: EventTarget | null): boolean {
+  return target instanceof HTMLElement
+    && Boolean(target.closest("a, button, input, select, textarea, [contenteditable='true'], [role='menu'], [role='dialog']"));
+}
+
 function concreteSignatureStatus(status: SignatureStatus): Exclude<SignatureStatus, "none" | "signed"> | null {
   if (status === "verified" || status === "bad" || status === "unknownKey") return status;
   return null;
@@ -611,6 +692,7 @@ export function LogView({
   const [verificationEntries, setVerificationEntries] = useState<Record<string, VerificationEntry>>({});
   const [sigPopover, setSigPopover] = useState<SigPopoverData | null>(null);
 
+  const logViewRef = useRef<HTMLDivElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const prevRepoRef = useRef<string | null>(repoPath);
   const prevLogScopeRef = useRef<CommitLogScope>(logScope);
@@ -1097,6 +1179,55 @@ export function LogView({
     setCommitMenu({ hash, x, y });
   }, [selectedCommitHashes, onSelectCommit]);
 
+  const moveSelectedCommit = useCallback((offset: number) => {
+    if (commits.length === 0) return;
+
+    const selectedIndex = commits.findIndex(commit => selectedCommitHashes.has(commit.hash));
+    const currentIndex = selectedIndex === -1
+      ? (offset > 0 ? -1 : commits.length)
+      : selectedIndex;
+    const nextIndex = Math.max(0, Math.min(commits.length - 1, currentIndex + offset));
+    const nextHash = commits[nextIndex]?.hash;
+    if (!nextHash) return;
+    if (selectedIndex === nextIndex && selectedCommitHashes.size === 1 && selectedCommitHashes.has(nextHash)) return;
+
+    setSelectedCommitHashes(new Set([nextHash]));
+    setSelectionAnchorHash(nextHash);
+    onSelectCommit(nextHash);
+
+    if (nextIndex < visibleRangeRef.current.startIndex) {
+      virtuosoRef.current?.scrollToIndex({ index: nextIndex, align: "start" });
+    } else if (nextIndex > visibleRangeRef.current.endIndex) {
+      virtuosoRef.current?.scrollToIndex({ index: nextIndex, align: "end" });
+    }
+  }, [commits, onSelectCommit, selectedCommitHashes]);
+
+  const handleLogKeyDown = useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (
+      commitMenu
+      || sigPopover
+      || isInteractiveTarget(event.target)
+      || event.altKey
+      || event.ctrlKey
+      || event.metaKey
+      || event.shiftKey
+    ) return;
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      moveSelectedCommit(1);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      moveSelectedCommit(-1);
+    }
+  }, [commitMenu, moveSelectedCommit, sigPopover]);
+
+  const handleLogMouseDown = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (isInteractiveTarget(event.target)) return;
+    if (!(event.target instanceof Element) || !event.target.closest(".log-view__row")) return;
+    logViewRef.current?.focus({ preventScroll: true });
+  }, []);
+
   const copyText = useCallback((text: string) => {
     navigator.clipboard?.writeText(text).catch(() => {});
   }, []);
@@ -1162,7 +1293,15 @@ export function LogView({
   };
 
   return (
-    <div className="log-view">
+    <div
+      ref={logViewRef}
+      className="log-view"
+      role="listbox"
+      aria-label={t("tabs.log")}
+      tabIndex={0}
+      onKeyDown={handleLogKeyDown}
+      onMouseDown={handleLogMouseDown}
+    >
       {historyNotice && <div className="log-view__notice">{historyNotice}</div>}
       {showUpstreamNotice && (
         <div className="log-view__notice">

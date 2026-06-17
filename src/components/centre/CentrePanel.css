@@ -602,6 +602,15 @@
   min-height: 0;
 }
 
+.log-view:focus {
+  outline: none;
+}
+
+.log-view:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
 .log-view__notice {
   margin: 6px 10px 8px;
   padding: 7px 10px;
@@ -817,7 +826,7 @@
   gap: 3px;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: min(32%, 132px);
+  max-width: min(42%, 150px);
   overflow: hidden;
 }
 

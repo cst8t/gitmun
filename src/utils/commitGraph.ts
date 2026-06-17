@@ -5,7 +5,9 @@ export type CommitGraphLane = {
   hash: string;
 };
 
-export type CommitGraphParent = CommitGraphLane;
+export type CommitGraphParent = CommitGraphLane & {
+  sourceLane?: number;
+};
 
 export type CommitGraphRow = {
   hash: string;
@@ -35,32 +37,18 @@ function uniqueParents(parents: string[]): string[] {
   });
 }
 
-function orderParentsByVisiblePosition(
-  parents: string[],
-  commitIndexes: Map<string, number>,
-): string[] {
-  return parents
-    .map((parent, index) => ({
-      parent,
-      index,
-      commitIndex: commitIndexes.get(parent) ?? Number.POSITIVE_INFINITY,
-    }))
-    .sort((a, b) => a.commitIndex - b.commitIndex || a.index - b.index)
-    .map(item => item.parent);
-}
-
 export function buildCommitGraph(
   commits: CommitHistoryItem[],
   maxVisibleLanes = DEFAULT_MAX_VISIBLE_LANES,
 ): CommitGraph {
   const rows: Record<string, CommitGraphRow> = {};
-  const commitIndexes = new Map(commits.map((commit, index) => [commit.hash, index]));
   let activeLanes: string[] = [];
   let widestLane = 0;
 
   for (const commit of commits) {
     let commitLane = activeLanes.indexOf(commit.hash);
     const laneAlreadyActive = commitLane !== -1;
+    const activeLaneByHash = new Map(activeLanes.map((hash, lane) => [hash, lane]));
 
     if (!laneAlreadyActive) {
       commitLane = activeLanes.length;
@@ -74,14 +62,19 @@ export function buildCommitGraph(
     nextLanes.splice(commitLane, 1);
 
     const parentLanes: CommitGraphParent[] = [];
-    const parents = orderParentsByVisiblePosition(uniqueParents(commit.parentHashes), commitIndexes);
+    const parents = uniqueParents(commit.parentHashes);
     for (const [index, parent] of parents.entries()) {
       let parentLane = nextLanes.indexOf(parent);
       if (parentLane === -1) {
         parentLane = index === 0 ? Math.min(commitLane, nextLanes.length) : nextLanes.length;
         nextLanes.splice(parentLane, 0, parent);
       }
-      parentLanes.push({ hash: parent, lane: parentLane });
+      const sourceLane = activeLaneByHash.get(parent);
+      parentLanes.push({
+        hash: parent,
+        lane: parentLane,
+        ...(sourceLane !== undefined && sourceLane !== parentLane ? { sourceLane } : {}),
+      });
     }
 
     const bottomLanes = laneItems(nextLanes);

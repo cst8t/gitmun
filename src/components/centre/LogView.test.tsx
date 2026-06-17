@@ -262,6 +262,44 @@ describe("LogView commit selection", () => {
     expect(onSelectCommit).toHaveBeenCalledWith(commit(2).hash);
   });
 
+  it("moves commit selection with arrow keys", () => {
+    const onSelectCommit = vi.fn();
+    renderLog({ onSelectCommit });
+
+    fireEvent.keyDown(screen.getByRole("listbox", { name: "Log" }), { key: "ArrowDown" });
+
+    expect(rowFor("Subject 1")).toHaveAttribute("aria-selected", "false");
+    expect(rowFor("Subject 2")).toHaveAttribute("aria-selected", "true");
+    expect(onSelectCommit).toHaveBeenLastCalledWith(commit(2).hash);
+
+    fireEvent.keyDown(screen.getByRole("listbox", { name: "Log" }), { key: "ArrowUp" });
+
+    expect(rowFor("Subject 1")).toHaveAttribute("aria-selected", "true");
+    expect(rowFor("Subject 2")).toHaveAttribute("aria-selected", "false");
+    expect(onSelectCommit).toHaveBeenLastCalledWith(commit(1).hash);
+  });
+
+  it("reveals a keyboard-selected commit outside the visible range", () => {
+    const onSelectCommit = vi.fn();
+    const commits = Array.from({ length: 25 }, (_, index) => {
+      const shortHash = `hash-${String(index + 1).padStart(2, "0")}`;
+      return commit(index + 1, {
+        hash: shortHash.padEnd(40, "0"),
+        shortHash,
+      });
+    });
+    renderLog({
+      commits,
+      selectedCommitHash: commits[19].hash,
+      onSelectCommit,
+    });
+
+    fireEvent.keyDown(screen.getByRole("listbox", { name: "Log" }), { key: "ArrowDown" });
+
+    expect(onSelectCommit).toHaveBeenCalledWith(commits[20].hash);
+    expect(virtuosoScrollToIndex).toHaveBeenCalledWith({ index: 20, align: "end" });
+  });
+
   it("renders the commit graph beside log rows", () => {
     renderLog({
       commits: [
@@ -271,6 +309,36 @@ describe("LogView commit selection", () => {
     });
 
     expect(rowFor("Subject 1").querySelector(".log-view__graph-node")).not.toBeNull();
+  });
+
+  it("does not draw a premature bottom vertical for a merge side parent", () => {
+    const main = commit(3);
+    const feature = commit(2, { parentHashes: [main.hash] });
+    const merge = commit(1, { parentHashes: [main.hash, feature.hash] });
+    renderLog({ commits: [merge, feature, main] });
+
+    const mergeRow = rowFor("Subject 1");
+    const sideConnector = mergeRow.querySelector(".log-view__graph-connectors line[x2='17']");
+    const bottomLaneOffsets = Array.from(mergeRow.querySelectorAll<HTMLElement>(".log-view__graph-vertical--bottom"))
+      .map(lane => lane.style.left);
+
+    expect(sideConnector).toHaveAttribute("x1", "5");
+    expect(sideConnector).toHaveAttribute("y2", "100");
+    expect(bottomLaneOffsets).toContain("5px");
+    expect(bottomLaneOffsets).not.toContain("17px");
+  });
+
+  it("keeps an active parent lane continuous through a branch join", () => {
+    const main = commit(3);
+    const feature = commit(2, { parentHashes: [main.hash] });
+    const merge = commit(1, { parentHashes: [main.hash, feature.hash] });
+    renderLog({ commits: [merge, feature, main] });
+
+    const joinRow = rowFor("Subject 2");
+    const bottomLaneOffsets = Array.from(joinRow.querySelectorAll<HTMLElement>(".log-view__graph-vertical--bottom"))
+      .map(lane => lane.style.left);
+
+    expect(bottomLaneOffsets).toContain("5px");
   });
 
   it("renders rows without the commit graph when hidden", () => {
@@ -333,6 +401,30 @@ describe("LogView commit selection", () => {
     expect(rowFor("Subject 1")).toHaveTextContent("v1.0.0");
     expect(rowFor("Subject 1")).toHaveTextContent("+1");
     expect(rowFor("Subject 1")).not.toHaveTextContent("origin/main");
+  });
+
+  it("counts head and upstream markers in the compact ref limit", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+      ],
+    });
+    renderLog({
+      commits: [targetCommit],
+      commitMarkers: {
+        localHead: targetCommit.hash,
+        upstreamHead: targetCommit.hash,
+        upstreamRef: "origin/main",
+      },
+    });
+
+    const labels = Array.from(rowFor("Subject 1").querySelectorAll(".log-view__refs > span"))
+      .map(label => label.textContent);
+
+    expect(labels).toEqual(["HEAD", "origi...", "+1"]);
+    expect(screen.getByTitle("origin/main")).toBeInTheDocument();
+    expect(screen.getByTitle("1 more refs: main")).toBeInTheDocument();
   });
 
   it("abbreviates long commit ref labels", () => {
