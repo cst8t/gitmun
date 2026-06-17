@@ -1477,6 +1477,7 @@ pub fn run() {
             commands::settings::set_ui_text_scale,
             commands::settings::set_wrap_diff_lines,
             commands::settings::set_row_striping,
+            commands::settings::set_show_commit_graph_button,
             commands::settings::set_persistent_error_toasts,
             commands::settings::set_error_toast_clear_delay_ms,
             commands::settings::set_panel_layout,

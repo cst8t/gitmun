@@ -155,6 +155,7 @@ const settingsPayload: Settings = {
   uiTextScale: 1,
   wrapDiffLines: false,
   rowStriping: "Off",
+  showCommitGraphButton: false,
   persistentErrorToasts: false,
   errorToastClearDelayMs: 5000,
   leftPaneWidth: 300,

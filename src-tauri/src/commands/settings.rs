@@ -232,6 +232,16 @@ pub fn set_row_striping(row_striping: RowStriping, state: tauri::State<'_, AppSt
 }
 
 #[tauri::command]
+pub fn set_show_commit_graph_button(
+    show_commit_graph_button: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_show_commit_graph_button(show_commit_graph_button)
+}
+
+#[tauri::command]
 pub fn set_persistent_error_toasts(
     persistent_error_toasts: bool,
     state: tauri::State<'_, AppState>,

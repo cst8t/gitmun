@@ -243,6 +243,8 @@ pub struct Settings {
     #[serde(default)]
     pub row_striping: RowStriping,
     #[serde(default)]
+    pub show_commit_graph_button: bool,
+    #[serde(default)]
     pub persistent_error_toasts: bool,
     #[serde(
         default = "default_error_toast_clear_delay_ms",
@@ -324,6 +326,7 @@ impl Default for Settings {
             ui_text_scale: default_ui_text_scale(),
             wrap_diff_lines: false,
             row_striping: RowStriping::Off,
+            show_commit_graph_button: false,
             persistent_error_toasts: false,
             error_toast_clear_delay_ms: DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS,
             left_pane_width: 300,

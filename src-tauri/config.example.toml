@@ -20,6 +20,9 @@ uiTextScale = 1.0
 # Whether to wrap long lines in diff views.
 wrapDiffLines = false
 
+# Experimental: show the commit graph toolbar button.
+showCommitGraphButton = false
+
 # Whether error messages stay open until dismissed.
 persistentErrorToasts = false
 

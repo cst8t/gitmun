@@ -20,6 +20,7 @@ const settings: Settings = {
     uiTextScale: 1,
     wrapDiffLines: false,
     rowStriping: "Off",
+    showCommitGraphButton: false,
     persistentErrorToasts: false,
     errorToastClearDelayMs: 8000,
     leftPaneWidth: 300,
@@ -61,6 +62,7 @@ const defaultInvoke = async (command: string) => {
         case "set_ui_text_scale":
         case "set_wrap_diff_lines":
         case "set_row_striping":
+        case "set_show_commit_graph_button":
         case "set_persistent_error_toasts":
         case "set_error_toast_clear_delay_ms":
         case "set_git_executable_path":
@@ -154,7 +156,25 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
 
         expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
+        expect(screen.getByText("Experimental")).toBeInTheDocument();
         expect(screen.queryByTestId("settings-skeleton")).not.toBeInTheDocument();
+    });
+
+    it("loads the commit graph button setting off by default and saves changes", async () => {
+        render(<SettingsWindow/>);
+
+        const toggle = await screen.findByLabelText("Show commit graph button");
+        expect(toggle).not.toBeChecked();
+
+        fireEvent.click(toggle);
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.invoke).toHaveBeenCalledWith("set_show_commit_graph_button", {
+                showCommitGraphButton: true,
+            });
+            expect(mocks.emit).toHaveBeenCalledWith("settings-updated", settings);
+        });
     });
 
     it("shows an error when settings fail to load", async () => {

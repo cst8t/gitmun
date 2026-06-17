@@ -65,6 +65,7 @@ export type Settings = {
     uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
     rowStriping: RowStriping;
+    showCommitGraphButton: boolean;
     persistentErrorToasts: boolean;
     errorToastClearDelayMs: number;
     leftPaneWidth: number;
