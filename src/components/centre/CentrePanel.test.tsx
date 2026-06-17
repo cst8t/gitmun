@@ -79,6 +79,7 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     commitMarkers: { localHead: null, upstreamHead: null, upstreamRef: null },
     logScope: "currentCheckout",
     rowStriping: "Off",
+    showCommitGraphButton: true,
     onLogScopeChange: vi.fn(),
     detachedHead: false,
     shallow: false,
@@ -169,5 +170,16 @@ describe("CentrePanel commit graph toggle", () => {
 
     expect(container.querySelector(".log-view__graph")).not.toBeNull();
     expect(screen.getByLabelText("Hide commit graph")).toBeInTheDocument();
+  });
+
+  it("hides the graph button and forces the graph hidden when the setting is off", () => {
+    localStorage.setItem("gitmun.showCommitGraph", "true");
+
+    const { container } = renderCentrePanel({ showCommitGraphButton: false });
+
+    expect(screen.queryByLabelText("Hide commit graph")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Show commit graph")).not.toBeInTheDocument();
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
   });
 });

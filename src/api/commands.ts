@@ -428,6 +428,10 @@ export function setRowStriping(rowStriping: RowStriping): Promise<Settings> {
     return invoke<Settings>("set_row_striping", {rowStriping});
 }
 
+export function setShowCommitGraphButton(showCommitGraphButton: boolean): Promise<Settings> {
+    return invoke<Settings>("set_show_commit_graph_button", {showCommitGraphButton});
+}
+
 export function setPersistentErrorToasts(persistentErrorToasts: boolean): Promise<Settings> {
     return invoke<Settings>("set_persistent_error_toasts", {persistentErrorToasts});
 }

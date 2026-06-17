@@ -261,6 +261,7 @@ export function ProjectView({
   const [rebasedBranchAwaitingPush, setRebasedBranchAwaitingPush] = useState<string | null>(null);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
+  const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
@@ -464,6 +465,7 @@ export function ProjectView({
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
           setRowStriping(settings.rowStriping ?? "Off");
+          setShowCommitGraphButton(settings.showCommitGraphButton ?? false);
         }
       })
       .catch(() => {
@@ -473,6 +475,7 @@ export function ProjectView({
           setPushFollowTags(false);
           setWrapDiffLines(false);
           setRowStriping("Off");
+          setShowCommitGraphButton(false);
         }
       });
 
@@ -2356,6 +2359,7 @@ export function ProjectView({
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   rowStriping={rowStriping}
+                  showCommitGraphButton={showCommitGraphButton}
                   onLogScopeChange={setLogScope}
                   detachedHead={status?.detachedHead ?? false}
                   shallow={status?.shallow ?? false}

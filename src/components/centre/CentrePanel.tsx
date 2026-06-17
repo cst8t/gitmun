@@ -60,6 +60,7 @@ type CentrePanelProps = {
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
+  showCommitGraphButton: boolean;
   onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
   shallow: boolean;
@@ -119,6 +120,7 @@ type CentrePanelProps = {
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
   const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
+  const effectiveShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
   const tab = props.activeTab;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
@@ -199,16 +201,18 @@ export function CentrePanel(props: CentrePanelProps) {
         <div className="centre__tabs-spacer" />
         {tab === "log" && (
           <div className="centre__tabs-actions">
-            <button
-              type="button"
-              className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
-              title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-              aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-              aria-pressed={showCommitGraph}
-              onClick={handleToggleCommitGraph}
-            >
-              <BranchIcon size={15} />
-            </button>
+            {props.showCommitGraphButton && (
+              <button
+                type="button"
+                className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
+                title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+                aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+                aria-pressed={showCommitGraph}
+                onClick={handleToggleCommitGraph}
+              >
+                <BranchIcon size={15} />
+              </button>
+            )}
             <div className="log-view__scope-actions" role="group" aria-label={t("log.commitLogScope")}>
               <button
                 type="button"
@@ -299,7 +303,7 @@ export function CentrePanel(props: CentrePanelProps) {
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
           rowStriping={props.rowStriping}
-          showCommitGraph={showCommitGraph}
+          showCommitGraph={effectiveShowCommitGraph}
           detachedHead={props.detachedHead}
           shallow={props.shallow}
           selectedCommitHash={props.selectedCommitHash}

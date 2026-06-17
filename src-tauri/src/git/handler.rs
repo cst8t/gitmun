@@ -232,6 +232,12 @@ impl GitService {
         })
     }
 
+    pub fn set_show_commit_graph_button(&self, show_commit_graph_button: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.show_commit_graph_button = show_commit_graph_button;
+        })
+    }
+
     pub fn set_persistent_error_toasts(&self, persistent_error_toasts: bool) -> Settings {
         self.update_settings(|settings| {
             settings.persistent_error_toasts = persistent_error_toasts;
@@ -494,5 +500,20 @@ impl GitService {
             .clone();
 
         crate::config_file::persist(&path, &settings)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GitService;
+
+    #[test]
+    fn set_show_commit_graph_button_updates_settings() {
+        let service = GitService::new();
+
+        let settings = service.set_show_commit_graph_button(true);
+
+        assert!(settings.show_commit_graph_button);
+        assert!(service.get_settings().show_commit_graph_button);
     }
 }
