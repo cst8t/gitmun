@@ -35,15 +35,27 @@
   margin: 0 4px;
 }
 
+.titlebar__repo-area {
+  display: flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: clamp(260px, 32vw, 430px);
+}
+
 .titlebar__repo-wrap {
   position: relative;
   display: flex;
   align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .titlebar__repo {
   display: flex;
   align-items: center;
+  min-width: 0;
+  max-width: 100%;
   border: none;
   background: none;
   color: inherit;
@@ -60,11 +72,20 @@
 .titlebar__repo-dir {
   color: var(--text-secondary);
   font-size: var(--font-size-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
 }
 
 .titlebar__repo-name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
 }
 
 .titlebar__repo-copied {
@@ -93,6 +114,9 @@
   display: flex;
   align-items: center;
   gap: 5px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: clamp(96px, 14vw, 180px);
   background: var(--accent-dim);
   padding: 4px 10px 4px 8px;
   border-radius: var(--radius-lg);
@@ -104,8 +128,18 @@
   font-family: var(--font-mono);
 }
 
+.titlebar__branch-icon {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+}
+
 .titlebar__branch-name {
   color: var(--accent);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .titlebar__spacer { flex: 1; }
@@ -524,13 +558,6 @@
 
   .titlebar__branch-pill {
     max-width: 150px;
-    min-width: 0;
-  }
-
-  .titlebar__branch-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
   }
 
   .titlebar__search {
