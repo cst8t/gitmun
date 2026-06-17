@@ -87,3 +87,6 @@ repoOpenBehaviour = "Ask"
 
 # Optional Git executable path. Leave blank to use Gitmun's automatic lookup.
 gitExecutablePath = ""
+
+# Whether Gitmun may fetch missing GPG public keys through your GnuPG keyserver configuration.
+gpgKeyserverVerificationEnabled = false

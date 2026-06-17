@@ -287,6 +287,8 @@ pub struct Settings {
     pub repo_open_behaviour: RepoOpenBehaviour,
     #[serde(default)]
     pub git_executable_path: String,
+    #[serde(default)]
+    pub gpg_keyserver_verification_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -343,6 +345,7 @@ impl Default for Settings {
             linux_terminal_custom_command: String::new(),
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),
+            gpg_keyserver_verification_enabled: false,
         }
     }
 }
@@ -670,6 +673,21 @@ pub enum SignatureStatus {
     Bad,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitRefKind {
+    LocalBranch,
+    RemoteBranch,
+    Tag,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitRefDecoration {
+    pub name: String,
+    pub kind: CommitRefKind,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitHistoryItem {
@@ -679,6 +697,8 @@ pub struct CommitHistoryItem {
     pub author_email: String,
     pub date: String,
     pub message: String,
+    pub parent_hashes: Vec<String>,
+    pub ref_decorations: Vec<CommitRefDecoration>,
     pub signature_status: SignatureStatus,
     /// "ssh" or "gpg", detected from the raw signature header.
     pub key_type: Option<String>,

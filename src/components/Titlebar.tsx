@@ -116,7 +116,7 @@ export function Titlebar({
 
       {/* Repo + branch */}
       {repoPath ? (
-        <>
+        <div className="titlebar__repo-area">
           <div className="titlebar__repo-wrap">
             <button
               type="button"
@@ -133,12 +133,12 @@ export function Titlebar({
             </span>
           </div>
           {currentBranch && (
-            <div className="titlebar__branch-pill">
-              <BranchIcon size={14} />
+            <div className="titlebar__branch-pill" title={currentBranch}>
+              <BranchIcon size={16} className="titlebar__branch-icon" />
               <span className="titlebar__branch-name">{currentBranch}</span>
             </div>
           )}
-        </>
+        </div>
       ) : (
         <span className="titlebar__no-repo" {...dragRegionProps}>{t("labels.noRepositoryOpen")}</span>
       )}

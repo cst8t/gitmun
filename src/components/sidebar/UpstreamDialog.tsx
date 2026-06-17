@@ -37,6 +37,7 @@ export function UpstreamDialog({
     return remotes.length === 1 ? remotes[0].name : "";
   });
   const [remoteBranch, setRemoteBranch] = useState(() => initialSelection?.branch ?? branchName);
+  const [knownBranchFilter, setKnownBranchFilter] = useState("");
 
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
@@ -56,6 +57,13 @@ export function UpstreamDialog({
       .sort((a, b) => a.localeCompare(b)),
     [remote, remoteBranches],
   );
+  const filteredKnownRemoteBranches = useMemo(() => {
+    const filter = knownBranchFilter.trim().toLowerCase();
+    if (!filter) {
+      return knownRemoteBranches;
+    }
+    return knownRemoteBranches.filter(branch => branch.toLowerCase().includes(filter));
+  }, [knownBranchFilter, knownRemoteBranches]);
 
   const trimmedRemote = remote.trim();
   const trimmedRemoteBranch = remoteBranch.trim();
@@ -86,12 +94,14 @@ export function UpstreamDialog({
         <form onSubmit={handleSubmit}>
           <div className="upstream-dialog__summary">
             <div className="upstream-dialog__summary-row">
-              <span>{t("upstream.localBranch")}</span>
-              <strong>{branchName}</strong>
+              <span className="upstream-dialog__summary-label">{t("upstream.localBranch")}</span>
+              <strong className="upstream-dialog__summary-value" title={branchName}>{branchName}</strong>
             </div>
             <div className="upstream-dialog__summary-row">
-              <span>{t("upstream.willTrack")}</span>
-              <strong>{trimmedRemote && trimmedRemoteBranch ? `${trimmedRemote}/${trimmedRemoteBranch}` : t("upstream.chooseBranch")}</strong>
+              <span className="upstream-dialog__summary-label">{t("upstream.willTrack")}</span>
+              <strong className="upstream-dialog__summary-value" title={trimmedRemote && trimmedRemoteBranch ? `${trimmedRemote}/${trimmedRemoteBranch}` : undefined}>
+                {trimmedRemote && trimmedRemoteBranch ? `${trimmedRemote}/${trimmedRemoteBranch}` : t("upstream.chooseBranch")}
+              </strong>
             </div>
           </div>
 
@@ -101,7 +111,10 @@ export function UpstreamDialog({
               id={remoteInputId}
               className="dialog__input"
               value={remote}
-              onChange={event => setRemote(event.target.value)}
+              onChange={event => {
+                setRemote(event.target.value);
+                setKnownBranchFilter("");
+              }}
               disabled={!hasRemotes}
             >
               <option value="">{hasRemotes ? t("upstream.chooseRemote") : t("upstream.noRemotes")}</option>
@@ -125,17 +138,31 @@ export function UpstreamDialog({
           {knownRemoteBranches.length > 0 && (
             <div className="upstream-dialog__branches">
               <div className="dialog__label">{t("upstream.knownBranches", { remote })}</div>
+              <input
+                type="text"
+                className="upstream-dialog__branch-filter"
+                value={knownBranchFilter}
+                onChange={event => setKnownBranchFilter(event.target.value)}
+                placeholder={t("upstream.filterKnownBranches")}
+              />
               <div className="upstream-dialog__branch-list">
-                {knownRemoteBranches.map(branch => (
-                  <button
-                    key={branch}
-                    type="button"
-                    className={`upstream-dialog__branch-chip${branch === trimmedRemoteBranch ? " upstream-dialog__branch-chip--active" : ""}`}
-                    onClick={() => setRemoteBranch(branch)}
-                  >
-                    {branch}
-                  </button>
-                ))}
+                {filteredKnownRemoteBranches.length === 0 ? (
+                  <div className="upstream-dialog__branch-item upstream-dialog__branch-item--empty">
+                    {t("upstream.noKnownBranches")}
+                  </div>
+                ) : (
+                  filteredKnownRemoteBranches.map(branch => (
+                    <button
+                      key={branch}
+                      type="button"
+                      className={`upstream-dialog__branch-item${branch === trimmedRemoteBranch ? " upstream-dialog__branch-item--active" : ""}`}
+                      onClick={() => setRemoteBranch(branch)}
+                      title={branch}
+                    >
+                      {branch}
+                    </button>
+                  ))
+                )}
               </div>
             </div>
           )}

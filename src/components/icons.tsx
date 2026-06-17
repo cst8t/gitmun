@@ -11,6 +11,8 @@ import {
   Archive,
   GearSix,
   CaretDown,
+  CaretLeft,
+  CaretRight,
   ArrowLineRight,
   ArrowLineLeft,
   X,
@@ -44,6 +46,8 @@ export const PushIcon = ({ size = 16, className }: IconProps) => <ArrowLineUp si
 export const StashIcon = ({ size = 16, className }: IconProps) => <Archive size={size} className={className} />;
 export const SettingsIcon = ({ size = 17, className }: IconProps) => <GearSix size={size} className={className} />;
 export const ChevDownIcon = ({ size = 16, className }: IconProps) => <CaretDown size={size} weight="bold" className={className} />;
+export const ChevLeftIcon = ({ size = 16, className }: IconProps) => <CaretLeft size={size} weight="bold" className={className} />;
+export const ChevRightIcon = ({ size = 16, className }: IconProps) => <CaretRight size={size} weight="bold" className={className} />;
 export const StageArrowIcon = ({ size = 16, className }: IconProps) => <ArrowLineRight size={size} weight="bold" className={className} />;
 export const UnstageArrowIcon = ({ size = 16, className }: IconProps) => <ArrowLineLeft size={size} weight="bold" className={className} />;
 export const DiscardIcon = ({ size = 16, className }: IconProps) => <X size={size} weight="bold" className={className} />;
