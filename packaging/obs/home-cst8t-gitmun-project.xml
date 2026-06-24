@@ -25,8 +25,8 @@
     <arch>x86_64</arch>
   </repository>
   <repository name="openSUSE_Leap_15.6">
+    <path project="devel:languages:rust" repository="15.6"/>
     <path project="devel:languages:nodejs" repository="15.6"/>
-    <path project="home:fl4nn:backports" repository="15.6"/>
     <path project="X11:Utilities" repository="15.6"/>
     <path project="openSUSE:Leap:15.6" repository="standard"/>
     <arch>x86_64</arch>
