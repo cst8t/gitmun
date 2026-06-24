@@ -40,6 +40,18 @@ Gitmun is a desktop Git client built with Tauri, Rust and React.
 export CARGO_NET_OFFLINE=true
 export GITMUN_COMMIT_HASH="$(cat %{_sourcedir}/commit-hash.txt)"
 obs_node_bin="$(mktemp -d)"
+if ! command -v gcc-15 >/dev/null 2>&1 && command -v gcc >/dev/null 2>&1; then
+    ln -sf "$(command -v gcc)" "$obs_node_bin/gcc-15"
+fi
+if ! command -v g++-15 >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; then
+    ln -sf "$(command -v g++)" "$obs_node_bin/g++-15"
+fi
+if ! command -v clang >/dev/null 2>&1 && command -v gcc >/dev/null 2>&1; then
+    ln -sf "$(command -v gcc)" "$obs_node_bin/clang"
+fi
+if ! command -v clang++ >/dev/null 2>&1 && command -v g++ >/dev/null 2>&1; then
+    ln -sf "$(command -v g++)" "$obs_node_bin/clang++"
+fi
 for node in /usr/bin/node /usr/bin/nodejs /usr/bin/node-*; do
     if [ -x "$node" ]; then
         ln -sf "$node" "$obs_node_bin/node"
