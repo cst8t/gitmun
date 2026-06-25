@@ -62,7 +62,7 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
     const elH = el.offsetHeight;
     // Drop down from the button, right-aligned to it
     let top = rect.bottom + gap;
-    if (top + elH > innerHeight - 8) top = rect.top - elH - gap;
+    if (top + elH > innerHeight - 8) top = Math.max(8, rect.top - elH - gap);
     let left = rect.right - popoverWidth;
     if (left < 8) left = 8;
     if (left + popoverWidth > innerWidth - 8) left = innerWidth - popoverWidth - 8;
@@ -117,6 +117,13 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
           <span className="commit-details-popover__label">{t("commitDetails.committer")}</span>
           <span className="commit-details-popover__value">{data.committer} &lt;{data.committerEmail}&gt;</span>
           <span className="commit-details-popover__value commit-details-popover__value--muted">{formatDate(data.committerDate)}</span>
+        </div>
+      )}
+
+      {data.body && (
+        <div className="commit-details-popover__section">
+          <span className="commit-details-popover__label">{t("commitDetails.message")}</span>
+          <span className="commit-details-popover__value commit-details-popover__value--message">{data.body}</span>
         </div>
       )}
 

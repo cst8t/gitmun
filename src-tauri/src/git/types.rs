@@ -464,6 +464,7 @@ pub struct CommitDetails {
     pub committer: String,
     pub committer_email: String,
     pub committer_date: String,
+    pub body: String,
     pub parent_hashes: Vec<String>,
     pub tags: Vec<String>,
     pub trailers: Vec<CommitTrailer>,

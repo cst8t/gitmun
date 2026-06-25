@@ -7,6 +7,7 @@
     "copyFullHash": "Copy full hash",
     "date": "Date",
     "hash": "Hash",
+    "message": "Message",
     "parents": "Parents",
     "tags": "Tags"
   },
