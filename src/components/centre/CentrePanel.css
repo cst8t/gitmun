@@ -136,9 +136,6 @@
   color: var(--text-secondary-strong);
 }
 
-.staging__folder-row--striped-subtle { background: var(--row-alternate-bg); }
-.staging__folder-row--striped-strong { background: var(--row-alternate-strong-bg); }
-
 .staging__folder-toggle {
   width: 16px;
   height: 16px;

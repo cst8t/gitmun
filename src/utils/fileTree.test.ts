@@ -69,6 +69,95 @@ describe("buildFileTree", () => {
     ]);
   });
 
+  it("compacts uninterrupted single-directory chains", () => {
+    const tree = buildFileTree([
+      file("game/assets/graphics/100/en/symbols/wheel_pip.png", 3, 1),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "game/assets/graphics/100/en/symbols",
+        path: "game/assets/graphics/100/en/symbols",
+        fileCount: 1,
+        additions: 3,
+        deletions: 1,
+        children: [
+          {
+            type: "file",
+            name: "wheel_pip.png",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("compacts single-directory chains below a branch", () => {
+    const tree = buildFileTree([
+      file("game/assets/graphics/100/en/symbols/wheel_pip.png"),
+      file("game/assets/graphics/50/en/symbols/wheel_pip.png"),
+      file("game/assets/scenes/default/base-game.json"),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "game/assets",
+        path: "game/assets",
+        children: [
+          {
+            type: "directory",
+            name: "graphics",
+            path: "game/assets/graphics",
+            children: [
+              {
+                type: "directory",
+                name: "100/en/symbols",
+                path: "game/assets/graphics/100/en/symbols",
+              },
+              {
+                type: "directory",
+                name: "50/en/symbols",
+                path: "game/assets/graphics/50/en/symbols",
+              },
+            ],
+          },
+          {
+            type: "directory",
+            name: "scenes/default",
+            path: "game/assets/scenes/default",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("does not compact directories containing files and directories", () => {
+    const tree = buildFileTree([
+      file("src/index.ts"),
+      file("src/components/forms/Input.tsx"),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "src",
+        path: "src",
+        children: [
+          {
+            type: "directory",
+            name: "components/forms",
+            path: "src/components/forms",
+          },
+          {
+            type: "file",
+            name: "index.ts",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("keeps separation through caller-provided buckets", () => {
     const staged = buildFileTree([file("src/app.ts")]);
     const unstaged = buildFileTree([file("src/app.ts"), file("src/theme.css")]);
