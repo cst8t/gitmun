@@ -560,6 +560,7 @@ export type CommitDetails = {
     committer: string;
     committerEmail: string;
     committerDate: string;
+    body: string;
     parentHashes: string[];
     tags: string[];
     trailers: CommitTrailer[];

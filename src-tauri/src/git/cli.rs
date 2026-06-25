@@ -14,15 +14,15 @@ use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
     CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
-    CommitRefKind, CommitRequest, CommitTrailer, ConflictFileItem, CreateBranchRequest,
-    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
-    DeleteTagRequest, DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportPatchFileSelection,
-    ExportPatchRequest, ExportPatchScope, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
-    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope,
-    ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState,
-    PullStrategy, PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
+    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
+    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportPatchFileSelection, ExportPatchRequest,
+    ExportPatchScope, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
+    GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest,
+    LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
+    PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState, PullStrategy,
+    PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult,
+    PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
     RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
     RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
     SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
@@ -2612,7 +2612,7 @@ impl GitOperationHandler for CliGitHandler {
             .map(|s| s.to_string())
             .collect();
         let body = if parts.len() > 8 { parts[8] } else { "" };
-        let trailers = parse_commit_trailers(body);
+        let processed_body = super::commit_message::process_commit_body(body);
 
         // Tags pointing at this commit (may be empty output)
         let tags_output =
@@ -2631,9 +2631,10 @@ impl GitOperationHandler for CliGitHandler {
             committer,
             committer_email,
             committer_date,
+            body: processed_body.body,
             parent_hashes,
             tags,
-            trailers,
+            trailers: processed_body.trailers,
         })
     }
 
@@ -5309,41 +5310,6 @@ impl CliGitHandler {
     }
 }
 
-/// Parse git-trailer lines from a commit body.
-///
-/// Scans lines from the end of the body, collecting `Key: value` pairs that
-/// match the trailer format. Stops on the first non-empty, non-matching line
-/// (trailers form a contiguous block at the end of the message body).
-pub(super) fn parse_commit_trailers(body: &str) -> Vec<CommitTrailer> {
-    let lines: Vec<&str> = body.lines().collect();
-    let mut trailers = Vec::new();
-
-    for line in lines.iter().rev() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        // Trailer format: Token: value  (token is word chars + hyphens)
-        if let Some(colon_pos) = trimmed.find(':') {
-            let key = &trimmed[..colon_pos];
-            let value = trimmed[colon_pos + 1..].trim();
-            let key_valid =
-                !key.is_empty() && key.chars().all(|c| c.is_ascii_alphanumeric() || c == '-');
-            if key_valid && !value.is_empty() {
-                trailers.push(CommitTrailer {
-                    key: key.to_string(),
-                    value: value.to_string(),
-                });
-                continue;
-            }
-        }
-        break;
-    }
-
-    trailers.reverse();
-    trailers
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -5605,49 +5571,5 @@ UD deleted_by_them.rs
             CliGitHandler::repo_name_from_url("https://example.com/user/repo/"),
             Some("repo".to_string())
         );
-    }
-
-    #[test]
-    fn trailers_empty_body() {
-        assert!(parse_commit_trailers("").is_empty());
-    }
-
-    #[test]
-    fn trailers_single() {
-        let result = parse_commit_trailers("Reviewed-by: Alice");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].key, "Reviewed-by");
-        assert_eq!(result[0].value, "Alice");
-    }
-
-    #[test]
-    fn trailers_multiple_in_order() {
-        let body = "Reviewed-by: Alice\nSigned-off-by: Bob";
-        let result = parse_commit_trailers(body);
-        assert_eq!(result.len(), 2);
-        assert_eq!(result[0].key, "Reviewed-by");
-        assert_eq!(result[1].key, "Signed-off-by");
-    }
-
-    #[test]
-    fn trailers_value_with_colon() {
-        let result = parse_commit_trailers("Co-authored-by: Name <email@example.com>");
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].key, "Co-authored-by");
-        assert_eq!(result[0].value, "Name <email@example.com>");
-    }
-
-    #[test]
-    fn trailers_stops_at_body_paragraph() {
-        let body = "This is the body.\n\nReviewed-by: Alice";
-        let result = parse_commit_trailers(body);
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].key, "Reviewed-by");
-    }
-
-    #[test]
-    fn trailers_invalid_key_with_space_not_collected() {
-        let result = parse_commit_trailers("Not A Key: value");
-        assert!(result.is_empty());
     }
 }

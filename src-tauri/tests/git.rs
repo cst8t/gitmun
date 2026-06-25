@@ -1308,6 +1308,7 @@ fn cli_commit_details_basic_fields() {
     assert_eq!(details.author, "Gitmun Test");
     assert_eq!(details.author_email, "test@gitmun.test");
     assert!(!details.author_date.is_empty());
+    assert!(details.body.is_empty());
     assert!(details.trailers.is_empty());
     assert!(details.tags.is_empty());
 }
@@ -1834,6 +1835,7 @@ fn cli_commit_details_trailers_parsed() {
         .get_commit_details(&details_request(&dir, &hash))
         .expect("get_commit_details");
 
+    assert!(details.body.is_empty());
     assert_eq!(details.trailers.len(), 1);
     assert_eq!(details.trailers[0].key, "Reviewed-by");
     assert_eq!(details.trailers[0].value, "Alice <a@b.com>");
@@ -1852,7 +1854,42 @@ fn cli_commit_details_no_trailers() {
         .get_commit_details(&details_request(&dir, &hash))
         .expect("get_commit_details");
 
+    assert!(details.body.is_empty());
     assert!(details.trailers.is_empty());
+}
+
+#[test]
+fn commit_details_backends_return_identical_body_and_trailers() {
+    let dir = init_repo();
+    git(
+        dir.path(),
+        &[
+            "commit",
+            "--allow-empty",
+            "-m",
+            "subject",
+            "-m",
+            "First paragraph.\n\nSecond paragraph.\n\nReviewed-by: Alice <a@b.com>\nSigned-off-by: Bob <b@example.com>",
+        ],
+    );
+    let hash = head_hash(dir.path());
+    let request = details_request(&dir, &hash);
+
+    let cli_details = handler()
+        .get_commit_details(&request)
+        .expect("get CLI commit details");
+    let gix_details = gix_handler()
+        .get_commit_details(&request)
+        .expect("get gix commit details");
+
+    assert_eq!(cli_details.body, "First paragraph.\n\nSecond paragraph.");
+    assert_eq!(gix_details.body, cli_details.body);
+    assert_eq!(cli_details.trailers.len(), 2);
+    assert_eq!(gix_details.trailers.len(), cli_details.trailers.len());
+    for (cli_trailer, gix_trailer) in cli_details.trailers.iter().zip(gix_details.trailers.iter()) {
+        assert_eq!(gix_trailer.key, cli_trailer.key);
+        assert_eq!(gix_trailer.value, cli_trailer.value);
+    }
 }
 
 #[test]
@@ -1914,6 +1951,7 @@ fn gix_commit_details_basic_fields() {
     assert_eq!(details.author, "Gitmun Test");
     assert_eq!(details.author_email, "test@gitmun.test");
     assert!(!details.author_date.is_empty());
+    assert!(details.body.is_empty());
     assert!(details.trailers.is_empty());
     assert!(details.tags.is_empty());
 }
@@ -1955,6 +1993,7 @@ fn gix_commit_details_trailers_parsed() {
         .get_commit_details(&details_request(&dir, &hash))
         .expect("get_commit_details");
 
+    assert!(details.body.is_empty());
     assert_eq!(details.trailers.len(), 1);
     assert_eq!(details.trailers[0].key, "Reviewed-by");
     assert_eq!(details.trailers[0].value, "Alice <a@b.com>");
@@ -1973,6 +2012,7 @@ fn gix_commit_details_no_trailers() {
         .get_commit_details(&details_request(&dir, &hash))
         .expect("get_commit_details");
 
+    assert!(details.body.is_empty());
     assert!(details.trailers.is_empty());
 }
 
