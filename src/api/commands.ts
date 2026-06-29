@@ -574,6 +574,10 @@ export function validateRepoPath(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("validate_repo_path", {repoPath});
 }
 
+export function getRepoDisplayName(repoPath: string): Promise<string | null> {
+    return invoke<string | null>("get_repo_display_name", {repoPath});
+}
+
 export function initRepo(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("init_repo", {repoPath});
 }
