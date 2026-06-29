@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, RefObject } from "react";
+import React, { useState, useEffect, useRef, useId, RefObject } from "react";
 import { useTranslation } from "react-i18next";
 import {
   GitIcon, BranchIcon, FetchIcon, PullIcon, PushIcon,
@@ -61,7 +61,12 @@ export function Titlebar({
   const { t } = useTranslation("titlebar");
   const [searchFocused, setSearchFocused] = useState(false);
   const [repoPathCopied, setRepoPathCopied] = useState(false);
+  const [openDisclosure, setOpenDisclosure] = useState<{ kind: "repo" | "branch"; truncated: boolean } | null>(null);
+  const repoNameRef = useRef<HTMLSpanElement>(null);
+  const branchNameRef = useRef<HTMLSpanElement>(null);
   const repoPathCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const repoDisclosureId = useId();
+  const branchDisclosureId = useId();
   const pushActionLabel = pushLabel ?? t("actions.push");
   const currentBranchInfo = branches.find(b => b.isCurrent);
   const ahead = currentBranchInfo?.ahead ?? 0;
@@ -71,8 +76,28 @@ export function Titlebar({
 
   const repoName = repoPath ? displayNameForRepoPath(repoPath, repoDisplayName) : "";
 
+  const isOverflowing = (element: HTMLElement | null) => {
+    if (!element) return false;
+    return element.scrollWidth > element.clientWidth;
+  };
+
+  const showRepoDisclosure = () => {
+    setOpenDisclosure({ kind: "repo", truncated: isOverflowing(repoNameRef.current) });
+  };
+
+  const showBranchDisclosure = () => {
+    if (isOverflowing(branchNameRef.current)) {
+      setOpenDisclosure({ kind: "branch", truncated: true });
+    } else {
+      setOpenDisclosure(null);
+    }
+  };
+
+  const closeDisclosure = () => setOpenDisclosure(null);
+
   const copyRepoPath = () => {
     if (!repoPath) return;
+    setOpenDisclosure(null);
     setRepoPathCopied(true);
     if (repoPathCopiedTimerRef.current) clearTimeout(repoPathCopiedTimerRef.current);
     repoPathCopiedTimerRef.current = setTimeout(() => {
@@ -105,24 +130,51 @@ export function Titlebar({
       {/* Repo + branch */}
       {repoPath ? (
         <div className="titlebar__repo-area">
-          <div className="titlebar__repo-wrap">
+          <div className="titlebar__repo-wrap" onMouseLeave={closeDisclosure}>
             <button
               type="button"
               className="titlebar__repo"
               onClick={copyRepoPath}
-              title={t("actions.copyRepositoryPath")}
+              onMouseEnter={showRepoDisclosure}
+              onFocus={showRepoDisclosure}
+              onBlur={closeDisclosure}
               aria-label={t("actions.copyRepositoryPath")}
+              aria-describedby={openDisclosure?.kind === "repo" ? repoDisclosureId : undefined}
             >
-              <span className="titlebar__repo-name">{repoName}</span>
+              <span ref={repoNameRef} className="titlebar__repo-name">{repoName}</span>
             </button>
+            {openDisclosure?.kind === "repo" && repoPath && (
+              <TitlebarDisclosure id={repoDisclosureId} compact={!openDisclosure.truncated} onMouseLeave={closeDisclosure}>
+                {openDisclosure.truncated && (
+                  <>
+                    <DisclosureRow label={t("labels.project")} value={repoName} />
+                    <DisclosureRow label={t("labels.repositoryPath")} value={repoPath} />
+                  </>
+                )}
+                <div className="titlebar__disclosure-hint">{t("labels.copyRepositoryPathHint")}</div>
+              </TitlebarDisclosure>
+            )}
             <span className={`titlebar__repo-copied${repoPathCopied ? " titlebar__repo-copied--visible" : ""}`}>
               {t("labels.copied")}
             </span>
           </div>
           {currentBranch && (
-            <div className="titlebar__branch-pill" title={currentBranch}>
+            <div
+              className="titlebar__branch-pill"
+              tabIndex={0}
+              onMouseEnter={showBranchDisclosure}
+              onMouseLeave={closeDisclosure}
+              onFocus={showBranchDisclosure}
+              onBlur={closeDisclosure}
+              aria-describedby={openDisclosure?.kind === "branch" ? branchDisclosureId : undefined}
+            >
               <BranchIcon size={16} className="titlebar__branch-icon" />
-              <span className="titlebar__branch-name">{currentBranch}</span>
+              <span ref={branchNameRef} className="titlebar__branch-name">{currentBranch}</span>
+              {openDisclosure?.kind === "branch" && (
+                <TitlebarDisclosure id={branchDisclosureId}>
+                  <DisclosureRow label={t("labels.branch")} value={currentBranch} />
+                </TitlebarDisclosure>
+              )}
             </div>
           )}
         </div>
@@ -217,6 +269,33 @@ export function Titlebar({
           : identityInitials}
       </div>
 
+    </div>
+  );
+}
+
+function TitlebarDisclosure({ id, children, compact = false, onMouseLeave }: {
+  id: string;
+  children: React.ReactNode;
+  compact?: boolean;
+  onMouseLeave?: () => void;
+}) {
+  return (
+    <div
+      id={id}
+      className={`titlebar__disclosure${compact ? " titlebar__disclosure--compact" : ""}`}
+      role="tooltip"
+      onMouseLeave={onMouseLeave}
+    >
+      {children}
+    </div>
+  );
+}
+
+function DisclosureRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="titlebar__disclosure-row">
+      <span className="titlebar__disclosure-label">{label}</span>
+      <span className="titlebar__disclosure-value">{value}</span>
     </div>
   );
 }
