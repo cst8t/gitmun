@@ -12,6 +12,7 @@ import {usePlatform} from "../hooks/usePlatform";
 import * as api from "../api/commands";
 import type {AppAvailableUpdate, RepoOpenBehaviour, RepoOpenLocationKind, Settings, ShellStartupAction} from "../types";
 import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
+import {buildMainWindowTitle, repoNameFromPath} from "../utils/repoDisplayName";
 import {applyThemeMode} from "../utils/theme";
 import {applyUiTextScale} from "../utils/uiTextScale";
 import {
@@ -52,10 +53,6 @@ function isLikelyNotRepoError(error: unknown): boolean {
     return /not a git repository/i.test(String(error));
 }
 
-function repoNameFromPath(path: string): string {
-    return path.split(/[\\/]/).filter(Boolean).pop() ?? path;
-}
-
 export function App() {
     const {t} = useTranslation("app");
     const platform = usePlatform();
@@ -73,6 +70,7 @@ export function App() {
     } = useUpdateFlow();
 
     const [repoPath, setRepoPath] = useState<string | null>(null);
+    const [repoDisplayName, setRepoDisplayName] = useState<{repoPath: string; name: string | null} | null>(null);
     const [ready, setReady] = useState(false);
     const [recentRepos, setRecentRepos] = useState<string[]>(() => {
         try {
@@ -81,9 +79,13 @@ export function App() {
             return [];
         }
     });
+    const [recentRepoDisplayNames, setRecentRepoDisplayNames] = useState<Record<string, string>>({});
     const [identityOpen, setIdentityOpen] = useState(false);
     const [confirmRevert, setConfirmRevert] = useState(true);
     const [settingsRevision, setSettingsRevision] = useState(0);
+    const activeRepoDisplayName = repoPath && repoDisplayName?.repoPath === repoPath
+        ? repoDisplayName.name
+        : null;
 
     const [leftPaneWidth, setLeftPaneWidth] = useState<number>(DEFAULT_LEFT_PANEL_WIDTH);
     const [rightPaneWidth, setRightPaneWidth] = useState<number>(DEFAULT_RIGHT_PANEL_WIDTH);
@@ -108,6 +110,33 @@ export function App() {
             return next;
         });
     }, []);
+
+    useEffect(() => {
+        const paths = recentRepos.slice(0, 5);
+        if (paths.length === 0) {
+            setRecentRepoDisplayNames({});
+            return;
+        }
+
+        let cancelled = false;
+        Promise.all(paths.map(async path => {
+            try {
+                return [path, await api.getRepoDisplayName(path)] as const;
+            } catch {
+                return [path, null] as const;
+            }
+        })).then(entries => {
+            if (cancelled) return;
+            const next: Record<string, string> = {};
+            for (const [path, name] of entries) {
+                if (name) next[path] = name;
+            }
+            setRecentRepoDisplayNames(next);
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [recentRepos]);
 
     useEffect(() => {
         panelLayoutRef.current = {left: leftPaneWidth, right: rightPaneWidth};
@@ -462,10 +491,28 @@ export function App() {
     useEffect(() => {
         setResultLogRepoPath(repoPath);
         if (repoPath) {
-            const repoName = repoPath.split(/[\\/]/).filter(Boolean).pop() ?? repoPath;
-            api.setMainWindowTitle(`${repoName} - ${repoPath}`).catch(() => {
+            api.setMainWindowTitle(buildMainWindowTitle(repoPath, activeRepoDisplayName)).catch(() => {
             });
         }
+    }, [repoPath, activeRepoDisplayName]);
+
+    useEffect(() => {
+        setRepoDisplayName(null);
+        if (!repoPath) {
+            return;
+        }
+
+        let cancelled = false;
+        api.getRepoDisplayName(repoPath)
+            .then(name => {
+                if (!cancelled) setRepoDisplayName({repoPath, name});
+            })
+            .catch(() => {
+                if (!cancelled) setRepoDisplayName({repoPath, name: null});
+            });
+        return () => {
+            cancelled = true;
+        };
     }, [repoPath]);
 
     const handleAboutClick = useCallback(() => {
@@ -614,10 +661,12 @@ export function App() {
             <ProjectView
                 key={repoPath ?? "__no_repo__"}
                 repoPath={repoPath}
+                repoDisplayName={activeRepoDisplayName}
                 settingsRevision={settingsRevision}
                 platform={platform}
                 showToast={showToast}
                 recentRepos={recentRepos}
+                recentRepoDisplayNames={recentRepoDisplayNames}
                 identityOpen={identityOpen}
                 onIdentityToggle={() => setIdentityOpen(v => !v)}
                 onRepoSelect={handleRepoSelect}

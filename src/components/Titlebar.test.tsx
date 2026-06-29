@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Titlebar } from "./Titlebar";
 import type { BranchInfo } from "../types";
@@ -42,6 +42,7 @@ function renderTitlebar(
     selectedPatchExportEnabled?: boolean;
     onReset?: (mode: "mixed" | "hard") => void;
     currentBranch?: string;
+    repoDisplayName?: string | null;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -51,6 +52,7 @@ function renderTitlebar(
       platform="windows"
       native={false}
       repoPath={repoPath}
+      repoDisplayName={patchHandlers.repoDisplayName ?? null}
       currentBranch={repoPath ? patchHandlers.currentBranch ?? "feature/demo" : null}
       branches={branches}
       identityInitials="GM"
@@ -82,6 +84,11 @@ function renderTitlebar(
   );
 }
 
+function setRenderedWidth(element: HTMLElement, scrollWidth: number, clientWidth: number) {
+  Object.defineProperty(element, "scrollWidth", { configurable: true, value: scrollWidth });
+  Object.defineProperty(element, "clientWidth", { configurable: true, value: clientWidth });
+}
+
 describe("Titlebar", () => {
   beforeEach(() => {
     writeText.mockClear();
@@ -106,20 +113,102 @@ describe("Titlebar", () => {
     expect(screen.getByText("Push")).toBeInTheDocument();
   });
 
-  it("keeps the full long branch name available from the titlebar pill", () => {
+  it("shows a disclosure with the full branch name when the branch label is truncated", () => {
     const longBranch = "feature/this-is-a-very-long-branch-name-that-should-not-crowd-toolbar-actions";
     renderTitlebar([makeBranch({ name: longBranch })], "Push", "/repo", vi.fn(), { currentBranch: longBranch });
 
-    expect(screen.getByText(longBranch).closest(".titlebar__branch-pill")).toHaveAttribute("title", longBranch);
+    const branchName = screen.getByText(longBranch);
+    setRenderedWidth(branchName, 320, 120);
+    fireEvent.mouseEnter(branchName.closest(".titlebar__branch-pill")!);
+
+    const disclosure = screen.getByRole("tooltip");
+    expect(within(disclosure).getByText("Branch")).toBeInTheDocument();
+    expect(within(disclosure).getByText(longBranch)).toBeInTheDocument();
+  });
+
+  it("does not show a redundant branch disclosure when the branch label fits", () => {
+    renderTitlebar([makeBranch()]);
+
+    const branchName = screen.getByText("feature/demo");
+    setRenderedWidth(branchName, 100, 120);
+    fireEvent.mouseEnter(branchName.closest(".titlebar__branch-pill")!);
+
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   });
 
   it("copies the repository path from the titlebar", async () => {
     renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun");
 
+    expect(screen.getByText("gitmun")).toBeInTheDocument();
+    expect(screen.queryByText("/home/conor/GitmunProjects/")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByLabelText("Copy repository path"));
 
     expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
     await screen.findByText("Copied");
+  });
+
+  it("shows the full project name and repository path when the project label is truncated", () => {
+    const projectName = "Project Atlas With A Long Display Name";
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
+      repoDisplayName: projectName,
+    });
+
+    const repoName = screen.getByText(projectName);
+    setRenderedWidth(repoName, 320, 120);
+    fireEvent.mouseEnter(screen.getByLabelText("Copy repository path"));
+
+    const disclosure = screen.getByRole("tooltip");
+    expect(within(disclosure).getByText("Project")).toBeInTheDocument();
+    expect(within(disclosure).getByText(projectName)).toBeInTheDocument();
+    expect(within(disclosure).getByText("Repository path")).toBeInTheDocument();
+    expect(within(disclosure).getByText("/home/conor/GitmunProjects/gitmun")).toBeInTheDocument();
+  });
+
+  it("keeps the project copy affordance without repeating the project name when the label fits", () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
+      repoDisplayName: "Project Atlas",
+    });
+
+    const repoName = screen.getByText("Project Atlas");
+    setRenderedWidth(repoName, 100, 140);
+    fireEvent.mouseEnter(screen.getByLabelText("Copy repository path"));
+
+    const disclosure = screen.getByRole("tooltip");
+    expect(within(disclosure).queryByText("Project")).not.toBeInTheDocument();
+    expect(within(disclosure).queryByText("Project Atlas")).not.toBeInTheDocument();
+    expect(within(disclosure).queryByText("Repository path")).not.toBeInTheDocument();
+    expect(within(disclosure).queryByText("/home/conor/GitmunProjects/gitmun")).not.toBeInTheDocument();
+    expect(within(disclosure).getByText("Click to copy path")).toBeInTheDocument();
+  });
+
+  it("hides the project copy hint when showing copied feedback", async () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun");
+
+    const repoName = screen.getByText("gitmun");
+    setRenderedWidth(repoName, 60, 100);
+    const repoButton = screen.getByLabelText("Copy repository path");
+
+    fireEvent.mouseEnter(repoButton);
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Click to copy path");
+
+    fireEvent.click(repoButton);
+
+    await screen.findByText("Copied");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  });
+
+  it("shows the repository display name when one is set", async () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
+      repoDisplayName: "Project Atlas",
+    });
+
+    expect(screen.getByText("Project Atlas")).toBeInTheDocument();
+    expect(screen.queryByText("gitmun")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Copy repository path"));
+
+    expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
   });
 
   it("shows copied feedback after copying the repository path", async () => {

@@ -65,7 +65,7 @@ type TreeSection = "staged" | "unstaged";
 
 type VisibleTreeRow =
   | { type: "directory"; node: FileTreeDirectoryNode; depth: number }
-  | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number };
+  | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number; fileIndex: number };
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
@@ -92,17 +92,23 @@ function visibleTreeRows(
   nodes: FileTreeNode[],
   section: TreeSection,
   expandedFolders: Record<string, boolean>,
-  depth = 0,
 ): VisibleTreeRow[] {
-  return nodes.flatMap((node): VisibleTreeRow[] => {
-    if (node.type === "file") {
-      return [{ type: "file", node, depth }];
-    }
+  let fileIndex = 0;
 
-    const expanded = expandedFolders[folderStateKey(section, node.path)] ?? true;
-    const children = expanded ? visibleTreeRows(node.children, section, expandedFolders, depth + 1) : [];
-    return [{ type: "directory", node, depth }, ...children];
-  });
+  const visit = (currentNodes: FileTreeNode[], depth: number): VisibleTreeRow[] =>
+    currentNodes.flatMap((node): VisibleTreeRow[] => {
+      if (node.type === "file") {
+        const row = { type: "file" as const, node, depth, fileIndex };
+        fileIndex += 1;
+        return [row];
+      }
+
+      const expanded = expandedFolders[folderStateKey(section, node.path)] ?? true;
+      const children = expanded ? visit(node.children, depth + 1) : [];
+      return [{ type: "directory", node, depth }, ...children];
+    });
+
+  return visit(nodes, 0);
 }
 
 function shortHash(hash: string | null): string {
@@ -181,7 +187,6 @@ type DirectoryRowProps = {
   expanded: boolean;
   checked: boolean;
   indeterminate: boolean;
-  striped?: "Subtle" | "Strong";
   onToggleExpanded: () => void;
   onToggleChecked: () => void;
 };
@@ -192,13 +197,11 @@ function DirectoryRow({
   expanded,
   checked,
   indeterminate,
-  striped,
   onToggleExpanded,
   onToggleChecked,
 }: DirectoryRowProps) {
   const { t } = useTranslation("centre");
   const checkRef = React.useRef<HTMLInputElement>(null);
-  const stripingClass = striped ? ` staging__folder-row--striped-${striped.toLowerCase()}` : "";
 
   useEffect(() => {
     if (checkRef.current) {
@@ -208,7 +211,7 @@ function DirectoryRow({
 
   return (
     <div
-      className={`staging__folder-row${stripingClass}`}
+      className="staging__folder-row"
       style={depth > 0 ? { paddingLeft: 8 + depth * 18 } : undefined}
       title={directory.path}
     >
@@ -428,7 +431,7 @@ export function StagingView({
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
   };
-  const renderTreeRow = (row: VisibleTreeRow, index: number, section: TreeSection) => {
+  const renderTreeRow = (row: VisibleTreeRow, section: TreeSection) => {
     const isStaged = section === "staged";
     const selectedMap = isStaged ? selectedStaged : selectedUnstaged;
     const onSelectedChange = isStaged ? onSelectedStagedChange : onSelectedUnstagedChange;
@@ -445,7 +448,6 @@ export function StagingView({
             expanded={expandedFolders[folderStateKey(section, row.node.path)] ?? true}
             checked={checked}
             indeterminate={!checked && someChecked}
-            striped={striped(index)}
             onToggleExpanded={() => toggleFolderExpanded(section, row.node.path)}
             onToggleChecked={() => {
               onSelectedChange(prev => {
@@ -472,7 +474,7 @@ export function StagingView({
           file={f}
           isStaged={isStaged}
           isSelected={selectedFile === f.path}
-          striped={striped(index)}
+          striped={striped(row.fileIndex)}
           checked={selectedMap[f.path] ?? false}
           displayPath={row.depth > 0 ? row.node.name : undefined}
           titlePath={row.depth > 0 ? f.path : undefined}
@@ -598,7 +600,7 @@ export function StagingView({
           {mergedStaged.length === 0 ? (
             <div className="staging__empty">{t("staging.noStagedChanges")}</div>
           ) : (
-            stagedTreeRows.map((row, index) => renderTreeRow(row, index, "staged"))
+            stagedTreeRows.map(row => renderTreeRow(row, "staged"))
           )}
         </div>
 
@@ -639,7 +641,7 @@ export function StagingView({
           {allUnstaged.length === 0 ? (
             <div className="staging__empty">{t("staging.workingTreeClean")}</div>
           ) : (
-            unstagedTreeRows.map((row, index) => renderTreeRow(row, index, "unstaged"))
+            unstagedTreeRows.map(row => renderTreeRow(row, "unstaged"))
           )}
         </div>
       </div>

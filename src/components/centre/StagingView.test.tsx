@@ -122,6 +122,21 @@ describe("StagingView file tree", () => {
     expect(screen.getByLabelText("Expand src")).toBeInTheDocument();
   });
 
+  it("renders and collapses compact folder chains using their full path", () => {
+    renderStagingView({
+      unstagedFiles: [
+        file("marine-lab/reports/sonar/2026/atlantic/beam_profile.csv"),
+      ],
+    });
+
+    expect(screen.getByText("marine-lab/reports/sonar/2026/atlantic")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Collapse marine-lab/reports/sonar/2026/atlantic"));
+
+    expect(screen.queryByText("beam_profile.csv")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Expand marine-lab/reports/sonar/2026/atlantic")).toBeInTheDocument();
+  });
+
   it("folder checkbox selects descendants for bulk actions", () => {
     const onStageFiles = vi.fn();
     render(<StatefulStagingView
@@ -136,6 +151,25 @@ describe("StagingView file tree", () => {
     fireEvent.click(screen.getByText("Stage Selected"));
 
     expect(onStageFiles).toHaveBeenCalledWith(["src/App.tsx", "src/components/Button.tsx"]);
+  });
+
+  it("selects every descendant from a compact folder row", () => {
+    const onStageFiles = vi.fn();
+    render(<StatefulStagingView
+      unstagedFiles={[
+        file("marine-lab/reports/sonar/2026/atlantic/beam_profile.csv"),
+        file("marine-lab/reports/sonar/2026/atlantic/beam_summary.csv"),
+      ]}
+      onStageFiles={onStageFiles}
+    />);
+
+    fireEvent.click(screen.getByLabelText("Select files in marine-lab/reports/sonar/2026/atlantic"));
+    fireEvent.click(screen.getByText("Stage Selected"));
+
+    expect(onStageFiles).toHaveBeenCalledWith([
+      "marine-lab/reports/sonar/2026/atlantic/beam_profile.csv",
+      "marine-lab/reports/sonar/2026/atlantic/beam_summary.csv",
+    ]);
   });
 
   it("shows an indeterminate folder checkbox when some descendants are selected", () => {
@@ -182,5 +216,71 @@ describe("StagingView file tree", () => {
 
     expect(screen.queryByText("Staged.tsx")).not.toBeInTheDocument();
     expect(screen.getByText("Unstaged.tsx")).toBeInTheDocument();
+  });
+
+  it("stripes visible files across directory boundaries without striping directories", () => {
+    renderStagingView({
+      unstagedFiles: [
+        file("src/App.tsx"),
+        file("src/index.ts"),
+        file("utils/fileTree.ts"),
+        file("README.md"),
+      ],
+      rowStriping: "Subtle",
+    });
+
+    expect(screen.getByText("src").closest(".staging__folder-row")).not.toHaveClass("staging__folder-row--striped-subtle");
+    expect(screen.getByText("utils").closest(".staging__folder-row")).not.toHaveClass("staging__folder-row--striped-subtle");
+    expect(screen.getByText("App.tsx").closest(".file-row")).not.toHaveClass("file-row--striped-subtle");
+    expect(screen.getByText("index.ts").closest(".file-row")).toHaveClass("file-row--striped-subtle");
+    expect(screen.getByText("fileTree.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle");
+    expect(screen.getByText("README.md").closest(".file-row")).toHaveClass("file-row--striped-subtle");
+  });
+
+  it("recalculates file striping when a folder is collapsed", () => {
+    renderStagingView({
+      unstagedFiles: [
+        file("alpha/A.ts"),
+        file("beta/B.ts"),
+        file("README.md"),
+      ],
+      rowStriping: "Subtle",
+    });
+
+    expect(screen.getByText("B.ts").closest(".file-row")).toHaveClass("file-row--striped-subtle");
+    expect(screen.getByText("README.md").closest(".file-row")).not.toHaveClass("file-row--striped-subtle");
+
+    fireEvent.click(screen.getByLabelText("Collapse alpha"));
+
+    expect(screen.getByText("B.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle");
+    expect(screen.getByText("README.md").closest(".file-row")).toHaveClass("file-row--striped-subtle");
+  });
+
+  it("restarts file striping for staged and unstaged sections", () => {
+    renderStagingView({
+      stagedFiles: [file("staged/A.ts"), file("staged/B.ts")],
+      unstagedFiles: [file("unstaged/A.ts"), file("unstaged/B.ts")],
+      rowStriping: "Strong",
+    });
+
+    const stagedSection = screen.getByText(/Staged . 2 files/).closest(".staging__section");
+    const unstagedSection = screen.getByText(/Unstaged . 2 files/).closest(".staging__section");
+    expect(stagedSection).not.toBeNull();
+    expect(unstagedSection).not.toBeNull();
+
+    expect(within(stagedSection as HTMLElement).getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-strong");
+    expect(within(stagedSection as HTMLElement).getByText("B.ts").closest(".file-row")).toHaveClass("file-row--striped-strong");
+    expect(within(unstagedSection as HTMLElement).getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-strong");
+    expect(within(unstagedSection as HTMLElement).getByText("B.ts").closest(".file-row")).toHaveClass("file-row--striped-strong");
+  });
+
+  it("does not stripe files when row striping is off", () => {
+    renderStagingView({
+      unstagedFiles: [file("A.ts"), file("B.ts")],
+      rowStriping: "Off",
+    });
+
+    expect(screen.getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle", "file-row--striped-strong");
+    expect(screen.getByText("B.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle", "file-row--striped-strong");
   });
 });

@@ -1561,6 +1561,7 @@ pub fn run() {
             commands::repo::get_commit_details,
             commands::repo::validate_repo_path,
             commands::repo::init_repo,
+            commands::repo::get_repo_display_name,
             commands::repo::get_repo_open_locations,
             commands::repo::open_repo_location,
             commands::repo::clone_repo,

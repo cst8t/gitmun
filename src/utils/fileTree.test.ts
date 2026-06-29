@@ -69,6 +69,95 @@ describe("buildFileTree", () => {
     ]);
   });
 
+  it("compacts uninterrupted single-directory chains", () => {
+    const tree = buildFileTree([
+      file("marine-lab/reports/sonar/2026/atlantic/beam_profile.csv", 3, 1),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "marine-lab/reports/sonar/2026/atlantic",
+        path: "marine-lab/reports/sonar/2026/atlantic",
+        fileCount: 1,
+        additions: 3,
+        deletions: 1,
+        children: [
+          {
+            type: "file",
+            name: "beam_profile.csv",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("compacts single-directory chains below a branch", () => {
+    const tree = buildFileTree([
+      file("marine-lab/reports/sonar/2026/atlantic/beam_profile.csv"),
+      file("marine-lab/reports/sonar/2025/atlantic/beam_profile.csv"),
+      file("marine-lab/reports/observations/current/plankton-baseline.json"),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "marine-lab/reports",
+        path: "marine-lab/reports",
+        children: [
+          {
+            type: "directory",
+            name: "graphics",
+            path: "marine-lab/reports/sonar",
+            children: [
+              {
+                type: "directory",
+                name: "100/en/symbols",
+                path: "marine-lab/reports/sonar/2026/atlantic",
+              },
+              {
+                type: "directory",
+                name: "50/en/symbols",
+                path: "marine-lab/reports/sonar/2025/atlantic",
+              },
+            ],
+          },
+          {
+            type: "directory",
+            name: "scenes/default",
+            path: "marine-lab/reports/observations/current",
+          },
+        ],
+      },
+    ]);
+  });
+
+  it("does not compact directories containing files and directories", () => {
+    const tree = buildFileTree([
+      file("src/index.ts"),
+      file("src/components/forms/Input.tsx"),
+    ]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "src",
+        path: "src",
+        children: [
+          {
+            type: "directory",
+            name: "components/forms",
+            path: "src/components/forms",
+          },
+          {
+            type: "file",
+            name: "index.ts",
+          },
+        ],
+      },
+    ]);
+  });
+
   it("keeps separation through caller-provided buckets", () => {
     const staged = buildFileTree([file("src/app.ts")]);
     const unstaged = buildFileTree([file("src/app.ts"), file("src/theme.css")]);
