@@ -116,6 +116,9 @@ describe("Titlebar", () => {
   it("copies the repository path from the titlebar", async () => {
     renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun");
 
+    expect(screen.getByText("gitmun")).toBeInTheDocument();
+    expect(screen.queryByText("/home/conor/GitmunProjects/")).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByLabelText("Copy repository path"));
 
     expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
