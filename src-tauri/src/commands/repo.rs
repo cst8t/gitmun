@@ -17,6 +17,9 @@ use std::sync::atomic::Ordering;
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 
+const DEFAULT_GIT_DESCRIPTION: &str =
+    "Unnamed repository; edit this file 'description' to name the repository.";
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RepoOpenLocationKind {
@@ -32,6 +35,119 @@ pub struct RepoOpenLocation {
     label: String,
     fallback_label: String,
     icon_data_url: Option<String>,
+}
+
+#[tauri::command]
+pub fn get_repo_display_name(repo_path: String) -> Option<String> {
+    let trimmed = repo_path.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+
+    read_repo_display_name(Path::new(trimmed))
+}
+
+fn read_repo_display_name(repo_path: &Path) -> Option<String> {
+    let git_dir = resolve_git_dir(repo_path)?;
+    let description = std::fs::read_to_string(git_dir.join("description")).ok()?;
+    parse_repo_description(&description)
+}
+
+fn parse_repo_description(description: &str) -> Option<String> {
+    let trimmed = description.trim();
+    if trimmed.is_empty() || trimmed == DEFAULT_GIT_DESCRIPTION {
+        return None;
+    }
+    Some(trimmed.to_string())
+}
+
+fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
+    let dot_git = repo_path.join(".git");
+    if dot_git.is_dir() {
+        return Some(dot_git);
+    }
+    if !dot_git.is_file() {
+        return None;
+    }
+
+    let gitdir = std::fs::read_to_string(&dot_git).ok()?;
+    let path = gitdir.trim().strip_prefix("gitdir:")?.trim();
+    if path.is_empty() {
+        return None;
+    }
+
+    let path = PathBuf::from(path);
+    if path.is_absolute() {
+        Some(path)
+    } else {
+        Some(repo_path.join(path))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::TempDir;
+
+    fn repo_with_git_dir() -> TempDir {
+        let dir = TempDir::new().expect("create temp dir");
+        std::fs::create_dir(dir.path().join(".git")).expect("create git dir");
+        dir
+    }
+
+    fn write_description(repo: &Path, description: &str) {
+        std::fs::write(repo.join(".git").join("description"), description)
+            .expect("write description");
+    }
+
+    #[test]
+    fn repo_display_name_ignores_default_description() {
+        let dir = repo_with_git_dir();
+        write_description(dir.path(), DEFAULT_GIT_DESCRIPTION);
+
+        assert_eq!(read_repo_display_name(dir.path()), None);
+    }
+
+    #[test]
+    fn repo_display_name_ignores_empty_description() {
+        let dir = repo_with_git_dir();
+        write_description(dir.path(), "  \n");
+
+        assert_eq!(read_repo_display_name(dir.path()), None);
+    }
+
+    #[test]
+    fn repo_display_name_reads_custom_description() {
+        let dir = repo_with_git_dir();
+        write_description(dir.path(), "  Project Atlas  \n");
+
+        assert_eq!(
+            read_repo_display_name(dir.path()).as_deref(),
+            Some("Project Atlas")
+        );
+    }
+
+    #[test]
+    fn repo_display_name_ignores_missing_description() {
+        let dir = repo_with_git_dir();
+
+        assert_eq!(read_repo_display_name(dir.path()), None);
+    }
+
+    #[test]
+    fn repo_display_name_resolves_gitdir_file() {
+        let dir = TempDir::new().expect("create temp dir");
+        let git_dir = dir.path().join("actual-git-dir");
+        std::fs::create_dir(&git_dir).expect("create git dir");
+        std::fs::write(dir.path().join(".git"), "gitdir: actual-git-dir\n")
+            .expect("write gitdir file");
+        std::fs::write(git_dir.join("description"), "Linked Repo\n").expect("write description");
+
+        assert_eq!(
+            read_repo_display_name(dir.path()).as_deref(),
+            Some("Linked Repo")
+        );
+    }
 }
 
 #[tauri::command]

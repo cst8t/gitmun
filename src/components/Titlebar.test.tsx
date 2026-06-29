@@ -42,6 +42,7 @@ function renderTitlebar(
     selectedPatchExportEnabled?: boolean;
     onReset?: (mode: "mixed" | "hard") => void;
     currentBranch?: string;
+    repoDisplayName?: string | null;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -51,6 +52,7 @@ function renderTitlebar(
       platform="windows"
       native={false}
       repoPath={repoPath}
+      repoDisplayName={patchHandlers.repoDisplayName ?? null}
       currentBranch={repoPath ? patchHandlers.currentBranch ?? "feature/demo" : null}
       branches={branches}
       identityInitials="GM"
@@ -123,6 +125,19 @@ describe("Titlebar", () => {
 
     expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
     await screen.findByText("Copied");
+  });
+
+  it("shows the repository display name when one is set", async () => {
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
+      repoDisplayName: "Project Atlas",
+    });
+
+    expect(screen.getByText("Project Atlas")).toBeInTheDocument();
+    expect(screen.queryByText("gitmun")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("Copy repository path"));
+
+    expect(writeText).toHaveBeenCalledWith("/home/conor/GitmunProjects/gitmun");
   });
 
   it("shows copied feedback after copying the repository path", async () => {

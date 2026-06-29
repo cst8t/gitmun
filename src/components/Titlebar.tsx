@@ -9,6 +9,7 @@ import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { BranchInfo, RepoOpenLocation, RepoOpenLocationKind } from "../types";
+import { displayNameForRepoPath } from "../utils/repoDisplayName";
 import "./Titlebar.css";
 
 type TitlebarProps = {
@@ -16,6 +17,7 @@ type TitlebarProps = {
   /** True when the OS provides native window decorations - hides drag region and window controls */
   native: boolean;
   repoPath: string | null;
+  repoDisplayName: string | null;
   currentBranch: string | null;
   branches: BranchInfo[];
   identityInitials: string;
@@ -47,19 +49,9 @@ type TitlebarProps = {
   identityOpen: boolean;
 };
 
-function repoNameFromPath(repoPath: string): string {
-  const normalised = repoPath.replace(/[\\/]+$/, "");
-  const match = normalised.match(/^(.*[\\/])([^\\/]+)$/);
-
-  if (!match) {
-    return normalised;
-  }
-
-  return match[2];
-}
-
 export function Titlebar({
   platform, native, repoPath, currentBranch, branches,
+  repoDisplayName,
   identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
@@ -77,7 +69,7 @@ export function Titlebar({
   const searchDisabled = !repoPath;
   const searchShortcutLabel = platform === "macos" ? "\u2318F" : "Ctrl+F";
 
-  const repoName = repoPath ? repoNameFromPath(repoPath) : "";
+  const repoName = repoPath ? displayNameForRepoPath(repoPath, repoDisplayName) : "";
 
   const copyRepoPath = () => {
     if (!repoPath) return;

@@ -64,6 +64,7 @@ import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
 import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
 import { getRemoteActionState } from "../utils/remoteActionState";
+import { displayNameForRepoPath } from "../utils/repoDisplayName";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
 // (lives outside the component so repo switches don't reset it).
@@ -144,11 +145,13 @@ export function shouldForceWithLeaseAfterRebase(
 export type ProjectViewProps = {
   /** The active repository path. Changing this key causes a full remount. */
   repoPath: string | null;
+  repoDisplayName: string | null;
   /** Increments each time settings are saved - triggers a full data refresh. */
   settingsRevision: number;
   platform: PlatformType;
   showToast: (message: string, type?: ToastType) => void;
   recentRepos: string[];
+  recentRepoDisplayNames: Record<string, string>;
   identityOpen: boolean;
   onIdentityToggle: () => void;
   onRepoSelect: (path: string) => void;
@@ -174,10 +177,12 @@ export type ProjectViewProps = {
 
 export function ProjectView({
   repoPath,
+  repoDisplayName,
   settingsRevision,
   platform,
   showToast,
   recentRepos,
+  recentRepoDisplayNames,
   identityOpen,
   onIdentityToggle,
   onRepoSelect,
@@ -2211,6 +2216,7 @@ export function ProjectView({
           platform={platform}
           native={isNative}
           repoPath={repoPath}
+          repoDisplayName={repoDisplayName}
           currentBranch={currentBranch}
           branches={branches}
           identityInitials={initials}
@@ -2481,7 +2487,7 @@ export function ProjectView({
                     <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
                     <div className="app__empty-recent-list">
                       {emptyStateRecentRepos.map(path => {
-                        const name = path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+                        const name = displayNameForRepoPath(path, recentRepoDisplayNames[path]);
                         return (
                           <button
                             type="button"
