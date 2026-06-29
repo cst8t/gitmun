@@ -19,8 +19,12 @@
     "terminal": "Terminal"
   },
   "labels": {
+    "branch": "Branch",
     "copied": "Copied",
+    "copyRepositoryPathHint": "Click to copy path",
     "noRepositoryOpen": "No repository open",
+    "project": "Project",
+    "repositoryPath": "Repository path",
     "searchCommits": "Search commits...",
     "searchCommitsShortcut": "Search commits ({{shortcut}})"
   },

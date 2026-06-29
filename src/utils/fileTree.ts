@@ -53,6 +53,19 @@ function finaliseDirectory(directory: MutableDirectoryNode): FileTreeDirectoryNo
     ),
   );
 
+  if (directory.name !== "" && children.length === 1 && children[0].type === "directory") {
+    const child = children[0];
+    return {
+      type: "directory",
+      name: `${directory.name}/${child.name}`,
+      path: child.path,
+      children: child.children,
+      fileCount: directory.fileCount,
+      additions: directory.additions,
+      deletions: directory.deletions,
+    };
+  }
+
   return {
     type: "directory",
     name: directory.name,

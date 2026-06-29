@@ -1156,7 +1156,7 @@ impl GitOperationHandler for GixGitHandler {
             .message()
             .map(|m| m.body.map(|b| Self::bstr_to_string(b)).unwrap_or_default())
             .unwrap_or_default();
-        let trailers = super::cli::parse_commit_trailers(&body);
+        let processed_body = super::commit_message::process_commit_body(&body);
 
         let tags = Self::collect_commit_tags(&repo, &oid)?;
 
@@ -1168,9 +1168,10 @@ impl GitOperationHandler for GixGitHandler {
             committer,
             committer_email,
             committer_date,
+            body: processed_body.body,
             parent_hashes,
             tags,
-            trailers,
+            trailers: processed_body.trailers,
         })
     }
 

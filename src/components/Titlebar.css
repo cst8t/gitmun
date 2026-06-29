@@ -69,15 +69,6 @@
   background: var(--bg-hover);
 }
 
-.titlebar__repo-dir {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
 .titlebar__repo-name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
@@ -110,7 +101,66 @@
   opacity: 1;
 }
 
+.titlebar__disclosure {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 90;
+  min-width: 220px;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--font-size-xs);
+  box-sizing: border-box;
+  user-select: text;
+}
+
+.titlebar__disclosure--compact {
+  min-width: 0;
+  width: max-content;
+  max-width: calc(100vw - 24px);
+  padding: 5px 8px;
+  user-select: none;
+}
+
+.titlebar__disclosure--compact .titlebar__disclosure-hint {
+  margin-top: 0;
+  line-height: 16px;
+}
+
+.titlebar__disclosure-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+}
+
+.titlebar__disclosure-row + .titlebar__disclosure-row,
+.titlebar__disclosure-hint {
+  margin-top: 5px;
+}
+
+.titlebar__disclosure-label {
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.titlebar__disclosure-value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-mono);
+}
+
+.titlebar__disclosure-hint {
+  color: var(--text-secondary);
+}
+
 .titlebar__branch-pill {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 5px;
@@ -126,6 +176,10 @@
   font-weight: var(--font-weight-medium);
   font-size: var(--font-size-sm);
   font-family: var(--font-mono);
+}
+
+.titlebar__branch-pill .titlebar__disclosure {
+  min-width: 180px;
 }
 
 .titlebar__branch-icon {
@@ -465,14 +519,6 @@
     overflow: hidden;
   }
 
-  .titlebar__repo-dir {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex-shrink: 1;
-  }
-
   .titlebar__repo-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -550,10 +596,6 @@
 
   .titlebar__sep {
     margin: 0 2px;
-  }
-
-  .titlebar__repo-dir {
-    display: none;
   }
 
   .titlebar__branch-pill {
