@@ -69,15 +69,6 @@
   background: var(--bg-hover);
 }
 
-.titlebar__repo-dir {
-  color: var(--text-secondary);
-  font-size: var(--font-size-sm);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  min-width: 0;
-}
-
 .titlebar__repo-name {
   font-weight: var(--font-weight-semibold);
   font-size: var(--font-size-base);
@@ -465,14 +456,6 @@
     overflow: hidden;
   }
 
-  .titlebar__repo-dir {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex-shrink: 1;
-  }
-
   .titlebar__repo-name {
     overflow: hidden;
     text-overflow: ellipsis;
@@ -550,10 +533,6 @@
 
   .titlebar__sep {
     margin: 0 2px;
-  }
-
-  .titlebar__repo-dir {
-    display: none;
   }
 
   .titlebar__branch-pill {

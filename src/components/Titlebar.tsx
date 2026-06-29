@@ -47,17 +47,15 @@ type TitlebarProps = {
   identityOpen: boolean;
 };
 
-function splitRepoPath(repoPath: string): { repoDir: string; repoName: string } {
+function repoNameFromPath(repoPath: string): string {
   const normalised = repoPath.replace(/[\\/]+$/, "");
   const match = normalised.match(/^(.*[\\/])([^\\/]+)$/);
 
   if (!match) {
-    return { repoDir: "", repoName: normalised };
+    return normalised;
   }
 
-  const [, repoDir, repoName] = match;
-  const shortenedRepoDir = repoDir.replace(/^\/home\/[^/\\]+/, "~");
-  return { repoDir: shortenedRepoDir, repoName };
+  return match[2];
 }
 
 export function Titlebar({
@@ -79,9 +77,7 @@ export function Titlebar({
   const searchDisabled = !repoPath;
   const searchShortcutLabel = platform === "macos" ? "\u2318F" : "Ctrl+F";
 
-  const { repoDir, repoName } = repoPath
-    ? splitRepoPath(repoPath)
-    : { repoDir: "", repoName: "" };
+  const repoName = repoPath ? repoNameFromPath(repoPath) : "";
 
   const copyRepoPath = () => {
     if (!repoPath) return;
@@ -125,7 +121,6 @@ export function Titlebar({
               title={t("actions.copyRepositoryPath")}
               aria-label={t("actions.copyRepositoryPath")}
             >
-              <span className="titlebar__repo-dir">{repoDir}</span>
               <span className="titlebar__repo-name">{repoName}</span>
             </button>
             <span className={`titlebar__repo-copied${repoPathCopied ? " titlebar__repo-copied--visible" : ""}`}>
