@@ -63,9 +63,11 @@ jobs:
         run: npm run generate:icons
 
       - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
+        shell: bash
+        run: |
+          cargo install cargo-about --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
       - name: Generate attribution file
         run: bash ./scripts/generate-attributions.sh
@@ -395,9 +397,11 @@ jobs:
         run: npm run generate:icons
 
       - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
+        shell: bash
+        run: |
+          cargo install cargo-about --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
       - name: Generate attribution file
         shell: bash
@@ -759,9 +763,11 @@ jobs:
         run: npm run generate:icons
 
       - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
+        shell: bash
+        run: |
+          cargo install cargo-about --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
       - name: Generate attribution file
         shell: bash
@@ -978,9 +984,11 @@ jobs:
         run: npm run generate:icons
 
       - name: Install cargo-about
-        uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
+        shell: bash
+        run: |
+          cargo install cargo-about --locked
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+          PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
       - name: Generate attribution file
         run: bash ./scripts/generate-attributions.sh
