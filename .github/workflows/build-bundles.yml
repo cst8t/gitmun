@@ -65,7 +65,7 @@ jobs:
       - name: Install cargo-about
         shell: bash
         run: |
-          cargo install cargo-about --locked
+          cargo install cargo-about --locked --features cli
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
@@ -399,7 +399,7 @@ jobs:
       - name: Install cargo-about
         shell: bash
         run: |
-          cargo install cargo-about --locked
+          cargo install cargo-about --locked --features cli
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
@@ -765,7 +765,7 @@ jobs:
       - name: Install cargo-about
         shell: bash
         run: |
-          cargo install cargo-about --locked
+          cargo install cargo-about --locked --features cli
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
@@ -986,7 +986,7 @@ jobs:
       - name: Install cargo-about
         shell: bash
         run: |
-          cargo install cargo-about --locked
+          cargo install cargo-about --locked --features cli
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           PATH="$HOME/.cargo/bin:$PATH" cargo-about --version
 
