@@ -751,6 +751,7 @@ impl GixGitHandler {
 
     fn collect_numstat(repo_path: &Path, staged: bool) -> HashMap<String, (u32, u32)> {
         let mut command = crate::configured_git_command();
+        command.env("GIT_OPTIONAL_LOCKS", "0");
         command.arg("-c").arg("core.quotepath=false").arg("diff");
         if staged {
             command.arg("--cached");

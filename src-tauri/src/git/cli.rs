@@ -113,6 +113,13 @@ impl CliGitHandler {
         Self::run_git_allow_exit_codes(args, current_dir, &[])
     }
 
+    fn run_git_without_optional_locks(
+        args: &[&str],
+        current_dir: Option<&Path>,
+    ) -> GitResult<String> {
+        Self::run_git_allow_exit_codes_with_optional_locks(args, current_dir, &[], false)
+    }
+
     fn run_git_bytes(args: &[&str], current_dir: Option<&Path>) -> GitResult<Vec<u8>> {
         let mut command = crate::git_command();
         Self::configure_command(&mut command);
@@ -282,8 +289,20 @@ impl CliGitHandler {
         current_dir: Option<&Path>,
         extra_ok_codes: &[i32],
     ) -> GitResult<String> {
+        Self::run_git_allow_exit_codes_with_optional_locks(args, current_dir, extra_ok_codes, true)
+    }
+
+    fn run_git_allow_exit_codes_with_optional_locks(
+        args: &[&str],
+        current_dir: Option<&Path>,
+        extra_ok_codes: &[i32],
+        optional_locks: bool,
+    ) -> GitResult<String> {
         let mut command = crate::git_command();
         Self::configure_command(&mut command);
+        if !optional_locks {
+            command.env("GIT_OPTIONAL_LOCKS", "0");
+        }
         command.args(args);
 
         if let Some(path) = current_dir {
@@ -2320,7 +2339,7 @@ impl GitOperationHandler for CliGitHandler {
 
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-        let output = Self::run_git(
+        let output = Self::run_git_without_optional_locks(
             &["-c", "core.quotepath=false", "status", "--porcelain=v1"],
             Some(&repo_path),
         )?;
@@ -2373,12 +2392,16 @@ impl GitOperationHandler for CliGitHandler {
 
         // Gather numstat for unstaged changes
         let unstaged_numstat =
-            Self::run_git(&["diff", "--numstat"], Some(&repo_path)).unwrap_or_default();
+            Self::run_git_without_optional_locks(&["diff", "--numstat"], Some(&repo_path))
+                .unwrap_or_default();
         let unstaged_stats = Self::parse_numstat(&unstaged_numstat);
 
         // Gather numstat for staged changes
-        let staged_numstat =
-            Self::run_git(&["diff", "--cached", "--numstat"], Some(&repo_path)).unwrap_or_default();
+        let staged_numstat = Self::run_git_without_optional_locks(
+            &["diff", "--cached", "--numstat"],
+            Some(&repo_path),
+        )
+        .unwrap_or_default();
         let staged_stats = Self::parse_numstat(&staged_numstat);
 
         for file in &mut status.changed_files {

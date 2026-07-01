@@ -12,7 +12,7 @@ use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use shell::cli::{CliOutcome, CloneStartupOptions, ShellStartupAction};
 use shell::{ContextAction, WindowRouting};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 #[cfg(windows)]
 use std::process::Command;
 use std::sync::{Arc, Mutex, OnceLock, RwLock, atomic::AtomicBool};
@@ -104,6 +104,33 @@ fn register_msix_application_restart() {}
 
 fn git_backend() -> GitBackend {
     *GIT_BACKEND.get_or_init(detect_git_backend)
+}
+
+fn git_watch_path_is_relevant(path: &Path) -> bool {
+    if path
+        .file_name()
+        .and_then(|file_name| file_name.to_str())
+        .is_some_and(|file_name| file_name.ends_with(".lock"))
+    {
+        return false;
+    }
+
+    let mut saw_git_dir = false;
+    for component in path.components() {
+        let Component::Normal(value) = component else {
+            continue;
+        };
+        if value == ".git" {
+            saw_git_dir = true;
+            continue;
+        }
+        if saw_git_dir && value == "objects" {
+            return false;
+        }
+        saw_git_dir = false;
+    }
+
+    true
 }
 
 fn forward_reuse_window_action(action: &ShellStartupAction) -> bool {
@@ -1220,10 +1247,7 @@ fn watch_repo(
             // Ignore object-database writes (.git/objects/) - they're numerous
             // during fetches but don't reflect a user-visible state change by
             // themselves; the accompanying refs update will trigger the refresh.
-            let relevant = event.paths.iter().any(|p| {
-                let s = p.to_string_lossy();
-                !s.contains("/.git/objects/") && !s.contains("\\.git\\objects\\")
-            });
+            let relevant = event.paths.iter().any(|p| git_watch_path_is_relevant(p));
             if relevant {
                 let _ = tx.send(Ok(event));
             }
@@ -1633,4 +1657,35 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::git_watch_path_is_relevant;
+    use std::path::Path;
+
+    #[test]
+    fn git_watch_ignores_lock_files() {
+        assert!(!git_watch_path_is_relevant(Path::new(
+            r"C:\repo\.git\index.lock"
+        )));
+        assert!(!git_watch_path_is_relevant(Path::new(
+            "/repo/.git/refs/heads/main.lock"
+        )));
+    }
+
+    #[test]
+    fn git_watch_ignores_object_database_writes() {
+        assert!(!git_watch_path_is_relevant(Path::new(
+            "/repo/.git/objects/ab/1234"
+        )));
+    }
+
+    #[test]
+    fn git_watch_keeps_real_state_changes() {
+        assert!(git_watch_path_is_relevant(Path::new("/repo/.git/index")));
+        assert!(git_watch_path_is_relevant(Path::new(
+            "/repo/.git/refs/heads/main"
+        )));
+    }
 }
