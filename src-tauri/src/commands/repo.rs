@@ -801,25 +801,29 @@ pub async fn get_numstat(
 }
 
 #[tauri::command]
-pub fn stage_files(
+pub async fn stage_files(
     request: StageFilesRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .stage_files(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.stage_files(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn commit_changes(
+pub async fn commit_changes(
     request: CommitRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .commit_changes(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.commit_changes(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -833,36 +837,42 @@ pub async fn get_diff(request: DiffRequest, app: tauri::AppHandle) -> Result<Fil
 }
 
 #[tauri::command]
-pub fn unstage_file(
+pub async fn unstage_file(
     request: FileRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .unstage_file(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.unstage_file(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn unstage_all(
+pub async fn unstage_all(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .unstage_all(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.unstage_all(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn stage_all(
+pub async fn stage_all(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .stage_all(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.stage_all(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

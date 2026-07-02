@@ -528,6 +528,32 @@ fn stage_files_moves_file_to_staged() {
 }
 
 #[test]
+fn stage_files_handles_large_selection_with_spaces() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("bulk files")).expect("create bulk directory");
+
+    let mut files = vec!["bulk files/root note.txt".to_string()];
+    write_file(dir.path(), &files[0], "root");
+    for index in 0..200 {
+        let path = format!("bulk files/file {index}.txt");
+        write_file(dir.path(), &path, "content");
+        files.push(path);
+    }
+
+    handler()
+        .stage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: files.clone(),
+        })
+        .expect("stage_files");
+
+    let staged = git_stdout(dir.path(), &["diff", "--cached", "--name-only"]);
+    for path in files {
+        assert!(staged.lines().any(|line| line == path), "missing {path}");
+    }
+}
+
+#[test]
 fn unstage_file_in_initial_commit_keeps_worktree_file() {
     let dir = init_unborn_repo();
     write_file(dir.path(), "PLAN.md", "draft v1");
