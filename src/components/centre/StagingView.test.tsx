@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import type { FileStatusItem } from "../../types";
@@ -10,6 +10,44 @@ vi.mock("../../api/commands", () => ({
   getNumstat: vi.fn(),
 }));
 
+const virtuosoSetVisibleRange = vi.hoisted(() => ({
+  current: null as ((range: { startIndex: number; endIndex: number }) => void) | null,
+}));
+
+vi.mock("react-virtuoso", () => ({
+  Virtuoso: ({ data, itemContent, computeItemKey }: {
+    data: Array<{ key: string }>;
+    itemContent: (index: number, item: { key: string }) => React.ReactNode;
+    computeItemKey?: (index: number, item: { key: string }) => React.Key;
+  }) => {
+    const [visibleRange, setVisibleRange] = React.useState({ startIndex: 0, endIndex: Math.min(data.length - 1, 19) });
+    const visibleStart = Math.min(visibleRange.startIndex, Math.max(data.length - 1, 0));
+    const visibleEnd = Math.min(visibleRange.endIndex, Math.max(data.length - 1, 0));
+    const visibleItems = data.slice(visibleStart, visibleEnd + 1);
+    virtuosoSetVisibleRange.current = setVisibleRange;
+
+    React.useEffect(() => {
+      setVisibleRange(current => ({
+        startIndex: Math.min(current.startIndex, Math.max(data.length - 1, 0)),
+        endIndex: Math.min(Math.max(current.endIndex, 19), Math.max(data.length - 1, 0)),
+      }));
+    }, [data.length]);
+
+    return (
+      <div data-testid="staging-virtuoso">
+        {visibleItems.map((item, offset) => {
+          const index = visibleStart + offset;
+          return (
+            <div key={computeItemKey?.(index, item) ?? item.key} data-testid={`staging-row-${index}`}>
+              {itemContent(index, item)}
+            </div>
+          );
+        })}
+      </div>
+    );
+  },
+}));
+
 function file(path: string, additions = 0, deletions = 0): FileStatusItem {
   return {
     path,
@@ -17,6 +55,10 @@ function file(path: string, additions = 0, deletions = 0): FileStatusItem {
     additions,
     deletions,
   };
+}
+
+function files(prefix: string, count: number): FileStatusItem[] {
+  return Array.from({ length: count }, (_, index) => file(`${prefix}/file-${String(index + 1).padStart(3, "0")}.ts`));
 }
 
 function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> = {}): React.ComponentProps<typeof StagingView> {
@@ -63,6 +105,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
     onOpenMergeTool: vi.fn(),
+    stagingOperation: null,
+    inlineOperation: null,
     isCommitting: false,
     lastCommitMessage: "",
     rowStriping: "Off",
@@ -153,6 +197,18 @@ describe("StagingView file tree", () => {
     expect(onStageFiles).toHaveBeenCalledWith(["src/App.tsx", "src/components/Button.tsx"]);
   });
 
+  it("disables bulk staging actions while staging is running", () => {
+    renderStagingView({
+      unstagedFiles: [file("src/App.tsx")],
+      selectedUnstaged: { "src/App.tsx": true },
+      stagingOperation: { kind: "stage", count: 1 },
+    });
+
+    expect(screen.getByText("Stage Selected")).toBeDisabled();
+    expect(screen.getByText("Stage All")).toBeDisabled();
+    expect(screen.getByLabelText("Deselect files in src")).toBeDisabled();
+  });
+
   it("selects every descendant from a compact folder row", () => {
     const onStageFiles = vi.fn();
     render(<StatefulStagingView
@@ -209,10 +265,7 @@ describe("StagingView file tree", () => {
       unstagedFiles: [file("src/Unstaged.tsx")],
     });
 
-    const stagedSection = screen.getByText(/Staged . 1 file/).closest(".staging__section");
-    expect(stagedSection).not.toBeNull();
-
-    fireEvent.click(within(stagedSection as HTMLElement).getByLabelText("Collapse src"));
+    fireEvent.click(screen.getAllByLabelText("Collapse src")[0]);
 
     expect(screen.queryByText("Staged.tsx")).not.toBeInTheDocument();
     expect(screen.getByText("Unstaged.tsx")).toBeInTheDocument();
@@ -263,15 +316,13 @@ describe("StagingView file tree", () => {
       rowStriping: "Strong",
     });
 
-    const stagedSection = screen.getByText(/Staged . 2 files/).closest(".staging__section");
-    const unstagedSection = screen.getByText(/Unstaged . 2 files/).closest(".staging__section");
-    expect(stagedSection).not.toBeNull();
-    expect(unstagedSection).not.toBeNull();
+    const aRows = screen.getAllByText("A.ts").map(row => row.closest(".file-row"));
+    const bRows = screen.getAllByText("B.ts").map(row => row.closest(".file-row"));
 
-    expect(within(stagedSection as HTMLElement).getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-strong");
-    expect(within(stagedSection as HTMLElement).getByText("B.ts").closest(".file-row")).toHaveClass("file-row--striped-strong");
-    expect(within(unstagedSection as HTMLElement).getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-strong");
-    expect(within(unstagedSection as HTMLElement).getByText("B.ts").closest(".file-row")).toHaveClass("file-row--striped-strong");
+    expect(aRows[0]).not.toHaveClass("file-row--striped-strong");
+    expect(bRows[0]).toHaveClass("file-row--striped-strong");
+    expect(aRows[1]).not.toHaveClass("file-row--striped-strong");
+    expect(bRows[1]).toHaveClass("file-row--striped-strong");
   });
 
   it("does not stripe files when row striping is off", () => {
@@ -282,5 +333,63 @@ describe("StagingView file tree", () => {
 
     expect(screen.getByText("A.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle", "file-row--striped-strong");
     expect(screen.getByText("B.ts").closest(".file-row")).not.toHaveClass("file-row--striped-subtle", "file-row--striped-strong");
+  });
+
+  it("keeps folder rows expanded below the large-section threshold", () => {
+    renderStagingView({
+      unstagedFiles: files("src", 20),
+    });
+
+    expect(screen.getByLabelText("Collapse src")).toBeInTheDocument();
+    expect(screen.getByText("file-001.ts")).toBeInTheDocument();
+  });
+
+  it("collapses top-level folders by default above the large-section threshold", () => {
+    renderStagingView({
+      unstagedFiles: files("bulk", 501),
+    });
+
+    expect(screen.getByLabelText("Expand bulk")).toBeInTheDocument();
+    expect(screen.queryByText("file-001.ts")).not.toBeInTheDocument();
+  });
+
+  it("allows manual expansion to override large-list folder defaults", () => {
+    renderStagingView({
+      unstagedFiles: files("bulk", 501),
+    });
+
+    fireEvent.click(screen.getByLabelText("Expand bulk"));
+
+    expect(screen.getByLabelText("Collapse bulk")).toBeInTheDocument();
+    expect(screen.getByText("file-001.ts")).toBeInTheDocument();
+  });
+
+  it("selects every descendant from a collapsed large folder row", () => {
+    const onStageFiles = vi.fn();
+    render(<StatefulStagingView
+      unstagedFiles={files("bulk", 501)}
+      onStageFiles={onStageFiles}
+    />);
+
+    fireEvent.click(screen.getByLabelText("Select files in bulk"));
+    fireEvent.click(screen.getByText("Stage Selected"));
+
+    expect(onStageFiles).toHaveBeenCalledWith(files("bulk", 501).map(f => f.path));
+  });
+
+  it("virtualises large root-level file lists without hiding later rows", () => {
+    renderStagingView({
+      unstagedFiles: Array.from({ length: 600 }, (_, index) => file(`root-${String(index + 1).padStart(3, "0")}.ts`)),
+    });
+
+    expect(screen.getByTestId("staging-virtuoso")).toBeInTheDocument();
+    expect(screen.getByText("root-001.ts")).toBeInTheDocument();
+    expect(screen.queryByText("root-600.ts")).not.toBeInTheDocument();
+
+    act(() => {
+      virtuosoSetVisibleRange.current?.({ startIndex: 580, endIndex: 603 });
+    });
+
+    expect(screen.getByText("root-600.ts")).toBeInTheDocument();
   });
 });

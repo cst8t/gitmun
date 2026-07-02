@@ -5,6 +5,26 @@ export type AvatarProviderMode = "Off" | "Libravatar";
 export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
+export type StagingOperationKind = "stage" | "stageAll" | "unstage" | "unstageAll";
+export type LongRunningOperationKind = StagingOperationKind | CommitPrimaryAction;
+
+export type StagingOperation = {
+    kind: StagingOperationKind;
+    count?: number;
+};
+
+export type LongRunningOperation = {
+    id: number;
+    kind: LongRunningOperationKind;
+    count?: number;
+    startedAt: number;
+};
+
+export type OperationFeedbackContent = {
+    kind: LongRunningOperationKind;
+    title: string;
+    message: string;
+};
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type LinuxTerminalEmulator =
     | "Auto"

@@ -49,6 +49,8 @@ import type {
   ExportPatchFileSelection,
   ExportPatchScope,
   GitIdentity,
+  LongRunningOperation,
+  LongRunningOperationKind,
   PullAnalysis,
   PullStrategy,
   PushRequest,
@@ -56,6 +58,8 @@ import type {
   RemoteInfo,
   RepoOpenLocationKind,
   RowStriping,
+  StagingOperation,
+  StagingOperationKind,
   StashEntry,
 } from "../types";
 import type { ResultLogEntry } from "../utils/resultLog";
@@ -75,6 +79,10 @@ const EMPTY_COMMIT_MARKERS: CommitMarkers = {
   upstreamHead: null,
   upstreamRef: null,
 };
+
+function isStagingOperationKind(kind: LongRunningOperationKind): kind is StagingOperationKind {
+  return kind === "stage" || kind === "stageAll" || kind === "unstage" || kind === "unstageAll";
+}
 
 function deriveLocalBranchName(remoteBranchName: string): string | null {
   const slashIndex = remoteBranchName.indexOf("/");
@@ -249,7 +257,9 @@ export function ProjectView({
   const [showCreateTagDialog, setShowCreateTagDialog] = useState(false);
   const [createTagTarget, setCreateTagTarget] = useState<string | null>(null);
   const [createBranchFromTagName, setCreateBranchFromTagName] = useState<string | null>(null);
-  const [isCommitting, setIsCommitting] = useState(false);
+  const [operationLock, setOperationLock] = useState<LongRunningOperation | null>(null);
+  const operationLockRef = useRef<LongRunningOperation | null>(null);
+  const nextOperationIdRef = useRef(1);
   const [isRebaseActionRunning, setIsRebaseActionRunning] = useState(false);
   const [isCherryPickActionRunning, setIsCherryPickActionRunning] = useState(false);
   const [isRevertActionRunning, setIsRevertActionRunning] = useState(false);
@@ -339,6 +349,11 @@ export function ProjectView({
   const forceWithLeaseAfterRebase = shouldForceWithLeaseAfterRebase(rebasedBranchAwaitingPush, currentBranch);
   const canCommitAndPush = currentBranchInfo?.upstreamStatus === "tracked";
   const effectiveCommitAction = getEffectiveCommitAction(commitPrimaryAction, canCommitAndPush);
+  const stagingOperation: StagingOperation | null =
+    operationLock && isStagingOperationKind(operationLock.kind)
+      ? { kind: operationLock.kind, count: operationLock.count }
+      : null;
+  const isCommitting = operationLock?.kind === "commit" || operationLock?.kind === "commitAndPush";
   const remoteActionLabel = remoteActionState.kind === "publish"
     ? t("remoteAction.publish", { ns: "git" })
     : remoteActionState.kind === "repair-upstream"
@@ -590,6 +605,49 @@ export function ProjectView({
     };
   }, [repoPath]);
 
+  const startOperation = useCallback((kind: LongRunningOperationKind, count?: number) => {
+    if (operationLockRef.current) {
+      return null;
+    }
+
+    const operation: LongRunningOperation = {
+      id: nextOperationIdRef.current,
+      kind,
+      count,
+      startedAt: Date.now(),
+    };
+    nextOperationIdRef.current += 1;
+    operationLockRef.current = operation;
+    setOperationLock(operation);
+    return operation;
+  }, []);
+
+  const finishOperation = useCallback((operation: LongRunningOperation) => {
+    if (operationLockRef.current?.id !== operation.id) {
+      return;
+    }
+
+    operationLockRef.current = null;
+    setOperationLock(null);
+  }, []);
+
+  const runStagingOperation = useCallback(async (
+    kind: StagingOperationKind,
+    count: number | undefined,
+    task: () => Promise<void>,
+  ) => {
+    const operation = startOperation(kind, count);
+    if (!operation) {
+      return;
+    }
+
+    try {
+      await task();
+    } finally {
+      finishOperation(operation);
+    }
+  }, [finishOperation, startOperation]);
+
   const handleFileSelect = useCallback((path: string, staged: boolean) => {
     setSelectedSubmodulePath(null);
     setSelectedFile(path);
@@ -604,44 +662,56 @@ export function ProjectView({
 
   const handleStageFile = useCallback(async (path: string) => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("stage", 1, async () => {
       const result = await api.stageFiles(repoPath, [path]);
       showToast(t("toast.stagedFiles", { count: 1, file: getFileName(path) }));
       appendResultLog("success", t("log.stagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleStageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
-    try {
+    await runStagingOperation("stage", paths.length, async () => {
       const result = await api.stageFiles(repoPath, paths);
       showToast(t("toast.stagedFiles", { count: paths.length, file: getFileName(paths[0]) }));
       appendResultLog("success", t("log.stagedFiles", { count: paths.length, path: paths[0] }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageFile = useCallback(async (path: string) => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("unstage", 1, async () => {
       const result = await api.unstageFile(repoPath, path);
       showToast(t("toast.unstagedFiles", { count: 1, file: getFileName(path) }), "info");
       appendResultLog("info", t("log.unstagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
-    try {
+    await runStagingOperation("unstage", paths.length, async () => {
       const results = await Promise.all(paths.map(path => api.unstageFile(repoPath, path)));
       showToast(t("toast.unstagedFiles", { count: paths.length, file: getFileName(paths[0]) }), "info");
       const backendUsed = results[0]?.backendUsed ?? "unknown";
       appendResultLog("info", t("log.unstagedFiles", { count: paths.length, path: paths[0] }), backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const doRevertFiles = useCallback(async (paths: string[]) => {
     if (!repoPath) return;
@@ -694,23 +764,29 @@ export function ProjectView({
 
   const handleStageAll = useCallback(async () => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("stageAll", undefined, async () => {
       const result = await api.stageAll(repoPath);
       showToast(t("toast.stagedAll"));
       appendResultLog("success", t("log.stagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageAll = useCallback(async () => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("unstageAll", undefined, async () => {
       const result = await api.unstageAll(repoPath);
       showToast(t("toast.unstagedAll"), "info");
       appendResultLog("info", t("log.unstagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleSelectCommitAction = useCallback(async (action: CommitPrimaryAction) => {
     if (action === commitPrimaryAction) {
@@ -757,13 +833,17 @@ export function ProjectView({
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
 
   const handleCommit = useCallback(async (message: string, amend: boolean) => {
-    setIsCommitting(true);
+    const operation = startOperation("commit");
+    if (!operation) {
+      return;
+    }
+
     try {
       await runCommitRequest(message, amend);
     } finally {
-      setIsCommitting(false);
+      finishOperation(operation);
     }
-  }, [runCommitRequest]);
+  }, [finishOperation, runCommitRequest, startOperation]);
 
   const handleFetch = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -911,7 +991,11 @@ export function ProjectView({
   }, [forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
-    setIsCommitting(true);
+    const operation = startOperation("commitAndPush");
+    if (!operation) {
+      return;
+    }
+
     try {
       const committed = await runCommitRequest(message, amend);
       if (!committed) {
@@ -919,9 +1003,9 @@ export function ProjectView({
       }
       await handlePush();
     } finally {
-      setIsCommitting(false);
+      finishOperation(operation);
     }
-  }, [handlePush, runCommitRequest]);
+  }, [finishOperation, handlePush, runCommitRequest, startOperation]);
 
   const handleUpstreamDialogConfirm = useCallback(async (selection: { remote: string; remoteBranch: string }) => {
     if (!repoPath || !currentBranchInfo || !upstreamDialogMode) {
@@ -2421,6 +2505,8 @@ export function ProjectView({
                   onConflictAcceptTheirs={handleConflictAcceptTheirs}
                   onConflictAcceptOurs={handleConflictAcceptOurs}
                   onOpenMergeTool={handleOpenMergeTool}
+                  stagingOperation={stagingOperation}
+                  operationLock={operationLock}
                   isCommitting={isCommitting}
                   isRebaseActionRunning={isRebaseActionRunning}
                   isCherryPickActionRunning={isCherryPickActionRunning}
