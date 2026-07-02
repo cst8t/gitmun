@@ -2143,9 +2143,16 @@ impl GitOperationHandler for CliGitHandler {
             ));
         }
 
-        let mut args = vec!["add", "--"];
-        args.extend(files.iter().copied());
-        Self::run_git(&args, Some(&repo_path))?;
+        let mut pathspecs = Vec::new();
+        for file in &files {
+            pathspecs.extend_from_slice(file.as_bytes());
+            pathspecs.push(0);
+        }
+        Self::run_git_with_stdin(
+            &["add", "--pathspec-from-file=-", "--pathspec-file-nul"],
+            &repo_path,
+            &pathspecs,
+        )?;
 
         Ok(OperationResult {
             message: format!("Staged {} file(s) in {}", files.len(), repo_path.display()),
