@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type React from "react";
 import type { CommitHistoryItem } from "../../types";
@@ -7,7 +7,16 @@ import "../../i18n";
 import { CentrePanel } from "./CentrePanel";
 
 vi.mock("./StagingView", () => ({
-  StagingView: () => <div data-testid="staging-view" />,
+  StagingView: ({ inlineOperation }: { inlineOperation: { title: string; message: string } | null }) => (
+    <div data-testid="staging-view">
+      {inlineOperation && (
+        <div data-testid="inline-operation">
+          <div>{inlineOperation.title}</div>
+          <div>{inlineOperation.message}</div>
+        </div>
+      )}
+    </div>
+  ),
 }));
 
 vi.mock("./LogView", () => ({
@@ -125,6 +134,8 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
     onOpenMergeTool: vi.fn(),
+    stagingOperation: null,
+    operationLock: null,
     isCommitting: false,
     isRebaseActionRunning: false,
     isCherryPickActionRunning: false,
@@ -133,7 +144,10 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     ...overrides,
   };
 
-  return render(<CentrePanel {...props} />);
+  return {
+    ...render(<CentrePanel {...props} />),
+    props,
+  };
 }
 
 describe("CentrePanel commit graph toggle", () => {
@@ -181,5 +195,123 @@ describe("CentrePanel commit graph toggle", () => {
     expect(screen.queryByLabelText("Show commit graph")).not.toBeInTheDocument();
     expect(container.querySelector(".log-view__graph")).toBeNull();
     expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+  });
+});
+
+describe("CentrePanel operation feedback", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("shows no visible feedback for a fast operation under 500ms", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "stage", count: 42, startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(499);
+    });
+
+    expect(screen.queryByTestId("inline-operation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("shows inline feedback after 500ms", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "stage", count: 42, startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Staging changes");
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Gitmun is staging 42 files.");
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("escalates to the popup after 2500ms", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "stage", count: 42, startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Staging changes");
+    expect(screen.getByRole("status")).toHaveTextContent("This operation is still running.");
+  });
+
+  it("clears feedback when the operation completes", () => {
+    const { props, rerender } = renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "stage", count: 42, startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    rerender(<CentrePanel {...props} operationLock={null} />);
+
+    expect(screen.queryByTestId("inline-operation")).not.toBeInTheDocument();
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+
+  it("resets delayed feedback for a new operation id", () => {
+    const { props, rerender } = renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "stage", count: 1, startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Staging changes");
+
+    rerender(<CentrePanel {...props} operationLock={{ id: 2, kind: "unstage", count: 1, startedAt: 500 }} />);
+    expect(screen.queryByTestId("inline-operation")).not.toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Unstaging changes");
+  });
+
+  it("uses delayed feedback for commit and push", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "commitAndPush", startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(500);
+    });
+
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Committing and pushing");
+    expect(screen.getByTestId("inline-operation")).toHaveTextContent("Gitmun is creating the commit and pushing it to the remote.");
+  });
+
+  it("uses delayed feedback for commit", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      operationLock: { id: 1, kind: "commit", startedAt: 0 },
+    });
+
+    act(() => {
+      vi.advanceTimersByTime(2500);
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Creating commit");
+    expect(screen.getByRole("status")).toHaveTextContent("This operation is still running.");
   });
 });

@@ -1,4 +1,5 @@
 import React from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { BranchIcon } from "../icons";
 import { StagingView } from "./StagingView";
@@ -14,14 +15,18 @@ import type {
   CommitPrimaryAction,
   ConflictFileItem,
   FileStatusItem,
+  LongRunningOperation,
+  OperationFeedbackContent,
   RowStriping,
+  StagingOperation,
   SubmoduleStatus,
 } from "../../types";
 import "./CentrePanel.css";
 
 export type CentreTab = "changes" | "log";
-
 const SHOW_COMMIT_GRAPH_KEY = "gitmun.showCommitGraph";
+const INLINE_OPERATION_DELAY_MS = 500;
+const POPUP_OPERATION_DELAY_MS = 2500;
 
 function readShowCommitGraphPreference(): boolean {
   try {
@@ -110,6 +115,8 @@ type CentrePanelProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
+  stagingOperation: StagingOperation | null;
+  operationLock: LongRunningOperation | null;
   isCommitting: boolean;
   isRebaseActionRunning: boolean;
   isCherryPickActionRunning: boolean;
@@ -117,11 +124,95 @@ type CentrePanelProps = {
   lastCommitMessage: string;
 };
 
+function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
+  const [now, setNow] = React.useState(() => Date.now());
+
+  React.useEffect(() => {
+    if (!operation) {
+      return;
+    }
+
+    const update = () => setNow(Date.now());
+    update();
+
+    const elapsed = Date.now() - operation.startedAt;
+    const inlineTimer = window.setTimeout(update, Math.max(0, INLINE_OPERATION_DELAY_MS - elapsed));
+    const popupTimer = window.setTimeout(update, Math.max(0, POPUP_OPERATION_DELAY_MS - elapsed));
+
+    return () => {
+      window.clearTimeout(inlineTimer);
+      window.clearTimeout(popupTimer);
+    };
+  }, [operation?.id, operation?.startedAt]);
+
+  if (!operation) {
+    return { showInline: false, showPopup: false };
+  }
+
+  const elapsed = now - operation.startedAt;
+  return {
+    showInline: elapsed >= INLINE_OPERATION_DELAY_MS,
+    showPopup: elapsed >= POPUP_OPERATION_DELAY_MS,
+  };
+}
+
+function getOperationContent(
+  operation: LongRunningOperation | null,
+  t: TFunction<"centre">,
+): OperationFeedbackContent | null {
+  if (!operation) return null;
+
+  switch (operation.kind) {
+    case "stage":
+      return {
+        kind: operation.kind,
+        title: t("operation.stageTitle"),
+        message: t("operation.stageMessage", { count: operation.count ?? 0 }),
+      };
+    case "stageAll":
+      return {
+        kind: operation.kind,
+        title: t("operation.stageAllTitle"),
+        message: t("operation.stageAllMessage"),
+      };
+    case "unstage":
+      return {
+        kind: operation.kind,
+        title: t("operation.unstageTitle"),
+        message: t("operation.unstageMessage", { count: operation.count ?? 0 }),
+      };
+    case "unstageAll":
+      return {
+        kind: operation.kind,
+        title: t("operation.unstageAllTitle"),
+        message: t("operation.unstageAllMessage"),
+      };
+    case "commitAndPush":
+      return {
+        kind: operation.kind,
+        title: t("operation.commitAndPushTitle"),
+        message: t("operation.commitAndPushMessage"),
+      };
+    case "commit":
+      return {
+        kind: operation.kind,
+        title: t("operation.commitTitle"),
+        message: t("operation.commitMessage"),
+      };
+  }
+}
+
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
   const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
   const effectiveShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
   const tab = props.activeTab;
+  const operationContent = getOperationContent(props.operationLock, t);
+  const operationFeedback = useDelayedOperationFeedback(props.operationLock);
+  const inlineOperationContent = operationFeedback.showInline ? operationContent : null;
+  const popupOperationContent = operationFeedback.showPopup && operationContent
+    ? { ...operationContent, message: t("operation.stillRunningMessage") }
+    : null;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
 
@@ -283,6 +374,8 @@ export function CentrePanel(props: CentrePanelProps) {
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
           onOpenMergeTool={props.onOpenMergeTool}
+          stagingOperation={props.stagingOperation}
+          inlineOperation={inlineOperationContent}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
           rowStriping={props.rowStriping}
@@ -314,6 +407,18 @@ export function CentrePanel(props: CentrePanelProps) {
           onResetToCommit={props.onResetToCommit}
         />
       </div>
+      {popupOperationContent && (
+        <>
+          <div className="centre__operation-backdrop" />
+          <div className="centre__operation-popup" role="status" aria-live="polite">
+            <div className="centre__operation-spinner" aria-hidden="true" />
+            <div className="centre__operation-copy">
+              <div className="centre__operation-title">{popupOperationContent.title}</div>
+              <div className="centre__operation-message">{popupOperationContent.message}</div>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

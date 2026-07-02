@@ -133,6 +133,23 @@
     "viewNextCommits": "View next {{count}} commits",
     "verified": "Verified"
   },
+  "operation": {
+    "commitAndPushMessage": "Gitmun is creating the commit and pushing it to the remote.",
+    "commitAndPushTitle": "Committing and pushing",
+    "commitMessage": "Gitmun is writing the commit. This can take a moment for large indexes.",
+    "commitTitle": "Creating commit",
+    "stageAllMessage": "Gitmun is staging every working tree change.",
+    "stageAllTitle": "Staging all changes",
+    "stageMessage_one": "Gitmun is staging {{count}} file.",
+    "stageMessage_other": "Gitmun is staging {{count}} files.",
+    "stageTitle": "Staging changes",
+    "stillRunningMessage": "This operation is still running. Gitmun will update the view when it finishes.",
+    "unstageAllMessage": "Gitmun is removing every staged change from the index.",
+    "unstageAllTitle": "Unstaging all changes",
+    "unstageMessage_one": "Gitmun is unstaging {{count}} file.",
+    "unstageMessage_other": "Gitmun is unstaging {{count}} files.",
+    "unstageTitle": "Unstaging changes"
+  },
   "pushRejected": {
     "cancel": "Cancel",
     "currentBranch": "Current branch",

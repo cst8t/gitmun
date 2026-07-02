@@ -1,8 +1,17 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
-import type { CommitPrimaryAction, ConflictFileItem, FileStatusItem, RowStriping, SubmoduleStatus } from "../../types";
+import type {
+  CommitPrimaryAction,
+  ConflictFileItem,
+  FileStatusItem,
+  OperationFeedbackContent,
+  RowStriping,
+  StagingOperation,
+  SubmoduleStatus,
+} from "../../types";
 import { getNumstat } from "../../api/commands";
 import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
@@ -50,6 +59,8 @@ type StagingViewProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
+  stagingOperation: StagingOperation | null;
+  inlineOperation: OperationFeedbackContent | null;
   isCommitting: boolean;
   lastCommitMessage: string;
   rowStriping: RowStriping;
@@ -64,11 +75,20 @@ type CachedNumstat = {
 type TreeSection = "staged" | "unstaged";
 
 type VisibleTreeRow =
-  | { type: "directory"; node: FileTreeDirectoryNode; depth: number }
+  | { type: "directory"; node: FileTreeDirectoryNode; depth: number; expanded: boolean }
   | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number; fileIndex: number };
+
+type StagingListRow =
+  | { type: "section"; key: string; section: "submodules" | "conflicts" | TreeSection }
+  | { type: "submodule"; key: string; submodule: SubmoduleStatus; index: number }
+  | { type: "conflict"; key: string; file: ConflictFileItem; index: number }
+  | { type: "tree"; key: string; section: TreeSection; row: VisibleTreeRow }
+  | { type: "empty"; key: string; section: TreeSection };
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
+const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
+const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
 
 const SUBMODULE_STATE_LABELS: Record<SubmoduleStatus["state"], string> = {
   clean: "Clean",
@@ -88,10 +108,27 @@ function folderStateKey(section: TreeSection, path: string): string {
   return `${section}:${path}`;
 }
 
+function defaultDirectoryExpanded(node: FileTreeDirectoryNode, depth: number, totalFiles: number): boolean {
+  if (totalFiles <= AUTO_COLLAPSE_SECTION_THRESHOLD) return true;
+  return depth > 0 && node.fileCount < AUTO_COLLAPSE_DIRECTORY_THRESHOLD;
+}
+
+function isDirectoryExpanded(
+  section: TreeSection,
+  node: FileTreeDirectoryNode,
+  depth: number,
+  totalFiles: number,
+  expandedFolders: Record<string, boolean>,
+): boolean {
+  const key = folderStateKey(section, node.path);
+  return expandedFolders[key] ?? defaultDirectoryExpanded(node, depth, totalFiles);
+}
+
 function visibleTreeRows(
   nodes: FileTreeNode[],
   section: TreeSection,
   expandedFolders: Record<string, boolean>,
+  totalFiles: number,
 ): VisibleTreeRow[] {
   let fileIndex = 0;
 
@@ -103,9 +140,9 @@ function visibleTreeRows(
         return [row];
       }
 
-      const expanded = expandedFolders[folderStateKey(section, node.path)] ?? true;
+      const expanded = isDirectoryExpanded(section, node, depth, totalFiles, expandedFolders);
       const children = expanded ? visit(node.children, depth + 1) : [];
-      return [{ type: "directory", node, depth }, ...children];
+      return [{ type: "directory", node, depth, expanded }, ...children];
     });
 
   return visit(nodes, 0);
@@ -113,6 +150,18 @@ function visibleTreeRows(
 
 function shortHash(hash: string | null): string {
   return hash ? hash.slice(0, 8) : "-";
+}
+
+function OperationInlineFeedback({ operation }: { operation: OperationFeedbackContent }) {
+  return (
+    <div className="staging__operation-inline" aria-live="polite">
+      <div className="staging__operation-spinner" aria-hidden="true" />
+      <div className="staging__operation-copy">
+        <div className="staging__operation-title">{operation.title}</div>
+        <div className="staging__operation-message">{operation.message}</div>
+      </div>
+    </div>
+  );
 }
 
 type SubmoduleRowProps = {
@@ -187,6 +236,7 @@ type DirectoryRowProps = {
   expanded: boolean;
   checked: boolean;
   indeterminate: boolean;
+  disabled: boolean;
   onToggleExpanded: () => void;
   onToggleChecked: () => void;
 };
@@ -197,6 +247,7 @@ function DirectoryRow({
   expanded,
   checked,
   indeterminate,
+  disabled,
   onToggleExpanded,
   onToggleChecked,
 }: DirectoryRowProps) {
@@ -220,11 +271,13 @@ function DirectoryRow({
         className="file-row__check"
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         aria-label={t(checked ? "staging.deselectFolderFiles" : "staging.selectFolderFiles", {
           path: directory.path,
         })}
         onChange={(e) => {
           e.stopPropagation();
+          if (disabled) return;
           onToggleChecked();
         }}
         onClick={e => e.stopPropagation()}
@@ -265,7 +318,7 @@ export function StagingView({
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
-  isCommitting, lastCommitMessage, rowStriping,
+  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
@@ -396,19 +449,23 @@ export function StagingView({
   const stagedTree = useMemo(() => buildFileTree(mergedStaged), [mergedStaged]);
   const unstagedTree = useMemo(() => buildFileTree(allUnstaged), [allUnstaged]);
   const stagedTreeRows = useMemo(
-    () => visibleTreeRows(stagedTree, "staged", expandedFolders),
-    [stagedTree, expandedFolders],
+    () => visibleTreeRows(stagedTree, "staged", expandedFolders, mergedStaged.length),
+    [stagedTree, expandedFolders, mergedStaged.length],
   );
   const unstagedTreeRows = useMemo(
-    () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders),
-    [unstagedTree, expandedFolders],
+    () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders, allUnstaged.length),
+    [unstagedTree, expandedFolders, allUnstaged.length],
   );
+  const stagingBusy = stagingOperation != null;
+  const inlineOperationIsCommit = inlineOperation?.kind === "commit" || inlineOperation?.kind === "commitAndPush";
 
   const toggleUnstaged = (path: string) => {
+    if (stagingBusy) return;
     onSelectedUnstagedChange(prev => ({ ...prev, [path]: !prev[path] }));
   };
 
   const toggleStaged = (path: string) => {
+    if (stagingBusy) return;
     onSelectedStagedChange(prev => ({ ...prev, [path]: !prev[path] }));
   };
 
@@ -425,7 +482,14 @@ export function StagingView({
   };
   const toggleFolderExpanded = (section: TreeSection, path: string) => {
     const key = folderStateKey(section, path);
-    setExpandedFolders(prev => ({ ...prev, [key]: !(prev[key] ?? true) }));
+    setExpandedFolders(prev => {
+      const treeRows = section === "staged" ? stagedTreeRows : unstagedTreeRows;
+      const currentRow = treeRows.find(row => row.type === "directory" && row.node.path === path);
+      const currentExpanded = currentRow?.type === "directory"
+        ? currentRow.expanded
+        : prev[key] ?? true;
+      return { ...prev, [key]: !currentExpanded };
+    });
   };
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
@@ -445,9 +509,10 @@ export function StagingView({
           <DirectoryRow
             directory={row.node}
             depth={row.depth}
-            expanded={expandedFolders[folderStateKey(section, row.node.path)] ?? true}
+            expanded={row.expanded}
             checked={checked}
             indeterminate={!checked && someChecked}
+            disabled={stagingBusy}
             onToggleExpanded={() => toggleFolderExpanded(section, row.node.path)}
             onToggleChecked={() => {
               onSelectedChange(prev => {
@@ -476,6 +541,7 @@ export function StagingView({
           isSelected={selectedFile === f.path}
           striped={striped(row.fileIndex)}
           checked={selectedMap[f.path] ?? false}
+          selectionDisabled={stagingBusy}
           displayPath={row.depth > 0 ? row.node.name : undefined}
           titlePath={row.depth > 0 ? f.path : undefined}
           depth={row.depth}
@@ -485,167 +551,258 @@ export function StagingView({
           onStage={isStaged ? undefined : () => onStageFile(f.path)}
           onUnstage={isStaged ? () => onUnstageFile(f.path) : undefined}
           onDiscard={isStaged ? undefined : () => onDiscardFile(f.path)}
+          actionDisabled={stagingBusy}
         />
       </div>
     );
   };
 
-  return (
-    <div className="staging">
-      <div className="staging__files">
-        {submodules.length > 0 && (
-          <div className="staging__section">
-            <div className="staging__section-header">
-              <span className="staging__section-label">
-                {t("staging.submodules")} {"\u00B7"} {submodules.length}
-              </span>
-            </div>
-            {submodules.map((submodule, index) => (
-              <div key={submodule.path} className="staging__row-anim">
-                <SubmoduleRow
-                  submodule={submodule}
-                  selected={selectedSubmodulePath === submodule.path}
-                  striped={striped(index)}
-                  onSelect={() => onSubmoduleSelect(submodule.path)}
-                  onInit={() => onSubmoduleInit(submodule.path)}
-                  onUpdate={() => onSubmoduleUpdate(submodule.path)}
-                  onSync={() => onSubmoduleSync(submodule.path)}
-                  onFetch={() => onSubmoduleFetch(submodule.path)}
-                  onPull={() => onSubmodulePull(submodule.path)}
-                  onOpen={() => onSubmoduleOpen(submodule.path)}
-                />
-              </div>
-            ))}
-          </div>
-        )}
+  const stagingRows = useMemo<StagingListRow[]>(() => {
+    const rows: StagingListRow[] = [];
 
-        {/* Conflicts section - shown during merge/rebase */}
-        {(mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0 && (
-          <div className="staging__section">
-            <div className="staging__section-header">
-              <span className="staging__section-label staging__section-label--conflict">
-                {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
-              </span>
-            </div>
-            {conflictedFiles.map((f, index) => {
-              const rowStripe = striped(index);
-              return (
-              <div key={f.path} className="staging__row-anim">
-                <div
-                  className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === f.path ? "staging__conflict-row--selected" : ""}`}
-                  onClick={() => onFileSelect(f.path, false)}
-                  onDoubleClick={() => onOpenMergeTool(f.path)}
-                >
-                  <span className="staging__conflict-badge">C</span>
-                  <span className="staging__conflict-path">{f.path}</span>
-                  <span className="staging__conflict-type">{f.conflictType.replace(/_/g, " ")}</span>
-                  <div className="staging__conflict-actions" onClick={e => e.stopPropagation()}>
-                    <button
-                      className="staging__conflict-btn staging__conflict-btn--open"
-                      title={t("staging.openInMergeTool")}
-                      onClick={() => onOpenMergeTool(f.path)}
-                    >
-                      {t("actions.open", {ns: "common"})}
-                    </button>
-                    <button
-                      className="staging__conflict-btn staging__conflict-btn--ours"
-                      title={t("staging.acceptOurs")}
-                      onClick={() => onConflictAcceptOurs(f.path)}
-                    >
-                      {t("staging.ours")}
-                    </button>
-                    <button
-                      className="staging__conflict-btn staging__conflict-btn--theirs"
-                      title={t("staging.acceptTheirs")}
-                      onClick={() => onConflictAcceptTheirs(f.path)}
-                    >
-                      {t("staging.theirs")}
-                    </button>
-                    <button
-                      className="staging__conflict-btn staging__conflict-btn--resolve"
-                      title={t("staging.markResolved")}
-                      onClick={() => onStageFile(f.path)}
-                    >
-                      {t("staging.resolve")}
-                    </button>
-                  </div>
-                </div>
-              </div>
-              );
-            })}
-          </div>
-        )}
+    if (submodules.length > 0) {
+      rows.push({ type: "section", key: "section:submodules", section: "submodules" });
+      rows.push(...submodules.map((submodule, index) => ({
+        type: "submodule" as const,
+        key: `submodule:${submodule.path}`,
+        submodule,
+        index,
+      })));
+    }
 
-        {/* Staged section */}
-        <div className="staging__section">
+    if ((mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0) {
+      rows.push({ type: "section", key: "section:conflicts", section: "conflicts" });
+      rows.push(...conflictedFiles.map((file, index) => ({
+        type: "conflict" as const,
+        key: `conflict:${file.path}`,
+        file,
+        index,
+      })));
+    }
+
+    rows.push({ type: "section", key: "section:staged", section: "staged" });
+    if (mergedStaged.length === 0) {
+      rows.push({ type: "empty", key: "empty:staged", section: "staged" });
+    } else {
+      rows.push(...stagedTreeRows.map(row => ({
+        type: "tree" as const,
+        key: row.type === "directory" ? `staged:directory:${row.node.path}` : `staged:file:${row.node.path}`,
+        section: "staged" as const,
+        row,
+      })));
+    }
+
+    rows.push({ type: "section", key: "section:unstaged", section: "unstaged" });
+    if (allUnstaged.length === 0) {
+      rows.push({ type: "empty", key: "empty:unstaged", section: "unstaged" });
+    } else {
+      rows.push(...unstagedTreeRows.map(row => ({
+        type: "tree" as const,
+        key: row.type === "directory" ? `unstaged:directory:${row.node.path}` : `unstaged:file:${row.node.path}`,
+        section: "unstaged" as const,
+        row,
+      })));
+    }
+
+    return rows;
+  }, [
+    allUnstaged.length,
+    cherryPickInProgress,
+    conflictedFiles,
+    mergeInProgress,
+    mergedStaged.length,
+    rebaseInProgress,
+    stagedTreeRows,
+    submodules,
+    unstagedTreeRows,
+  ]);
+
+  const renderSectionHeader = (section: StagingListRow & { type: "section" }) => {
+    if (section.section === "submodules") {
+      return (
+        <div className="staging__section staging__section--virtual">
           <div className="staging__section-header">
             <span className="staging__section-label">
-              {t("staging.staged")} {"\u00B7"} {t("fileCount", {ns: "common", count: stagedFiles.length})}
+              {t("staging.submodules")} {"\u00B7"} {submodules.length}
             </span>
-            {stagedFiles.length > 0 && (
-              <div className="staging__section-actions">
-                <button
-                  className="staging__section-action staging__section-action--muted"
-                  onClick={handleUnstageSelected}
-                  disabled={selectedStagedPaths.length === 0}
-                >
-                  {t("staging.unstageSelected")}
-                </button>
-                <button className="staging__section-action staging__section-action--muted" onClick={onUnstageAll}>
-                  {t("staging.unstageAll")}
-                </button>
-              </div>
-            )}
           </div>
-          {mergedStaged.length === 0 ? (
-            <div className="staging__empty">{t("staging.noStagedChanges")}</div>
-          ) : (
-            stagedTreeRows.map(row => renderTreeRow(row, "staged"))
-          )}
         </div>
+      );
+    }
 
-        {/* Unstaged section */}
-        <div className="staging__section">
+    if (section.section === "conflicts") {
+      return (
+        <div className="staging__section staging__section--virtual">
           <div className="staging__section-header">
-            <span className="staging__section-label">
-              {t("staging.unstaged")} {"\u00B7"} {t("fileCount", {ns: "common", count: allUnstaged.length})}
+            <span className="staging__section-label staging__section-label--conflict">
+              {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
             </span>
-            {allUnstaged.length > 0 && (
-              <div className="staging__section-actions">
-                <button
-                  className="staging__section-action staging__section-action--danger"
-                  onClick={() => onDiscardFiles(selectedUnstagedPaths)}
-                  disabled={selectedUnstagedPaths.length === 0}
-                >
-                  {t("staging.revertSelected")}
-                </button>
-                <button
-                  className="staging__section-action staging__section-action--danger"
-                  onClick={() => onDiscardAll(allUnstaged.map(f => f.path))}
-                >
-                  {t("staging.revertAll")}
-                </button>
-                <button
-                  className="staging__section-action staging__section-action--accent"
-                  onClick={handleStageSelected}
-                  disabled={selectedUnstagedPaths.length === 0}
-                >
-                  {t("staging.stageSelected")}
-                </button>
-                <button className="staging__section-action staging__section-action--accent" onClick={onStageAll}>
-                  {t("staging.stageAll")}
-                </button>
-              </div>
-            )}
           </div>
-          {allUnstaged.length === 0 ? (
-            <div className="staging__empty">{t("staging.workingTreeClean")}</div>
-          ) : (
-            unstagedTreeRows.map(row => renderTreeRow(row, "unstaged"))
+        </div>
+      );
+    }
+
+    const isStaged = section.section === "staged";
+    const count = isStaged ? stagedFiles.length : allUnstaged.length;
+    const selectedPaths = isStaged ? selectedStagedPaths : selectedUnstagedPaths;
+
+    return (
+      <div className="staging__section staging__section--virtual">
+        <div className="staging__section-header">
+          <span className="staging__section-label">
+            {t(isStaged ? "staging.staged" : "staging.unstaged")} {"\u00B7"} {t("fileCount", {ns: "common", count})}
+          </span>
+          {count > 0 && (
+            <div className="staging__section-actions">
+              {isStaged ? (
+                <>
+                  <button
+                    className="staging__section-action staging__section-action--muted"
+                    onClick={handleUnstageSelected}
+                    disabled={selectedPaths.length === 0 || stagingBusy}
+                  >
+                    {t("staging.unstageSelected")}
+                  </button>
+                  <button className="staging__section-action staging__section-action--muted" onClick={onUnstageAll} disabled={stagingBusy}>
+                    {t("staging.unstageAll")}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="staging__section-action staging__section-action--danger"
+                    onClick={() => onDiscardFiles(selectedUnstagedPaths)}
+                    disabled={selectedUnstagedPaths.length === 0 || stagingBusy}
+                  >
+                    {t("staging.revertSelected")}
+                  </button>
+                  <button
+                    className="staging__section-action staging__section-action--danger"
+                    onClick={() => onDiscardAll(allUnstaged.map(f => f.path))}
+                    disabled={stagingBusy}
+                  >
+                    {t("staging.revertAll")}
+                  </button>
+                  <button
+                    className="staging__section-action staging__section-action--accent"
+                    onClick={handleStageSelected}
+                    disabled={selectedUnstagedPaths.length === 0 || stagingBusy}
+                  >
+                    {t("staging.stageSelected")}
+                  </button>
+                  <button className="staging__section-action staging__section-action--accent" onClick={onStageAll} disabled={stagingBusy}>
+                    {t("staging.stageAll")}
+                  </button>
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>
+    );
+  };
 
+  const renderConflictRow = (file: ConflictFileItem, index: number) => {
+    const rowStripe = striped(index);
+    return (
+      <div className="staging__list-row">
+        <div className="staging__row-anim">
+          <div
+            className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === file.path ? "staging__conflict-row--selected" : ""}`}
+            onClick={() => onFileSelect(file.path, false)}
+            onDoubleClick={() => onOpenMergeTool(file.path)}
+          >
+            <span className="staging__conflict-badge">C</span>
+            <span className="staging__conflict-path">{file.path}</span>
+            <span className="staging__conflict-type">{file.conflictType.replace(/_/g, " ")}</span>
+            <div className="staging__conflict-actions" onClick={e => e.stopPropagation()}>
+              <button
+                className="staging__conflict-btn staging__conflict-btn--open"
+                title={t("staging.openInMergeTool")}
+                onClick={() => onOpenMergeTool(file.path)}
+              >
+                {t("actions.open", {ns: "common"})}
+              </button>
+              <button
+                className="staging__conflict-btn staging__conflict-btn--ours"
+                title={t("staging.acceptOurs")}
+                onClick={() => onConflictAcceptOurs(file.path)}
+              >
+                {t("staging.ours")}
+              </button>
+              <button
+                className="staging__conflict-btn staging__conflict-btn--theirs"
+                title={t("staging.acceptTheirs")}
+                onClick={() => onConflictAcceptTheirs(file.path)}
+              >
+                {t("staging.theirs")}
+              </button>
+              <button
+                className="staging__conflict-btn staging__conflict-btn--resolve"
+                title={t("staging.markResolved")}
+                onClick={() => onStageFile(file.path)}
+              >
+                {t("staging.resolve")}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderStagingRow = (_index: number, row: StagingListRow) => {
+    switch (row.type) {
+      case "section":
+        return renderSectionHeader(row);
+      case "submodule":
+        return (
+          <div className="staging__list-row">
+            <div className="staging__row-anim">
+              <SubmoduleRow
+                submodule={row.submodule}
+                selected={selectedSubmodulePath === row.submodule.path}
+                striped={striped(row.index)}
+                onSelect={() => onSubmoduleSelect(row.submodule.path)}
+                onInit={() => onSubmoduleInit(row.submodule.path)}
+                onUpdate={() => onSubmoduleUpdate(row.submodule.path)}
+                onSync={() => onSubmoduleSync(row.submodule.path)}
+                onFetch={() => onSubmoduleFetch(row.submodule.path)}
+                onPull={() => onSubmodulePull(row.submodule.path)}
+                onOpen={() => onSubmoduleOpen(row.submodule.path)}
+              />
+            </div>
+          </div>
+        );
+      case "conflict":
+        return renderConflictRow(row.file, row.index);
+      case "tree":
+        return <div className="staging__list-row">{renderTreeRow(row.row, row.section)}</div>;
+      case "empty":
+        return (
+          <div className="staging__list-row">
+            <div className="staging__empty">
+              {t(row.section === "staged" ? "staging.noStagedChanges" : "staging.workingTreeClean")}
+            </div>
+          </div>
+        );
+    }
+  };
+
+  return (
+    <div className="staging">
+      {inlineOperation && !inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
+      <div className="staging__files">
+        <Virtuoso
+          className="staging__virtual-list"
+          style={{ height: "100%" }}
+          data={stagingRows}
+          computeItemKey={(_index, row) => row.key}
+          itemContent={renderStagingRow}
+        />
+      </div>
+
+      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
       <CommitBox
         stagedCount={stagedFiles.length}
         selectedAction={selectedCommitAction}
