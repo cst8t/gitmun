@@ -10,9 +10,9 @@ use super::types::{
     CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
     CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
     DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
-    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    ExportCommitPatchRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff,
+    FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest,
+    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
@@ -37,6 +37,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
     fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
     fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult>;
+    fn export_commit_patch_file(
+        &self,
+        request: &ExportCommitPatchRequest,
+    ) -> GitResult<OperationResult>;
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus>;
     fn get_commit_history(
         &self,
@@ -467,6 +471,7 @@ impl GitService {
         fn check_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
         fn import_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
         fn export_patch_file(request: ExportPatchRequest) -> GitResult<OperationResult>;
+        fn export_commit_patch_file(request: ExportCommitPatchRequest) -> GitResult<OperationResult>;
     }
 
     forward_read_methods! {

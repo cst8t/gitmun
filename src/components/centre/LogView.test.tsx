@@ -1000,6 +1000,27 @@ describe("LogView commit selection", () => {
     ].join("\n"));
   });
 
+  it("exports the selected commit patch", () => {
+    const onExportCommitPatch = vi.fn();
+    renderLog({ onExportCommitPatch });
+
+    fireEvent.contextMenu(rowFor("Subject 1"));
+    fireEvent.click(screen.getByText("Export Commit Patch..."));
+
+    expect(onExportCommitPatch).toHaveBeenCalledWith([commit(1).hash]);
+  });
+
+  it("exports selected commit patches in log order", () => {
+    const onExportCommitPatch = vi.fn();
+    renderLog({ onExportCommitPatch });
+
+    fireEvent.click(rowFor("Subject 2"), { ctrlKey: true });
+    fireEvent.contextMenu(rowFor("Subject 1"));
+    fireEvent.click(screen.getByText("Export Commit Patches..."));
+
+    expect(onExportCommitPatch).toHaveBeenCalledWith([commit(1).hash, commit(2).hash]);
+  });
+
   it("right-clicking outside the selection selects only that commit", () => {
     renderLog();
 

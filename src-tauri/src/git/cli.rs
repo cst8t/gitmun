@@ -16,18 +16,18 @@ use super::types::{
     CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
     CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportPatchFileSelection, ExportPatchRequest,
-    ExportPatchScope, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem,
-    GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest,
-    LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
-    PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState, PullStrategy,
-    PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult,
-    PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UnversionedItem,
-    UnversionedItemKind, UpstreamStatus,
+    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
+    ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
+    FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest,
+    IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest, PushFailureKind,
+    PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetMode, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
+    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleState, SubmoduleStatus,
+    TagInfo, UnversionedItem, UnversionedItemKind, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -44,6 +44,8 @@ struct ConfiguredSubmodule {
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 impl CliGitHandler {
+    const EMPTY_TREE_HASH: &'static str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
     fn preferred_mime_from_path(file_path: &str) -> Option<String> {
         let mut first: Option<String> = None;
         for mime in mime_guess::from_path(file_path) {
@@ -561,6 +563,35 @@ impl CliGitHandler {
         Ok(PathBuf::from(trimmed))
     }
 
+    fn validate_commit_hash(repo_path: &Path, commit_hash: &str) -> GitResult<String> {
+        let trimmed = commit_hash.trim();
+        if trimmed.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Commit hash cannot be empty".to_string(),
+            ));
+        }
+        if trimmed.contains('\0') {
+            return Err(GitError::InvalidInput(
+                "Commit hash contains an invalid character".to_string(),
+            ));
+        }
+
+        let commit_ref = format!("{trimmed}^{{commit}}");
+        let output = Self::run_git_allow_exit_codes(
+            &["rev-parse", "--verify", "--quiet", &commit_ref],
+            Some(repo_path),
+            &[1],
+        )?;
+        let resolved = output.trim();
+        if resolved.is_empty() {
+            return Err(GitError::InvalidInput(format!(
+                "Invalid commit hash: {trimmed}"
+            )));
+        }
+
+        Ok(resolved.to_string())
+    }
+
     fn git_diff_for_paths(repo_path: &Path, staged: bool, paths: &[String]) -> GitResult<String> {
         if paths.is_empty() {
             return Ok(String::new());
@@ -645,6 +676,44 @@ impl CliGitHandler {
         }
         target.push_str(patch);
         target.push('\n');
+    }
+
+    fn git_plain_patch_for_commit(repo_path: &Path, commit_hash: &str) -> GitResult<String> {
+        let parents_output = Self::run_git(
+            &["rev-list", "--parents", "-n", "1", commit_hash],
+            Some(repo_path),
+        )?;
+        let mut parts = parents_output.split_whitespace();
+        let resolved_hash = parts.next().unwrap_or(commit_hash);
+        let base_hash = parts.next().unwrap_or(Self::EMPTY_TREE_HASH);
+
+        Self::run_git_allow_exit_codes(
+            &["diff", "--binary", base_hash, resolved_hash, "--"],
+            Some(repo_path),
+            &[1],
+        )
+    }
+
+    fn build_commit_patch(
+        request: &ExportCommitPatchRequest,
+        repo_path: &Path,
+    ) -> GitResult<String> {
+        if request.commit_hashes.is_empty() {
+            return Err(GitError::InvalidInput(
+                "No commits selected for patch export".to_string(),
+            ));
+        }
+
+        let mut output = String::new();
+        for commit_hash in request.commit_hashes.iter().rev() {
+            let resolved_hash = Self::validate_commit_hash(repo_path, commit_hash)?;
+            Self::append_patch(
+                &mut output,
+                &Self::git_plain_patch_for_commit(repo_path, &resolved_hash)?,
+            );
+        }
+
+        Ok(output)
     }
 
     fn selected_paths(files: &[ExportPatchFileSelection], staged: bool) -> GitResult<Vec<String>> {
@@ -2345,6 +2414,31 @@ impl GitOperationHandler for CliGitHandler {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let patch_path = Self::validate_patch_path(&request.patch_path)?;
         let output = Self::build_patch(request, &repo_path)?;
+
+        if output.trim().is_empty() {
+            return Err(GitError::InvalidInput(
+                "No changes available for patch export".to_string(),
+            ));
+        }
+
+        fs::write(&patch_path, output.as_bytes())?;
+
+        Ok(OperationResult {
+            message: format!("Exported patch file to {}", patch_path.display()),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+        })
+    }
+
+    fn export_commit_patch_file(
+        &self,
+        request: &ExportCommitPatchRequest,
+    ) -> GitResult<OperationResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let patch_path = Self::validate_patch_path(&request.patch_path)?;
+        let output = Self::build_commit_patch(request, &repo_path)?;
 
         if output.trim().is_empty() {
             return Err(GitError::InvalidInput(

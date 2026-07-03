@@ -78,6 +78,7 @@ type CentrePanelProps = {
   onCherryPickAtCommit?: (commitHash: string) => void;
   onRevertAtCommit?: (commitHash: string) => void;
   onResetToCommit?: (commitHash: string, mode: "soft" | "mixed") => void;
+  onExportCommitPatch?: (commitHashes: string[]) => void;
   selectedFile: string | null;
   selectedSubmodulePath: string | null;
   selectedStagedFiles: Record<string, boolean>;
@@ -408,6 +409,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onCherryPickAtCommit={props.onCherryPickAtCommit}
           onRevertAtCommit={props.onRevertAtCommit}
           onResetToCommit={props.onResetToCommit}
+          onExportCommitPatch={props.onExportCommitPatch}
         />
       </div>
       {popupOperationContent && (

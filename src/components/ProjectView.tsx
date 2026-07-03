@@ -1708,6 +1708,37 @@ export function ProjectView({
     }
   }, [repoPath, selectedPatchFiles, showToast, t]);
 
+  const handleExportCommitPatch = useCallback(async (commitHashes: string[]) => {
+    if (!repoPath) return;
+    if (commitHashes.length === 0) {
+      showToast(t("toast.noPatchChanges"), "info");
+      return;
+    }
+
+    const selected = await save({
+      title: t("patch.exportPickerTitle"),
+      defaultPath: "commits.patch",
+      filters: [{ name: t("patch.patchFilesFilter"), extensions: ["patch"] }],
+    });
+    if (!selected) return;
+
+    try {
+      const result = await api.exportCommitPatchFile({ repoPath, patchPath: selected, commitHashes });
+      const patchName = getFileName(selected);
+      showToast(t("toast.patchExported", { file: patchName }), "success");
+      appendResultLog("success", result.message, result.backendUsed);
+    } catch (e) {
+      const message = String(e);
+      if (message.includes("No changes available for patch export")) {
+        showToast(t("toast.noPatchChanges"), "info");
+        appendResultLog("info", t("log.noPatchChanges"), "git-cli");
+        return;
+      }
+      showToast(message, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message }), "unknown");
+    }
+  }, [repoPath, showToast, t]);
+
   const runSubmoduleAction = useCallback(async (
     path: string,
     label: string,
@@ -2463,6 +2494,7 @@ export function ProjectView({
                   onCherryPickAtCommit={handleCherryPickAtCommit}
                   onRevertAtCommit={handleRevertAtCommit}
                   onResetToCommit={handleResetToCommit}
+                  onExportCommitPatch={handleExportCommitPatch}
                   selectedFile={selectedFile}
                   selectedSubmodulePath={selectedSubmodulePath}
                   selectedStagedFiles={selectedStagedFiles}

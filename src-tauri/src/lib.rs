@@ -1596,6 +1596,7 @@ pub fn run() {
             commands::repo::check_patch_file,
             commands::repo::import_patch_file,
             commands::repo::export_patch_file,
+            commands::repo::export_commit_patch_file,
             commands::repo::get_repo_diff_tool,
             commands::repo::analyze_pull,
             commands::repo::pull_changes,
