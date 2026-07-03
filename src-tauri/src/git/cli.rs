@@ -26,7 +26,8 @@ use super::types::{
     RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
     RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
     SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UpstreamStatus,
+    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UnversionedItem,
+    UnversionedItemKind, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -884,6 +885,24 @@ impl CliGitHandler {
         status
             .unversioned_files
             .retain(|path| !Self::is_submodule_status_path(path, &submodule_paths));
+        status
+            .unversioned_items
+            .retain(|item| !Self::is_submodule_status_path(&item.path, &submodule_paths));
+    }
+
+    pub(crate) fn refresh_unversioned_items(status: &mut RepoStatus, repo_path: &Path) {
+        status.unversioned_items = status
+            .unversioned_files
+            .iter()
+            .map(|path| UnversionedItem {
+                path: path.clone(),
+                kind: if repo_path.join(path).is_dir() {
+                    UnversionedItemKind::Directory
+                } else {
+                    UnversionedItemKind::File
+                },
+            })
+            .collect();
     }
 
     fn current_branch_name(repo_path: &Path) -> Option<String> {
@@ -2351,6 +2370,7 @@ impl GitOperationHandler for CliGitHandler {
             Some(&repo_path),
         )?;
         let mut status = Self::parse_repo_status(&output);
+        Self::refresh_unversioned_items(&mut status, &repo_path);
         status.submodules = Self::collect_submodules_for_status(&repo_path);
         Self::remove_submodule_file_entries(&mut status);
         status.current_branch = Self::detect_current_branch(&repo_path);
@@ -4906,6 +4926,13 @@ impl CliGitHandler {
         RepoStatus {
             changed_files,
             staged_files,
+            unversioned_items: unversioned_files
+                .iter()
+                .map(|path| UnversionedItem {
+                    path: path.clone(),
+                    kind: UnversionedItemKind::File,
+                })
+                .collect(),
             unversioned_files,
             submodules: vec![],
             current_branch: None,

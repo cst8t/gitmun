@@ -437,6 +437,12 @@ export type FileStatusItem = {
     status: string;
     additions: number | null;
     deletions: number | null;
+    kind?: "file" | "directory";
+};
+
+export type UnversionedItem = {
+    path: string;
+    kind: "file" | "directory";
 };
 
 export type ConflictFileItem = {
@@ -474,6 +480,7 @@ export type RepoStatus = {
     changedFiles: FileStatusItem[];
     stagedFiles: FileStatusItem[];
     unversionedFiles: string[];
+    unversionedItems?: UnversionedItem[];
     submodules: SubmoduleStatus[];
     currentBranch: string | null;
     detachedHead: boolean;

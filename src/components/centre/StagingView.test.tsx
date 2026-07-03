@@ -61,6 +61,8 @@ function files(prefix: string, count: number): FileStatusItem[] {
   return Array.from({ length: count }, (_, index) => file(`${prefix}/file-${String(index + 1).padStart(3, "0")}.ts`));
 }
 
+const untrackedDirectory = { path: "instrument-readings", kind: "directory" as const };
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> = {}): React.ComponentProps<typeof StagingView> {
   return {
     repoPath: "/repo",
@@ -207,6 +209,42 @@ describe("StagingView file tree", () => {
     expect(screen.getByText("Stage Selected")).toBeDisabled();
     expect(screen.getByText("Stage All")).toBeDisabled();
     expect(screen.getByLabelText("Deselect files in src")).toBeDisabled();
+  });
+
+  it("renders an untracked directory row with directory copy", () => {
+    renderStagingView({
+      unversionedFiles: ["instrument-readings"],
+      unversionedItems: [untrackedDirectory],
+    });
+
+    expect(screen.getByText("instrument-readings")).toBeInTheDocument();
+    expect(screen.getByText("Untracked directory")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Expand instrument-readings")).not.toBeInTheDocument();
+  });
+
+  it("stages a selected untracked directory path", () => {
+    const onStageFiles = vi.fn();
+    render(<StatefulStagingView
+      unversionedFiles={["instrument-readings"]}
+      unversionedItems={[untrackedDirectory]}
+      onStageFiles={onStageFiles}
+    />);
+
+    fireEvent.click(screen.getByLabelText("Select files in instrument-readings"));
+    fireEvent.click(screen.getByText("Stage Selected"));
+
+    expect(onStageFiles).toHaveBeenCalledWith(["instrument-readings"]);
+  });
+
+  it("disables untracked directory selection while staging is running", () => {
+    renderStagingView({
+      unversionedFiles: ["instrument-readings"],
+      unversionedItems: [untrackedDirectory],
+      stagingOperation: { kind: "stage", count: 1 },
+    });
+
+    expect(screen.getByLabelText("Select files in instrument-readings")).toBeDisabled();
+    expect(screen.getByText("Stage All")).toBeDisabled();
   });
 
   it("selects every descendant from a compact folder row", () => {

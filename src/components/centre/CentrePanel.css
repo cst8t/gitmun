@@ -314,6 +314,11 @@
   flex-shrink: 0;
 }
 
+.file-row__badge--new {
+  background: rgba(52,211,153,0.12);
+  color: #34d399;
+}
+
 .file-row__path {
   flex: 1;
   font-family: var(--font-ui);
