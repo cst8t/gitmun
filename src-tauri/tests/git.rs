@@ -11,8 +11,8 @@ use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
     CreateBranchRequest, DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest,
     ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest,
-    ResetMode, ResetRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
-    SubmoduleState,
+    RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, StageFilesRequest,
+    SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -252,6 +252,55 @@ fn status_detects_untracked_file() {
         .get_repo_status(&repo_request(&dir))
         .expect("get_repo_status");
     assert!(status.unversioned_files.iter().any(|f| f == "new.txt"));
+}
+
+fn assert_unversioned_item(status: &RepoStatus, path: &str, kind: UnversionedItemKind) {
+    assert!(
+        status
+            .unversioned_items
+            .iter()
+            .any(|item| item.path == path && item.kind == kind),
+        "missing {kind:?} item for {path}: {:?}",
+        status.unversioned_items
+    );
+}
+
+#[test]
+fn status_reports_untracked_item_kinds() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("tracked")).expect("create tracked directory");
+    write_file(dir.path(), "tracked/kept.txt", "kept");
+    git(dir.path(), &["add", "tracked/kept.txt"]);
+    git(dir.path(), &["commit", "-m", "track directory"]);
+
+    write_file(dir.path(), "new.txt", "hello");
+    write_file(dir.path(), "tracked/new.txt", "new");
+    fs::create_dir_all(dir.path().join("notes")).expect("create notes directory");
+    write_file(dir.path(), "notes/draft.txt", "draft");
+
+    let cli_status = handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("cli get_repo_status");
+    assert!(cli_status.unversioned_files.iter().any(|path| path == "new.txt"));
+    assert!(cli_status
+        .unversioned_files
+        .iter()
+        .any(|path| path == "notes/"));
+    assert_unversioned_item(&cli_status, "new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&cli_status, "tracked/new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&cli_status, "notes/", UnversionedItemKind::Directory);
+
+    let gix_status = gix_handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("gix get_repo_status");
+    assert!(gix_status.unversioned_files.iter().any(|path| path == "new.txt"));
+    assert!(gix_status
+        .unversioned_files
+        .iter()
+        .any(|path| path == "notes/"));
+    assert_unversioned_item(&gix_status, "new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&gix_status, "tracked/new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&gix_status, "notes/", UnversionedItemKind::Directory);
 }
 
 #[test]

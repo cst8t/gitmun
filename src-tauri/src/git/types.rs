@@ -554,12 +554,27 @@ pub struct SubmoduleStatus {
     pub state: SubmoduleState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UnversionedItemKind {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnversionedItem {
+    pub path: String,
+    pub kind: UnversionedItemKind,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoStatus {
     pub changed_files: Vec<FileStatusItem>,
     pub staged_files: Vec<FileStatusItem>,
     pub unversioned_files: Vec<String>,
+    pub unversioned_items: Vec<UnversionedItem>,
     pub submodules: Vec<SubmoduleStatus>,
     pub current_branch: Option<String>,
     pub detached_head: bool,

@@ -189,6 +189,7 @@
     "unstageFile": "Unstage file",
     "unstageSelected": "Unstage Selected",
     "unstaged": "Unstaged",
+    "untrackedDirectory": "Untracked directory",
     "workingTreeClean": "Working tree clean",
     "stagedChanges": "Staged Changes",
     "unstagedChanges": "Unstaged Changes",

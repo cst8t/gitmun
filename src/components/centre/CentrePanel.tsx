@@ -20,6 +20,7 @@ import type {
   RowStriping,
   StagingOperation,
   SubmoduleStatus,
+  UnversionedItem,
 } from "../../types";
 import "./CentrePanel.css";
 
@@ -43,6 +44,7 @@ type CentrePanelProps = {
   stagedFiles: FileStatusItem[];
   unstagedFiles: FileStatusItem[];
   unversionedFiles: string[];
+  unversionedItems?: UnversionedItem[];
   submodules: SubmoduleStatus[];
   conflictedFiles: ConflictFileItem[];
   mergeInProgress: boolean;
@@ -336,6 +338,7 @@ export function CentrePanel(props: CentrePanelProps) {
           stagedFiles={props.stagedFiles}
           unstagedFiles={props.unstagedFiles}
           unversionedFiles={props.unversionedFiles}
+          unversionedItems={props.unversionedItems}
           submodules={props.submodules}
           conflictedFiles={props.conflictedFiles}
           mergeInProgress={props.mergeInProgress}

@@ -11,6 +11,7 @@ import type {
   RowStriping,
   StagingOperation,
   SubmoduleStatus,
+  UnversionedItem,
 } from "../../types";
 import { getNumstat } from "../../api/commands";
 import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
@@ -21,6 +22,7 @@ type StagingViewProps = {
   stagedFiles: FileStatusItem[];
   unstagedFiles: FileStatusItem[];
   unversionedFiles: string[];
+  unversionedItems?: UnversionedItem[];
   submodules: SubmoduleStatus[];
   conflictedFiles: ConflictFileItem[];
   mergeInProgress: boolean;
@@ -140,7 +142,7 @@ function visibleTreeRows(
         return [row];
       }
 
-      const expanded = isDirectoryExpanded(section, node, depth, totalFiles, expandedFolders);
+      const expanded = node.children.length > 0 && isDirectoryExpanded(section, node, depth, totalFiles, expandedFolders);
       const children = expanded ? visit(node.children, depth + 1) : [];
       return [{ type: "directory", node, depth, expanded }, ...children];
     });
@@ -282,21 +284,28 @@ function DirectoryRow({
         }}
         onClick={e => e.stopPropagation()}
       />
-      <button
-        className="staging__folder-toggle"
-        type="button"
-        aria-label={t(expanded ? "staging.collapseFolder" : "staging.expandFolder", {
-          path: directory.path,
-        })}
-        onClick={onToggleExpanded}
-      >
-        {expanded ? <ChevDownIcon size={13} /> : <ChevRightIcon size={13} />}
-      </button>
+      {directory.children.length > 0 && (
+        <button
+          className="staging__folder-toggle"
+          type="button"
+          aria-label={t(expanded ? "staging.collapseFolder" : "staging.expandFolder", {
+            path: directory.path,
+          })}
+          onClick={onToggleExpanded}
+        >
+          {expanded ? <ChevDownIcon size={13} /> : <ChevRightIcon size={13} />}
+        </button>
+      )}
       <span className="staging__folder-icon">
         <FolderIcon size={15} />
       </span>
+      {directory.status === "new" && <span className="file-row__badge file-row__badge--new">A</span>}
       <span className="staging__folder-name">{directory.name}</span>
-      <span className="staging__folder-count">{t("fileCount", { ns: "common", count: directory.fileCount })}</span>
+      <span className="staging__folder-count">
+        {directory.selectablePath && directory.children.length === 0
+          ? t("staging.untrackedDirectory")
+          : t("fileCount", { ns: "common", count: directory.fileCount })}
+      </span>
       <span className="file-row__stats">
         {directory.additions > 0 && (
           <span className="file-row__stat-add">+{directory.additions}</span>
@@ -311,7 +320,7 @@ function DirectoryRow({
 
 export function StagingView({
   repoPath,
-  stagedFiles, unstagedFiles, unversionedFiles, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
+  stagedFiles, unstagedFiles, unversionedFiles, unversionedItems, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
   selectedFile, selectedSubmodulePath, selectedUnstaged, selectedStaged, onSelectedUnstagedChange, onSelectedStagedChange,
   onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
@@ -354,9 +363,10 @@ export function StagingView({
   const allUnstaged: FileStatusItem[] = useMemo(
     () => [
       ...mergedUnstaged,
-      ...unversionedFiles.map(path => ({ path, status: "new", additions: null, deletions: null })),
+      ...(unversionedItems ?? unversionedFiles.map(path => ({ path, kind: "file" as const })))
+        .map(item => ({ path: item.path, kind: item.kind, status: "new", additions: null, deletions: null })),
     ],
-    [mergedUnstaged, unversionedFiles],
+    [mergedUnstaged, unversionedFiles, unversionedItems],
   );
 
   useEffect(() => {

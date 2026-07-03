@@ -315,6 +315,7 @@ export function ProjectView({
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
+  const unversionedItems = status?.unversionedItems;
   const selectedStagedPaths = stagedFiles
     .filter(file => selectedStagedFiles[file.path])
     .map(file => file.path);
@@ -2420,6 +2421,7 @@ export function ProjectView({
                   stagedFiles={stagedFiles}
                   unstagedFiles={unstagedFiles}
                   unversionedFiles={unversionedFiles}
+                  unversionedItems={unversionedItems}
                   submodules={submodules}
                   conflictedFiles={conflictedFiles}
                   mergeInProgress={mergeInProgress}
