@@ -292,6 +292,11 @@ export type ExportPatchRequest = RepoRequest & {
     files?: ExportPatchFileSelection[];
 };
 
+export type ExportCommitPatchRequest = RepoRequest & {
+    patchPath: string;
+    commitHashes: string[];
+};
+
 export type CommitRequest = RepoRequest & {
     message: string;
     amend?: boolean;

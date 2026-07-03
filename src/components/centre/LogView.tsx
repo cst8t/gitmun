@@ -573,6 +573,7 @@ type LogViewProps = {
   onCherryPickAtCommit?: (commitHash: string) => void;
   onRevertAtCommit?: (commitHash: string) => void;
   onResetToCommit?: (commitHash: string, mode: "soft" | "mixed") => void;
+  onExportCommitPatch?: (commitHashes: string[]) => void;
 };
 
 // Caps the burst of IPC calls on mount to avoid saturating the Tauri channel.
@@ -679,6 +680,7 @@ export function LogView({
   onCherryPickAtCommit,
   onRevertAtCommit,
   onResetToCommit,
+  onExportCommitPatch,
 }: LogViewProps) {
   const { t } = useTranslation("centre");
   const [avatars, setAvatars] = useState<Record<string, string | null>>({});
@@ -1385,6 +1387,13 @@ export function LogView({
               label: t("log.copyDetails"),
               onClick: () => copyText(formatCommitDetails(commitMenuCommits)),
             },
+            ...(onExportCommitPatch ? [
+              { type: "separator" as const },
+              {
+                label: t(commitMenuCommits.length === 1 ? "log.exportCommitPatch" : "log.exportCommitPatches"),
+                onClick: () => onExportCommitPatch(commitMenuCommits.map(c => c.hash)),
+              },
+            ] : []),
             ...(commitMenuCommits.length === 1 && (onCherryPickAtCommit || onRevertAtCommit || onResetToCommit || onCreateTagAtCommit) ? [
               { type: "separator" as const },
             ] : []),

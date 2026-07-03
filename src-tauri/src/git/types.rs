@@ -317,6 +317,15 @@ pub struct ExportPatchRequest {
     pub files: Vec<ExportPatchFileSelection>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportCommitPatchRequest {
+    pub repo_path: String,
+    pub patch_path: String,
+    #[serde(default)]
+    pub commit_hashes: Vec<String>,
+}
+
 impl Default for Settings {
     fn default() -> Self {
         Self {

@@ -22,6 +22,7 @@ import type {
     DiffRequest,
     FetchRequest,
     ExportPatchRequest,
+    ExportCommitPatchRequest,
     ExternalDiffTool,
     FileDiff,
     FileRequest,
@@ -177,6 +178,10 @@ export function importPatchFile(request: ImportPatchRequest): Promise<OperationR
 
 export function exportPatchFile(request: ExportPatchRequest): Promise<OperationResult> {
     return invoke<OperationResult>("export_patch_file", {request});
+}
+
+export function exportCommitPatchFile(request: ExportCommitPatchRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("export_commit_patch_file", {request});
 }
 
 export function getRepoDiffTool(repoPath: string): Promise<string | null> {

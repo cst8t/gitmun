@@ -9,10 +9,10 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
-    CreateBranchRequest, DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest,
-    ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest,
-    RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, StageFilesRequest,
-    SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
+    CreateBranchRequest, DeleteBranchRequest, ExportCommitPatchRequest, ExportPatchFileSelection,
+    ExportPatchRequest, ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind,
+    PushRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest,
+    StageFilesRequest, SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -229,6 +229,18 @@ fn export_patch_request(
         patch_path: patch_path.to_str().unwrap().to_string(),
         scope,
         files,
+    }
+}
+
+fn export_commit_patch_request(
+    repo: &TempDir,
+    patch_path: &Path,
+    commit_hashes: Vec<String>,
+) -> ExportCommitPatchRequest {
+    ExportCommitPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        commit_hashes,
     }
 }
 
@@ -509,6 +521,95 @@ fn export_selected_honours_staged_and_unstaged_file_selections() {
     assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
     assert!(!output.contains("ignored.txt"));
+}
+
+#[test]
+fn export_commit_patch_contains_selected_commit_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "commit.txt", "first\n");
+    git(dir.path(), &["add", "commit.txt"]);
+    git(dir.path(), &["commit", "-m", "add commit file"]);
+    let hash = head_hash(dir.path());
+
+    let patch = dir.path().join("commit.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
+        .expect("export commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/commit.txt b/commit.txt"));
+    assert!(output.contains("+first"));
+}
+
+#[test]
+fn export_commit_patch_orders_multiple_commits_oldest_first() {
+    let dir = init_repo();
+    write_file(dir.path(), "first.txt", "first\n");
+    git(dir.path(), &["add", "first.txt"]);
+    git(dir.path(), &["commit", "-m", "first"]);
+    let first_hash = head_hash(dir.path());
+    write_file(dir.path(), "second.txt", "second\n");
+    git(dir.path(), &["add", "second.txt"]);
+    git(dir.path(), &["commit", "-m", "second"]);
+    let second_hash = head_hash(dir.path());
+
+    let patch = dir.path().join("commits.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(
+            &dir,
+            &patch,
+            vec![second_hash, first_hash],
+        ))
+        .expect("export commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    let first_index = output.find("diff --git a/first.txt b/first.txt").unwrap();
+    let second_index = output.find("diff --git a/second.txt b/second.txt").unwrap();
+    assert!(first_index < second_index);
+}
+
+#[test]
+fn export_commit_patch_supports_root_commit() {
+    let dir = init_unborn_repo();
+    write_file(dir.path(), "root.txt", "root\n");
+    git(dir.path(), &["add", "root.txt"]);
+    git(dir.path(), &["commit", "-m", "root"]);
+    let hash = head_hash(dir.path());
+
+    let patch = dir.path().join("root.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
+        .expect("export root commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/root.txt b/root.txt"));
+    assert!(output.contains("new file mode"));
+    assert!(output.contains("+root"));
+}
+
+#[test]
+fn export_commit_patch_rejects_empty_selection() {
+    let dir = init_repo();
+    let patch = dir.path().join("empty.patch");
+    let result =
+        handler().export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![]));
+
+    assert!(result.is_err());
+    assert!(!patch.exists());
+}
+
+#[test]
+fn export_commit_patch_rejects_invalid_commit_hash() {
+    let dir = init_repo();
+    let patch = dir.path().join("invalid.patch");
+    let result = handler().export_commit_patch_file(&export_commit_patch_request(
+        &dir,
+        &patch,
+        vec!["not-a-commit".to_string()],
+    ));
+
+    assert!(result.is_err());
+    assert!(!patch.exists());
 }
 
 #[test]

@@ -90,6 +90,8 @@
     "copySubject": "Copy Subject",
     "createTagHere": "Create Tag Here...",
     "currentCheckout": "Current checkout",
+    "exportCommitPatch": "Export Commit Patch...",
+    "exportCommitPatches": "Export Commit Patches...",
     "date": "Date",
     "fingerprint": "Fingerprint",
     "graphCommit": "Commit {{hash}}",
