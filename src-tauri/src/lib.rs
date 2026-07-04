@@ -1515,7 +1515,7 @@ pub fn run() {
             commands::settings::check_for_app_update,
             commands::settings::download_and_install_app_update,
             commands::store_update::check_microsoft_store_update,
-            commands::store_update::request_microsoft_store_update,
+            commands::store_update::open_microsoft_store_update_page,
             commands::settings::get_global_diff_tool,
             commands::settings::get_global_diff_tool_path,
             commands::settings::get_global_default_branch,
