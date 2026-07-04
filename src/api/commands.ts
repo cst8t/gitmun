@@ -9,6 +9,7 @@ import type {
     CommitPrimaryAction,
     CommitVerification,
     CommitRequest,
+    CommitMessageRecovery,
     CreateBranchRequest,
     CherryPickRequest,
     CherryPickResult,
@@ -239,6 +240,10 @@ export function submodulePull(request: SubmoduleActionRequest): Promise<Operatio
 
 export function commitChanges(repoPath: string, message: string, amend?: boolean): Promise<OperationResult> {
     return invoke<OperationResult>("commit_changes", {request: {repoPath, message, amend}});
+}
+
+export function getCommitMessageRecovery(repoPath: string): Promise<CommitMessageRecovery | null> {
+    return invoke<CommitMessageRecovery | null>("get_commit_message_recovery", {request: {repoPath}});
 }
 
 export function fetchRemote(repoPath: string, remote?: string): Promise<OperationResult> {

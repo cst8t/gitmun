@@ -485,6 +485,13 @@ pub struct CommitRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitMessageRecovery {
+    pub message: String,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OperationResult {
     pub message: String,
     pub output: Option<String>,

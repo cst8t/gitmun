@@ -942,6 +942,49 @@ fn commit_preserves_description_and_trailer_like_lines() {
 }
 
 #[test]
+fn commit_message_recovery_reads_commit_editmsg() {
+    let dir = init_repo();
+    let commit_editmsg = git_stdout(dir.path(), &["rev-parse", "--git-path", "COMMIT_EDITMSG"]);
+    fs::write(
+        dir.path().join(commit_editmsg),
+        "Recovered subject\n\nRecovered body\n# ignored comment\n",
+    )
+    .expect("write COMMIT_EDITMSG");
+
+    let recovery = handler()
+        .get_commit_message_recovery(&repo_request(&dir))
+        .expect("get_commit_message_recovery")
+        .expect("recovery message");
+
+    assert_eq!(recovery.message, "Recovered subject\n\nRecovered body");
+    assert!(recovery.updated_at > 0);
+}
+
+#[test]
+fn commit_message_recovery_ignores_missing_or_comment_only_file() {
+    let dir = init_repo();
+    let commit_editmsg = git_stdout(dir.path(), &["rev-parse", "--git-path", "COMMIT_EDITMSG"]);
+    let commit_editmsg_path = dir.path().join(commit_editmsg);
+    fs::remove_file(&commit_editmsg_path).expect("remove COMMIT_EDITMSG");
+
+    assert!(
+        handler()
+            .get_commit_message_recovery(&repo_request(&dir))
+            .expect("missing COMMIT_EDITMSG")
+            .is_none()
+    );
+
+    fs::write(commit_editmsg_path, "# comment only\n\n# still comment\n").expect("write COMMIT_EDITMSG");
+
+    assert!(
+        handler()
+            .get_commit_message_recovery(&repo_request(&dir))
+            .expect("comment-only COMMIT_EDITMSG")
+            .is_none()
+    );
+}
+
+#[test]
 fn commit_history_all_refs_includes_branch_outside_detached_head() {
     let dir = init_repo();
     let init_hash = git_stdout(dir.path(), &["rev-parse", "HEAD"]);

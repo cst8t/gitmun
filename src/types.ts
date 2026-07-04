@@ -249,6 +249,11 @@ export type CommitRequest = RepoRequest & {
     amend?: boolean;
 };
 
+export type CommitMessageRecovery = {
+    message: string;
+    updatedAt: number;
+};
+
 export type CommitHistoryRequest = RepoRequest & {
     limit?: number;
     afterHash?: string;

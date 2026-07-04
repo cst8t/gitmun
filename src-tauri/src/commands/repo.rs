@@ -2,11 +2,12 @@
 use crate::git::types::LinuxTerminalEmulator;
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitRequest, DiffRequest, ExportPatchRequest, ExternalDiffRequest,
-    FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest,
-    ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus, SetIdentityRequest,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
+    CommitMarkers, CommitMessageRecovery, CommitRequest, DiffRequest, ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
+    IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
+    SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
@@ -824,6 +825,17 @@ pub async fn commit_changes(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_commit_message_recovery(
+    request: RepoRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<CommitMessageRecovery>, String> {
+    state
+        .git_service
+        .get_commit_message_recovery(request)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

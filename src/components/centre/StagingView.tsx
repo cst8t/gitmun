@@ -57,7 +57,7 @@ type StagingViewProps = {
   commitMessageRecommendedLength: number;
   allowCommitAndPush: boolean;
   onSelectCommitAction: (action: CommitPrimaryAction) => void;
-  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
+  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
@@ -814,6 +814,7 @@ export function StagingView({
 
       {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
       <CommitBox
+        repoPath={repoPath}
         stagedCount={stagedFiles.length}
         selectedAction={selectedCommitAction}
         commitMessageRecommendedLength={commitMessageRecommendedLength}

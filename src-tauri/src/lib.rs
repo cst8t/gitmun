@@ -1604,6 +1604,7 @@ pub fn run() {
             commands::repo::get_numstat,
             commands::repo::stage_files,
             commands::repo::commit_changes,
+            commands::repo::get_commit_message_recovery,
             commands::repo::get_diff,
             commands::repo::unstage_file,
             commands::repo::unstage_all,
