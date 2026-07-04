@@ -9,18 +9,18 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
-    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffRequest, ExportCommitPatchRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest,
-    FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest,
-    ImportPatchRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
-    PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest,
-    RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest,
-    RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest,
-    SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo,
-    UpstreamStatus,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitMessageRecovery,
+    CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
+    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -1072,6 +1072,14 @@ impl GitOperationHandler for GixGitHandler {
         self.cli_fallback
             .commit_changes(request)
             .map(Self::with_cli_fallback_backend)
+    }
+
+    fn get_commit_message_recovery(
+        &self,
+        request: &RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.get_commit_message_recovery(request)
     }
 
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {

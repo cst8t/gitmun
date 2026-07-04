@@ -603,6 +603,18 @@
 
 .commit-box__hint--error { color: var(--red); }
 
+.commit-box__restore {
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font-size: var(--font-size-xxs);
+  font-family: var(--font-ui);
+  padding: 0;
+  cursor: pointer;
+}
+
+.commit-box__restore:hover { text-decoration: underline; }
+
 .commit-box__counter {
   font-size: var(--font-size-xxs);
   color: var(--text-muted);

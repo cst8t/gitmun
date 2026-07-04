@@ -7,6 +7,15 @@ import type { CommitPrimaryAction } from "../../types";
 import "../../i18n";
 
 const COMMIT_BOX_RATIO_KEY = "gitmun.commitBoxRatio";
+const getCommitMessageRecovery = vi.fn();
+
+vi.mock("../../api/commands", () => ({
+  getCommitMessageRecovery: (...args: unknown[]) => getCommitMessageRecovery(...args),
+}));
+
+function commitMessageDraftKey(repoPath: string) {
+  return `gitmun.commitMessageDraft.v1:${encodeURIComponent(repoPath)}`;
+}
 
 function makeLocalStorage() {
   const store: Record<string, string> = {};
@@ -22,6 +31,7 @@ function makeLocalStorage() {
 }
 
 type RenderCommitBoxOptions = {
+  repoPath?: string | null;
   selectedAction?: CommitPrimaryAction;
   commitMessageRecommendedLength?: number;
   allowCommitAndPush?: boolean;
@@ -31,6 +41,7 @@ type RenderCommitBoxOptions = {
 };
 
 function renderCommitBox({
+  repoPath = "C:\\repo",
   selectedAction = "commit",
   commitMessageRecommendedLength = 72,
   allowCommitAndPush = true,
@@ -44,6 +55,7 @@ function renderCommitBox({
   const view = render(
     <div className="commit-box-test-host">
       <CommitBox
+        repoPath={repoPath}
         stagedCount={2}
         selectedAction={selectedAction}
         commitMessageRecommendedLength={commitMessageRecommendedLength}
@@ -65,6 +77,8 @@ describe("CommitBox", () => {
   beforeEach(() => {
     vi.stubGlobal("localStorage", makeLocalStorage());
     localStorage.removeItem(COMMIT_BOX_RATIO_KEY);
+    getCommitMessageRecovery.mockClear();
+    getCommitMessageRecovery.mockResolvedValue(null);
   });
 
   afterEach(() => {
@@ -82,6 +96,7 @@ describe("CommitBox", () => {
 
     rerender(
       <CommitBox
+        repoPath="C:\\repo"
         stagedCount={2}
         selectedAction="commitAndPush"
         commitMessageRecommendedLength={72}
@@ -139,6 +154,112 @@ describe("CommitBox", () => {
     fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
 
     expect(onCommit).toHaveBeenCalledWith("Subject\n\nBody", false, "commit");
+  });
+
+  it("saves normal commit message drafts while typing", async () => {
+    renderCommitBox({repoPath: "C:\\repo"});
+
+    fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
+      target: { value: "Draft subject" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
+      target: { value: "Draft body" },
+    });
+
+    await waitFor(() => {
+      const draft = JSON.parse(localStorage.getItem(commitMessageDraftKey("C:\\repo")) ?? "null");
+      expect(draft).toMatchObject({subject: "Draft subject", body: "Draft body"});
+    });
+  });
+
+  it("restores saved drafts for the same repo", () => {
+    localStorage.setItem(commitMessageDraftKey("C:\\repo"), JSON.stringify({
+      subject: "Saved subject",
+      body: "Saved body",
+      updatedAt: 1,
+    }));
+
+    renderCommitBox({repoPath: "C:\\repo"});
+
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Saved subject");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Saved body");
+    expect(getCommitMessageRecovery).not.toHaveBeenCalled();
+  });
+
+  it("does not restore a saved draft over a merge message", () => {
+    localStorage.setItem(commitMessageDraftKey("C:\\repo"), JSON.stringify({
+      subject: "Saved subject",
+      body: "Saved body",
+      updatedAt: 1,
+    }));
+
+    renderCommitBox({
+      repoPath: "C:\\repo",
+      mergeInProgress: true,
+      mergeMessage: "Merge branch 'main'\n\n# comment",
+    });
+
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Merge branch 'main'");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("");
+  });
+
+  it("clears drafts after a successful commit", async () => {
+    const { onCommit } = renderCommitBox({repoPath: "C:\\repo"});
+    onCommit.mockResolvedValue(true);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
+      target: { value: "Subject" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
+      target: { value: "Body" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("");
+      expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("");
+      expect(localStorage.getItem(commitMessageDraftKey("C:\\repo"))).toBeNull();
+    });
+  });
+
+  it("keeps drafts visible after a failed commit", async () => {
+    const { onCommit } = renderCommitBox({repoPath: "C:\\repo"});
+    onCommit.mockResolvedValue(false);
+
+    fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
+      target: { value: "Subject" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
+      target: { value: "Body" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
+
+    await waitFor(() => expect(onCommit).toHaveBeenCalled());
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Subject");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Body");
+    expect(localStorage.getItem(commitMessageDraftKey("C:\\repo"))).not.toBeNull();
+  });
+
+  it("offers COMMIT_EDITMSG recovery when no local draft exists", async () => {
+    getCommitMessageRecovery.mockResolvedValue({message: "Recovered subject\n\nRecovered body", updatedAt: 1});
+    renderCommitBox({repoPath: "C:\\repo"});
+
+    const restore = await screen.findByRole("button", {name: "Restore previous message"});
+    fireEvent.click(restore);
+
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Recovered subject");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Recovered body");
+  });
+
+  it("does not offer COMMIT_EDITMSG recovery for the latest commit message", async () => {
+    getCommitMessageRecovery.mockResolvedValue({message: "Latest subject\n\nLatest body", updatedAt: 1});
+    renderCommitBox({
+      repoPath: "C:\\repo",
+      lastCommitMessage: "Latest subject\n\nLatest body",
+    });
+
+    await waitFor(() => expect(getCommitMessageRecovery).toHaveBeenCalled());
+    expect(screen.queryByRole("button", {name: "Restore previous message"})).not.toBeInTheDocument();
   });
 
   it("keeps commit disabled when only the body is present", () => {

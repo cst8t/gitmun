@@ -3,7 +3,6 @@ use std::path::Path;
 use crate::git::types::Settings;
 
 const TEMPLATE: &str = include_str!("../config.example.toml");
-const MANUAL_CONFIG_KEYS: &[&str] = &["enableUpdateWithMSStoreFlow"];
 
 /// Load settings from config.toml, migrating from config.json if needed.
 ///
@@ -126,7 +125,7 @@ fn apply_settings_to_doc(doc: &mut toml_edit::DocumentMut, settings: &Settings) 
                 *v = new_val.clone();
             }
             table.insert_formatted(template_key, new_item);
-        } else if !MANUAL_CONFIG_KEYS.contains(&key) {
+        } else {
             table.insert(key, toml_edit::value(new_val.clone()));
         }
     }
@@ -214,7 +213,7 @@ mod tests {
     }
 
     #[test]
-    fn load_toml_populates_manual_ms_store_update_flow_config() {
+    fn load_toml_ignores_old_ms_store_update_flow_config() {
         let dir = TempDir::new().unwrap();
         let toml_path = dir.path().join("config.toml");
         let json_path = dir.path().join("config.json");
@@ -223,7 +222,11 @@ mod tests {
 
         let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
         assert!(!should_persist);
-        assert!(settings.enable_update_with_ms_store_flow);
+        assert_eq!(
+            settings.backend_mode,
+            crate::git::types::BackendMode::Default
+        );
+        assert!(!settings.show_result_log);
     }
 
     #[test]
@@ -438,16 +441,13 @@ mod tests {
     }
 
     #[test]
-    fn persist_preserves_manual_ms_store_update_flow_config() {
+    fn persist_leaves_old_ms_store_update_flow_config_untouched() {
         let dir = TempDir::new().unwrap();
         let toml_path = dir.path().join("config.toml");
 
         write_file(&toml_path, "enableUpdateWithMSStoreFlow = true\n");
 
-        let mut settings = Settings::default();
-        settings.enable_update_with_ms_store_flow = true;
-
-        persist(&toml_path, &settings).unwrap();
+        persist(&toml_path, &Settings::default()).unwrap();
 
         let updated = std::fs::read_to_string(&toml_path).unwrap();
         assert!(updated.contains("enableUpdateWithMSStoreFlow = true"));

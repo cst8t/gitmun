@@ -59,36 +59,27 @@ export function UpdateDialog({
     ? Math.max(0, Math.min(100, Math.round((downloadedBytes / contentLength) * 100)))
     : null;
   const isMicrosoftStore = update.source === "microsoftStore";
-  const isBusy = phase === "downloading" || phase === "installing" || phase === "storeOpening";
+  const isBusy = phase === "downloading" || phase === "installing";
   const isSuccess = phase === "success";
 
   let title = isMicrosoftStore
     ? t("labels.storePromptTitle")
     : t("labels.promptTitle", { version: update.version });
   let body = isMicrosoftStore ? t("labels.storePromptBody") : t("labels.promptBody");
-  if (phase === "storeOpening") {
-    title = t("labels.storeOpeningTitle");
-    body = t("labels.storeOpeningBody");
-  } else if (phase === "storeDeferred") {
-    title = t("labels.storeDeferredTitle");
-    body = t("labels.storeDeferredBody");
+  if (phase === "storeOpened") {
+    title = t("labels.storeOpenedTitle");
+    body = t("labels.storeOpenedBody");
   } else if (phase === "storeError") {
     title = t("labels.storeFailedTitle");
     body = t("labels.storeFailedBody", { message: errorMessage ?? t("labels.unknownError") });
-  } else if (phase === "downloading") {
-    title = isMicrosoftStore
-      ? t("labels.storeDownloadingTitle")
-      : t("labels.downloadingTitle", { version: update.version });
-    body = isMicrosoftStore
-      ? t("labels.storeDownloadingBody")
-      : hasKnownLength
-        ? t("labels.downloadedOf", { downloaded: formatBytes(downloadedBytes), total: formatBytes(contentLength) })
-        : t("labels.downloaded", { bytes: formatBytes(downloadedBytes) });
-  } else if (phase === "installing") {
-    title = isMicrosoftStore
-      ? t("labels.storeInstallingTitle")
-      : t("labels.installingTitle", { version: update.version });
-    body = isMicrosoftStore ? t("labels.storeInstallingBody") : t("labels.installingBody");
+  } else if (!isMicrosoftStore && phase === "downloading") {
+    title = t("labels.downloadingTitle", { version: update.version });
+    body = hasKnownLength
+      ? t("labels.downloadedOf", { downloaded: formatBytes(downloadedBytes), total: formatBytes(contentLength) })
+      : t("labels.downloaded", { bytes: formatBytes(downloadedBytes) });
+  } else if (!isMicrosoftStore && phase === "installing") {
+    title = t("labels.installingTitle", { version: update.version });
+    body = t("labels.installingBody");
   } else if (isSuccess && !isMicrosoftStore) {
     title = t("labels.installedTitle", { version: update.version });
     body = t("labels.installedBody");
@@ -118,7 +109,7 @@ export function UpdateDialog({
         {errorMessage && !isMicrosoftStore && (
           <div className="update-dialog__error">{errorMessage}</div>
         )}
-        {(phase === "downloading" || phase === "installing" || phase === "storeOpening") && (
+        {(phase === "downloading" || phase === "installing") && (
           <div className="update-dialog__progress">
             <div className={`update-dialog__progress-track${hasKnownLength ? "" : " update-dialog__progress-track--indeterminate"}`}>
               <div
@@ -127,11 +118,9 @@ export function UpdateDialog({
               />
             </div>
             <div className="update-dialog__progress-label">
-              {phase === "storeOpening"
-                ? t("labels.storeOpening")
-                : phase === "installing"
-                  ? t("labels.installing")
-                  : percent == null ? t("labels.downloading") : `${percent}%`}
+              {phase === "installing"
+                ? t("labels.installing")
+                : percent == null ? t("labels.downloading") : `${percent}%`}
             </div>
           </div>
         )}
@@ -155,11 +144,11 @@ export function UpdateDialog({
                 {t("actions.later")}
               </button>
               <button className="update-dialog__btn update-dialog__btn--primary" onClick={onUpdateNow}>
-                {isMicrosoftStore ? t("actions.updateWithMicrosoftStore") : t("actions.updateNow")}
+                {isMicrosoftStore ? t("actions.openMicrosoftStore") : t("actions.updateNow")}
               </button>
             </>
           )}
-          {(isSuccess || phase === "storeDeferred" || phase === "storeError") && (
+          {(isSuccess || phase === "storeOpened" || phase === "storeError") && (
             <button className="update-dialog__btn update-dialog__btn--primary" onClick={onClose}>
               {t("actions.close")}
             </button>

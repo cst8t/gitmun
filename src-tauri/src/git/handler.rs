@@ -8,9 +8,10 @@ use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
     CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
     CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
-    CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
-    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExportCommitPatchRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff,
+    CommitMessageRecovery, CommitPrimaryAction, CommitRequest, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff,
     FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest,
     MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
@@ -30,6 +31,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult>;
     fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult>;
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult>;
+    fn get_commit_message_recovery(
+        &self,
+        request: &RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>>;
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult>;
     fn get_configured_diff_tool(&self, request: &RepoRequest) -> GitResult<Option<String>>;
     fn open_external_diff(&self, request: &ExternalDiffRequest) -> GitResult<OperationResult>;
@@ -412,6 +417,14 @@ impl GitService {
 
     pub fn validate_repo_path(&self, repo_path: &str) -> GitResult<OperationResult> {
         self.active_read_handler().validate_repo_path(repo_path)
+    }
+
+    pub fn get_commit_message_recovery(
+        &self,
+        request: RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>> {
+        self.active_read_handler()
+            .get_commit_message_recovery(&request)
     }
 
     forward_write_methods! {
