@@ -277,8 +277,6 @@ pub struct Settings {
     pub auto_install_updates: bool,
     #[serde(default = "Settings::default_update_endpoint")]
     pub update_endpoint: String,
-    #[serde(default, rename = "enableUpdateWithMSStoreFlow")]
-    pub enable_update_with_ms_store_flow: bool,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
     #[serde(default)]
@@ -342,7 +340,6 @@ impl Default for Settings {
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
-            enable_update_with_ms_store_flow: false,
             linux_graphics_mode: LinuxGraphicsMode::Auto,
             linux_terminal_emulator: LinuxTerminalEmulator::Auto,
             linux_terminal_custom_command: String::new(),
