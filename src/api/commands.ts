@@ -28,6 +28,7 @@ import type {
     FileDiff,
     FileRequest,
     GitIdentity,
+    SshAllowedSignerStatus,
     HunkStageRequest,
     IdentityRequest,
     ImportPatchRequest,
@@ -374,6 +375,14 @@ export function getIdentity(repoPath: string, scope: "Local" | "Global"): Promis
 
 export function setIdentity(request: SetIdentityRequest): Promise<OperationResult> {
     return invoke<OperationResult>("set_identity", {request});
+}
+
+export function getSshAllowedSignerStatus(repoPath: string, scope: "Local" | "Global"): Promise<SshAllowedSignerStatus> {
+    return invoke<SshAllowedSignerStatus>("get_ssh_allowed_signer_status", {request: {repoPath, scope}});
+}
+
+export function addSshSigningKeyToAllowedSigners(repoPath: string, scope: "Local" | "Global"): Promise<OperationResult> {
+    return invoke<OperationResult>("add_ssh_signing_key_to_allowed_signers", {request: {repoPath, scope}});
 }
 
 export function getTags(repoPath: string): Promise<TagInfo[]> {

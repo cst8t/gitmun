@@ -25,9 +25,10 @@ use super::types::{
     PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetMode, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
-    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleState, SubmoduleStatus,
-    TagInfo, UnversionedItem, UnversionedItemKind, UpstreamStatus,
+    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, SshAllowedSignerReason,
+    SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
+    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UnversionedItem,
+    UnversionedItemKind, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -45,6 +46,27 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 impl CliGitHandler {
     const EMPTY_TREE_HASH: &'static str = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+    const SSH_ALLOWED_SIGNERS_ADDED: &'static str = "GITMUN_SSH_ALLOWED_SIGNERS_ADDED";
+    const SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE: &'static str =
+        "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE";
+    const SSH_ALLOWED_SIGNERS_MISSING_EMAIL: &'static str =
+        "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL";
+    const SSH_ALLOWED_SIGNERS_NO_TARGET: &'static str =
+        "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_NO_TARGET";
+    const SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING: &'static str =
+        "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING";
+    const SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED: &'static str =
+        "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED";
+    const PATCH_EXPORT_COMMIT_HASH_EMPTY: &'static str =
+        "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_EMPTY";
+    const PATCH_EXPORT_COMMIT_HASH_INVALID: &'static str =
+        "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID";
+    const PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER: &'static str =
+        "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER";
+    const PATCH_EXPORT_NO_CHANGES: &'static str = "GITMUN_ERROR_PATCH_EXPORT_NO_CHANGES";
+    const PATCH_EXPORT_NO_COMMITS_SELECTED: &'static str =
+        "GITMUN_ERROR_PATCH_EXPORT_NO_COMMITS_SELECTED";
+    const PATCH_EXPORT_WRITTEN: &'static str = "GITMUN_PATCH_EXPORT_WRITTEN";
 
     fn preferred_mime_from_path(file_path: &str) -> Option<String> {
         let mut first: Option<String> = None;
@@ -110,6 +132,178 @@ impl CliGitHandler {
         }
 
         Ok(path)
+    }
+
+    fn identity_scope_flag(scope: &IdentityScope) -> &'static str {
+        match scope {
+            IdentityScope::Local => "--local",
+            IdentityScope::Global => "--global",
+        }
+    }
+
+    fn scoped_config_get(
+        repo_path: &Path,
+        scope: &IdentityScope,
+        key: &str,
+    ) -> GitResult<Option<String>> {
+        let output = Self::run_git_allow_exit_codes(
+            &["config", Self::identity_scope_flag(scope), "--get", key],
+            Some(repo_path),
+            &[1],
+        )?;
+        let trimmed = output.trim();
+        Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
+    }
+
+    fn expand_user_path(path: &str) -> PathBuf {
+        if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
+            if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
+            {
+                return PathBuf::from(home).join(
+                    path.trim_start_matches('~')
+                        .trim_start_matches(|ch| ch == '/' || ch == '\\'),
+                );
+            }
+        }
+        PathBuf::from(path)
+    }
+
+    fn default_global_allowed_signers_path() -> GitResult<PathBuf> {
+        let home = std::env::var_os("HOME")
+            .or_else(|| std::env::var_os("USERPROFILE"))
+            .ok_or_else(|| {
+                GitError::InvalidInput(
+                    Self::SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE.to_string(),
+                )
+            })?;
+        Ok(PathBuf::from(home)
+            .join(".config")
+            .join("git")
+            .join("gitmun_allowed_signers"))
+    }
+
+    fn default_allowed_signers_path(repo_path: &Path, scope: &IdentityScope) -> GitResult<PathBuf> {
+        match scope {
+            IdentityScope::Local => {
+                let output = Self::run_git(
+                    &["rev-parse", "--git-path", "gitmun_allowed_signers"],
+                    Some(repo_path),
+                )?;
+                let path = PathBuf::from(output.trim());
+                Ok(if path.is_absolute() {
+                    path
+                } else {
+                    repo_path.join(path)
+                })
+            }
+            IdentityScope::Global => Self::default_global_allowed_signers_path(),
+        }
+    }
+
+    fn resolve_allowed_signers_path(
+        repo_path: &Path,
+        scope: &IdentityScope,
+        configured: Option<&str>,
+    ) -> GitResult<(PathBuf, bool)> {
+        let Some(configured) = configured.map(str::trim).filter(|value| !value.is_empty()) else {
+            return Ok((Self::default_allowed_signers_path(repo_path, scope)?, false));
+        };
+        let path = Self::expand_user_path(configured);
+        Ok((
+            if path.is_absolute() {
+                path
+            } else {
+                repo_path.join(path)
+            },
+            true,
+        ))
+    }
+
+    fn public_key_identity(key: &str) -> Option<(&str, &str)> {
+        let mut parts = key.split_whitespace();
+        let key_type = parts.next()?;
+        let key_body = parts.next()?;
+        if !(key_type.starts_with("ssh-") || key_type.starts_with("sk-ssh-")) {
+            return None;
+        }
+        Some((key_type, key_body))
+    }
+
+    fn normalise_ssh_public_key(value: &str) -> Option<String> {
+        let trimmed = value.trim();
+        let key = trimmed.strip_prefix("key::").unwrap_or(trimmed).trim();
+        Self::public_key_identity(key)?;
+        Some(key.to_string())
+    }
+
+    fn path_with_pub_suffix(path: &Path) -> PathBuf {
+        let mut value = path.as_os_str().to_os_string();
+        value.push(".pub");
+        PathBuf::from(value)
+    }
+
+    fn resolve_ssh_signing_public_key(signing_key: &str) -> GitResult<String> {
+        if let Some(key) = Self::normalise_ssh_public_key(signing_key) {
+            return Ok(key);
+        }
+
+        let path = Self::expand_user_path(signing_key.trim());
+        if path.exists() {
+            let content = fs::read_to_string(&path)?;
+            if let Some(key) = content.lines().find_map(Self::normalise_ssh_public_key) {
+                return Ok(key);
+            }
+        }
+
+        let pub_path = Self::path_with_pub_suffix(&path);
+        if pub_path.exists() {
+            let content = fs::read_to_string(&pub_path)?;
+            if let Some(key) = content.lines().find_map(Self::normalise_ssh_public_key) {
+                return Ok(key);
+            }
+        }
+
+        Err(GitError::InvalidInput(
+            Self::SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED.to_string(),
+        ))
+    }
+
+    fn allowed_signers_contains_key(content: &str, public_key: &str) -> bool {
+        let Some(expected) = Self::public_key_identity(public_key) else {
+            return false;
+        };
+        content.lines().any(|line| {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                return false;
+            }
+            let mut parts = line.split_whitespace();
+            let _principals = parts.next();
+            matches!((parts.next(), parts.next()), (Some(kind), Some(body)) if (kind, body) == expected)
+        })
+    }
+
+    fn ssh_allowed_signer_status(
+        setup_needed: bool,
+        target_path: Option<&Path>,
+        blocking_reason: Option<String>,
+        allowed_signers_configured: bool,
+        allowed_signers_exists: bool,
+        signing_key_present: bool,
+        signing_key_trusted: bool,
+        reason: SshAllowedSignerReason,
+    ) -> SshAllowedSignerStatus {
+        SshAllowedSignerStatus {
+            setup_needed,
+            target_path: target_path.map(Self::path_to_string),
+            blocking_reason,
+            allowed_signers_configured,
+            allowed_signers_exists,
+            signing_key_present,
+            signing_key_trusted,
+            resolved_public_key_fingerprint: None,
+            reason: Some(reason),
+        }
     }
 
     fn run_git(args: &[&str], current_dir: Option<&Path>) -> GitResult<String> {
@@ -577,12 +771,12 @@ impl CliGitHandler {
         let trimmed = commit_hash.trim();
         if trimmed.is_empty() {
             return Err(GitError::InvalidInput(
-                "Commit hash cannot be empty".to_string(),
+                Self::PATCH_EXPORT_COMMIT_HASH_EMPTY.to_string(),
             ));
         }
         if trimmed.contains('\0') {
             return Err(GitError::InvalidInput(
-                "Commit hash contains an invalid character".to_string(),
+                Self::PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER.to_string(),
             ));
         }
 
@@ -595,7 +789,8 @@ impl CliGitHandler {
         let resolved = output.trim();
         if resolved.is_empty() {
             return Err(GitError::InvalidInput(format!(
-                "Invalid commit hash: {trimmed}"
+                "{}::{trimmed}",
+                Self::PATCH_EXPORT_COMMIT_HASH_INVALID
             )));
         }
 
@@ -710,7 +905,7 @@ impl CliGitHandler {
     ) -> GitResult<String> {
         if request.commit_hashes.is_empty() {
             return Err(GitError::InvalidInput(
-                "No commits selected for patch export".to_string(),
+                Self::PATCH_EXPORT_NO_COMMITS_SELECTED.to_string(),
             ));
         }
 
@@ -2465,14 +2660,14 @@ impl GitOperationHandler for CliGitHandler {
 
         if output.trim().is_empty() {
             return Err(GitError::InvalidInput(
-                "No changes available for patch export".to_string(),
+                Self::PATCH_EXPORT_NO_CHANGES.to_string(),
             ));
         }
 
         fs::write(&patch_path, output.as_bytes())?;
 
         Ok(OperationResult {
-            message: format!("Exported patch file to {}", patch_path.display()),
+            message: Self::PATCH_EXPORT_WRITTEN.to_string(),
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
@@ -2490,14 +2685,14 @@ impl GitOperationHandler for CliGitHandler {
 
         if output.trim().is_empty() {
             return Err(GitError::InvalidInput(
-                "No changes available for patch export".to_string(),
+                Self::PATCH_EXPORT_NO_CHANGES.to_string(),
             ));
         }
 
         fs::write(&patch_path, output.as_bytes())?;
 
         Ok(OperationResult {
-            message: format!("Exported patch file to {}", patch_path.display()),
+            message: Self::PATCH_EXPORT_WRITTEN.to_string(),
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),
@@ -3468,10 +3663,7 @@ impl GitOperationHandler for CliGitHandler {
 
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-        let scope_flag = match request.scope {
-            IdentityScope::Local => "--local",
-            IdentityScope::Global => "--global",
-        };
+        let scope_flag = Self::identity_scope_flag(&request.scope);
 
         let set_or_unset = |key: &str, value: &Option<String>| -> GitResult<()> {
             let Some(raw) = value.as_ref() else {
@@ -3533,6 +3725,186 @@ impl GitOperationHandler for CliGitHandler {
 
         Ok(OperationResult {
             message: "Git identity updated".to_string(),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+        })
+    }
+
+    fn get_ssh_allowed_signer_status(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<SshAllowedSignerStatus> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let signing_format = Self::scoped_config_get(&repo_path, &request.scope, "gpg.format")?;
+        if !signing_format
+            .as_deref()
+            .map(|value| value.eq_ignore_ascii_case("ssh"))
+            .unwrap_or(false)
+        {
+            return Ok(Self::ssh_allowed_signer_status(
+                false,
+                None,
+                None,
+                false,
+                false,
+                false,
+                false,
+                SshAllowedSignerReason::NotSsh,
+            ));
+        }
+
+        let Some(signing_key) =
+            Self::scoped_config_get(&repo_path, &request.scope, "user.signingkey")?
+        else {
+            return Ok(Self::ssh_allowed_signer_status(
+                false,
+                None,
+                None,
+                false,
+                false,
+                false,
+                false,
+                SshAllowedSignerReason::MissingSigningKey,
+            ));
+        };
+
+        if Self::scoped_config_get(&repo_path, &request.scope, "user.email")?.is_none() {
+            return Ok(Self::ssh_allowed_signer_status(
+                false,
+                None,
+                Some(Self::SSH_ALLOWED_SIGNERS_MISSING_EMAIL.to_string()),
+                false,
+                false,
+                true,
+                false,
+                SshAllowedSignerReason::MissingEmail,
+            ));
+        }
+
+        let public_key = match Self::resolve_ssh_signing_public_key(&signing_key) {
+            Ok(public_key) => public_key,
+            Err(_) => {
+                return Ok(Self::ssh_allowed_signer_status(
+                    false,
+                    None,
+                    Some(Self::SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED.to_string()),
+                    false,
+                    false,
+                    true,
+                    false,
+                    SshAllowedSignerReason::UnresolvedSigningKey,
+                ));
+            }
+        };
+
+        let configured_signers =
+            Self::scoped_config_get(&repo_path, &request.scope, "gpg.ssh.allowedSignersFile")?;
+        let (target_path, configured) = Self::resolve_allowed_signers_path(
+            &repo_path,
+            &request.scope,
+            configured_signers.as_deref(),
+        )?;
+        let exists = target_path.exists();
+        if exists {
+            let content = fs::read_to_string(&target_path)?;
+            if Self::allowed_signers_contains_key(&content, &public_key) {
+                return Ok(Self::ssh_allowed_signer_status(
+                    false,
+                    Some(&target_path),
+                    None,
+                    configured,
+                    true,
+                    true,
+                    true,
+                    SshAllowedSignerReason::Trusted,
+                ));
+            }
+        }
+
+        let reason = if configured && !exists {
+            SshAllowedSignerReason::MissingAllowedSignersFile
+        } else {
+            SshAllowedSignerReason::UntrustedSigningKey
+        };
+        Ok(Self::ssh_allowed_signer_status(
+            true,
+            Some(&target_path),
+            None,
+            configured,
+            exists,
+            true,
+            false,
+            reason,
+        ))
+    }
+
+    fn add_ssh_signing_key_to_allowed_signers(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<OperationResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let status = self.get_ssh_allowed_signer_status(request)?;
+        if let Some(reason) = status.blocking_reason {
+            return Err(GitError::InvalidInput(reason));
+        }
+        let Some(target_path) = status.target_path else {
+            return Err(GitError::InvalidInput(
+                Self::SSH_ALLOWED_SIGNERS_NO_TARGET.to_string(),
+            ));
+        };
+
+        let signing_key =
+            match Self::scoped_config_get(&repo_path, &request.scope, "user.signingkey")? {
+                Some(value) => value,
+                None => {
+                    return Err(GitError::InvalidInput(
+                        Self::SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING.to_string(),
+                    ));
+                }
+            };
+        let email = Self::scoped_config_get(&repo_path, &request.scope, "user.email")?.ok_or_else(
+            || {
+                GitError::InvalidInput(
+                    Self::SSH_ALLOWED_SIGNERS_MISSING_EMAIL.to_string(),
+                )
+            },
+        )?;
+        let public_key = Self::resolve_ssh_signing_public_key(&signing_key)?;
+        let target_path = PathBuf::from(target_path);
+
+        if let Some(parent) = target_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+
+        let existing = fs::read_to_string(&target_path).unwrap_or_default();
+        if !Self::allowed_signers_contains_key(&existing, &public_key) {
+            let mut file = fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(&target_path)?;
+            if !existing.is_empty() && !existing.ends_with('\n') {
+                file.write_all(b"\n")?;
+            }
+            file.write_all(format!("{email} {public_key}\n").as_bytes())?;
+        }
+
+        if !status.allowed_signers_configured {
+            let target_path_value = target_path.to_string_lossy().into_owned();
+            Self::run_git(
+                &[
+                    "config",
+                    Self::identity_scope_flag(&request.scope),
+                    "gpg.ssh.allowedSignersFile",
+                    target_path_value.as_str(),
+                ],
+                Some(&repo_path),
+            )?;
+        }
+
+        Ok(OperationResult {
+            message: Self::SSH_ALLOWED_SIGNERS_ADDED.to_string(),
             output: None,
             repo_path: Some(Self::path_to_string(&repo_path)),
             backend_used: "git-cli".to_string(),

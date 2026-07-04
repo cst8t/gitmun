@@ -1180,6 +1180,12 @@
   margin-top: 1px;
 }
 
+.sig-popover__body {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
 .sig-popover__row {
   display: flex;
   flex-direction: column;
@@ -1203,6 +1209,41 @@
 .sig-popover__value--mono {
   font-family: var(--font-mono);
   font-size: var(--font-size-xxs);
+}
+
+.sig-popover__value-with-action {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sig-popover__copy,
+.sig-popover__repair {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xxs);
+  font-weight: var(--font-weight-medium);
+}
+
+.sig-popover__copy {
+  align-self: flex-start;
+  background: transparent;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+}
+
+.sig-popover__repair {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--bg);
+  padding: 5px 8px;
+}
+
+.sig-popover__repair:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }
 
 .merge-banner {

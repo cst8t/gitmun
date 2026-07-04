@@ -5,7 +5,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CommitHistoryItem, CommitMarkers, Settings } from "../../types";
 import "../../i18n";
 import { LogView } from "./LogView";
-import { verifyCommits } from "../../api/commands";
+import {
+  addSshSigningKeyToAllowedSigners,
+  getSshAllowedSignerStatus,
+  verifyCommits,
+} from "../../api/commands";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(async () => null),
@@ -30,6 +34,11 @@ const virtuosoCallbacksEnabled = vi.hoisted(() => ({
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
+  emit: vi.fn(async (event: string) => {
+    for (const listener of eventListeners.get(event) ?? []) {
+      listener({ payload: undefined });
+    }
+  }),
   listen: vi.fn(async (event: string, callback: (event: { payload: unknown }) => void) => {
     const listeners = eventListeners.get(event) ?? [];
     listeners.push(callback);
@@ -41,10 +50,28 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  message: vi.fn(async () => "Ok"),
+}));
+
 vi.mock("../../api/commands", () => ({
+  addSshSigningKeyToAllowedSigners: vi.fn(async () => ({ message: "Added", backendUsed: "git-cli" })),
+  getSshAllowedSignerStatus: vi.fn(async () => ({
+    setupNeeded: false,
+    targetPath: null,
+    blockingReason: null,
+    allowedSignersConfigured: false,
+    allowedSignersExists: false,
+    signingKeyPresent: false,
+    signingKeyTrusted: false,
+    resolvedPublicKeyFingerprint: null,
+    reason: "notSsh",
+  })),
   verifyCommits: vi.fn(async () => []),
 }));
 
+const mockAddSshSigningKeyToAllowedSigners = vi.mocked(addSshSigningKeyToAllowedSigners);
+const mockGetSshAllowedSignerStatus = vi.mocked(getSshAllowedSignerStatus);
 const mockVerifyCommits = vi.mocked(verifyCommits);
 
 function emitEvent(event: string, payload: unknown = undefined) {
@@ -244,6 +271,20 @@ describe("LogView commit selection", () => {
     virtuosoEndReached.current = null;
     virtuosoScrollToIndex.mockClear();
     virtuosoCallbacksEnabled.current = true;
+    mockAddSshSigningKeyToAllowedSigners.mockReset();
+    mockAddSshSigningKeyToAllowedSigners.mockResolvedValue({ message: "Added", backendUsed: "git-cli" });
+    mockGetSshAllowedSignerStatus.mockReset();
+    mockGetSshAllowedSignerStatus.mockResolvedValue({
+      setupNeeded: false,
+      targetPath: null,
+      blockingReason: null,
+      allowedSignersConfigured: false,
+      allowedSignersExists: false,
+      signingKeyPresent: false,
+      signingKeyTrusted: false,
+      resolvedPublicKeyFingerprint: null,
+      reason: "notSsh",
+    });
     mockVerifyCommits.mockReset();
     mockVerifyCommits.mockResolvedValue([]);
     Object.defineProperty(navigator, "clipboard", {
@@ -849,6 +890,86 @@ describe("LogView commit selection", () => {
     expect(await screen.findByText("Verified")).toBeInTheDocument();
     await waitFor(() => expect(mockVerifyCommits).toHaveBeenCalledTimes(2));
     expect(mockVerifyCommits).toHaveBeenLastCalledWith("/repo", [gpgCommit.hash]);
+  });
+
+  it("repairs SSH unknown-key signatures with the configured signing key", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "ssh" });
+    mockVerifyCommits
+      .mockResolvedValueOnce([{
+        hash: signedCommit.hash,
+        status: "unknownKey",
+        signer: "test@gitmun.test",
+        fingerprint: "SHA256:test",
+      }])
+      .mockResolvedValueOnce([{
+        hash: signedCommit.hash,
+        status: "verified",
+        signer: "test@gitmun.test",
+        fingerprint: "SHA256:test",
+      }]);
+    mockGetSshAllowedSignerStatus.mockResolvedValue({
+      setupNeeded: true,
+      targetPath: "/repo/.git/gitmun_allowed_signers",
+      blockingReason: null,
+      allowedSignersConfigured: false,
+      allowedSignersExists: false,
+      signingKeyPresent: true,
+      signingKeyTrusted: false,
+      resolvedPublicKeyFingerprint: null,
+      reason: "untrustedSigningKey",
+    });
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    await screen.findByText("Signed");
+    fireEvent.click(screen.getByRole("button", { name: "Signed" }));
+    const repairButton = await screen.findByRole("button", { name: "Add my SSH signing key" });
+    fireEvent.click(repairButton);
+
+    await waitFor(() => {
+      expect(mockGetSshAllowedSignerStatus).toHaveBeenCalledWith("/repo", "Local");
+      expect(mockAddSshSigningKeyToAllowedSigners).toHaveBeenCalledWith("/repo", "Local");
+      expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("does not offer arbitrary SSH commit trust without configured key material", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "ssh" });
+    mockVerifyCommits.mockResolvedValue([{
+      hash: signedCommit.hash,
+      status: "unknownKey",
+      signer: "test@gitmun.test",
+      fingerprint: "SHA256:test",
+    }]);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    await screen.findByText("Signed");
+    fireEvent.click(screen.getByRole("button", { name: "Signed" }));
+
+    await waitFor(() => expect(mockGetSshAllowedSignerStatus).toHaveBeenCalledWith("/repo", "Global"));
+    expect(screen.queryByRole("button", { name: "Add my SSH signing key" })).not.toBeInTheDocument();
+  });
+
+  it("copies signature signer and fingerprint from the popover", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "ssh" });
+    mockVerifyCommits.mockResolvedValue([{
+      hash: signedCommit.hash,
+      status: "unknownKey",
+      signer: "test@gitmun.test",
+      fingerprint: "SHA256:test",
+    }]);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    await screen.findByText("Signed");
+    fireEvent.click(screen.getByRole("button", { name: "Signed" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Copy signer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy fingerprint" }));
+
+    expect(writeText).toHaveBeenCalledWith("test@gitmun.test");
+    expect(writeText).toHaveBeenCalledWith("SHA256:test");
+    expect(mockAddSshSigningKeyToAllowedSigners).not.toHaveBeenCalled();
   });
 
   it("ignores verification results from an older repo generation", async () => {

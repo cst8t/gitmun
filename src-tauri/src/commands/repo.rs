@@ -7,8 +7,8 @@ use crate::git::types::{
     ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
     IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult,
     PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
-    SetIdentityRequest, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest,
+    SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
@@ -1076,6 +1076,28 @@ pub fn set_identity(
     state
         .git_service
         .set_identity(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_ssh_allowed_signer_status(
+    request: IdentityRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<SshAllowedSignerStatus, String> {
+    state
+        .git_service
+        .get_ssh_allowed_signer_status(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn add_ssh_signing_key_to_allowed_signers(
+    request: IdentityRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .add_ssh_signing_key_to_allowed_signers(request)
         .map_err(|error| error.to_string())
 }
 

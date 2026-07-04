@@ -1626,6 +1626,8 @@ pub fn run() {
             commands::repo::stash_drop,
             commands::repo::get_identity,
             commands::repo::set_identity,
+            commands::repo::get_ssh_allowed_signer_status,
+            commands::repo::add_ssh_signing_key_to_allowed_signers,
             commands::repo::push_changes,
             commands::repo::fetch_avatar,
             commands::branches::get_branches,

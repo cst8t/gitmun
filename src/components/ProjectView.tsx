@@ -114,6 +114,13 @@ function getFileName(path: string): string {
 
 const BUNDLED_GIT_EXTERNAL_TOOL_ERROR = "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::";
 const UNMERGED_BRANCH_DELETE_ERROR = "GITMUN_ERROR_UNMERGED_BRANCH_DELETE";
+const PATCH_EXPORT_NO_CHANGES = "GITMUN_ERROR_PATCH_EXPORT_NO_CHANGES";
+const PATCH_EXPORT_NO_COMMITS_SELECTED = "GITMUN_ERROR_PATCH_EXPORT_NO_COMMITS_SELECTED";
+const PATCH_EXPORT_ERROR_CODES = [
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_EMPTY",
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID",
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER",
+] as const;
 
 function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
   const message = String(error);
@@ -124,6 +131,11 @@ function localiseExternalToolError(error: unknown, t: TFunction<"projectView">):
 
   const tool = message.slice(markerIndex + BUNDLED_GIT_EXTERNAL_TOOL_ERROR.length).trim();
   return t("toast.bundledGitExternalToolUnsupported", { tool });
+}
+
+function localisePatchExportError(message: string, t: TFunction<"projectView">): string {
+  const code = PATCH_EXPORT_ERROR_CODES.find(code => message.includes(code));
+  return code ? t(`patch.errors.${code}`) : message;
 }
 
 export function buildStashDropPrompt(
@@ -312,9 +324,9 @@ export function ProjectView({
   ));
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity } =
+  const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity, refreshIdentity: refreshLocalIdentity } =
     useGitIdentity(repoPath, "Local");
-  const { identity: globalIdentity, saving: globalIdentitySaving, saveIdentity: saveGlobalIdentity } =
+  const { identity: globalIdentity, saving: globalIdentitySaving, saveIdentity: saveGlobalIdentity, refreshIdentity: refreshGlobalIdentity } =
     useGitIdentity(repoPath, "Global");
   const [identityScope, setIdentityScope] = useState<"local" | "global">(() => {
     const stored = localStorage.getItem("gitmun.identityScope");
@@ -1733,13 +1745,14 @@ export function ProjectView({
       appendResultLog("success", result.message, result.backendUsed);
     } catch (e) {
       const message = String(e);
-      if (message.includes("No changes available for patch export")) {
+      if (message.includes(PATCH_EXPORT_NO_CHANGES) || message.includes(PATCH_EXPORT_NO_COMMITS_SELECTED)) {
         showToast(t("toast.noPatchChanges"), "info");
         appendResultLog("info", t("log.noPatchChanges"), "git-cli");
         return;
       }
-      showToast(message, "error");
-      appendResultLog("error", t("log.exportPatchFailed", { message }), "unknown");
+      const displayMessage = localisePatchExportError(message, t);
+      showToast(displayMessage, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message: displayMessage }), "unknown");
     }
   }, [repoPath, selectedPatchFiles, showToast, t]);
 
@@ -1761,16 +1774,17 @@ export function ProjectView({
       const result = await api.exportCommitPatchFile({ repoPath, patchPath: selected, commitHashes });
       const patchName = getFileName(selected);
       showToast(t("toast.patchExported", { file: patchName }), "success");
-      appendResultLog("success", result.message, result.backendUsed);
+      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
     } catch (e) {
       const message = String(e);
-      if (message.includes("No changes available for patch export")) {
+      if (message.includes(PATCH_EXPORT_NO_CHANGES)) {
         showToast(t("toast.noPatchChanges"), "info");
         appendResultLog("info", t("log.noPatchChanges"), "git-cli");
         return;
       }
-      showToast(message, "error");
-      appendResultLog("error", t("log.exportPatchFailed", { message }), "unknown");
+      const displayMessage = localisePatchExportError(message, t);
+      showToast(displayMessage, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message: displayMessage }), "unknown");
     }
   }, [repoPath, showToast, t]);
 
@@ -1783,7 +1797,7 @@ export function ProjectView({
     try {
       const result = await action({ repoPath, path, recursive: false });
       showToast(result.message, "success");
-      appendResultLog("success", result.message, result.backendUsed);
+      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
       await refreshStatus();
     } catch (e) {
       showToast(String(e), "error");
@@ -2237,7 +2251,10 @@ export function ProjectView({
         globalIdentitySaving={globalIdentitySaving}
         onSaveLocalIdentity={handleSaveLocalIdentity}
         onSaveGlobalIdentity={handleSaveGlobalIdentity}
+        onRefreshLocalIdentity={refreshLocalIdentity}
+        onRefreshGlobalIdentity={refreshGlobalIdentity}
         onScopeChange={setIdentityScope}
+        repoPath={repoPath}
       />
 
       {showNoDiffToolWarning && (

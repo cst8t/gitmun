@@ -10,8 +10,9 @@ use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
     CreateBranchRequest, DeleteBranchRequest, ExportCommitPatchRequest, ExportPatchFileSelection,
-    ExportPatchRequest, ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind,
-    PushRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest,
+    ExportPatchRequest, ExportPatchScope, FileRequest, IdentityRequest, IdentityScope,
+    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, RepoStatus, ResetMode,
+    ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest, SshAllowedSignerReason,
     StageFilesRequest, SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
 };
 
@@ -86,6 +87,28 @@ fn file_request(dir: &TempDir, path: &str) -> FileRequest {
         repo_path: dir.path().to_str().unwrap().to_string(),
         file_path: path.to_string(),
     }
+}
+
+fn identity_request(dir: &TempDir) -> IdentityRequest {
+    IdentityRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        scope: IdentityScope::Local,
+    }
+}
+
+fn set_local_identity(dir: &TempDir, email: Option<&str>, signing_key: Option<&str>, format: &str) {
+    handler()
+        .set_identity(&SetIdentityRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            scope: IdentityScope::Local,
+            name: Some("Gitmun Test".to_string()),
+            email: email.map(str::to_string),
+            signing_key: signing_key.map(str::to_string),
+            signing_format: Some(format.to_string()),
+            ssh_key_path: None,
+            commit_signing_enabled: Some(true),
+        })
+        .expect("set identity");
 }
 
 fn handler() -> CliGitHandler {
@@ -1082,6 +1105,289 @@ fn commit_message_recovery_ignores_missing_or_comment_only_file() {
             .get_commit_message_recovery(&repo_request(&dir))
             .expect("comment-only COMMIT_EDITMSG")
             .is_none()
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_status_ignores_non_ssh_signing() {
+    let dir = init_repo();
+    set_local_identity(&dir, Some("test@gitmun.test"), Some("ABC123"), "openpgp");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(status.blocking_reason, None);
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::NotSsh));
+}
+
+#[test]
+fn ssh_allowed_signer_status_requires_signing_key() {
+    let dir = init_repo();
+    set_local_identity(&dir, Some("test@gitmun.test"), None, "ssh");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(status.blocking_reason, None);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::MissingSigningKey)
+    );
+    assert!(!status.signing_key_present);
+}
+
+#[test]
+fn ssh_allowed_signer_adds_inline_key_to_local_default_file() {
+    let dir = init_repo();
+    let key = "key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey test@gitmun.test";
+    set_local_identity(&dir, Some("test@gitmun.test"), Some(key), "ssh");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+    assert!(status.setup_needed);
+    assert!(!status.allowed_signers_configured);
+    assert!(!status.allowed_signers_exists);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::UntrustedSigningKey)
+    );
+    assert!(status.signing_key_present);
+    assert!(!status.signing_key_trusted);
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    let content = fs::read_to_string(&configured).expect("read allowed signers");
+    assert_eq!(
+        content,
+        "test@gitmun.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey test@gitmun.test\n"
+    );
+    assert!(!git_stdout(dir.path(), &["status", "--porcelain"]).contains("gitmun_allowed_signers"));
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_raw_public_key() {
+    let dir = init_repo();
+    let allowed = dir.path().join("allowed_signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIRawKey"),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    assert_eq!(
+        fs::read_to_string(allowed).expect("read allowed signers"),
+        "test@gitmun.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIRawKey\n"
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_reports_configured_missing_file() {
+    let dir = init_repo();
+    let allowed = dir.path().join("missing_allowed_signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMissingFile"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(status.setup_needed);
+    assert!(status.allowed_signers_configured);
+    assert!(!status.allowed_signers_exists);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::MissingAllowedSignersFile)
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_public_key_file() {
+    let dir = init_repo();
+    let public_key = dir.path().join("id_ed25519.pub");
+    fs::write(
+        &public_key,
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFileKey test@gitmun.test\n",
+    )
+    .expect("write public key");
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some(public_key.to_str().unwrap()),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    assert!(
+        fs::read_to_string(configured)
+            .expect("read allowed signers")
+            .contains("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFileKey")
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_private_key_path_with_public_pair() {
+    let dir = init_repo();
+    let private_key = dir.path().join("id_ed25519");
+    fs::write(&private_key, "private key placeholder").expect("write private key");
+    fs::write(
+        dir.path().join("id_ed25519.pub"),
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPairedKey test@gitmun.test\n",
+    )
+    .expect("write public key");
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some(private_key.to_str().unwrap()),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    assert!(
+        fs::read_to_string(configured)
+            .expect("read allowed signers")
+            .contains("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPairedKey")
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_does_not_duplicate_existing_key() {
+    let dir = init_repo();
+    let allowed = dir.path().join("allowed_signers");
+    fs::write(
+        &allowed,
+        "other@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDupeKey other\n",
+    )
+    .expect("write allowed signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDupeKey test"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+    assert!(!status.setup_needed);
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::Trusted));
+    assert!(status.signing_key_trusted);
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+    let content = fs::read_to_string(allowed).expect("read allowed signers");
+    assert_eq!(content.lines().count(), 1);
+}
+
+#[test]
+fn ssh_allowed_signer_requires_email() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--local", "--unset", "user.email"]);
+    set_local_identity(
+        &dir,
+        None,
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINoEmail"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(
+        status.blocking_reason.as_deref(),
+        Some("GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL")
+    );
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::MissingEmail));
+}
+
+#[test]
+fn ssh_allowed_signer_reports_unresolved_signing_key() {
+    let dir = init_repo();
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("missing_id_ed25519"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::UnresolvedSigningKey)
+    );
+    assert!(
+        status
+            .blocking_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED")
     );
 }
 

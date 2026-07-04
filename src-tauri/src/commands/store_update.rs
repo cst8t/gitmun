@@ -102,6 +102,8 @@ mod platform {
         core::w,
     };
 
+    const STORE_OPEN_FAILED: &str = "GITMUN_ERROR_MICROSOFT_STORE_OPEN_FAILED";
+
     fn version_string(version: PackageVersion) -> String {
         format!(
             "{}.{}.{}.{}",
@@ -128,7 +130,7 @@ mod platform {
             )
         };
         if result.0 as isize <= 32 {
-            return Err("Microsoft Store could not be opened.".to_string());
+            return Err(STORE_OPEN_FAILED.to_string());
         }
         Ok(())
     }

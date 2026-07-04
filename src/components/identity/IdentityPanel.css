@@ -271,6 +271,33 @@
   background: rgba(196, 181, 253, 0.1);
 }
 
+.identity-detail__allowed-signers {
+  border-top: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  padding-top: 8px;
+}
+
+.identity-detail__allowed-signers-btn {
+  align-self: flex-end;
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--bg);
+  cursor: pointer;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  padding: 4px 8px;
+}
+
+.identity-detail__allowed-signers-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
 
 
 /* Edit Form */
