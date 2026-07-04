@@ -836,11 +836,11 @@ export function ProjectView({
   const handleCommit = useCallback(async (message: string, amend: boolean) => {
     const operation = startOperation("commit");
     if (!operation) {
-      return;
+      return false;
     }
 
     try {
-      await runCommitRequest(message, amend);
+      return await runCommitRequest(message, amend);
     } finally {
       finishOperation(operation);
     }
@@ -994,15 +994,16 @@ export function ProjectView({
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     const operation = startOperation("commitAndPush");
     if (!operation) {
-      return;
+      return false;
     }
 
     try {
       const committed = await runCommitRequest(message, amend);
       if (!committed) {
-        return;
+        return false;
       }
       await handlePush();
+      return true;
     } finally {
       finishOperation(operation);
     }

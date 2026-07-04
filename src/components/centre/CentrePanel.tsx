@@ -106,7 +106,7 @@ type CentrePanelProps = {
   commitMessageRecommendedLength: number;
   allowCommitAndPush: boolean;
   onSelectCommitAction: (action: CommitPrimaryAction) => void;
-  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
+  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   onMergeAbort: () => void;
   onRebaseContinue: () => void;
   onRebaseAbort: () => void;
@@ -234,7 +234,7 @@ export function CentrePanel(props: CentrePanelProps) {
     const message = props.mergeMessage?.split("\n").find(l => !l.startsWith("#"))?.trim()
       || props.mergeMessage?.trim()
       || "";
-    props.onCommit(message, false, props.selectedCommitAction);
+    void props.onCommit(message, false, props.selectedCommitAction);
   };
 
   return (
