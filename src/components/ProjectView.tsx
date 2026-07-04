@@ -42,6 +42,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
+  BranchInfo,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
@@ -67,7 +68,7 @@ import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
 import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
-import { getRemoteActionState } from "../utils/remoteActionState";
+import { getRemoteActionState, splitUpstreamRef } from "../utils/remoteActionState";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
@@ -148,6 +149,34 @@ export function shouldForceWithLeaseAfterRebase(
   currentBranch: string | null,
 ): boolean {
   return rebasedBranchAwaitingPush !== null && rebasedBranchAwaitingPush === currentBranch;
+}
+
+export function buildPushRequestForCurrentBranch(
+  repoPath: string,
+  currentBranchInfo: BranchInfo | null | undefined,
+  forceWithLease: boolean,
+  pushFollowTags: boolean,
+): PushRequest {
+  const request: PushRequest = {
+    repoPath,
+    forceWithLease,
+    pushFollowTags,
+  };
+
+  if (currentBranchInfo?.upstreamStatus !== "tracked") {
+    return request;
+  }
+
+  const upstream = splitUpstreamRef(currentBranchInfo.upstream);
+  if (!upstream) {
+    return request;
+  }
+
+  return {
+    ...request,
+    remote: upstream.remote,
+    remoteBranch: upstream.branch,
+  };
 }
 
 export type ProjectViewProps = {
@@ -984,12 +1013,17 @@ export function ProjectView({
       return;
     }
 
-    await runPushRequest({
-      repoPath,
-      forceWithLease: forceWithLeaseAfterRebase,
-      pushFollowTags,
-    }, t("toast.pushComplete"), t("toast.pushFailed"));
-  }, [forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
+    await runPushRequest(
+      buildPushRequestForCurrentBranch(
+        repoPath,
+        currentBranchInfo,
+        forceWithLeaseAfterRebase,
+        pushFollowTags,
+      ),
+      t("toast.pushComplete"),
+      t("toast.pushFailed"),
+    );
+  }, [currentBranchInfo, forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     const operation = startOperation("commitAndPush");
