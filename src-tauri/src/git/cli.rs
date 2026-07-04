@@ -13,10 +13,10 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
-    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitMessageRecovery,
+    CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
     FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest,
     IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult,
@@ -513,6 +513,16 @@ impl CliGitHandler {
         Err(GitError::IoError(
             "Could not create a temporary commit message file".to_string(),
         ))
+    }
+
+    fn clean_commit_edit_message(message: &str) -> String {
+        message
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .collect::<Vec<_>>()
+            .join("\n")
+            .trim()
+            .to_string()
     }
 
     fn validate_repo_relative_path(path: &str) -> GitResult<String> {
@@ -2214,6 +2224,44 @@ impl GitOperationHandler for CliGitHandler {
             backend_used: "git-cli".to_string(),
             interpreted_error: None,
         })
+    }
+
+    fn get_commit_message_recovery(
+        &self,
+        request: &RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let path = Self::run_git(
+            &["rev-parse", "--git-path", "COMMIT_EDITMSG"],
+            Some(&repo_path),
+        )?;
+        let path = PathBuf::from(path.trim());
+        let path = if path.is_absolute() {
+            path
+        } else {
+            repo_path.join(path)
+        };
+        if !path.exists() {
+            return Ok(None);
+        }
+
+        let content = fs::read_to_string(&path)?;
+        let message = Self::clean_commit_edit_message(&content);
+        if message.is_empty() {
+            return Ok(None);
+        }
+
+        let updated_at = fs::metadata(&path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .and_then(|modified| modified.duration_since(UNIX_EPOCH).ok())
+            .map(|duration| duration.as_millis() as u64)
+            .unwrap_or(0);
+
+        Ok(Some(CommitMessageRecovery {
+            message,
+            updated_at,
+        }))
     }
 
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {

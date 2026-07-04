@@ -315,14 +315,8 @@ pub fn get_app_update_channel(state: tauri::State<'_, AppState>) -> AppUpdateCha
     }
     #[cfg(target_os = "windows")]
     if crate::is_msix_build() {
-        if state
-            .git_service
-            .get_settings()
-            .enable_update_with_ms_store_flow
-        {
-            return AppUpdateChannel::MicrosoftStore;
-        }
-        return AppUpdateChannel::SystemManaged;
+        let _ = &state;
+        return AppUpdateChannel::MicrosoftStore;
     }
     AppUpdateChannel::SelfManaged
 }

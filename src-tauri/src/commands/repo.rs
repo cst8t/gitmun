@@ -2,7 +2,8 @@
 use crate::git::types::LinuxTerminalEmulator;
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
+    CommitMarkers, CommitMessageRecovery, CommitRequest, DiffRequest, ExportCommitPatchRequest,
+    ExportPatchRequest,
     ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
     IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult,
     PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
@@ -836,6 +837,17 @@ pub async fn commit_changes(
     .await
     .map_err(|e| e.to_string())?
     .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_commit_message_recovery(
+    request: RepoRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<CommitMessageRecovery>, String> {
+    state
+        .git_service
+        .get_commit_message_recovery(request)
+        .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

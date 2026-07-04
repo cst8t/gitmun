@@ -9,6 +9,7 @@ import type {
     CommitPrimaryAction,
     CommitVerification,
     CommitRequest,
+    CommitMessageRecovery,
     CreateBranchRequest,
     CherryPickRequest,
     CherryPickResult,
@@ -62,8 +63,6 @@ import type {
     AppUpdateChannel,
     AvailableUpdate,
     MicrosoftStoreUpdate,
-    MicrosoftStoreUpdateEvent,
-    MicrosoftStoreUpdateResult,
     UpdateDownloadEvent,
     RemoveRemoteRequest,
     RenameRemoteRequest,
@@ -246,6 +245,10 @@ export function submodulePull(request: SubmoduleActionRequest): Promise<Operatio
 
 export function commitChanges(repoPath: string, message: string, amend?: boolean): Promise<OperationResult> {
     return invoke<OperationResult>("commit_changes", {request: {repoPath, message, amend}});
+}
+
+export function getCommitMessageRecovery(repoPath: string): Promise<CommitMessageRecovery | null> {
+    return invoke<CommitMessageRecovery | null>("get_commit_message_recovery", {request: {repoPath}});
 }
 
 export function fetchRemote(repoPath: string, remote?: string): Promise<OperationResult> {
@@ -525,17 +528,8 @@ export function checkMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdate | null
     return invoke<MicrosoftStoreUpdate | null>("check_microsoft_store_update");
 }
 
-export function requestMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdateResult> {
-    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
-    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
-}
-
-export function requestMicrosoftStoreUpdateWithProgress(
-    onProgress: (event: MicrosoftStoreUpdateEvent) => void,
-): Promise<MicrosoftStoreUpdateResult> {
-    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
-    onEvent.onmessage = onProgress;
-    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
+export function openMicrosoftStoreUpdatePage(): Promise<void> {
+    return invoke<void>("open_microsoft_store_update_page");
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {

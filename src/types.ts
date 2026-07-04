@@ -101,7 +101,6 @@ export type Settings = {
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;
-    enableUpdateWithMSStoreFlow?: boolean;
     linuxGraphicsMode: LinuxGraphicsMode;
     linuxTerminalEmulator: LinuxTerminalEmulator;
     linuxTerminalCustomCommand: string;
@@ -186,53 +185,6 @@ export type MicrosoftStoreUpdate = {
     currentVersion: string;
     packageCount: number;
     mandatory: boolean;
-    queueStatus: MicrosoftStoreQueueStatus | null;
-};
-
-export type MicrosoftStoreUpdateStatus =
-    | "Completed"
-    | "Canceled"
-    | "OtherError"
-    | "ErrorWifiRecommended"
-    | "ErrorWifiRequired"
-    | "ErrorLowBattery"
-    | "Unknown";
-
-export type MicrosoftStoreQueueState =
-    | "Active"
-    | "Paused"
-    | "Completed"
-    | "Canceled"
-    | "Error"
-    | "Unknown";
-
-export type MicrosoftStoreUpdateProgress = {
-    packageDownloadProgress: number;
-    totalDownloadProgress: number;
-    packageBytesDownloaded: number;
-    packageDownloadSizeInBytes: number;
-    packageUpdateState: MicrosoftStoreUpdateStatus;
-};
-
-export type MicrosoftStoreQueueStatus = {
-    state: MicrosoftStoreQueueState;
-    extendedState: string;
-    progress: MicrosoftStoreUpdateProgress | null;
-};
-
-export type MicrosoftStoreUpdateEvent =
-    | {
-        event: "Progress";
-        data: MicrosoftStoreUpdateProgress;
-    }
-    | {
-        event: "QueueStatus";
-        data: MicrosoftStoreQueueStatus;
-    };
-
-export type MicrosoftStoreUpdateResult = {
-    status: MicrosoftStoreUpdateStatus;
-    queueStatus: MicrosoftStoreQueueStatus | null;
 };
 
 export type AppAvailableUpdate =
@@ -300,6 +252,11 @@ export type ExportCommitPatchRequest = RepoRequest & {
 export type CommitRequest = RepoRequest & {
     message: string;
     amend?: boolean;
+};
+
+export type CommitMessageRecovery = {
+    message: string;
+    updatedAt: number;
 };
 
 export type CommitHistoryRequest = RepoRequest & {

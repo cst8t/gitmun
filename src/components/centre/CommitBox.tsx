@@ -2,15 +2,22 @@ import React, { useEffect, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { CommitPrimaryAction } from "../../types";
+import { getCommitMessageRecovery } from "../../api/commands";
+import {
+  clearCommitMessageDraft,
+  loadCommitMessageDraft,
+  saveCommitMessageDraft,
+} from "../../utils/commitMessageDraft";
 import { CheckIcon, ChevDownIcon } from "../icons";
 
 type CommitBoxProps = {
+  repoPath: string | null;
   stagedCount: number;
   selectedAction: CommitPrimaryAction;
   commitMessageRecommendedLength: number;
   allowCommitAndPush: boolean;
   onSelectAction: (action: CommitPrimaryAction) => void;
-  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => void;
+  onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   isCommitting: boolean;
   lastCommitMessage: string;
   mergeMessage?: string | null;
@@ -97,6 +104,7 @@ function getCommitBoxStorage(): Storage | null {
 }
 
 export function CommitBox({
+  repoPath,
   stagedCount,
   selectedAction,
   commitMessageRecommendedLength,
@@ -115,6 +123,8 @@ export function CommitBox({
   const [body, setBody] = useState("");
   const [amend, setAmend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
   const [commitBoxHeight, setCommitBoxHeight] = useState<number | null>(null);
   const [dragState, setDragState] = useState<CommitBoxDragState | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -124,16 +134,63 @@ export function CommitBox({
   const activeAction = allowCommitAndPush ? selectedAction : "commit";
 
   useEffect(() => {
+    setDraftReady(false);
+    setRecoveryMessage(null);
+
     if (mergeInProgress && mergeMessage) {
       const cleaned = mergeMessage.split("\n").filter(l => !l.startsWith("#")).join("\n").trim();
       const nextMessage = splitCommitMessage(cleaned);
       setSubject(nextMessage.subject);
       setBody(nextMessage.body);
-    } else if (!mergeInProgress) {
+      setDraftReady(true);
+      return;
+    }
+
+    if (mergeInProgress) {
+      setDraftReady(true);
+      return;
+    }
+
+    if (!repoPath) {
       setSubject("");
       setBody("");
+      setDraftReady(true);
+      return;
     }
-  }, [mergeInProgress, mergeMessage]);
+
+    const draft = loadCommitMessageDraft(repoPath);
+    if (draft) {
+      setSubject(draft.subject);
+      setBody(draft.body);
+      setDraftReady(true);
+      return;
+    }
+
+    setSubject("");
+    setBody("");
+    setDraftReady(true);
+
+    let cancelled = false;
+    getCommitMessageRecovery(repoPath)
+      .then(recovery => {
+        if (!cancelled) {
+          setRecoveryMessage(recovery && recovery.message !== lastCommitMessage ? recovery.message : null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecoveryMessage(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [repoPath, mergeInProgress, mergeMessage, lastCommitMessage]);
+
+  useEffect(() => {
+    if (!repoPath || !draftReady || mergeInProgress || amend) return;
+    saveCommitMessageDraft(repoPath, subject, body);
+  }, [repoPath, subject, body, draftReady, mergeInProgress, amend]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -229,14 +286,29 @@ export function CommitBox({
     }
   };
 
-  const handleCommit = () => {
+  const canRestoreRecovery = recoveryMessage != null && subject === "" && body === "" && !mergeInProgress && !amend;
+
+  const handleRestoreRecovery = () => {
+    if (!recoveryMessage) return;
+    const nextMessage = splitCommitMessage(recoveryMessage);
+    setSubject(nextMessage.subject);
+    setBody(nextMessage.body);
+    setRecoveryMessage(null);
+  };
+
+  const handleCommit = async () => {
     if (actionDisabled) return;
     const message = trimmedBody === "" ? trimmedSubject : `${trimmedSubject}\n\n${trimmedBody}`;
-    onCommit(message, amend, activeAction);
-    setSubject("");
-    setBody("");
-    setAmend(false);
-    setMenuOpen(false);
+    const committed = await onCommit(message, amend, activeAction);
+    if (committed !== false) {
+      setSubject("");
+      setBody("");
+      setAmend(false);
+      setMenuOpen(false);
+      if (repoPath) {
+        clearCommitMessageDraft(repoPath);
+      }
+    }
   };
 
   const handleCommitKeyDown = (
@@ -309,6 +381,15 @@ export function CommitBox({
         </div>
 
         <div className="commit-box__hints">
+          {canRestoreRecovery && (
+            <button
+              type="button"
+              className="commit-box__restore"
+              onClick={handleRestoreRecovery}
+            >
+              {t("commitBox.restorePreviousMessage")}
+            </button>
+          )}
           <span className={`commit-box__hint ${subjectOverflow ? "commit-box__hint--error" : ""}`}>
             {subjectOverflow
               ? t("commitBox.subjectTooLong", {count: commitMessageRecommendedLength})
