@@ -267,3 +267,8 @@
     "patchFilesFilter": "Patch files"
   }
 }
+    "errors": {
+      "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_EMPTY": "Select a commit before exporting a patch.",
+      "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID": "One selected commit could not be found.",
+      "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER": "One selected commit hash contains an invalid character."
+    },

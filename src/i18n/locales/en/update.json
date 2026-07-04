@@ -5,6 +5,9 @@
     "openMicrosoftStore": "Open Microsoft Store",
     "updateNow": "Update now"
   },
+  "errors": {
+    "microsoftStoreOpenFailed": "Microsoft Store could not be opened."
+  },
   "labels": {
     "dontShowAgain": "Don't show this update again",
     "downloaded": "{{bytes}} downloaded",

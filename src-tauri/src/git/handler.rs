@@ -17,8 +17,8 @@ use super::types::{
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, TagInfo, ThemeMode,
+    SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -76,6 +76,14 @@ pub trait GitOperationHandler: Send + Sync {
     fn stash_drop(&self, request: &StashRequest) -> GitResult<OperationResult>;
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity>;
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult>;
+    fn get_ssh_allowed_signer_status(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<SshAllowedSignerStatus>;
+    fn add_ssh_signing_key_to_allowed_signers(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<OperationResult>;
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>>;
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult>;
@@ -452,6 +460,7 @@ impl GitService {
         fn stash_pop(request: StashRequest) -> GitResult<OperationResult>;
         fn stash_drop(request: StashRequest) -> GitResult<OperationResult>;
         fn set_identity(request: SetIdentityRequest) -> GitResult<OperationResult>;
+        fn add_ssh_signing_key_to_allowed_signers(request: IdentityRequest) -> GitResult<OperationResult>;
         fn switch_branch(request: BranchRequest) -> GitResult<OperationResult>;
         fn set_branch_upstream(request: SetBranchUpstreamRequest) -> GitResult<OperationResult>;
         fn delete_branch(request: DeleteBranchRequest) -> GitResult<OperationResult>;
@@ -499,6 +508,7 @@ impl GitService {
         fn get_branches(request: RepoRequest) -> GitResult<Vec<BranchInfo>>;
         fn stash_list(request: RepoRequest) -> GitResult<Vec<StashEntry>>;
         fn get_identity(request: IdentityRequest) -> GitResult<GitIdentity>;
+        fn get_ssh_allowed_signer_status(request: IdentityRequest) -> GitResult<SshAllowedSignerStatus>;
         fn get_tags(request: RepoRequest) -> GitResult<Vec<TagInfo>>;
         fn get_remotes(request: RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     }

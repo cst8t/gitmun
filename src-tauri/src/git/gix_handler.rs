@@ -19,8 +19,8 @@ use super::types::{
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
+    SetRemoteUrlRequest, SignatureStatus, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -1384,6 +1384,24 @@ impl GitOperationHandler for GixGitHandler {
         // We set via CLI to ensure consistency with git's config semantics
         self.cli_fallback
             .set_identity(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn get_ssh_allowed_signer_status(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<SshAllowedSignerStatus> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.get_ssh_allowed_signer_status(request)
+    }
+
+    fn add_ssh_signing_key_to_allowed_signers(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .add_ssh_signing_key_to_allowed_signers(request)
             .map(Self::with_cli_fallback_backend)
     }
 

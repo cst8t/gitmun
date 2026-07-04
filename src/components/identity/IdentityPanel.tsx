@@ -1,43 +1,72 @@
 import React, { useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { emit } from "@tauri-apps/api/event";
+import { ask, message } from "@tauri-apps/plugin-dialog";
 import {
   UserIcon, FolderIcon, GlobeIcon, SwapIcon, ShieldIcon,
   CloseIcon, EditIcon,
 } from "../icons";
-import type { GitIdentity } from "../../types";
+import {
+  addSshSigningKeyToAllowedSigners,
+  getSshAllowedSignerStatus,
+} from "../../api/commands";
+import type { GitIdentity, SshAllowedSignerStatus } from "../../types";
 import "./IdentityPanel.css";
 
 type IdentityTab = "local" | "global" | "profiles";
 
 const PROFILES_ENABLED = false;
 
+const ALLOWED_SIGNERS_ERROR_CODES = [
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_NO_TARGET",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED",
+] as const;
+
+type AllowedSignersErrorCode = typeof ALLOWED_SIGNERS_ERROR_CODES[number];
+
+function extractAllowedSignersErrorCode(value: unknown): AllowedSignersErrorCode | null {
+  const message = String(value);
+  return ALLOWED_SIGNERS_ERROR_CODES.find(code => message.includes(code)) ?? null;
+}
+
 type IdentityPanelProps = {
   open: boolean;
   onClose: () => void;
+  repoPath: string | null;
   localIdentity: GitIdentity | null;
   globalIdentity: GitIdentity | null;
   localIdentitySaving?: boolean;
   globalIdentitySaving?: boolean;
   onSaveLocalIdentity?: (payload: Partial<GitIdentity>) => Promise<void>;
   onSaveGlobalIdentity?: (payload: Partial<GitIdentity>) => Promise<void>;
+  onRefreshLocalIdentity?: () => Promise<void>;
+  onRefreshGlobalIdentity?: () => Promise<void>;
   onScopeChange?: (scope: "local" | "global") => void;
 };
 
 export function IdentityPanel({
   open,
   onClose,
+  repoPath,
   localIdentity,
   globalIdentity,
   localIdentitySaving = false,
   globalIdentitySaving = false,
   onSaveLocalIdentity,
   onSaveGlobalIdentity,
+  onRefreshLocalIdentity,
+  onRefreshGlobalIdentity,
   onScopeChange,
 }: IdentityPanelProps) {
   const { t } = useTranslation("identity");
   const [tab, setTab] = useState<IdentityTab>("local");
   const [editMode, setEditMode] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<GitIdentity>>({});
+  const [allowedSignerStatus, setAllowedSignerStatus] = useState<SshAllowedSignerStatus | null>(null);
+  const [allowedSignerLoading, setAllowedSignerLoading] = useState(false);
 
   const didAutoSelectTabRef = useRef(false);
   const identity = tab === "local" ? localIdentity : globalIdentity;
@@ -51,6 +80,35 @@ export function IdentityPanel({
     sshKeyPath: null,
     commitSigningEnabled: false,
   };
+  const activeScope = tab === "local" ? "Local" : tab === "global" ? "Global" : null;
+  const allowedSignersErrorMessage = React.useCallback((value: unknown) => {
+    const code = extractAllowedSignersErrorCode(value);
+    return code ? t(`allowedSigners.errors.${code}`) : String(value);
+  }, [t]);
+
+  const refreshAllowedSignerStatus = React.useCallback(async () => {
+    if (!open || !repoPath || !activeScope || displayIdentity.signingFormat !== "ssh") {
+      setAllowedSignerStatus(null);
+      return null;
+    }
+
+    setAllowedSignerLoading(true);
+    try {
+      const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+      setAllowedSignerStatus(status);
+      return status;
+    } finally {
+      setAllowedSignerLoading(false);
+    }
+  }, [activeScope, displayIdentity.signingFormat, open, repoPath]);
+
+  const addAllowedSigner = React.useCallback(async () => {
+    if (!repoPath || !activeScope) return;
+    await addSshSigningKeyToAllowedSigners(repoPath, activeScope);
+    await (activeScope === "Local" ? onRefreshLocalIdentity?.() : onRefreshGlobalIdentity?.());
+    await refreshAllowedSignerStatus();
+    await emit("signature-settings-updated");
+  }, [activeScope, onRefreshGlobalIdentity, onRefreshLocalIdentity, refreshAllowedSignerStatus, repoPath]);
 
   React.useEffect(() => {
     if (!open) return;
@@ -93,6 +151,30 @@ export function IdentityPanel({
     }
   }, [tab]);
 
+  React.useEffect(() => {
+    let cancelled = false;
+
+    async function load() {
+      if (!open || !repoPath || !activeScope || displayIdentity.signingFormat !== "ssh") {
+        if (!cancelled) setAllowedSignerStatus(null);
+        return;
+      }
+
+      setAllowedSignerLoading(true);
+      try {
+        const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+        if (!cancelled) setAllowedSignerStatus(status);
+      } finally {
+        if (!cancelled) setAllowedSignerLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeScope, displayIdentity.signingFormat, displayIdentity.signingKey, displayIdentity.sshKeyPath, open, repoPath]);
+
   // Initialise edit form when entering edit mode
   React.useEffect(() => {
     if (!open) return;
@@ -117,9 +199,36 @@ export function IdentityPanel({
     try {
       await onSave(editFormData);
       setEditMode(false);
+      if (!repoPath || !activeScope) return;
+
+      const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+      setAllowedSignerStatus(status);
+      if (status.blockingReason) {
+        await message(allowedSignersErrorMessage(status.blockingReason), {
+          title: t("allowedSigners.setupBlockedTitle"),
+          kind: "error",
+        });
+        return;
+      }
+      if (!status.setupNeeded) return;
+
+      const confirmed = await ask(
+        t("allowedSigners.prompt", {path: status.targetPath}),
+        {
+          title: t("allowedSigners.promptTitle"),
+          kind: "info",
+          okLabel: t("allowedSigners.add"),
+          cancelLabel: t("allowedSigners.notNow"),
+        },
+      );
+      if (!confirmed) return;
+
+      await addAllowedSigner();
     } catch (e) {
-      // Error is handled by the hook
-      console.error(e);
+      await message(allowedSignersErrorMessage(e), {
+        title: t("allowedSigners.setupFailedTitle"),
+        kind: "error",
+      });
     }
   };
 
@@ -196,7 +305,7 @@ export function IdentityPanel({
                         {displayIdentity.commitSigningEnabled ? t("labels.enabled") : t("labels.disabled")}
                       </span>
                     </div>
-                    {displayIdentity.signingKey && (
+                    {(displayIdentity.signingKey || displayIdentity.signingFormat === "ssh") && (
                       <div className="identity-detail__signing-info">
                         <div className="identity-detail__signing-row">
                           <span>{t("labels.format")}</span>
@@ -204,14 +313,48 @@ export function IdentityPanel({
                             {displayIdentity.signingFormat === "ssh" ? "SSH" : "GPG"}
                           </span>
                         </div>
-                        <div className="identity-detail__signing-row">
-                          <span>{displayIdentity.signingFormat === "ssh" ? t("labels.key") : t("labels.keyId")}</span>
-                          <span className="identity-detail__key-value">{displayIdentity.signingKey}</span>
-                        </div>
+                        {displayIdentity.signingKey && (
+                          <div className="identity-detail__signing-row">
+                            <span>{displayIdentity.signingFormat === "ssh" ? t("labels.key") : t("labels.keyId")}</span>
+                            <span className="identity-detail__key-value">{displayIdentity.signingKey}</span>
+                          </div>
+                        )}
                         {displayIdentity.sshKeyPath && (
                           <div className="identity-detail__signing-row">
                             <span>{t("labels.file")}</span>
                             <span className="identity-detail__key-value">{displayIdentity.sshKeyPath}</span>
+                          </div>
+                        )}
+                        {displayIdentity.signingFormat === "ssh" && (
+                          <div className="identity-detail__allowed-signers">
+                            <div className="identity-detail__signing-row">
+                              <span>{t("allowedSigners.configured")}</span>
+                              <span>{allowedSignerStatus?.allowedSignersConfigured ? t("allowedSigners.yes") : t("allowedSigners.no")}</span>
+                            </div>
+                            <div className="identity-detail__signing-row">
+                              <span>{t("allowedSigners.exists")}</span>
+                              <span>{allowedSignerStatus?.allowedSignersExists ? t("allowedSigners.yes") : t("allowedSigners.no")}</span>
+                            </div>
+                            {allowedSignerStatus?.targetPath && (
+                              <div className="identity-detail__signing-row">
+                                <span>{t("allowedSigners.path")}</span>
+                                <span className="identity-detail__key-value">{allowedSignerStatus.targetPath}</span>
+                              </div>
+                            )}
+                            <div className="identity-detail__signing-row">
+                              <span>{t("allowedSigners.keyTrusted")}</span>
+                              <span>{allowedSignerStatus?.signingKeyTrusted ? t("allowedSigners.yes") : t("allowedSigners.no")}</span>
+                            </div>
+                            {allowedSignerStatus?.setupNeeded && (
+                              <button
+                                type="button"
+                                className="identity-detail__allowed-signers-btn"
+                                onClick={addAllowedSigner}
+                                disabled={allowedSignerLoading}
+                              >
+                                {allowedSignerLoading ? t("allowedSigners.adding") : t("allowedSigners.add")}
+                              </button>
+                            )}
                           </div>
                         )}
                       </div>

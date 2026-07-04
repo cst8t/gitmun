@@ -686,6 +686,18 @@ export type GitIdentity = {
     commitSigningEnabled: boolean;
 };
 
+export type SshAllowedSignerStatus = {
+    setupNeeded: boolean;
+    targetPath?: string | null;
+    blockingReason?: string | null;
+    allowedSignersConfigured: boolean;
+    allowedSignersExists: boolean;
+    signingKeyPresent: boolean;
+    signingKeyTrusted: boolean;
+    resolvedPublicKeyFingerprint?: string | null;
+    reason?: "notSsh" | "missingSigningKey" | "missingEmail" | "missingAllowedSignersFile" | "untrustedSigningKey" | "trusted" | "unresolvedSigningKey" | null;
+};
+
 export type SetIdentityRequest = {
     repoPath: string;
     scope: IdentityScope;

@@ -838,6 +838,32 @@ pub struct GitIdentity {
     pub commit_signing_enabled: bool,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshAllowedSignerReason {
+    NotSsh,
+    MissingSigningKey,
+    MissingEmail,
+    MissingAllowedSignersFile,
+    UntrustedSigningKey,
+    Trusted,
+    UnresolvedSigningKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshAllowedSignerStatus {
+    pub setup_needed: bool,
+    pub target_path: Option<String>,
+    pub blocking_reason: Option<String>,
+    pub allowed_signers_configured: bool,
+    pub allowed_signers_exists: bool,
+    pub signing_key_present: bool,
+    pub signing_key_trusted: bool,
+    pub resolved_public_key_fingerprint: Option<String>,
+    pub reason: Option<SshAllowedSignerReason>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum IdentityScope {
     #[serde(rename = "Local", alias = "local")]

@@ -9,6 +9,7 @@ import type {
 } from "../types";
 
 const DISMISSED_UPDATE_VERSION_KEY = "gitmun.dismissedUpdateVersion";
+const STORE_OPEN_FAILED = "GITMUN_ERROR_MICROSOFT_STORE_OPEN_FAILED";
 
 export type UpdateDialogPhase =
   | "prompt"
@@ -73,6 +74,14 @@ function createClosedState(): UpdateDialogState {
     downloadedBytes: 0,
     contentLength: null,
   };
+}
+
+function localiseUpdateError(error: unknown, t: (key: string, options?: Record<string, unknown>) => string): string {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes(STORE_OPEN_FAILED)) {
+    return t("errors.microsoftStoreOpenFailed");
+  }
+  return message;
 }
 
 export function useUpdateFlow() {
@@ -195,7 +204,7 @@ export function useUpdateFlow() {
         } : current);
         setStatusMessage(t("status.storeOpened"));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
+        const message = localiseUpdateError(error, t);
         setDialog((current) => current.update ? {
           ...current,
           phase: "storeError",

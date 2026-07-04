@@ -1,6 +1,7 @@
 import React, { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
+import { message } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
 import type { ListItem, ListRange, VirtuosoHandle } from "react-virtuoso";
@@ -13,8 +14,13 @@ import type {
   RowStriping,
   Settings,
   SignatureStatus,
+  SshAllowedSignerStatus,
 } from "../../types";
-import { verifyCommits } from "../../api/commands";
+import {
+  addSshSigningKeyToAllowedSigners,
+  getSshAllowedSignerStatus,
+  verifyCommits,
+} from "../../api/commands";
 import { buildCommitGraph, type CommitGraphRow } from "../../utils/commitGraph";
 import { ContextMenu } from "../shared/ContextMenu";
 
@@ -81,10 +87,34 @@ function ShieldIcon({ status }: { status: SignatureStatus }) {
   );
 }
 
-function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: () => void }) {
+function copyValue(value: string | null) {
+  if (!value) return;
+  navigator.clipboard?.writeText(value).catch(() => {});
+}
+
+function repairableStatus(status: SshAllowedSignerStatus | null): boolean {
+  return !!status?.setupNeeded && status.signingKeyPresent && !status.signingKeyTrusted;
+}
+
+const ALLOWED_SIGNERS_ERROR_CODES = [
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_NO_TARGET",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING",
+  "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED",
+] as const;
+
+function extractAllowedSignersErrorCode(value: unknown): typeof ALLOWED_SIGNERS_ERROR_CODES[number] | null {
+  const message = String(value);
+  return ALLOWED_SIGNERS_ERROR_CODES.find(code => message.includes(code)) ?? null;
+}
+
+function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; repoPath: string | null; onClose: () => void }) {
   const { t } = useTranslation("centre");
   const ref = useRef<HTMLDivElement>(null);
   const { rect, status, signer, fingerprint, keyType, date } = data;
+  const [repairStatus, setRepairStatus] = useState<{ scope: "Local" | "Global"; status: SshAllowedSignerStatus } | null>(null);
+  const [repairLoading, setRepairLoading] = useState(false);
 
   // Position the popover above the badge, clamped to viewport
   const popoverWidth = 280;
@@ -117,11 +147,61 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
     };
   }, [onClose]);
 
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadRepairStatus() {
+      setRepairStatus(null);
+      if (!repoPath || status !== "unknownKey" || keyType !== "ssh") return;
+
+      const local = await getSshAllowedSignerStatus(repoPath, "Local");
+      if (cancelled) return;
+      if (repairableStatus(local)) {
+        setRepairStatus({ scope: "Local", status: local });
+        return;
+      }
+
+      const global = await getSshAllowedSignerStatus(repoPath, "Global");
+      if (cancelled) return;
+      if (repairableStatus(global)) {
+        setRepairStatus({ scope: "Global", status: global });
+      }
+    }
+
+    loadRepairStatus().catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [keyType, repoPath, status]);
+
+  const handleAddAllowedSigner = async () => {
+    if (!repoPath || !repairStatus) return;
+    setRepairLoading(true);
+    try {
+      await addSshSigningKeyToAllowedSigners(repoPath, repairStatus.scope);
+      await emit("signature-settings-updated");
+      onClose();
+    } catch (error) {
+      const code = extractAllowedSignersErrorCode(error);
+      await message(code ? t(`log.allowedSignersErrors.${code}`) : String(error), {
+        title: t("log.allowedSignersRepairFailed"),
+        kind: "error",
+      });
+    } finally {
+      setRepairLoading(false);
+    }
+  };
+
   const heading =
     status === "verified" ? t("log.signedVerified") :
     status === "bad"      ? t("log.signedBad") :
     status === "unknownKey" ? t("log.signedUnknownKey") :
                             t("log.signedUnverified");
+  const explanation = status === "unknownKey" && keyType === "ssh"
+    ? repairStatus?.status.reason === "missingAllowedSignersFile"
+      ? t("log.sshAllowedSignersMissing")
+      : t("log.sshAllowedSignersUntrusted")
+    : null;
 
   const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
 
@@ -132,10 +212,14 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
         <ShieldIcon status={status} />
         <span>{heading}</span>
       </div>
+      {explanation && <div className="sig-popover__body">{explanation}</div>}
       {signer && (
         <div className="sig-popover__row">
           <span className="sig-popover__label">{t("log.signer")}</span>
-          <span className="sig-popover__value">{signer}</span>
+          <span className="sig-popover__value sig-popover__value-with-action">
+            {signer}
+            <button type="button" className="sig-popover__copy" onClick={() => copyValue(signer)}>{t("log.copySigner")}</button>
+          </span>
         </div>
       )}
       {keyType && (
@@ -147,13 +231,26 @@ function SignaturePopover({ data, onClose }: { data: SigPopoverData; onClose: ()
       {fingerprint && (
         <div className="sig-popover__row">
           <span className="sig-popover__label">{t("log.fingerprint")}</span>
-          <span className="sig-popover__value sig-popover__value--mono">{formatFingerprint(fingerprint)}</span>
+          <span className="sig-popover__value sig-popover__value--mono sig-popover__value-with-action">
+            {formatFingerprint(fingerprint)}
+            <button type="button" className="sig-popover__copy" onClick={() => copyValue(fingerprint)}>{t("log.copyFingerprint")}</button>
+          </span>
         </div>
       )}
       <div className="sig-popover__row">
         <span className="sig-popover__label">{t("log.date")}</span>
         <span className="sig-popover__value">{new Date(date).toLocaleString()}</span>
       </div>
+      {repairStatus && (
+        <button
+          type="button"
+          className="sig-popover__repair"
+          onClick={handleAddAllowedSigner}
+          disabled={repairLoading}
+        >
+          {repairLoading ? t("log.addingAllowedSigner") : t("log.addMySshSigningKey")}
+        </button>
+      )}
     </div>
   );
 }
@@ -1364,7 +1461,7 @@ export function LogView({
           Footer,
         }}
       />
-      {sigPopover && <SignaturePopover data={sigPopover} onClose={handleCloseSigPopover} />}
+      {sigPopover && <SignaturePopover data={sigPopover} repoPath={repoPath} onClose={handleCloseSigPopover} />}
       {commitMenu && commitMenuCommits.length > 0 && (
         <ContextMenu
           x={commitMenu.x}
