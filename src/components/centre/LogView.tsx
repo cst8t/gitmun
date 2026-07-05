@@ -296,8 +296,7 @@ type CommitRowProps = {
 
 const GRAPH_LANE_WIDTH = 12;
 const GRAPH_NODE_RADIUS = 4;
-const MAX_VISIBLE_REF_CHIPS = 2;
-const MAX_REF_LABEL_LENGTH = 8;
+const MAX_VISIBLE_REF_CHIPS = 4;
 const MAX_VERIFICATION_BATCH_SIZE = 20;
 const BACKGROUND_VERIFICATION_PUMP_DELAY_MS = 25;
 
@@ -454,18 +453,9 @@ function refTitle(
   return t("log.tagRef", { name: decoration.name });
 }
 
-function refClass(kind: CommitRefKind): string {
-  return `log-view__ref log-view__ref--${kind}`;
-}
-
-function compactRefName(name: string): string {
-  if (name.length <= MAX_REF_LABEL_LENGTH) return name;
-  return `${name.slice(0, MAX_REF_LABEL_LENGTH - 3)}...`;
-}
-
 function refPriority(kind: CommitRefKind): number {
   if (kind === "localBranch") return 0;
-  if (kind === "tag") return 1;
+  if (kind === "remoteBranch") return 1;
   return 2;
 }
 
@@ -479,20 +469,30 @@ type CommitRefChip = {
   key: string;
   label: string;
   title: string;
-  className: string;
-  compact: boolean;
+  kind: CommitRefKind | "head" | "upstream";
+  marker: string;
 };
+
+function chipPriority(kind: CommitRefChip["kind"]): number {
+  if (kind === "head") return 0;
+  if (kind === "localBranch") return 1;
+  if (kind === "upstream") return 2;
+  if (kind === "remoteBranch") return 3;
+  return 4;
+}
 
 function CommitRefChips({
   decorations,
   isHead,
   isUpstream,
   upstreamRef,
+  variant = "inline",
 }: {
   decorations: CommitRefDecoration[];
   isHead: boolean;
   isUpstream: boolean;
   upstreamRef: string | null | undefined;
+  variant?: "inline" | "prominent";
 }) {
   const { t } = useTranslation("centre");
   const markerNames = new Set<string>();
@@ -502,9 +502,9 @@ function CommitRefChips({
     chips.push({
       key: "head",
       label: "HEAD",
-      title: "HEAD",
-      className: "log-view__ref log-view__marker log-view__marker--head",
-      compact: false,
+      title: t("log.currentCheckout"),
+      kind: "head",
+      marker: "@",
     });
   }
 
@@ -514,9 +514,9 @@ function CommitRefChips({
     chips.push({
       key: "upstream",
       label,
-      title: label,
-      className: "log-view__ref log-view__marker log-view__marker--upstream",
-      compact: true,
+      title: refTitle({ name: label, kind: "remoteBranch" }, t),
+      kind: "upstream",
+      marker: "U",
     });
   }
 
@@ -526,24 +526,28 @@ function CommitRefChips({
       key: `${decoration.kind}-${decoration.name}`,
       label: decoration.name,
       title: refTitle(decoration, t),
-      className: refClass(decoration.kind),
-      compact: true,
+      kind: decoration.kind,
+      marker: decoration.kind === "localBranch" ? "L" : decoration.kind === "remoteBranch" ? "R" : "T",
     });
   }
 
   if (chips.length === 0) return null;
-  const visible = chips.slice(0, MAX_VISIBLE_REF_CHIPS);
-  const hidden = chips.slice(MAX_VISIBLE_REF_CHIPS);
+  const orderedChips = chips.sort((a, b) => (
+    chipPriority(a.kind) - chipPriority(b.kind) || a.label.localeCompare(b.label)
+  ));
+  const visible = orderedChips.slice(0, MAX_VISIBLE_REF_CHIPS);
+  const hidden = orderedChips.slice(MAX_VISIBLE_REF_CHIPS);
 
   return (
-    <div className="log-view__refs" aria-label={t("log.commitRefs")}>
+    <div className={`log-view__refs log-view__refs--${variant}`} aria-label={t("log.commitRefs")}>
       {visible.map(chip => (
         <span
           key={chip.key}
-          className={chip.className}
+          className={`log-view__ref log-view__ref--${chip.kind}`}
           title={chip.title}
         >
-          {chip.compact ? compactRefName(chip.label) : chip.label}
+          <span className="log-view__ref-marker" aria-hidden="true">{chip.marker}</span>
+          <span className="log-view__ref-label">{chip.label}</span>
         </span>
       ))}
       {hidden.length > 0 && (
@@ -589,6 +593,7 @@ const CommitRow = React.memo(function CommitRow({
     e.preventDefault();
     onContextMenu(c.hash, index, e.clientX, e.clientY);
   }, [onContextMenu, c.hash, index]);
+  const showProminentRefs = isSelected || isHead;
   useEffect(() => {
     if (c.signatureStatus === "signed") onVisibleSignedCommit(index);
   }, [c.hash, c.signatureStatus, index, onVisibleSignedCommit]);
@@ -627,14 +632,25 @@ const CommitRow = React.memo(function CommitRow({
         <div className="log-view__subject-row">
           <div className="log-view__message">{c.message}</div>
         </div>
-        <div className="log-view__meta">
-          <span className="log-view__hash">{c.shortHash}</span>
+        {showProminentRefs && (
           <CommitRefChips
             decorations={c.refDecorations}
             isHead={isHead}
             isUpstream={isUpstream}
             upstreamRef={upstreamRef}
+            variant="prominent"
           />
+        )}
+        <div className="log-view__meta">
+          <span className="log-view__hash">{c.shortHash}</span>
+          {!showProminentRefs && (
+            <CommitRefChips
+              decorations={c.refDecorations}
+              isHead={isHead}
+              isUpstream={isUpstream}
+              upstreamRef={upstreamRef}
+            />
+          )}
           <SignatureBadge
             status={effectiveSigStatus}
             onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
