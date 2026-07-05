@@ -944,16 +944,31 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  flex: 0 1 auto;
   min-width: 0;
-  max-width: min(42%, 150px);
+  max-width: 100%;
   overflow: hidden;
+}
+
+.log-view__refs--inline {
+  flex: 0 1 auto;
+}
+
+.log-view__refs--prominent {
+  display: flex;
+  width: 100%;
+  margin-top: 3px;
+}
+
+.log-view__refs--prominent .log-view__ref {
+  transition: max-width 0.1s ease;
 }
 
 .log-view__ref {
   display: inline-flex;
   align-items: center;
-  max-width: 58px;
+  gap: 3px;
+  max-width: 14ch;
+  min-width: 0;
   padding: 1px 5px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-subtle);
@@ -962,6 +977,16 @@
   font-size: var(--font-size-xxs);
   font-family: var(--font-mono);
   white-space: nowrap;
+  overflow: hidden;
+}
+
+.log-view__ref-marker {
+  flex-shrink: 0;
+  opacity: 0.75;
+}
+
+.log-view__ref-label {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -972,13 +997,53 @@
   border-color: var(--diff-add-border);
 }
 
+.log-view__ref--head {
+  max-width: none;
+  color: var(--green);
+  background: var(--green-dim);
+  border-color: var(--diff-add-border);
+  flex-shrink: 0;
+}
+
 .log-view__ref--remoteBranch {
+  max-width: 24ch;
   color: var(--accent);
   background: var(--accent-dim);
   border-color: var(--selection-border);
 }
 
+.log-view__ref--upstream {
+  max-width: 24ch;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--selection-border);
+}
+
+.log-view__refs--prominent .log-view__ref--remoteBranch,
+.log-view__refs--prominent .log-view__ref--upstream {
+  max-width: 34ch;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .log-view__refs--prominent:has(.log-view__ref:not(.log-view__ref--head):not(.log-view__ref--more):hover)
+  .log-view__ref:not(:hover):not(.log-view__ref--head):not(.log-view__ref--more) {
+    max-width: 10ch;
+  }
+
+  .log-view__refs--prominent:has(.log-view__ref:not(.log-view__ref--head):not(.log-view__ref--more):hover)
+  .log-view__ref--remoteBranch:not(:hover),
+  .log-view__refs--prominent:has(.log-view__ref:not(.log-view__ref--head):not(.log-view__ref--more):hover)
+  .log-view__ref--upstream:not(:hover) {
+    max-width: 16ch;
+  }
+
+  .log-view__refs--prominent .log-view__ref:hover:not(.log-view__ref--head):not(.log-view__ref--more) {
+    max-width: 42ch;
+  }
+}
+
 .log-view__ref--tag {
+  max-width: 14ch;
   color: var(--yellow);
   background: var(--bg-elevated);
   border-color: var(--yellow);
@@ -1002,28 +1067,7 @@
   font-size: var(--font-size-xs);
   color: var(--accent);
   opacity: 0.7;
-}
-
-.log-view__marker {
-  font-size: var(--font-size-xxs);
-  font-family: var(--font-mono);
-  font-weight: var(--font-weight-bold);
-  letter-spacing: 0.03em;
-  padding: 1px 6px;
-  border-radius: 999px;
-  border: 1px solid transparent;
-}
-
-.log-view__marker--head {
-  color: var(--green);
-  background: var(--green-dim);
-  border-color: var(--diff-add-border);
-}
-
-.log-view__marker--upstream {
-  color: var(--accent);
-  background: var(--accent-dim);
-  border-color: var(--selection-border);
+  flex-shrink: 0;
 }
 
 .log-view__sig-badge {

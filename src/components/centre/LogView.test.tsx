@@ -228,6 +228,16 @@ function rowFor(subject: string): HTMLElement {
   return row as HTMLElement;
 }
 
+function prominentRefLabelsFor(subject: string): string[] {
+  return Array.from(rowFor(subject).querySelectorAll(".log-view__refs--prominent .log-view__ref-label"))
+    .map(label => label.textContent ?? "");
+}
+
+function inlineRefLabelsFor(subject: string): string[] {
+  return Array.from(rowFor(subject).querySelectorAll(".log-view__meta .log-view__refs--inline .log-view__ref-label"))
+    .map(label => label.textContent ?? "");
+}
+
 function renderLog(overrides: Partial<React.ComponentProps<typeof LogView>> = {}) {
   const commits = overrides.commits ?? [commit(1), commit(2), commit(3)];
   const commitMarkers: CommitMarkers = {
@@ -426,7 +436,7 @@ describe("LogView commit selection", () => {
     expect(rowFor("Subject 1")).toHaveTextContent("main");
   });
 
-  it("keeps commit ref decorations compact", () => {
+  it("shows up to four commit ref decorations before overflow", () => {
     renderLog({
       commits: [
         commit(1, {
@@ -439,17 +449,16 @@ describe("LogView commit selection", () => {
       ],
     });
 
-    expect(rowFor("Subject 1")).toHaveTextContent("main");
-    expect(rowFor("Subject 1")).toHaveTextContent("v1.0.0");
-    expect(rowFor("Subject 1")).toHaveTextContent("+1");
-    expect(rowFor("Subject 1")).not.toHaveTextContent("origin/main");
+    expect(prominentRefLabelsFor("Subject 1")).toEqual(["main", "origin/main", "v1.0.0"]);
+    expect(rowFor("Subject 1")).not.toHaveTextContent("+1");
   });
 
-  it("counts head and upstream markers in the compact ref limit", () => {
+  it("renders selected checkout refs on a prominent ref line", () => {
     const targetCommit = commit(1, {
       refDecorations: [
         { name: "main", kind: "localBranch" },
         { name: "origin/main", kind: "remoteBranch" },
+        { name: "v1.0.0", kind: "tag" },
       ],
     });
     renderLog({
@@ -461,28 +470,124 @@ describe("LogView commit selection", () => {
       },
     });
 
-    const labels = Array.from(rowFor("Subject 1").querySelectorAll(".log-view__refs > span"))
-      .map(label => label.textContent);
+    const row = rowFor("Subject 1");
+    const refs = Array.from(row.querySelectorAll(".log-view__refs--prominent > span"));
 
-    expect(labels).toEqual(["HEAD", "origi...", "+1"]);
-    expect(screen.getByTitle("origin/main")).toBeInTheDocument();
-    expect(screen.getByTitle("1 more refs: main")).toBeInTheDocument();
+    expect(prominentRefLabelsFor("Subject 1")).toEqual(["HEAD", "main", "origin/main", "v1.0.0"]);
+    expect(inlineRefLabelsFor("Subject 1")).toEqual([]);
+    expect(refs.map(ref => Array.from(ref.classList))).toEqual([
+      expect.arrayContaining(["log-view__ref--head"]),
+      expect.arrayContaining(["log-view__ref--localBranch"]),
+      expect.arrayContaining(["log-view__ref--upstream"]),
+      expect.arrayContaining(["log-view__ref--tag"]),
+    ]);
+    expect(screen.getByTitle("Current checkout")).toBeInTheDocument();
+    expect(screen.getByTitle("Remote branch origin/main")).toBeInTheDocument();
+    expect(row).not.toHaveTextContent("+1");
   });
 
-  it("abbreviates long commit ref labels", () => {
+  it("keeps unselected non-checkout refs inline in the meta row", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+      ],
+    });
+    const selectedCommit = commit(2);
+
+    renderLog({
+      commits: [targetCommit, selectedCommit],
+      selectedCommitHash: selectedCommit.hash,
+    });
+
+    expect(inlineRefLabelsFor("Subject 1")).toEqual(["main", "origin/main"]);
+    expect(prominentRefLabelsFor("Subject 1")).toEqual([]);
+  });
+
+  it("keeps long remote ref labels visible and exposes the full label in the title", () => {
+    const remoteName = "origin/feature/long-branch-label";
+
     renderLog({
       commits: [
         commit(1, {
           refDecorations: [
-            { name: "0.8.0-develop", kind: "localBranch" },
+            { name: remoteName, kind: "remoteBranch" },
           ],
         }),
       ],
     });
 
-    expect(rowFor("Subject 1")).toHaveTextContent("0.8.0...");
-    expect(rowFor("Subject 1")).not.toHaveTextContent("0.8.0-develop");
-    expect(screen.getByTitle("Local branch 0.8.0-develop")).toBeInTheDocument();
+    expect(prominentRefLabelsFor("Subject 1")).toEqual([remoteName]);
+    expect(screen.getByTitle(`Remote branch ${remoteName}`)).toBeInTheDocument();
+  });
+
+  it("lists overflow refs in priority order", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "release", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+        { name: "origin/feature-a", kind: "remoteBranch" },
+        { name: "v1.0.0", kind: "tag" },
+        { name: "v2.0.0", kind: "tag" },
+      ],
+    });
+
+    renderLog({
+      commits: [targetCommit],
+      commitMarkers: {
+        localHead: targetCommit.hash,
+        upstreamHead: null,
+        upstreamRef: null,
+      },
+    });
+
+    expect(prominentRefLabelsFor("Subject 1")).toEqual(["HEAD", "main", "release", "origin/feature-a"]);
+    expect(screen.getByTitle("3 more refs: origin/main, v1.0.0, v2.0.0")).toBeInTheDocument();
+  });
+
+  it("suppresses the duplicate upstream remote decoration on prominent ref rows", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+      ],
+    });
+
+    renderLog({
+      commits: [targetCommit],
+      commitMarkers: {
+        localHead: targetCommit.hash,
+        upstreamHead: targetCommit.hash,
+        upstreamRef: "origin/main",
+      },
+    });
+
+    expect(prominentRefLabelsFor("Subject 1")).toEqual(["HEAD", "main", "origin/main"]);
+    expect(rowFor("Subject 1")).not.toHaveTextContent("+1");
+  });
+
+  it("suppresses the duplicate upstream remote decoration on inline ref rows", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+      ],
+    });
+    const selectedCommit = commit(2);
+
+    renderLog({
+      commits: [targetCommit, selectedCommit],
+      selectedCommitHash: selectedCommit.hash,
+      commitMarkers: {
+        localHead: null,
+        upstreamHead: targetCommit.hash,
+        upstreamRef: "origin/main",
+      },
+    });
+
+    expect(inlineRefLabelsFor("Subject 1")).toEqual(["main", "origin/main"]);
+    expect(prominentRefLabelsFor("Subject 1")).toEqual([]);
   });
 
   it("renders an explicit load more footer instead of wiring automatic end reached loading", () => {
