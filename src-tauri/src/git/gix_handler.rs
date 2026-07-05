@@ -9,16 +9,17 @@ use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
     CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitRefDecoration,
-    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    DiffRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
-    FileStatusItem, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
-    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
-    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
-    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
-    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
-    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, StageFilesRequest, StashEntry,
+    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitMessageRecovery,
+    CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
+    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, SignatureStatus, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
     StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
 };
 
@@ -59,6 +60,35 @@ impl GixGitHandler {
 
     fn bstr_to_string(value: &gix::bstr::BStr) -> String {
         String::from_utf8_lossy(value.as_ref()).to_string()
+    }
+
+    fn collapse_unversioned_path(repo_path: &Path, path: &str, tracked_paths: &[String]) -> String {
+        let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
+        if parts.len() <= 1 {
+            return if repo_path.join(path).is_dir() && !path.ends_with('/') {
+                format!("{path}/")
+            } else {
+                path.to_string()
+            };
+        }
+
+        for index in 0..parts.len() - 1 {
+            let candidate = parts[..=index].join("/");
+            let has_tracked_descendant = tracked_paths.iter().any(|tracked_path| {
+                tracked_path == &candidate
+                    || tracked_path
+                        .strip_prefix(&candidate)
+                        .map(|rest| rest.starts_with('/'))
+                        .unwrap_or(false)
+            });
+            if repo_path.join(&candidate).is_dir()
+                && !has_tracked_descendant
+            {
+                return format!("{candidate}/");
+            }
+        }
+
+        path.to_string()
     }
 
     fn mailmap_identity(
@@ -794,6 +824,17 @@ impl GixGitHandler {
         let mut changed_by_path: HashMap<String, &'static str> = HashMap::new();
         let mut staged_by_path: HashMap<String, &'static str> = HashMap::new();
         let mut unversioned_paths: HashSet<String> = HashSet::new();
+        let repo_path = repo.workdir().unwrap_or(repo.path());
+        let tracked_paths: Vec<String> = repo
+            .index()
+            .map(|index| {
+                index
+                    .entries()
+                    .iter()
+                    .map(|entry| Self::bstr_to_string(entry.path(&index)))
+                    .collect()
+            })
+            .unwrap_or_default();
 
         let mut status_iter = repo
             .status(gix::progress::Discard)
@@ -810,8 +851,12 @@ impl GixGitHandler {
                         &worktree_item
                     {
                         if matches!(entry.status, gix::dir::entry::Status::Untracked) {
-                            unversioned_paths
-                                .insert(Self::bstr_to_string(entry.rela_path.as_ref()));
+                            let path = Self::bstr_to_string(entry.rela_path.as_ref());
+                            unversioned_paths.insert(Self::collapse_unversioned_path(
+                                repo_path,
+                                &path,
+                                &tracked_paths,
+                            ));
                             continue;
                         }
                     }
@@ -851,7 +896,6 @@ impl GixGitHandler {
             .collect();
         staged_files.sort_by(|left, right| left.path.cmp(&right.path));
 
-        let repo_path = repo.workdir().unwrap_or(repo.path());
         let unstaged_stats = Self::collect_numstat(repo_path, false);
         let staged_stats = Self::collect_numstat(repo_path, true);
 
@@ -919,6 +963,7 @@ impl GixGitHandler {
             changed_files,
             staged_files,
             unversioned_files,
+            unversioned_items: vec![],
             submodules: CliGitHandler::collect_submodules_for_status(repo_path),
             current_branch: Self::current_branch(repo),
             detached_head: matches!(repo.head_name(), Ok(None)),
@@ -934,6 +979,7 @@ impl GixGitHandler {
             revert_in_progress,
             revert_head,
         };
+        CliGitHandler::refresh_unversioned_items(&mut status, repo_path);
         CliGitHandler::remove_submodule_file_entries(&mut status);
         Ok(status)
     }
@@ -1028,6 +1074,14 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
+    fn get_commit_message_recovery(
+        &self,
+        request: &RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.get_commit_message_recovery(request)
+    }
+
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
@@ -1075,6 +1129,16 @@ impl GitOperationHandler for GixGitHandler {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback
             .export_patch_file(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn export_commit_patch_file(
+        &self,
+        request: &ExportCommitPatchRequest,
+    ) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .export_commit_patch_file(request)
             .map(Self::with_cli_fallback_backend)
     }
 
@@ -1320,6 +1384,24 @@ impl GitOperationHandler for GixGitHandler {
         // We set via CLI to ensure consistency with git's config semantics
         self.cli_fallback
             .set_identity(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
+    fn get_ssh_allowed_signer_status(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<SshAllowedSignerStatus> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.get_ssh_allowed_signer_status(request)
+    }
+
+    fn add_ssh_signing_key_to_allowed_signers(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .add_ssh_signing_key_to_allowed_signers(request)
             .map(Self::with_cli_fallback_backend)
     }
 

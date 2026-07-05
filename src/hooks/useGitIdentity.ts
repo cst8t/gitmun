@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getIdentity, setIdentity as setIdentityApi } from "../api/commands";
 import type { GitIdentity, IdentityScope, SetIdentityRequest } from "../types";
 
@@ -8,20 +8,48 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const refreshIdentity = useCallback(async () => {
     if (!repoPath) {
       setIdentity(null);
       return;
     }
 
-    let cancelled = false;
     setLoading(true);
     setError(null);
 
-    getIdentity(repoPath, scope)
-      .then(id => { if (!cancelled) setIdentity(id); })
-      .catch(e => { if (!cancelled) setError(String(e)); })
-      .finally(() => { if (!cancelled) setLoading(false); });
+    try {
+      const id = await getIdentity(repoPath, scope);
+      setIdentity(id);
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setLoading(false);
+    }
+  }, [repoPath, scope]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!repoPath) {
+        setIdentity(null);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+
+      try {
+        const id = await getIdentity(repoPath, scope);
+        if (!cancelled) setIdentity(id);
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+
+    void load();
 
     return () => { cancelled = true; };
   }, [repoPath, scope]);
@@ -42,5 +70,5 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
     }
   };
 
-  return { identity, loading, saving, error, saveIdentity };
+  return { identity, loading, saving, error, saveIdentity, refreshIdentity };
 }

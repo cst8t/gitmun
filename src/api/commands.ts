@@ -9,6 +9,7 @@ import type {
     CommitPrimaryAction,
     CommitVerification,
     CommitRequest,
+    CommitMessageRecovery,
     CreateBranchRequest,
     CherryPickRequest,
     CherryPickResult,
@@ -22,10 +23,12 @@ import type {
     DiffRequest,
     FetchRequest,
     ExportPatchRequest,
+    ExportCommitPatchRequest,
     ExternalDiffTool,
     FileDiff,
     FileRequest,
     GitIdentity,
+    SshAllowedSignerStatus,
     HunkStageRequest,
     IdentityRequest,
     ImportPatchRequest,
@@ -61,8 +64,6 @@ import type {
     AppUpdateChannel,
     AvailableUpdate,
     MicrosoftStoreUpdate,
-    MicrosoftStoreUpdateEvent,
-    MicrosoftStoreUpdateResult,
     UpdateDownloadEvent,
     RemoveRemoteRequest,
     RenameRemoteRequest,
@@ -179,6 +180,10 @@ export function exportPatchFile(request: ExportPatchRequest): Promise<OperationR
     return invoke<OperationResult>("export_patch_file", {request});
 }
 
+export function exportCommitPatchFile(request: ExportCommitPatchRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("export_commit_patch_file", {request});
+}
+
 export function getRepoDiffTool(repoPath: string): Promise<string | null> {
     return invoke<string | null>("get_repo_diff_tool", {request: {repoPath}});
 }
@@ -241,6 +246,10 @@ export function submodulePull(request: SubmoduleActionRequest): Promise<Operatio
 
 export function commitChanges(repoPath: string, message: string, amend?: boolean): Promise<OperationResult> {
     return invoke<OperationResult>("commit_changes", {request: {repoPath, message, amend}});
+}
+
+export function getCommitMessageRecovery(repoPath: string): Promise<CommitMessageRecovery | null> {
+    return invoke<CommitMessageRecovery | null>("get_commit_message_recovery", {request: {repoPath}});
 }
 
 export function fetchRemote(repoPath: string, remote?: string): Promise<OperationResult> {
@@ -366,6 +375,14 @@ export function getIdentity(repoPath: string, scope: "Local" | "Global"): Promis
 
 export function setIdentity(request: SetIdentityRequest): Promise<OperationResult> {
     return invoke<OperationResult>("set_identity", {request});
+}
+
+export function getSshAllowedSignerStatus(repoPath: string, scope: "Local" | "Global"): Promise<SshAllowedSignerStatus> {
+    return invoke<SshAllowedSignerStatus>("get_ssh_allowed_signer_status", {request: {repoPath, scope}});
+}
+
+export function addSshSigningKeyToAllowedSigners(repoPath: string, scope: "Local" | "Global"): Promise<OperationResult> {
+    return invoke<OperationResult>("add_ssh_signing_key_to_allowed_signers", {request: {repoPath, scope}});
 }
 
 export function getTags(repoPath: string): Promise<TagInfo[]> {
@@ -520,17 +537,8 @@ export function checkMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdate | null
     return invoke<MicrosoftStoreUpdate | null>("check_microsoft_store_update");
 }
 
-export function requestMicrosoftStoreUpdate(): Promise<MicrosoftStoreUpdateResult> {
-    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
-    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
-}
-
-export function requestMicrosoftStoreUpdateWithProgress(
-    onProgress: (event: MicrosoftStoreUpdateEvent) => void,
-): Promise<MicrosoftStoreUpdateResult> {
-    const onEvent = new Channel<MicrosoftStoreUpdateEvent>();
-    onEvent.onmessage = onProgress;
-    return invoke<MicrosoftStoreUpdateResult>("request_microsoft_store_update", {onEvent});
+export function openMicrosoftStoreUpdatePage(): Promise<void> {
+    return invoke<void>("open_microsoft_store_update_page");
 }
 
 export function downloadAndInstallAppUpdate(expectedVersion?: string): Promise<void> {

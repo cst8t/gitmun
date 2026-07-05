@@ -2,11 +2,13 @@
 use crate::git::types::LinuxTerminalEmulator;
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitRequest, DiffRequest, ExportPatchRequest, ExternalDiffRequest,
-    FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest,
-    ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus, SetIdentityRequest,
-    StageFilesRequest, StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
+    CommitMarkers, CommitMessageRecovery, CommitRequest, DiffRequest, ExportCommitPatchRequest,
+    ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
+    IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
+    SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest,
 };
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
@@ -725,6 +727,17 @@ pub fn export_patch_file(
 }
 
 #[tauri::command]
+pub fn export_commit_patch_file(
+    request: ExportCommitPatchRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .export_commit_patch_file(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub fn get_repo_diff_tool(
     request: RepoRequest,
     state: tauri::State<'_, AppState>,
@@ -801,24 +814,39 @@ pub async fn get_numstat(
 }
 
 #[tauri::command]
-pub fn stage_files(
+pub async fn stage_files(
     request: StageFilesRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .stage_files(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.stage_files(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn commit_changes(
+pub async fn commit_changes(
     request: CommitRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.commit_changes(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_commit_message_recovery(
+    request: RepoRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<Option<CommitMessageRecovery>, String> {
     state
         .git_service
-        .commit_changes(request)
+        .get_commit_message_recovery(request)
         .map_err(|error| error.to_string())
 }
 
@@ -833,36 +861,42 @@ pub async fn get_diff(request: DiffRequest, app: tauri::AppHandle) -> Result<Fil
 }
 
 #[tauri::command]
-pub fn unstage_file(
+pub async fn unstage_file(
     request: FileRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .unstage_file(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.unstage_file(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn unstage_all(
+pub async fn unstage_all(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .unstage_all(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.unstage_all(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn stage_all(
+pub async fn stage_all(
     request: RepoRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .stage_all(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.stage_all(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -1042,6 +1076,28 @@ pub fn set_identity(
     state
         .git_service
         .set_identity(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn get_ssh_allowed_signer_status(
+    request: IdentityRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<SshAllowedSignerStatus, String> {
+    state
+        .git_service
+        .get_ssh_allowed_signer_status(request)
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn add_ssh_signing_key_to_allowed_signers(
+    request: IdentityRequest,
+    state: tauri::State<'_, AppState>,
+) -> Result<OperationResult, String> {
+    state
+        .git_service
+        .add_ssh_signing_key_to_allowed_signers(request)
         .map_err(|error| error.to_string())
 }
 

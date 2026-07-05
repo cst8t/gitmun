@@ -31,6 +31,28 @@
     "save": "Save",
     "saving": "Saving..."
   },
+  "allowedSigners": {
+    "add": "Add to allowed signers",
+    "adding": "Adding...",
+    "configured": "Configured",
+    "exists": "Exists",
+    "keyTrusted": "Key trusted",
+    "no": "No",
+    "notNow": "Not now",
+    "path": "Path",
+    "prompt": "Add your configured SSH signing key to {{path}} so Gitmun can verify commits signed with it?",
+    "promptTitle": "Trust SSH signing key?",
+    "setupBlockedTitle": "Allowed signers setup unavailable",
+    "setupFailedTitle": "Allowed signers setup failed",
+    "yes": "Yes",
+    "errors": {
+      "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE": "Could not determine the home directory for the allowed signers file.",
+      "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL": "Configure user.email before adding an allowed signer.",
+      "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_NO_TARGET": "No allowed signers file is available.",
+      "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_MISSING": "user.signingkey is not configured.",
+      "GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED": "Could not resolve user.signingkey to an SSH public key."
+    }
+  },
   "profiles": {
     "description": "Switch between saved identity profiles for different contexts.",
     "comingSoon": "Identity profiles coming soon"

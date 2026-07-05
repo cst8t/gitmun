@@ -42,6 +42,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
+  BranchInfo,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
@@ -49,6 +50,10 @@ import type {
   ExportPatchFileSelection,
   ExportPatchScope,
   GitIdentity,
+  ImportPatchRequest,
+  LongRunningOperation,
+  LongRunningOperationKind,
+  OperationResult,
   PullAnalysis,
   PullStrategy,
   PushRequest,
@@ -56,14 +61,16 @@ import type {
   RemoteInfo,
   RepoOpenLocationKind,
   RowStriping,
+  StagingOperation,
+  StagingOperationKind,
   StashEntry,
 } from "../types";
-import type { ResultLogEntry } from "../utils/resultLog";
+import type { ResultLogEntry, ResultLogLevel } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
 import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
-import { getRemoteActionState } from "../utils/remoteActionState";
+import { getRemoteActionState, splitUpstreamRef } from "../utils/remoteActionState";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
@@ -75,6 +82,10 @@ const EMPTY_COMMIT_MARKERS: CommitMarkers = {
   upstreamHead: null,
   upstreamRef: null,
 };
+
+function isStagingOperationKind(kind: LongRunningOperationKind): kind is StagingOperationKind {
+  return kind === "stage" || kind === "stageAll" || kind === "unstage" || kind === "unstageAll";
+}
 
 function deriveLocalBranchName(remoteBranchName: string): string | null {
   const slashIndex = remoteBranchName.indexOf("/");
@@ -105,6 +116,20 @@ function getFileName(path: string): string {
 
 const BUNDLED_GIT_EXTERNAL_TOOL_ERROR = "GITMUN_BUNDLED_GIT_EXTERNAL_TOOL_UNSUPPORTED::";
 const UNMERGED_BRANCH_DELETE_ERROR = "GITMUN_ERROR_UNMERGED_BRANCH_DELETE";
+const PATCH_EXPORT_NO_CHANGES = "GITMUN_ERROR_PATCH_EXPORT_NO_CHANGES";
+const PATCH_EXPORT_NO_COMMITS_SELECTED = "GITMUN_ERROR_PATCH_EXPORT_NO_COMMITS_SELECTED";
+const PATCH_EXPORT_ERROR_CODES = [
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_EMPTY",
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID",
+  "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER",
+] as const;
+const PATCH_IMPORT_APPLIED = "GITMUN_PATCH_IMPORT_APPLIED";
+const PATCH_IMPORT_CONFLICTS = "GITMUN_PATCH_IMPORT_CONFLICTS";
+const PATCH_IMPORT_MESSAGE_CODES = [
+  PATCH_IMPORT_APPLIED,
+  PATCH_IMPORT_CONFLICTS,
+  "GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED",
+] as const;
 
 function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
   const message = String(error);
@@ -115,6 +140,16 @@ function localiseExternalToolError(error: unknown, t: TFunction<"projectView">):
 
   const tool = message.slice(markerIndex + BUNDLED_GIT_EXTERNAL_TOOL_ERROR.length).trim();
   return t("toast.bundledGitExternalToolUnsupported", { tool });
+}
+
+function localisePatchExportError(message: string, t: TFunction<"projectView">): string {
+  const code = PATCH_EXPORT_ERROR_CODES.find(code => message.includes(code));
+  return code ? t(`patch.errors.${code}`) : message;
+}
+
+function localisePatchImportMessage(message: string, t: TFunction<"projectView">): string {
+  const code = PATCH_IMPORT_MESSAGE_CODES.find(code => message.includes(code));
+  return code ? t(`patch.import.${code}`) : message;
 }
 
 export function buildStashDropPrompt(
@@ -140,6 +175,95 @@ export function shouldForceWithLeaseAfterRebase(
   currentBranch: string | null,
 ): boolean {
   return rebasedBranchAwaitingPush !== null && rebasedBranchAwaitingPush === currentBranch;
+}
+
+export function buildPushRequestForCurrentBranch(
+  repoPath: string,
+  currentBranchInfo: BranchInfo | null | undefined,
+  forceWithLease: boolean,
+  pushFollowTags: boolean,
+): PushRequest {
+  const request: PushRequest = {
+    repoPath,
+    forceWithLease,
+    pushFollowTags,
+  };
+
+  if (currentBranchInfo?.upstreamStatus !== "tracked") {
+    return request;
+  }
+
+  const upstream = splitUpstreamRef(currentBranchInfo.upstream);
+  if (!upstream) {
+    return request;
+  }
+
+  return {
+    ...request,
+    remote: upstream.remote,
+    remoteBranch: upstream.branch,
+  };
+}
+
+export type PatchImportOutcome = "applied" | "conflicts" | "cancelled" | "failed";
+
+export type PatchImportRecoveryDependencies = {
+  checkPatchFile: (request: ImportPatchRequest) => Promise<OperationResult>;
+  importPatchFile: (request: ImportPatchRequest) => Promise<OperationResult>;
+  confirmThreeWayApply: (message: string) => Promise<boolean>;
+  formatFailureMessage: (message: string) => string;
+  formatResultMessage: (message: string) => string;
+  appendLog: (level: ResultLogLevel, message: string, backend: ResultLogEntry["backend"]) => void;
+  onApplied: (result: OperationResult) => Promise<void>;
+  onConflicts: (result: OperationResult) => Promise<void>;
+  onError: (message: string) => void;
+};
+
+export function isPatchConflictResult(result: Pick<OperationResult, "message">): boolean {
+  return result.message.includes(PATCH_IMPORT_CONFLICTS);
+}
+
+export async function importPatchWithRecovery(
+  repoPath: string,
+  patchPath: string,
+  deps: PatchImportRecoveryDependencies,
+): Promise<PatchImportOutcome> {
+  const request = { repoPath, patchPath };
+
+  try {
+    await deps.checkPatchFile(request);
+    const result = await deps.importPatchFile(request);
+    deps.appendLog("success", deps.formatResultMessage(result.message), result.backendUsed);
+    await deps.onApplied(result);
+    return "applied";
+  } catch (error) {
+    const message = String(error);
+    deps.appendLog("error", deps.formatFailureMessage(message), "unknown");
+
+    const retry = await deps.confirmThreeWayApply(message);
+    if (!retry) {
+      return "cancelled";
+    }
+
+    try {
+      const result = await deps.importPatchFile({ ...request, threeWay: true });
+      const conflicts = isPatchConflictResult(result);
+      deps.appendLog(conflicts ? "info" : "success", deps.formatResultMessage(result.message), result.backendUsed);
+      if (conflicts) {
+        await deps.onConflicts(result);
+        return "conflicts";
+      }
+
+      await deps.onApplied(result);
+      return "applied";
+    } catch (retryError) {
+      const retryMessage = String(retryError);
+      const displayMessage = deps.formatResultMessage(retryMessage);
+      deps.onError(displayMessage);
+      deps.appendLog("error", deps.formatFailureMessage(displayMessage), "unknown");
+      return "failed";
+    }
+  }
 }
 
 export type ProjectViewProps = {
@@ -249,7 +373,9 @@ export function ProjectView({
   const [showCreateTagDialog, setShowCreateTagDialog] = useState(false);
   const [createTagTarget, setCreateTagTarget] = useState<string | null>(null);
   const [createBranchFromTagName, setCreateBranchFromTagName] = useState<string | null>(null);
-  const [isCommitting, setIsCommitting] = useState(false);
+  const [operationLock, setOperationLock] = useState<LongRunningOperation | null>(null);
+  const operationLockRef = useRef<LongRunningOperation | null>(null);
+  const nextOperationIdRef = useRef(1);
   const [isRebaseActionRunning, setIsRebaseActionRunning] = useState(false);
   const [isCherryPickActionRunning, setIsCherryPickActionRunning] = useState(false);
   const [isRevertActionRunning, setIsRevertActionRunning] = useState(false);
@@ -273,9 +399,9 @@ export function ProjectView({
   ));
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity } =
+  const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity, refreshIdentity: refreshLocalIdentity } =
     useGitIdentity(repoPath, "Local");
-  const { identity: globalIdentity, saving: globalIdentitySaving, saveIdentity: saveGlobalIdentity } =
+  const { identity: globalIdentity, saving: globalIdentitySaving, saveIdentity: saveGlobalIdentity, refreshIdentity: refreshGlobalIdentity } =
     useGitIdentity(repoPath, "Global");
   const [identityScope, setIdentityScope] = useState<"local" | "global">(() => {
     const stored = localStorage.getItem("gitmun.identityScope");
@@ -305,6 +431,7 @@ export function ProjectView({
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
+  const unversionedItems = status?.unversionedItems;
   const selectedStagedPaths = stagedFiles
     .filter(file => selectedStagedFiles[file.path])
     .map(file => file.path);
@@ -339,6 +466,11 @@ export function ProjectView({
   const forceWithLeaseAfterRebase = shouldForceWithLeaseAfterRebase(rebasedBranchAwaitingPush, currentBranch);
   const canCommitAndPush = currentBranchInfo?.upstreamStatus === "tracked";
   const effectiveCommitAction = getEffectiveCommitAction(commitPrimaryAction, canCommitAndPush);
+  const stagingOperation: StagingOperation | null =
+    operationLock && isStagingOperationKind(operationLock.kind)
+      ? { kind: operationLock.kind, count: operationLock.count }
+      : null;
+  const isCommitting = operationLock?.kind === "commit" || operationLock?.kind === "commitAndPush";
   const remoteActionLabel = remoteActionState.kind === "publish"
     ? t("remoteAction.publish", { ns: "git" })
     : remoteActionState.kind === "repair-upstream"
@@ -590,6 +722,49 @@ export function ProjectView({
     };
   }, [repoPath]);
 
+  const startOperation = useCallback((kind: LongRunningOperationKind, count?: number) => {
+    if (operationLockRef.current) {
+      return null;
+    }
+
+    const operation: LongRunningOperation = {
+      id: nextOperationIdRef.current,
+      kind,
+      count,
+      startedAt: Date.now(),
+    };
+    nextOperationIdRef.current += 1;
+    operationLockRef.current = operation;
+    setOperationLock(operation);
+    return operation;
+  }, []);
+
+  const finishOperation = useCallback((operation: LongRunningOperation) => {
+    if (operationLockRef.current?.id !== operation.id) {
+      return;
+    }
+
+    operationLockRef.current = null;
+    setOperationLock(null);
+  }, []);
+
+  const runStagingOperation = useCallback(async (
+    kind: StagingOperationKind,
+    count: number | undefined,
+    task: () => Promise<void>,
+  ) => {
+    const operation = startOperation(kind, count);
+    if (!operation) {
+      return;
+    }
+
+    try {
+      await task();
+    } finally {
+      finishOperation(operation);
+    }
+  }, [finishOperation, startOperation]);
+
   const handleFileSelect = useCallback((path: string, staged: boolean) => {
     setSelectedSubmodulePath(null);
     setSelectedFile(path);
@@ -604,44 +779,56 @@ export function ProjectView({
 
   const handleStageFile = useCallback(async (path: string) => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("stage", 1, async () => {
       const result = await api.stageFiles(repoPath, [path]);
       showToast(t("toast.stagedFiles", { count: 1, file: getFileName(path) }));
       appendResultLog("success", t("log.stagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleStageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
-    try {
+    await runStagingOperation("stage", paths.length, async () => {
       const result = await api.stageFiles(repoPath, paths);
       showToast(t("toast.stagedFiles", { count: paths.length, file: getFileName(paths[0]) }));
       appendResultLog("success", t("log.stagedFiles", { count: paths.length, path: paths[0] }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageFile = useCallback(async (path: string) => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("unstage", 1, async () => {
       const result = await api.unstageFile(repoPath, path);
       showToast(t("toast.unstagedFiles", { count: 1, file: getFileName(path) }), "info");
       appendResultLog("info", t("log.unstagedFiles", { count: 1, path }), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
-    try {
+    await runStagingOperation("unstage", paths.length, async () => {
       const results = await Promise.all(paths.map(path => api.unstageFile(repoPath, path)));
       showToast(t("toast.unstagedFiles", { count: paths.length, file: getFileName(paths[0]) }), "info");
       const backendUsed = results[0]?.backendUsed ?? "unknown";
       appendResultLog("info", t("log.unstagedFiles", { count: paths.length, path: paths[0] }), backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const doRevertFiles = useCallback(async (paths: string[]) => {
     if (!repoPath) return;
@@ -694,23 +881,29 @@ export function ProjectView({
 
   const handleStageAll = useCallback(async () => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("stageAll", undefined, async () => {
       const result = await api.stageAll(repoPath);
       showToast(t("toast.stagedAll"));
       appendResultLog("success", t("log.stagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleUnstageAll = useCallback(async () => {
     if (!repoPath) return;
-    try {
+    await runStagingOperation("unstageAll", undefined, async () => {
       const result = await api.unstageAll(repoPath);
       showToast(t("toast.unstagedAll"), "info");
       appendResultLog("info", t("log.unstagedAll"), result.backendUsed);
       await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
+    }).catch(e => {
+      showToast(String(e), "error");
+      appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown");
+    });
+  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleSelectCommitAction = useCallback(async (action: CommitPrimaryAction) => {
     if (action === commitPrimaryAction) {
@@ -757,13 +950,17 @@ export function ProjectView({
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
 
   const handleCommit = useCallback(async (message: string, amend: boolean) => {
-    setIsCommitting(true);
-    try {
-      await runCommitRequest(message, amend);
-    } finally {
-      setIsCommitting(false);
+    const operation = startOperation("commit");
+    if (!operation) {
+      return false;
     }
-  }, [runCommitRequest]);
+
+    try {
+      return await runCommitRequest(message, amend);
+    } finally {
+      finishOperation(operation);
+    }
+  }, [finishOperation, runCommitRequest, startOperation]);
 
   const handleFetch = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -903,25 +1100,35 @@ export function ProjectView({
       return;
     }
 
-    await runPushRequest({
-      repoPath,
-      forceWithLease: forceWithLeaseAfterRebase,
-      pushFollowTags,
-    }, t("toast.pushComplete"), t("toast.pushFailed"));
-  }, [forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
+    await runPushRequest(
+      buildPushRequestForCurrentBranch(
+        repoPath,
+        currentBranchInfo,
+        forceWithLeaseAfterRebase,
+        pushFollowTags,
+      ),
+      t("toast.pushComplete"),
+      t("toast.pushFailed"),
+    );
+  }, [currentBranchInfo, forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
 
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
-    setIsCommitting(true);
+    const operation = startOperation("commitAndPush");
+    if (!operation) {
+      return false;
+    }
+
     try {
       const committed = await runCommitRequest(message, amend);
       if (!committed) {
-        return;
+        return false;
       }
       await handlePush();
+      return true;
     } finally {
-      setIsCommitting(false);
+      finishOperation(operation);
     }
-  }, [handlePush, runCommitRequest]);
+  }, [finishOperation, handlePush, runCommitRequest, startOperation]);
 
   const handleUpstreamDialogConfirm = useCallback(async (selection: { remote: string; remoteBranch: string }) => {
     if (!repoPath || !currentBranchInfo || !upstreamDialogMode) {
@@ -1577,17 +1784,30 @@ export function ProjectView({
     });
     if (!confirmed) return;
 
-    try {
-      await api.checkPatchFile({ repoPath, patchPath: selected });
-      const result = await api.importPatchFile({ repoPath, patchPath: selected });
-      showToast(t("toast.patchImported"), "success");
-      appendResultLog("success", result.message, result.backendUsed);
-      setCentreTab("changes");
-      await refreshAll();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.importPatchFailed", { message: String(e) }), "unknown");
-    }
+    await importPatchWithRecovery(repoPath, selected, {
+      checkPatchFile: api.checkPatchFile,
+      importPatchFile: api.importPatchFile,
+      confirmThreeWayApply: (message) => ask(t("ask.importPatchThreeWay.message", { message }), {
+        title: t("ask.importPatchThreeWay.title"),
+        kind: "warning",
+        okLabel: t("actions.tryThreeWayApply"),
+        cancelLabel: t("actions.cancel"),
+      }),
+      formatFailureMessage: (message) => t("log.importPatchFailed", { message }),
+      formatResultMessage: (message) => localisePatchImportMessage(message, t),
+      appendLog: appendResultLog,
+      onApplied: async () => {
+        showToast(t("toast.patchImported"), "success");
+        setCentreTab("changes");
+        await refreshAll();
+      },
+      onConflicts: async () => {
+        showToast(t("toast.patchImportedWithConflicts"), "info");
+        setCentreTab("changes");
+        await refreshAll();
+      },
+      onError: (message) => showToast(message, "error"),
+    });
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleExportPatch = useCallback(async (scope: ExportPatchScope) => {
@@ -1610,18 +1830,51 @@ export function ProjectView({
       const result = await api.exportPatchFile({ repoPath, patchPath: selected, scope, files });
       const patchName = getFileName(selected);
       showToast(t("toast.patchExported", { file: patchName }), "success");
-      appendResultLog("success", result.message, result.backendUsed);
+      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
     } catch (e) {
       const message = String(e);
-      if (message.includes("No changes available for patch export")) {
+      if (message.includes(PATCH_EXPORT_NO_CHANGES)) {
         showToast(t("toast.noPatchChanges"), "info");
         appendResultLog("info", t("log.noPatchChanges"), "git-cli");
         return;
       }
-      showToast(message, "error");
-      appendResultLog("error", t("log.exportPatchFailed", { message }), "unknown");
+      const displayMessage = localisePatchExportError(message, t);
+      showToast(displayMessage, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message: displayMessage }), "unknown");
     }
   }, [repoPath, selectedPatchFiles, showToast, t]);
+
+  const handleExportCommitPatch = useCallback(async (commitHashes: string[]) => {
+    if (!repoPath) return;
+    if (commitHashes.length === 0) {
+      showToast(t("toast.noPatchChanges"), "info");
+      return;
+    }
+
+    const selected = await save({
+      title: t("patch.exportPickerTitle"),
+      defaultPath: "commits.patch",
+      filters: [{ name: t("patch.patchFilesFilter"), extensions: ["patch"] }],
+    });
+    if (!selected) return;
+
+    try {
+      const result = await api.exportCommitPatchFile({ repoPath, patchPath: selected, commitHashes });
+      const patchName = getFileName(selected);
+      showToast(t("toast.patchExported", { file: patchName }), "success");
+      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
+    } catch (e) {
+      const message = String(e);
+      if (message.includes(PATCH_EXPORT_NO_CHANGES) || message.includes(PATCH_EXPORT_NO_COMMITS_SELECTED)) {
+        showToast(t("toast.noPatchChanges"), "info");
+        appendResultLog("info", t("log.noPatchChanges"), "git-cli");
+        return;
+      }
+      const displayMessage = localisePatchExportError(message, t);
+      showToast(displayMessage, "error");
+      appendResultLog("error", t("log.exportPatchFailed", { message: displayMessage }), "unknown");
+    }
+  }, [repoPath, showToast, t]);
 
   const runSubmoduleAction = useCallback(async (
     path: string,
@@ -2086,7 +2339,10 @@ export function ProjectView({
         globalIdentitySaving={globalIdentitySaving}
         onSaveLocalIdentity={handleSaveLocalIdentity}
         onSaveGlobalIdentity={handleSaveGlobalIdentity}
+        onRefreshLocalIdentity={refreshLocalIdentity}
+        onRefreshGlobalIdentity={refreshGlobalIdentity}
         onScopeChange={setIdentityScope}
+        repoPath={repoPath}
       />
 
       {showNoDiffToolWarning && (
@@ -2336,6 +2592,7 @@ export function ProjectView({
                   stagedFiles={stagedFiles}
                   unstagedFiles={unstagedFiles}
                   unversionedFiles={unversionedFiles}
+                  unversionedItems={unversionedItems}
                   submodules={submodules}
                   conflictedFiles={conflictedFiles}
                   mergeInProgress={mergeInProgress}
@@ -2377,6 +2634,7 @@ export function ProjectView({
                   onCherryPickAtCommit={handleCherryPickAtCommit}
                   onRevertAtCommit={handleRevertAtCommit}
                   onResetToCommit={handleResetToCommit}
+                  onExportCommitPatch={handleExportCommitPatch}
                   selectedFile={selectedFile}
                   selectedSubmodulePath={selectedSubmodulePath}
                   selectedStagedFiles={selectedStagedFiles}
@@ -2421,6 +2679,8 @@ export function ProjectView({
                   onConflictAcceptTheirs={handleConflictAcceptTheirs}
                   onConflictAcceptOurs={handleConflictAcceptOurs}
                   onOpenMergeTool={handleOpenMergeTool}
+                  stagingOperation={stagingOperation}
+                  operationLock={operationLock}
                   isCommitting={isCommitting}
                   isRebaseActionRunning={isRebaseActionRunning}
                   isCherryPickActionRunning={isCherryPickActionRunning}

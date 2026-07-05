@@ -5,6 +5,26 @@ export type AvatarProviderMode = "Off" | "Libravatar";
 export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
+export type StagingOperationKind = "stage" | "stageAll" | "unstage" | "unstageAll";
+export type LongRunningOperationKind = StagingOperationKind | CommitPrimaryAction;
+
+export type StagingOperation = {
+    kind: StagingOperationKind;
+    count?: number;
+};
+
+export type LongRunningOperation = {
+    id: number;
+    kind: LongRunningOperationKind;
+    count?: number;
+    startedAt: number;
+};
+
+export type OperationFeedbackContent = {
+    kind: LongRunningOperationKind;
+    title: string;
+    message: string;
+};
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
 export type LinuxTerminalEmulator =
     | "Auto"
@@ -81,7 +101,6 @@ export type Settings = {
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;
-    enableUpdateWithMSStoreFlow?: boolean;
     linuxGraphicsMode: LinuxGraphicsMode;
     linuxTerminalEmulator: LinuxTerminalEmulator;
     linuxTerminalCustomCommand: string;
@@ -166,53 +185,6 @@ export type MicrosoftStoreUpdate = {
     currentVersion: string;
     packageCount: number;
     mandatory: boolean;
-    queueStatus: MicrosoftStoreQueueStatus | null;
-};
-
-export type MicrosoftStoreUpdateStatus =
-    | "Completed"
-    | "Canceled"
-    | "OtherError"
-    | "ErrorWifiRecommended"
-    | "ErrorWifiRequired"
-    | "ErrorLowBattery"
-    | "Unknown";
-
-export type MicrosoftStoreQueueState =
-    | "Active"
-    | "Paused"
-    | "Completed"
-    | "Canceled"
-    | "Error"
-    | "Unknown";
-
-export type MicrosoftStoreUpdateProgress = {
-    packageDownloadProgress: number;
-    totalDownloadProgress: number;
-    packageBytesDownloaded: number;
-    packageDownloadSizeInBytes: number;
-    packageUpdateState: MicrosoftStoreUpdateStatus;
-};
-
-export type MicrosoftStoreQueueStatus = {
-    state: MicrosoftStoreQueueState;
-    extendedState: string;
-    progress: MicrosoftStoreUpdateProgress | null;
-};
-
-export type MicrosoftStoreUpdateEvent =
-    | {
-        event: "Progress";
-        data: MicrosoftStoreUpdateProgress;
-    }
-    | {
-        event: "QueueStatus";
-        data: MicrosoftStoreQueueStatus;
-    };
-
-export type MicrosoftStoreUpdateResult = {
-    status: MicrosoftStoreUpdateStatus;
-    queueStatus: MicrosoftStoreQueueStatus | null;
 };
 
 export type AppAvailableUpdate =
@@ -259,6 +231,7 @@ export type RepoRequest = {
 
 export type ImportPatchRequest = RepoRequest & {
     patchPath: string;
+    threeWay?: boolean;
 };
 
 export type ExportPatchFileSelection = {
@@ -272,9 +245,19 @@ export type ExportPatchRequest = RepoRequest & {
     files?: ExportPatchFileSelection[];
 };
 
+export type ExportCommitPatchRequest = RepoRequest & {
+    patchPath: string;
+    commitHashes: string[];
+};
+
 export type CommitRequest = RepoRequest & {
     message: string;
     amend?: boolean;
+};
+
+export type CommitMessageRecovery = {
+    message: string;
+    updatedAt: number;
 };
 
 export type CommitHistoryRequest = RepoRequest & {
@@ -417,6 +400,12 @@ export type FileStatusItem = {
     status: string;
     additions: number | null;
     deletions: number | null;
+    kind?: "file" | "directory";
+};
+
+export type UnversionedItem = {
+    path: string;
+    kind: "file" | "directory";
 };
 
 export type ConflictFileItem = {
@@ -454,6 +443,7 @@ export type RepoStatus = {
     changedFiles: FileStatusItem[];
     stagedFiles: FileStatusItem[];
     unversionedFiles: string[];
+    unversionedItems?: UnversionedItem[];
     submodules: SubmoduleStatus[];
     currentBranch: string | null;
     detachedHead: boolean;
@@ -695,6 +685,18 @@ export type GitIdentity = {
     signingFormat: string | null;
     sshKeyPath: string | null;
     commitSigningEnabled: boolean;
+};
+
+export type SshAllowedSignerStatus = {
+    setupNeeded: boolean;
+    targetPath?: string | null;
+    blockingReason?: string | null;
+    allowedSignersConfigured: boolean;
+    allowedSignersExists: boolean;
+    signingKeyPresent: boolean;
+    signingKeyTrusted: boolean;
+    resolvedPublicKeyFingerprint?: string | null;
+    reason?: "notSsh" | "missingSigningKey" | "missingEmail" | "missingAllowedSignersFile" | "untrustedSigningKey" | "trusted" | "unresolvedSigningKey" | null;
 };
 
 export type SetIdentityRequest = {

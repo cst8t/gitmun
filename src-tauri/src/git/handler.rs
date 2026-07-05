@@ -8,16 +8,17 @@ use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
     CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
     CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
-    CommitPrimaryAction, CommitRequest, CreateBranchRequest, CreateTagRequest, DeleteBranchRequest,
-    DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest,
-    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
-    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    CommitMessageRecovery, CommitPrimaryAction, CommitRequest, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
+    ExternalDiffRequest, FetchRequest, FileDiff,
+    FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest,
+    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, TagInfo, ThemeMode,
+    SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -30,6 +31,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn pull_with_strategy(&self, request: &PullStrategyRequest) -> GitResult<OperationResult>;
     fn push_changes(&self, request: &PushRequest) -> GitResult<PushResult>;
     fn commit_changes(&self, request: &CommitRequest) -> GitResult<OperationResult>;
+    fn get_commit_message_recovery(
+        &self,
+        request: &RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>>;
     fn stage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult>;
     fn get_configured_diff_tool(&self, request: &RepoRequest) -> GitResult<Option<String>>;
     fn open_external_diff(&self, request: &ExternalDiffRequest) -> GitResult<OperationResult>;
@@ -37,6 +42,10 @@ pub trait GitOperationHandler: Send + Sync {
     fn check_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
     fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult>;
     fn export_patch_file(&self, request: &ExportPatchRequest) -> GitResult<OperationResult>;
+    fn export_commit_patch_file(
+        &self,
+        request: &ExportCommitPatchRequest,
+    ) -> GitResult<OperationResult>;
     fn get_repo_status(&self, request: &RepoRequest) -> GitResult<RepoStatus>;
     fn get_commit_history(
         &self,
@@ -67,6 +76,14 @@ pub trait GitOperationHandler: Send + Sync {
     fn stash_drop(&self, request: &StashRequest) -> GitResult<OperationResult>;
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity>;
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult>;
+    fn get_ssh_allowed_signer_status(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<SshAllowedSignerStatus>;
+    fn add_ssh_signing_key_to_allowed_signers(
+        &self,
+        request: &IdentityRequest,
+    ) -> GitResult<OperationResult>;
     fn get_tags(&self, request: &RepoRequest) -> GitResult<Vec<TagInfo>>;
     fn get_remotes(&self, request: &RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     fn switch_branch(&self, request: &BranchRequest) -> GitResult<OperationResult>;
@@ -410,6 +427,14 @@ impl GitService {
         self.active_read_handler().validate_repo_path(repo_path)
     }
 
+    pub fn get_commit_message_recovery(
+        &self,
+        request: RepoRequest,
+    ) -> GitResult<Option<CommitMessageRecovery>> {
+        self.active_read_handler()
+            .get_commit_message_recovery(&request)
+    }
+
     forward_write_methods! {
         fn analyze_pull(request: RepoRequest) -> GitResult<PullAnalysis>;
         fn pull_changes(request: RepoRequest) -> GitResult<OperationResult>;
@@ -435,6 +460,7 @@ impl GitService {
         fn stash_pop(request: StashRequest) -> GitResult<OperationResult>;
         fn stash_drop(request: StashRequest) -> GitResult<OperationResult>;
         fn set_identity(request: SetIdentityRequest) -> GitResult<OperationResult>;
+        fn add_ssh_signing_key_to_allowed_signers(request: IdentityRequest) -> GitResult<OperationResult>;
         fn switch_branch(request: BranchRequest) -> GitResult<OperationResult>;
         fn set_branch_upstream(request: SetBranchUpstreamRequest) -> GitResult<OperationResult>;
         fn delete_branch(request: DeleteBranchRequest) -> GitResult<OperationResult>;
@@ -467,6 +493,7 @@ impl GitService {
         fn check_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
         fn import_patch_file(request: ImportPatchRequest) -> GitResult<OperationResult>;
         fn export_patch_file(request: ExportPatchRequest) -> GitResult<OperationResult>;
+        fn export_commit_patch_file(request: ExportCommitPatchRequest) -> GitResult<OperationResult>;
     }
 
     forward_read_methods! {
@@ -481,6 +508,7 @@ impl GitService {
         fn get_branches(request: RepoRequest) -> GitResult<Vec<BranchInfo>>;
         fn stash_list(request: RepoRequest) -> GitResult<Vec<StashEntry>>;
         fn get_identity(request: IdentityRequest) -> GitResult<GitIdentity>;
+        fn get_ssh_allowed_signer_status(request: IdentityRequest) -> GitResult<SshAllowedSignerStatus>;
         fn get_tags(request: RepoRequest) -> GitResult<Vec<TagInfo>>;
         fn get_remotes(request: RepoRequest) -> GitResult<Vec<RemoteInfo>>;
     }

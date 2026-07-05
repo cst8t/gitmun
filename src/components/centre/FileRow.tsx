@@ -8,12 +8,14 @@ type FileRowProps = {
   isStaged: boolean;
   isSelected: boolean;
   checked?: boolean;
+  selectionDisabled?: boolean;
   onToggleChecked?: () => void;
   onSelect: () => void;
   onDoubleClick?: () => void;
   onStage?: () => void;
   onUnstage?: () => void;
   onDiscard?: () => void;
+  actionDisabled?: boolean;
   striped?: "Subtle" | "Strong";
   displayPath?: string;
   titlePath?: string;
@@ -33,12 +35,14 @@ export function FileRow({
   isStaged,
   isSelected,
   checked,
+  selectionDisabled = false,
   onToggleChecked,
   onSelect,
   onDoubleClick,
   onStage,
   onUnstage,
   onDiscard,
+  actionDisabled = false,
   striped,
   displayPath,
   titlePath,
@@ -64,8 +68,10 @@ export function FileRow({
         className="file-row__check"
         type="checkbox"
         checked={checked ?? false}
+        disabled={selectionDisabled}
         onChange={(e) => {
           e.stopPropagation();
+          if (selectionDisabled) return;
           onToggleChecked?.();
         }}
         onClick={e => e.stopPropagation()}
@@ -79,15 +85,15 @@ export function FileRow({
       {hovered ? (
         <div className="file-row__actions" onClick={e => e.stopPropagation()}>
           {isStaged ? (
-            <button className="file-row__action-btn file-row__action-btn--red" title={t("staging.unstageFile")} onClick={onUnstage}>
+            <button className="file-row__action-btn file-row__action-btn--red" title={t("staging.unstageFile")} onClick={onUnstage} disabled={actionDisabled}>
               <UnstageArrowIcon />
             </button>
           ) : (
             <>
-              <button className="file-row__action-btn file-row__action-btn--accent" title={t("staging.stageFile")} onClick={onStage}>
+              <button className="file-row__action-btn file-row__action-btn--accent" title={t("staging.stageFile")} onClick={onStage} disabled={actionDisabled}>
                 <StageArrowIcon />
               </button>
-              <button className="file-row__action-btn file-row__action-btn--red" title={t("confirmRevert.title")} onClick={onDiscard}>
+              <button className="file-row__action-btn file-row__action-btn--red" title={t("confirmRevert.title")} onClick={onDiscard} disabled={actionDisabled}>
                 <DiscardIcon />
               </button>
             </>

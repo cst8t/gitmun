@@ -9,10 +9,11 @@ use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
     CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
-    CreateBranchRequest, DeleteBranchRequest, ExportPatchFileSelection, ExportPatchRequest,
-    ExportPatchScope, FileRequest, ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest,
-    ResetMode, ResetRequest, SetBranchUpstreamRequest, StageFilesRequest, SubmoduleActionRequest,
-    SubmoduleState,
+    CreateBranchRequest, DeleteBranchRequest, ExportCommitPatchRequest, ExportPatchFileSelection,
+    ExportPatchRequest, ExportPatchScope, FileRequest, IdentityRequest, IdentityScope,
+    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, RepoStatus, ResetMode,
+    ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest, SshAllowedSignerReason,
+    StageFilesRequest, SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -86,6 +87,28 @@ fn file_request(dir: &TempDir, path: &str) -> FileRequest {
         repo_path: dir.path().to_str().unwrap().to_string(),
         file_path: path.to_string(),
     }
+}
+
+fn identity_request(dir: &TempDir) -> IdentityRequest {
+    IdentityRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        scope: IdentityScope::Local,
+    }
+}
+
+fn set_local_identity(dir: &TempDir, email: Option<&str>, signing_key: Option<&str>, format: &str) {
+    handler()
+        .set_identity(&SetIdentityRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            scope: IdentityScope::Local,
+            name: Some("Gitmun Test".to_string()),
+            email: email.map(str::to_string),
+            signing_key: signing_key.map(str::to_string),
+            signing_format: Some(format.to_string()),
+            ssh_key_path: None,
+            commit_signing_enabled: Some(true),
+        })
+        .expect("set identity");
 }
 
 fn handler() -> CliGitHandler {
@@ -215,6 +238,19 @@ fn import_patch_request(repo: &TempDir, patch_path: &Path) -> ImportPatchRequest
     ImportPatchRequest {
         repo_path: repo.path().to_str().unwrap().to_string(),
         patch_path: patch_path.to_str().unwrap().to_string(),
+        three_way: false,
+    }
+}
+
+fn import_patch_request_with_three_way(
+    repo: &TempDir,
+    patch_path: &Path,
+    three_way: bool,
+) -> ImportPatchRequest {
+    ImportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        three_way,
     }
 }
 
@@ -229,6 +265,35 @@ fn export_patch_request(
         patch_path: patch_path.to_str().unwrap().to_string(),
         scope,
         files,
+    }
+}
+
+fn assert_patch_contains_full_index(output: &str) {
+    let index_line = output
+        .lines()
+        .find(|line| line.starts_with("index "))
+        .expect("patch has index line");
+    let ids = index_line
+        .trim_start_matches("index ")
+        .split_whitespace()
+        .next()
+        .expect("index line has object ids");
+    let (old, new) = ids
+        .split_once("..")
+        .expect("index line separates object ids");
+    assert_eq!(old.len(), 40);
+    assert_eq!(new.len(), 40);
+}
+
+fn export_commit_patch_request(
+    repo: &TempDir,
+    patch_path: &Path,
+    commit_hashes: Vec<String>,
+) -> ExportCommitPatchRequest {
+    ExportCommitPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        commit_hashes,
     }
 }
 
@@ -252,6 +317,55 @@ fn status_detects_untracked_file() {
         .get_repo_status(&repo_request(&dir))
         .expect("get_repo_status");
     assert!(status.unversioned_files.iter().any(|f| f == "new.txt"));
+}
+
+fn assert_unversioned_item(status: &RepoStatus, path: &str, kind: UnversionedItemKind) {
+    assert!(
+        status
+            .unversioned_items
+            .iter()
+            .any(|item| item.path == path && item.kind == kind),
+        "missing {kind:?} item for {path}: {:?}",
+        status.unversioned_items
+    );
+}
+
+#[test]
+fn status_reports_untracked_item_kinds() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("tracked")).expect("create tracked directory");
+    write_file(dir.path(), "tracked/kept.txt", "kept");
+    git(dir.path(), &["add", "tracked/kept.txt"]);
+    git(dir.path(), &["commit", "-m", "track directory"]);
+
+    write_file(dir.path(), "new.txt", "hello");
+    write_file(dir.path(), "tracked/new.txt", "new");
+    fs::create_dir_all(dir.path().join("notes")).expect("create notes directory");
+    write_file(dir.path(), "notes/draft.txt", "draft");
+
+    let cli_status = handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("cli get_repo_status");
+    assert!(cli_status.unversioned_files.iter().any(|path| path == "new.txt"));
+    assert!(cli_status
+        .unversioned_files
+        .iter()
+        .any(|path| path == "notes/"));
+    assert_unversioned_item(&cli_status, "new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&cli_status, "tracked/new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&cli_status, "notes/", UnversionedItemKind::Directory);
+
+    let gix_status = gix_handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("gix get_repo_status");
+    assert!(gix_status.unversioned_files.iter().any(|path| path == "new.txt"));
+    assert!(gix_status
+        .unversioned_files
+        .iter()
+        .any(|path| path == "notes/"));
+    assert_unversioned_item(&gix_status, "new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&gix_status, "tracked/new.txt", UnversionedItemKind::File);
+    assert_unversioned_item(&gix_status, "notes/", UnversionedItemKind::Directory);
 }
 
 #[test]
@@ -337,6 +451,104 @@ fn import_patch_rejects_non_applicable_patch_without_modifying_files() {
 }
 
 #[test]
+fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "base\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add base file"]);
+    let base_hash = head_hash(dir.path());
+
+    write_file(dir.path(), "file.txt", "patch\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "patch change"]);
+    let patch = dir.path().join("change.patch");
+    let patch_content = git_stdout(
+        dir.path(),
+        &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
+    );
+    fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
+
+    git(dir.path(), &["reset", "--hard", &base_hash]);
+    write_file(dir.path(), "file.txt", "target\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "target drift"]);
+
+    let result = handler()
+        .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
+        .expect("three-way import result");
+
+    assert_eq!(result.message, "GITMUN_PATCH_IMPORT_CONFLICTS");
+    assert!(
+        git_stdout(dir.path(), &["status", "--porcelain"])
+            .lines()
+            .any(|line| line.starts_with("UU file.txt"))
+    );
+    assert!(read_file(dir.path(), "file.txt").contains("<<<<<<<"));
+}
+
+#[test]
+fn import_patch_three_way_failure_without_blob_data_leaves_files_unchanged() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "different\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    let result =
+        handler().import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true));
+
+    assert!(result.is_err());
+    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+    assert!(
+        git_stdout(dir.path(), &["status", "--porcelain"])
+            .lines()
+            .all(|line| !line.starts_with("UU "))
+    );
+}
+
+#[test]
+fn import_patch_three_way_blocks_dirty_tracked_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "base\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add base file"]);
+    let base_hash = head_hash(dir.path());
+
+    write_file(dir.path(), "file.txt", "patch\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "patch change"]);
+    let patch = dir.path().join("change.patch");
+    let patch_content = git_stdout(
+        dir.path(),
+        &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
+    );
+    fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
+
+    git(dir.path(), &["reset", "--hard", &base_hash]);
+    write_file(dir.path(), "file.txt", "local\n");
+
+    let error = handler()
+        .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
+        .expect_err("dirty files block three-way apply")
+        .to_string();
+
+    assert!(error.contains("GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED"));
+    assert_eq!(read_file(dir.path(), "file.txt"), "local\n");
+}
+
+#[test]
 fn export_staged_patch_contains_only_staged_changes() {
     let dir = init_repo();
     write_file(dir.path(), "staged.txt", "old\n");
@@ -360,6 +572,7 @@ fn export_staged_patch_contains_only_staged_changes() {
 
     assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
     assert!(!output.contains("unstaged.txt"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -385,6 +598,7 @@ fn export_unstaged_patch_contains_tracked_unstaged_and_untracked_files() {
     assert!(output.contains("diff --git a/tracked.txt b/tracked.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
     assert!(output.contains("new file mode"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -413,6 +627,7 @@ fn export_all_concatenates_staged_unstaged_and_untracked_changes() {
     assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
     assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -460,6 +675,97 @@ fn export_selected_honours_staged_and_unstaged_file_selections() {
     assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
     assert!(!output.contains("ignored.txt"));
+    assert_patch_contains_full_index(&output);
+}
+
+#[test]
+fn export_commit_patch_contains_selected_commit_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "commit.txt", "first\n");
+    git(dir.path(), &["add", "commit.txt"]);
+    git(dir.path(), &["commit", "-m", "add commit file"]);
+    let hash = head_hash(dir.path());
+
+    let patch = dir.path().join("commit.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
+        .expect("export commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/commit.txt b/commit.txt"));
+    assert!(output.contains("+first"));
+    assert_patch_contains_full_index(&output);
+}
+
+#[test]
+fn export_commit_patch_orders_multiple_commits_oldest_first() {
+    let dir = init_repo();
+    write_file(dir.path(), "first.txt", "first\n");
+    git(dir.path(), &["add", "first.txt"]);
+    git(dir.path(), &["commit", "-m", "first"]);
+    let first_hash = head_hash(dir.path());
+    write_file(dir.path(), "second.txt", "second\n");
+    git(dir.path(), &["add", "second.txt"]);
+    git(dir.path(), &["commit", "-m", "second"]);
+    let second_hash = head_hash(dir.path());
+
+    let patch = dir.path().join("commits.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(
+            &dir,
+            &patch,
+            vec![second_hash, first_hash],
+        ))
+        .expect("export commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    let first_index = output.find("diff --git a/first.txt b/first.txt").unwrap();
+    let second_index = output.find("diff --git a/second.txt b/second.txt").unwrap();
+    assert!(first_index < second_index);
+}
+
+#[test]
+fn export_commit_patch_supports_root_commit() {
+    let dir = init_unborn_repo();
+    write_file(dir.path(), "root.txt", "root\n");
+    git(dir.path(), &["add", "root.txt"]);
+    git(dir.path(), &["commit", "-m", "root"]);
+    let hash = head_hash(dir.path());
+
+    let patch = dir.path().join("root.patch");
+    handler()
+        .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
+        .expect("export root commit patch");
+    let output = fs::read_to_string(patch).expect("read patch");
+
+    assert!(output.contains("diff --git a/root.txt b/root.txt"));
+    assert!(output.contains("new file mode"));
+    assert!(output.contains("+root"));
+}
+
+#[test]
+fn export_commit_patch_rejects_empty_selection() {
+    let dir = init_repo();
+    let patch = dir.path().join("empty.patch");
+    let result =
+        handler().export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![]));
+
+    assert!(result.is_err());
+    assert!(!patch.exists());
+}
+
+#[test]
+fn export_commit_patch_rejects_invalid_commit_hash() {
+    let dir = init_repo();
+    let patch = dir.path().join("invalid.patch");
+    let result = handler().export_commit_patch_file(&export_commit_patch_request(
+        &dir,
+        &patch,
+        vec!["not-a-commit".to_string()],
+    ));
+
+    assert!(result.is_err());
+    assert!(!patch.exists());
 }
 
 #[test]
@@ -525,6 +831,32 @@ fn stage_files_moves_file_to_staged() {
         .expect("get_repo_status");
     assert!(status.staged_files.iter().any(|f| f.path == "a.txt"));
     assert!(status.unversioned_files.is_empty());
+}
+
+#[test]
+fn stage_files_handles_large_selection_with_spaces() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("bulk files")).expect("create bulk directory");
+
+    let mut files = vec!["bulk files/root note.txt".to_string()];
+    write_file(dir.path(), &files[0], "root");
+    for index in 0..200 {
+        let path = format!("bulk files/file {index}.txt");
+        write_file(dir.path(), &path, "content");
+        files.push(path);
+    }
+
+    handler()
+        .stage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: files.clone(),
+        })
+        .expect("stage_files");
+
+    let staged = git_stdout(dir.path(), &["diff", "--cached", "--name-only"]);
+    for path in files {
+        assert!(staged.lines().any(|line| line == path), "missing {path}");
+    }
 }
 
 #[test]
@@ -864,6 +1196,332 @@ fn commit_preserves_description_and_trailer_like_lines() {
 
     let committed_message = git_stdout(dir.path(), &["log", "-1", "--format=%B"]);
     assert_eq!(committed_message, message);
+}
+
+#[test]
+fn commit_message_recovery_reads_commit_editmsg() {
+    let dir = init_repo();
+    let commit_editmsg = git_stdout(dir.path(), &["rev-parse", "--git-path", "COMMIT_EDITMSG"]);
+    fs::write(
+        dir.path().join(commit_editmsg),
+        "Recovered subject\n\nRecovered body\n# ignored comment\n",
+    )
+    .expect("write COMMIT_EDITMSG");
+
+    let recovery = handler()
+        .get_commit_message_recovery(&repo_request(&dir))
+        .expect("get_commit_message_recovery")
+        .expect("recovery message");
+
+    assert_eq!(recovery.message, "Recovered subject\n\nRecovered body");
+    assert!(recovery.updated_at > 0);
+}
+
+#[test]
+fn commit_message_recovery_ignores_missing_or_comment_only_file() {
+    let dir = init_repo();
+    let commit_editmsg = git_stdout(dir.path(), &["rev-parse", "--git-path", "COMMIT_EDITMSG"]);
+    let commit_editmsg_path = dir.path().join(commit_editmsg);
+    fs::remove_file(&commit_editmsg_path).expect("remove COMMIT_EDITMSG");
+
+    assert!(
+        handler()
+            .get_commit_message_recovery(&repo_request(&dir))
+            .expect("missing COMMIT_EDITMSG")
+            .is_none()
+    );
+
+    fs::write(commit_editmsg_path, "# comment only\n\n# still comment\n").expect("write COMMIT_EDITMSG");
+
+    assert!(
+        handler()
+            .get_commit_message_recovery(&repo_request(&dir))
+            .expect("comment-only COMMIT_EDITMSG")
+            .is_none()
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_status_ignores_non_ssh_signing() {
+    let dir = init_repo();
+    set_local_identity(&dir, Some("test@gitmun.test"), Some("ABC123"), "openpgp");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(status.blocking_reason, None);
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::NotSsh));
+}
+
+#[test]
+fn ssh_allowed_signer_status_requires_signing_key() {
+    let dir = init_repo();
+    set_local_identity(&dir, Some("test@gitmun.test"), None, "ssh");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(status.blocking_reason, None);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::MissingSigningKey)
+    );
+    assert!(!status.signing_key_present);
+}
+
+#[test]
+fn ssh_allowed_signer_adds_inline_key_to_local_default_file() {
+    let dir = init_repo();
+    let key = "key::ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey test@gitmun.test";
+    set_local_identity(&dir, Some("test@gitmun.test"), Some(key), "ssh");
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+    assert!(status.setup_needed);
+    assert!(!status.allowed_signers_configured);
+    assert!(!status.allowed_signers_exists);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::UntrustedSigningKey)
+    );
+    assert!(status.signing_key_present);
+    assert!(!status.signing_key_trusted);
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    let content = fs::read_to_string(&configured).expect("read allowed signers");
+    assert_eq!(
+        content,
+        "test@gitmun.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAITestKey test@gitmun.test\n"
+    );
+    assert!(!git_stdout(dir.path(), &["status", "--porcelain"]).contains("gitmun_allowed_signers"));
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_raw_public_key() {
+    let dir = init_repo();
+    let allowed = dir.path().join("allowed_signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIRawKey"),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    assert_eq!(
+        fs::read_to_string(allowed).expect("read allowed signers"),
+        "test@gitmun.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIRawKey\n"
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_reports_configured_missing_file() {
+    let dir = init_repo();
+    let allowed = dir.path().join("missing_allowed_signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIMissingFile"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(status.setup_needed);
+    assert!(status.allowed_signers_configured);
+    assert!(!status.allowed_signers_exists);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::MissingAllowedSignersFile)
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_public_key_file() {
+    let dir = init_repo();
+    let public_key = dir.path().join("id_ed25519.pub");
+    fs::write(
+        &public_key,
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFileKey test@gitmun.test\n",
+    )
+    .expect("write public key");
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some(public_key.to_str().unwrap()),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    assert!(
+        fs::read_to_string(configured)
+            .expect("read allowed signers")
+            .contains("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFileKey")
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_private_key_path_with_public_pair() {
+    let dir = init_repo();
+    let private_key = dir.path().join("id_ed25519");
+    fs::write(&private_key, "private key placeholder").expect("write private key");
+    fs::write(
+        dir.path().join("id_ed25519.pub"),
+        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPairedKey test@gitmun.test\n",
+    )
+    .expect("write public key");
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some(private_key.to_str().unwrap()),
+        "ssh",
+    );
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+
+    let configured = git_stdout(
+        dir.path(),
+        &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"],
+    );
+    assert!(
+        fs::read_to_string(configured)
+            .expect("read allowed signers")
+            .contains("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPairedKey")
+    );
+}
+
+#[test]
+fn ssh_allowed_signer_does_not_duplicate_existing_key() {
+    let dir = init_repo();
+    let allowed = dir.path().join("allowed_signers");
+    fs::write(
+        &allowed,
+        "other@example.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDupeKey other\n",
+    )
+    .expect("write allowed signers");
+    git(
+        dir.path(),
+        &[
+            "config",
+            "--local",
+            "gpg.ssh.allowedSignersFile",
+            allowed.to_str().unwrap(),
+        ],
+    );
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDupeKey test"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+    assert!(!status.setup_needed);
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::Trusted));
+    assert!(status.signing_key_trusted);
+
+    handler()
+        .add_ssh_signing_key_to_allowed_signers(&identity_request(&dir))
+        .expect("add allowed signer");
+    let content = fs::read_to_string(allowed).expect("read allowed signers");
+    assert_eq!(content.lines().count(), 1);
+}
+
+#[test]
+fn ssh_allowed_signer_requires_email() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--local", "--unset", "user.email"]);
+    set_local_identity(
+        &dir,
+        None,
+        Some("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAINoEmail"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(
+        status.blocking_reason.as_deref(),
+        Some("GITMUN_ERROR_SSH_ALLOWED_SIGNERS_MISSING_EMAIL")
+    );
+    assert_eq!(status.reason, Some(SshAllowedSignerReason::MissingEmail));
+}
+
+#[test]
+fn ssh_allowed_signer_reports_unresolved_signing_key() {
+    let dir = init_repo();
+    set_local_identity(
+        &dir,
+        Some("test@gitmun.test"),
+        Some("missing_id_ed25519"),
+        "ssh",
+    );
+
+    let status = handler()
+        .get_ssh_allowed_signer_status(&identity_request(&dir))
+        .expect("status");
+
+    assert!(!status.setup_needed);
+    assert_eq!(
+        status.reason,
+        Some(SshAllowedSignerReason::UnresolvedSigningKey)
+    );
+    assert!(
+        status
+            .blocking_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("GITMUN_ERROR_SSH_ALLOWED_SIGNERS_SIGNING_KEY_UNRESOLVED")
+    );
 }
 
 #[test]

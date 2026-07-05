@@ -277,8 +277,6 @@ pub struct Settings {
     pub auto_install_updates: bool,
     #[serde(default = "Settings::default_update_endpoint")]
     pub update_endpoint: String,
-    #[serde(default, rename = "enableUpdateWithMSStoreFlow")]
-    pub enable_update_with_ms_store_flow: bool,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
     #[serde(default)]
@@ -298,6 +296,8 @@ pub struct Settings {
 pub struct ImportPatchRequest {
     pub repo_path: String,
     pub patch_path: String,
+    #[serde(default)]
+    pub three_way: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -315,6 +315,15 @@ pub struct ExportPatchRequest {
     pub scope: ExportPatchScope,
     #[serde(default)]
     pub files: Vec<ExportPatchFileSelection>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportCommitPatchRequest {
+    pub repo_path: String,
+    pub patch_path: String,
+    #[serde(default)]
+    pub commit_hashes: Vec<String>,
 }
 
 impl Default for Settings {
@@ -342,7 +351,6 @@ impl Default for Settings {
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
-            enable_update_with_ms_store_flow: false,
             linux_graphics_mode: LinuxGraphicsMode::Auto,
             linux_terminal_emulator: LinuxTerminalEmulator::Auto,
             linux_terminal_custom_command: String::new(),
@@ -488,6 +496,13 @@ pub struct CommitRequest {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitMessageRecovery {
+    pub message: String,
+    pub updated_at: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct OperationResult {
     pub message: String,
     pub output: Option<String>,
@@ -554,12 +569,27 @@ pub struct SubmoduleStatus {
     pub state: SubmoduleState,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UnversionedItemKind {
+    File,
+    Directory,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UnversionedItem {
+    pub path: String,
+    pub kind: UnversionedItemKind,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RepoStatus {
     pub changed_files: Vec<FileStatusItem>,
     pub staged_files: Vec<FileStatusItem>,
     pub unversioned_files: Vec<String>,
+    pub unversioned_items: Vec<UnversionedItem>,
     pub submodules: Vec<SubmoduleStatus>,
     pub current_branch: Option<String>,
     pub detached_head: bool,
@@ -808,6 +838,32 @@ pub struct GitIdentity {
     pub signing_format: Option<String>,
     pub ssh_key_path: Option<String>,
     pub commit_signing_enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum SshAllowedSignerReason {
+    NotSsh,
+    MissingSigningKey,
+    MissingEmail,
+    MissingAllowedSignersFile,
+    UntrustedSigningKey,
+    Trusted,
+    UnresolvedSigningKey,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SshAllowedSignerStatus {
+    pub setup_needed: bool,
+    pub target_path: Option<String>,
+    pub blocking_reason: Option<String>,
+    pub allowed_signers_configured: bool,
+    pub allowed_signers_exists: bool,
+    pub signing_key_present: bool,
+    pub signing_key_trusted: bool,
+    pub resolved_public_key_fingerprint: Option<String>,
+    pub reason: Option<SshAllowedSignerReason>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

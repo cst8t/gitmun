@@ -11,6 +11,16 @@ function file(path: string, additions: number | null = null, deletions: number |
   };
 }
 
+function directory(path: string): FileStatusItem {
+  return {
+    path,
+    status: "new",
+    additions: null,
+    deletions: null,
+    kind: "directory",
+  };
+}
+
 describe("buildFileTree", () => {
   it("groups files by shared folders", () => {
     const tree = buildFileTree([
@@ -179,5 +189,30 @@ describe("buildFileTree", () => {
       "src/components/Button.tsx",
       "src/App.tsx",
     ]);
+  });
+
+  it("creates a directory node for a directory-kind untracked entry with no children", () => {
+    const tree = buildFileTree([directory("drafts")]);
+
+    expect(tree).toMatchObject([
+      {
+        type: "directory",
+        name: "drafts",
+        path: "drafts",
+        selectablePath: "drafts",
+        status: "new",
+        fileCount: 1,
+        children: [],
+      },
+    ]);
+  });
+
+  it("returns the directory path for selectable directory nodes", () => {
+    const [node] = buildFileTree([directory("drafts")]);
+
+    expect(node.type).toBe("directory");
+    if (node.type !== "directory") return;
+
+    expect(descendantFilePaths(node)).toEqual(["drafts"]);
   });
 });

@@ -2,8 +2,11 @@
   "actions": {
     "close": "Close",
     "later": "Remind me later",
-    "updateNow": "Update now",
-    "updateWithMicrosoftStore": "Update with Microsoft Store"
+    "openMicrosoftStore": "Open Microsoft Store",
+    "updateNow": "Update now"
+  },
+  "errors": {
+    "microsoftStoreOpenFailed": "Microsoft Store could not be opened."
   },
   "labels": {
     "dontShowAgain": "Don't show this update again",
@@ -19,19 +22,12 @@
     "published": "Published {{date}}",
     "promptBody": "A newer Gitmun release is ready to download.",
     "promptTitle": "Update {{version}} is available",
-    "storeDeferredBody": "The Microsoft Store update was not started.",
-    "storeDeferredTitle": "Update deferred",
-    "storeDownloadingBody": "Microsoft Store is downloading the update.",
-    "storeDownloadingTitle": "Downloading Microsoft Store update",
-    "storeFailedBody": "Microsoft Store could not start the update: {{message}}",
+    "storeFailedBody": "Microsoft Store could not be opened: {{message}}",
     "storeFailedTitle": "Microsoft Store update failed",
-    "storeInstallingBody": "Microsoft Store is installing the update. Gitmun may close while Windows applies it.",
-    "storeInstallingTitle": "Installing Microsoft Store update",
     "storeMandatory": "Microsoft Store marks this update as required.",
-    "storeOpening": "Starting Microsoft Store update...",
-    "storeOpeningBody": "Windows is preparing the update. Follow any Windows prompts to continue.",
-    "storeOpeningTitle": "Starting Microsoft Store update",
-    "storePromptBody": "A newer Gitmun release is available through Microsoft Store.",
+    "storeOpenedBody": "Use Microsoft Store to update Gitmun.",
+    "storeOpenedTitle": "Microsoft Store opened",
+    "storePromptBody": "A newer Gitmun release is available through Microsoft Store. Open the Store page to update Gitmun.",
     "storePromptTitle": "An update is available",
     "unknownError": "Unknown error"
   },
@@ -42,10 +38,8 @@
     "latest": "You're already running the latest version.",
     "latestMicrosoftStore": "You're already running the latest Microsoft Store version.",
     "managed": "Updates are managed by this installation channel.",
-    "storeCompleted": "Microsoft Store finished processing the update.",
-    "storeDeferred": "Microsoft Store update deferred.",
     "storeFailed": "Microsoft Store update failed: {{message}}",
-    "storeInProgress": "Microsoft Store is processing the update.",
+    "storeOpened": "Microsoft Store opened.",
     "storeUpdateAvailable": "A Microsoft Store update is available.",
     "updateAvailable": "Update {{version}} is available."
   }
