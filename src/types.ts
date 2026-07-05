@@ -231,6 +231,7 @@ export type RepoRequest = {
 
 export type ImportPatchRequest = RepoRequest & {
     patchPath: string;
+    threeWay?: boolean;
 };
 
 export type ExportPatchFileSelection = {

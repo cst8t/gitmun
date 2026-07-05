@@ -11,7 +11,8 @@
     "remove": "Remove",
     "revert": "Revert",
     "reset": "Reset",
-    "stashAndSwitch": "Stash and Switch"
+    "stashAndSwitch": "Stash and Switch",
+    "tryThreeWayApply": "Try 3-way apply"
   },
   "ask": {
     "abortCherryPick": {
@@ -63,6 +64,10 @@
     "importPatch": {
       "message": "Apply patch file to the working tree?",
       "title": "Import Patch"
+    },
+    "importPatchThreeWay": {
+      "message": "The patch does not apply cleanly:\n\n{{message}}\n\nTry a 3-way apply? This may leave conflicts to resolve in the Changes tab.",
+      "title": "Patch Does Not Apply Cleanly"
     },
     "removeRemote": {
       "message": "Remove remote \"{{remote}}\"? This will also delete all remote-tracking branches for this remote.",
@@ -230,6 +235,7 @@
     "noPatchChanges": "No changes available for patch export",
     "patchExported": "Exported {{file}}",
     "patchImported": "Patch imported",
+    "patchImportedWithConflicts": "Patch applied with conflicts - resolve them in the Changes tab",
     "pullComplete": "Pull complete",
     "pushComplete": "Push complete",
     "pushDetached": "Push is unavailable while HEAD is detached.",
@@ -262,13 +268,18 @@
     "upstreamRepaired": "Upstream repaired"
   },
   "patch": {
-    "exportPickerTitle": "Export patch file",
-    "importPickerTitle": "Import patch file",
-    "patchFilesFilter": "Patch files"
-  }
-}
     "errors": {
       "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_EMPTY": "Select a commit before exporting a patch.",
       "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID": "One selected commit could not be found.",
       "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER": "One selected commit hash contains an invalid character."
     },
+    "import": {
+      "GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED": "Commit, stash, or discard local changes before trying 3-way patch apply.",
+      "GITMUN_PATCH_IMPORT_APPLIED": "Patch imported",
+      "GITMUN_PATCH_IMPORT_CONFLICTS": "Patch applied with conflicts - resolve them in the Changes tab"
+    },
+    "exportPickerTitle": "Export patch file",
+    "importPickerTitle": "Import patch file",
+    "patchFilesFilter": "Patch files"
+  }
+}

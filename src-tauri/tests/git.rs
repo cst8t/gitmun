@@ -238,6 +238,19 @@ fn import_patch_request(repo: &TempDir, patch_path: &Path) -> ImportPatchRequest
     ImportPatchRequest {
         repo_path: repo.path().to_str().unwrap().to_string(),
         patch_path: patch_path.to_str().unwrap().to_string(),
+        three_way: false,
+    }
+}
+
+fn import_patch_request_with_three_way(
+    repo: &TempDir,
+    patch_path: &Path,
+    three_way: bool,
+) -> ImportPatchRequest {
+    ImportPatchRequest {
+        repo_path: repo.path().to_str().unwrap().to_string(),
+        patch_path: patch_path.to_str().unwrap().to_string(),
+        three_way,
     }
 }
 
@@ -253,6 +266,23 @@ fn export_patch_request(
         scope,
         files,
     }
+}
+
+fn assert_patch_contains_full_index(output: &str) {
+    let index_line = output
+        .lines()
+        .find(|line| line.starts_with("index "))
+        .expect("patch has index line");
+    let ids = index_line
+        .trim_start_matches("index ")
+        .split_whitespace()
+        .next()
+        .expect("index line has object ids");
+    let (old, new) = ids
+        .split_once("..")
+        .expect("index line separates object ids");
+    assert_eq!(old.len(), 40);
+    assert_eq!(new.len(), 40);
 }
 
 fn export_commit_patch_request(
@@ -421,6 +451,104 @@ fn import_patch_rejects_non_applicable_patch_without_modifying_files() {
 }
 
 #[test]
+fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "base\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add base file"]);
+    let base_hash = head_hash(dir.path());
+
+    write_file(dir.path(), "file.txt", "patch\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "patch change"]);
+    let patch = dir.path().join("change.patch");
+    let patch_content = git_stdout(
+        dir.path(),
+        &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
+    );
+    fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
+
+    git(dir.path(), &["reset", "--hard", &base_hash]);
+    write_file(dir.path(), "file.txt", "target\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "target drift"]);
+
+    let result = handler()
+        .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
+        .expect("three-way import result");
+
+    assert_eq!(result.message, "GITMUN_PATCH_IMPORT_CONFLICTS");
+    assert!(
+        git_stdout(dir.path(), &["status", "--porcelain"])
+            .lines()
+            .any(|line| line.starts_with("UU file.txt"))
+    );
+    assert!(read_file(dir.path(), "file.txt").contains("<<<<<<<"));
+}
+
+#[test]
+fn import_patch_three_way_failure_without_blob_data_leaves_files_unchanged() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "different\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add file"]);
+
+    let patch = dir.path().join("change.patch");
+    fs::write(
+        &patch,
+        "diff --git a/file.txt b/file.txt\n\
+         index 624785c..172491a 100644\n\
+         --- a/file.txt\n\
+         +++ b/file.txt\n\
+         @@ -1 +1 @@\n\
+         -before\n\
+         +after\n",
+    )
+    .expect("write patch");
+
+    let result =
+        handler().import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true));
+
+    assert!(result.is_err());
+    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+    assert!(
+        git_stdout(dir.path(), &["status", "--porcelain"])
+            .lines()
+            .all(|line| !line.starts_with("UU "))
+    );
+}
+
+#[test]
+fn import_patch_three_way_blocks_dirty_tracked_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "file.txt", "base\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "add base file"]);
+    let base_hash = head_hash(dir.path());
+
+    write_file(dir.path(), "file.txt", "patch\n");
+    git(dir.path(), &["add", "file.txt"]);
+    git(dir.path(), &["commit", "-m", "patch change"]);
+    let patch = dir.path().join("change.patch");
+    let patch_content = git_stdout(
+        dir.path(),
+        &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
+    );
+    fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
+
+    git(dir.path(), &["reset", "--hard", &base_hash]);
+    write_file(dir.path(), "file.txt", "local\n");
+
+    let error = handler()
+        .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
+        .expect_err("dirty files block three-way apply")
+        .to_string();
+
+    assert!(error.contains("GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED"));
+    assert_eq!(read_file(dir.path(), "file.txt"), "local\n");
+}
+
+#[test]
 fn export_staged_patch_contains_only_staged_changes() {
     let dir = init_repo();
     write_file(dir.path(), "staged.txt", "old\n");
@@ -444,6 +572,7 @@ fn export_staged_patch_contains_only_staged_changes() {
 
     assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
     assert!(!output.contains("unstaged.txt"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -469,6 +598,7 @@ fn export_unstaged_patch_contains_tracked_unstaged_and_untracked_files() {
     assert!(output.contains("diff --git a/tracked.txt b/tracked.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
     assert!(output.contains("new file mode"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -497,6 +627,7 @@ fn export_all_concatenates_staged_unstaged_and_untracked_changes() {
     assert!(output.contains("diff --git a/staged.txt b/staged.txt"));
     assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -544,6 +675,7 @@ fn export_selected_honours_staged_and_unstaged_file_selections() {
     assert!(output.contains("diff --git a/unstaged.txt b/unstaged.txt"));
     assert!(output.contains("diff --git a/new.txt b/new.txt"));
     assert!(!output.contains("ignored.txt"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
@@ -562,6 +694,7 @@ fn export_commit_patch_contains_selected_commit_changes() {
 
     assert!(output.contains("diff --git a/commit.txt b/commit.txt"));
     assert!(output.contains("+first"));
+    assert_patch_contains_full_index(&output);
 }
 
 #[test]
