@@ -56,7 +56,7 @@ describe("getResultLogEntries", () => {
   });
 
   test("returns empty array when stored value is not an array", () => {
-    localStorage.setItem(RESULT_LOG_STORAGE_KEY, JSON.stringify({ foo: "bar" }));
+    localStorage.setItem(RESULT_LOG_STORAGE_KEY, JSON.stringify({ message: "not wrapped in an array" }));
     expect(getResultLogEntries()).toEqual([]);
   });
 

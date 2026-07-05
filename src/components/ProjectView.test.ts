@@ -108,14 +108,16 @@ function patchImportDeps(overrides: Partial<Parameters<typeof importPatchWithRec
 }
 
 describe("importPatchWithRecovery", () => {
+  const patchPath = "/tmp/sonar-calibration.patch";
+
   it("keeps the normal import success path unchanged", async () => {
     const deps = patchImportDeps();
 
-    const outcome = await importPatchWithRecovery("/repo", "/tmp/change.patch", deps);
+    const outcome = await importPatchWithRecovery("/repo", patchPath, deps);
 
     expect(outcome).toBe("applied");
-    expect(deps.checkPatchFile).toHaveBeenCalledWith({ repoPath: "/repo", patchPath: "/tmp/change.patch" });
-    expect(deps.importPatchFile).toHaveBeenCalledWith({ repoPath: "/repo", patchPath: "/tmp/change.patch" });
+    expect(deps.checkPatchFile).toHaveBeenCalledWith({ repoPath: "/repo", patchPath });
+    expect(deps.importPatchFile).toHaveBeenCalledWith({ repoPath: "/repo", patchPath });
     expect(deps.confirmThreeWayApply).not.toHaveBeenCalled();
     expect(deps.onApplied).toHaveBeenCalledWith(operationResult("Applied patch file"));
     expect(deps.appendLog).toHaveBeenCalledWith("success", "Applied patch file", "git-cli");
@@ -128,7 +130,7 @@ describe("importPatchWithRecovery", () => {
       }),
     });
 
-    const outcome = await importPatchWithRecovery("/repo", "/tmp/change.patch", deps);
+    const outcome = await importPatchWithRecovery("/repo", patchPath, deps);
 
     expect(outcome).toBe("cancelled");
     expect(deps.confirmThreeWayApply).toHaveBeenCalledWith("Error: patch does not apply");
@@ -148,12 +150,12 @@ describe("importPatchWithRecovery", () => {
       confirmThreeWayApply: vi.fn(async () => true),
     });
 
-    const outcome = await importPatchWithRecovery("/repo", "/tmp/change.patch", deps);
+    const outcome = await importPatchWithRecovery("/repo", patchPath, deps);
 
     expect(outcome).toBe("applied");
     expect(deps.importPatchFile).toHaveBeenCalledWith({
       repoPath: "/repo",
-      patchPath: "/tmp/change.patch",
+      patchPath,
       threeWay: true,
     });
     expect(deps.onApplied).toHaveBeenCalledWith(operationResult("Applied patch file"));
@@ -169,7 +171,7 @@ describe("importPatchWithRecovery", () => {
       importPatchFile: vi.fn(async () => conflictResult),
     });
 
-    const outcome = await importPatchWithRecovery("/repo", "/tmp/change.patch", deps);
+    const outcome = await importPatchWithRecovery("/repo", patchPath, deps);
 
     expect(outcome).toBe("conflicts");
     expect(deps.onConflicts).toHaveBeenCalledWith(conflictResult);

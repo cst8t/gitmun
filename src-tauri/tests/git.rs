@@ -396,20 +396,20 @@ fn status_detects_modified_unstaged_file() {
 #[test]
 fn import_patch_applies_to_working_tree() {
     let dir = init_repo();
-    write_file(dir.path(), "file.txt", "before\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "add file"]);
+    write_file(dir.path(), "calibration-report.txt", "baseline reading\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add calibration report"]);
 
-    let patch = dir.path().join("change.patch");
+    let patch = dir.path().join("sonar-calibration.patch");
     fs::write(
         &patch,
-        "diff --git a/file.txt b/file.txt\n\
+        "diff --git a/calibration-report.txt b/calibration-report.txt\n\
          index 624785c..172491a 100644\n\
-         --- a/file.txt\n\
-         +++ b/file.txt\n\
+         --- a/calibration-report.txt\n\
+         +++ b/calibration-report.txt\n\
          @@ -1 +1 @@\n\
-         -before\n\
-         +after\n",
+         -baseline reading\n\
+         +corrected reading\n",
     )
     .expect("write patch");
 
@@ -417,7 +417,10 @@ fn import_patch_applies_to_working_tree() {
         .import_patch_file(&import_patch_request(&dir, &patch))
         .expect("import patch");
 
-    assert_eq!(read_file(dir.path(), "file.txt"), "after\n");
+    assert_eq!(
+        read_file(dir.path(), "calibration-report.txt"),
+        "corrected reading\n"
+    );
     assert_eq!(
         git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
         ""
@@ -427,41 +430,44 @@ fn import_patch_applies_to_working_tree() {
 #[test]
 fn import_patch_rejects_non_applicable_patch_without_modifying_files() {
     let dir = init_repo();
-    write_file(dir.path(), "file.txt", "different\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "add file"]);
+    write_file(dir.path(), "calibration-report.txt", "manual reading\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add calibration report"]);
 
-    let patch = dir.path().join("change.patch");
+    let patch = dir.path().join("sonar-calibration.patch");
     fs::write(
         &patch,
-        "diff --git a/file.txt b/file.txt\n\
+        "diff --git a/calibration-report.txt b/calibration-report.txt\n\
          index 624785c..172491a 100644\n\
-         --- a/file.txt\n\
-         +++ b/file.txt\n\
+         --- a/calibration-report.txt\n\
+         +++ b/calibration-report.txt\n\
          @@ -1 +1 @@\n\
-         -before\n\
-         +after\n",
+         -baseline reading\n\
+         +corrected reading\n",
     )
     .expect("write patch");
 
     let result = handler().import_patch_file(&import_patch_request(&dir, &patch));
 
     assert!(result.is_err());
-    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+    assert_eq!(
+        read_file(dir.path(), "calibration-report.txt"),
+        "manual reading\n"
+    );
 }
 
 #[test]
 fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch() {
     let dir = init_repo();
-    write_file(dir.path(), "file.txt", "base\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "add base file"]);
+    write_file(dir.path(), "calibration-report.txt", "baseline reading\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add calibration baseline"]);
     let base_hash = head_hash(dir.path());
 
-    write_file(dir.path(), "file.txt", "patch\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "patch change"]);
-    let patch = dir.path().join("change.patch");
+    write_file(dir.path(), "calibration-report.txt", "incoming calibration\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "record incoming calibration"]);
+    let patch = dir.path().join("sonar-calibration.patch");
     let patch_content = git_stdout(
         dir.path(),
         &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
@@ -469,9 +475,9 @@ fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch()
     fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
 
     git(dir.path(), &["reset", "--hard", &base_hash]);
-    write_file(dir.path(), "file.txt", "target\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "target drift"]);
+    write_file(dir.path(), "calibration-report.txt", "operator correction\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "record operator correction"]);
 
     let result = handler()
         .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
@@ -481,28 +487,28 @@ fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch()
     assert!(
         git_stdout(dir.path(), &["status", "--porcelain"])
             .lines()
-            .any(|line| line.starts_with("UU file.txt"))
+            .any(|line| line.starts_with("UU calibration-report.txt"))
     );
-    assert!(read_file(dir.path(), "file.txt").contains("<<<<<<<"));
+    assert!(read_file(dir.path(), "calibration-report.txt").contains("<<<<<<<"));
 }
 
 #[test]
 fn import_patch_three_way_failure_without_blob_data_leaves_files_unchanged() {
     let dir = init_repo();
-    write_file(dir.path(), "file.txt", "different\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "add file"]);
+    write_file(dir.path(), "calibration-report.txt", "manual reading\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add calibration report"]);
 
-    let patch = dir.path().join("change.patch");
+    let patch = dir.path().join("sonar-calibration.patch");
     fs::write(
         &patch,
-        "diff --git a/file.txt b/file.txt\n\
+        "diff --git a/calibration-report.txt b/calibration-report.txt\n\
          index 624785c..172491a 100644\n\
-         --- a/file.txt\n\
-         +++ b/file.txt\n\
+         --- a/calibration-report.txt\n\
+         +++ b/calibration-report.txt\n\
          @@ -1 +1 @@\n\
-         -before\n\
-         +after\n",
+         -baseline reading\n\
+         +corrected reading\n",
     )
     .expect("write patch");
 
@@ -510,7 +516,10 @@ fn import_patch_three_way_failure_without_blob_data_leaves_files_unchanged() {
         handler().import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true));
 
     assert!(result.is_err());
-    assert_eq!(read_file(dir.path(), "file.txt"), "different\n");
+    assert_eq!(
+        read_file(dir.path(), "calibration-report.txt"),
+        "manual reading\n"
+    );
     assert!(
         git_stdout(dir.path(), &["status", "--porcelain"])
             .lines()
@@ -521,15 +530,15 @@ fn import_patch_three_way_failure_without_blob_data_leaves_files_unchanged() {
 #[test]
 fn import_patch_three_way_blocks_dirty_tracked_files() {
     let dir = init_repo();
-    write_file(dir.path(), "file.txt", "base\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "add base file"]);
+    write_file(dir.path(), "calibration-report.txt", "baseline reading\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add calibration baseline"]);
     let base_hash = head_hash(dir.path());
 
-    write_file(dir.path(), "file.txt", "patch\n");
-    git(dir.path(), &["add", "file.txt"]);
-    git(dir.path(), &["commit", "-m", "patch change"]);
-    let patch = dir.path().join("change.patch");
+    write_file(dir.path(), "calibration-report.txt", "incoming calibration\n");
+    git(dir.path(), &["add", "calibration-report.txt"]);
+    git(dir.path(), &["commit", "-m", "record incoming calibration"]);
+    let patch = dir.path().join("sonar-calibration.patch");
     let patch_content = git_stdout(
         dir.path(),
         &["diff", "--full-index", "--binary", &base_hash, "HEAD", "--"],
@@ -537,7 +546,7 @@ fn import_patch_three_way_blocks_dirty_tracked_files() {
     fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
 
     git(dir.path(), &["reset", "--hard", &base_hash]);
-    write_file(dir.path(), "file.txt", "local\n");
+    write_file(dir.path(), "calibration-report.txt", "local reading\n");
 
     let error = handler()
         .import_patch_file(&import_patch_request_with_three_way(&dir, &patch, true))
@@ -545,7 +554,10 @@ fn import_patch_three_way_blocks_dirty_tracked_files() {
         .to_string();
 
     assert!(error.contains("GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED"));
-    assert_eq!(read_file(dir.path(), "file.txt"), "local\n");
+    assert_eq!(
+        read_file(dir.path(), "calibration-report.txt"),
+        "local reading\n"
+    );
 }
 
 #[test]
@@ -681,35 +693,35 @@ fn export_selected_honours_staged_and_unstaged_file_selections() {
 #[test]
 fn export_commit_patch_contains_selected_commit_changes() {
     let dir = init_repo();
-    write_file(dir.path(), "commit.txt", "first\n");
-    git(dir.path(), &["add", "commit.txt"]);
-    git(dir.path(), &["commit", "-m", "add commit file"]);
+    write_file(dir.path(), "analysis-notes.txt", "sonar baseline\n");
+    git(dir.path(), &["add", "analysis-notes.txt"]);
+    git(dir.path(), &["commit", "-m", "add sonar analysis notes"]);
     let hash = head_hash(dir.path());
 
-    let patch = dir.path().join("commit.patch");
+    let patch = dir.path().join("analysis-notes.patch");
     handler()
         .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
         .expect("export commit patch");
     let output = fs::read_to_string(patch).expect("read patch");
 
-    assert!(output.contains("diff --git a/commit.txt b/commit.txt"));
-    assert!(output.contains("+first"));
+    assert!(output.contains("diff --git a/analysis-notes.txt b/analysis-notes.txt"));
+    assert!(output.contains("+sonar baseline"));
     assert_patch_contains_full_index(&output);
 }
 
 #[test]
 fn export_commit_patch_orders_multiple_commits_oldest_first() {
     let dir = init_repo();
-    write_file(dir.path(), "first.txt", "first\n");
-    git(dir.path(), &["add", "first.txt"]);
-    git(dir.path(), &["commit", "-m", "first"]);
+    write_file(dir.path(), "survey-intake.txt", "morning survey\n");
+    git(dir.path(), &["add", "survey-intake.txt"]);
+    git(dir.path(), &["commit", "-m", "add morning survey"]);
     let first_hash = head_hash(dir.path());
-    write_file(dir.path(), "second.txt", "second\n");
-    git(dir.path(), &["add", "second.txt"]);
-    git(dir.path(), &["commit", "-m", "second"]);
+    write_file(dir.path(), "survey-review.txt", "evening review\n");
+    git(dir.path(), &["add", "survey-review.txt"]);
+    git(dir.path(), &["commit", "-m", "add evening survey review"]);
     let second_hash = head_hash(dir.path());
 
-    let patch = dir.path().join("commits.patch");
+    let patch = dir.path().join("survey-commits.patch");
     handler()
         .export_commit_patch_file(&export_commit_patch_request(
             &dir,
@@ -719,34 +731,38 @@ fn export_commit_patch_orders_multiple_commits_oldest_first() {
         .expect("export commit patch");
     let output = fs::read_to_string(patch).expect("read patch");
 
-    let first_index = output.find("diff --git a/first.txt b/first.txt").unwrap();
-    let second_index = output.find("diff --git a/second.txt b/second.txt").unwrap();
+    let first_index = output
+        .find("diff --git a/survey-intake.txt b/survey-intake.txt")
+        .unwrap();
+    let second_index = output
+        .find("diff --git a/survey-review.txt b/survey-review.txt")
+        .unwrap();
     assert!(first_index < second_index);
 }
 
 #[test]
 fn export_commit_patch_supports_root_commit() {
     let dir = init_unborn_repo();
-    write_file(dir.path(), "root.txt", "root\n");
-    git(dir.path(), &["add", "root.txt"]);
-    git(dir.path(), &["commit", "-m", "root"]);
+    write_file(dir.path(), "baseline-report.txt", "initial survey\n");
+    git(dir.path(), &["add", "baseline-report.txt"]);
+    git(dir.path(), &["commit", "-m", "add baseline report"]);
     let hash = head_hash(dir.path());
 
-    let patch = dir.path().join("root.patch");
+    let patch = dir.path().join("baseline-root.patch");
     handler()
         .export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![hash]))
         .expect("export root commit patch");
     let output = fs::read_to_string(patch).expect("read patch");
 
-    assert!(output.contains("diff --git a/root.txt b/root.txt"));
+    assert!(output.contains("diff --git a/baseline-report.txt b/baseline-report.txt"));
     assert!(output.contains("new file mode"));
-    assert!(output.contains("+root"));
+    assert!(output.contains("+initial survey"));
 }
 
 #[test]
 fn export_commit_patch_rejects_empty_selection() {
     let dir = init_repo();
-    let patch = dir.path().join("empty.patch");
+    let patch = dir.path().join("empty-selection.patch");
     let result =
         handler().export_commit_patch_file(&export_commit_patch_request(&dir, &patch, vec![]));
 
@@ -757,7 +773,7 @@ fn export_commit_patch_rejects_empty_selection() {
 #[test]
 fn export_commit_patch_rejects_invalid_commit_hash() {
     let dir = init_repo();
-    let patch = dir.path().join("invalid.patch");
+    let patch = dir.path().join("invalid-selection.patch");
     let result = handler().export_commit_patch_file(&export_commit_patch_request(
         &dir,
         &patch,
@@ -1204,7 +1220,7 @@ fn commit_message_recovery_reads_commit_editmsg() {
     let commit_editmsg = git_stdout(dir.path(), &["rev-parse", "--git-path", "COMMIT_EDITMSG"]);
     fs::write(
         dir.path().join(commit_editmsg),
-        "Recovered subject\n\nRecovered body\n# ignored comment\n",
+        "Restore buoy calibration\n\nRecovered after the interrupted commit.\n# ignored comment\n",
     )
     .expect("write COMMIT_EDITMSG");
 
@@ -1213,7 +1229,10 @@ fn commit_message_recovery_reads_commit_editmsg() {
         .expect("get_commit_message_recovery")
         .expect("recovery message");
 
-    assert_eq!(recovery.message, "Recovered subject\n\nRecovered body");
+    assert_eq!(
+        recovery.message,
+        "Restore buoy calibration\n\nRecovered after the interrupted commit."
+    );
     assert!(recovery.updated_at > 0);
 }
 
@@ -1406,7 +1425,7 @@ fn ssh_allowed_signer_accepts_public_key_file() {
 fn ssh_allowed_signer_accepts_private_key_path_with_public_pair() {
     let dir = init_repo();
     let private_key = dir.path().join("id_ed25519");
-    fs::write(&private_key, "private key placeholder").expect("write private key");
+    fs::write(&private_key, "marine lab private key fixture\n").expect("write private key");
     fs::write(
         dir.path().join("id_ed25519.pub"),
         "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPairedKey test@gitmun.test\n",

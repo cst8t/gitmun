@@ -504,6 +504,29 @@ describe("LogView commit selection", () => {
     expect(prominentRefLabelsFor("Subject 1")).toEqual([]);
   });
 
+  it("keeps current checkout refs prominent when another row is selected", () => {
+    const targetCommit = commit(1, {
+      refDecorations: [
+        { name: "main", kind: "localBranch" },
+        { name: "origin/main", kind: "remoteBranch" },
+      ],
+    });
+    const selectedCommit = commit(2);
+
+    renderLog({
+      commits: [targetCommit, selectedCommit],
+      selectedCommitHash: selectedCommit.hash,
+      commitMarkers: {
+        localHead: targetCommit.hash,
+        upstreamHead: targetCommit.hash,
+        upstreamRef: "origin/main",
+      },
+    });
+
+    expect(prominentRefLabelsFor("Subject 1")).toEqual(["HEAD", "main", "origin/main"]);
+    expect(inlineRefLabelsFor("Subject 1")).toEqual([]);
+  });
+
   it("keeps long remote ref labels visible and exposes the full label in the title", () => {
     const remoteName = "origin/feature/long-branch-label";
 

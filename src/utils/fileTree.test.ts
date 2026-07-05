@@ -117,25 +117,25 @@ describe("buildFileTree", () => {
         children: [
           {
             type: "directory",
-            name: "graphics",
+            name: "observations/current",
+            path: "marine-lab/reports/observations/current",
+          },
+          {
+            type: "directory",
+            name: "sonar",
             path: "marine-lab/reports/sonar",
             children: [
               {
                 type: "directory",
-                name: "100/en/symbols",
-                path: "marine-lab/reports/sonar/2026/atlantic",
+                name: "2025/atlantic",
+                path: "marine-lab/reports/sonar/2025/atlantic",
               },
               {
                 type: "directory",
-                name: "50/en/symbols",
-                path: "marine-lab/reports/sonar/2025/atlantic",
+                name: "2026/atlantic",
+                path: "marine-lab/reports/sonar/2026/atlantic",
               },
             ],
-          },
-          {
-            type: "directory",
-            name: "scenes/default",
-            path: "marine-lab/reports/observations/current",
           },
         ],
       },

@@ -8,6 +8,7 @@ import "../../i18n";
 
 const COMMIT_BOX_RATIO_KEY = "gitmun.commitBoxRatio";
 const getCommitMessageRecovery = vi.fn();
+const repoPath = "C:\\marine-lab\\reports";
 
 vi.mock("../../api/commands", () => ({
   getCommitMessageRecovery: (...args: unknown[]) => getCommitMessageRecovery(...args),
@@ -41,7 +42,7 @@ type RenderCommitBoxOptions = {
 };
 
 function renderCommitBox({
-  repoPath = "C:\\repo",
+  repoPath = "C:\\marine-lab\\reports",
   selectedAction = "commit",
   commitMessageRecommendedLength = 72,
   allowCommitAndPush = true,
@@ -96,7 +97,7 @@ describe("CommitBox", () => {
 
     rerender(
       <CommitBox
-        repoPath="C:\\repo"
+        repoPath={repoPath}
         stagedCount={2}
         selectedAction="commitAndPush"
         commitMessageRecommendedLength={72}
@@ -157,44 +158,47 @@ describe("CommitBox", () => {
   });
 
   it("saves normal commit message drafts while typing", async () => {
-    renderCommitBox({repoPath: "C:\\repo"});
+    renderCommitBox({ repoPath });
 
     fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
-      target: { value: "Draft subject" },
+      target: { value: "Document sonar drift" },
     });
     fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
-      target: { value: "Draft body" },
+      target: { value: "Add the Atlantic calibration notes." },
     });
 
     await waitFor(() => {
-      const draft = JSON.parse(localStorage.getItem(commitMessageDraftKey("C:\\repo")) ?? "null");
-      expect(draft).toMatchObject({subject: "Draft subject", body: "Draft body"});
+      const draft = JSON.parse(localStorage.getItem(commitMessageDraftKey(repoPath)) ?? "null");
+      expect(draft).toMatchObject({
+        subject: "Document sonar drift",
+        body: "Add the Atlantic calibration notes.",
+      });
     });
   });
 
   it("restores saved drafts for the same repo", () => {
-    localStorage.setItem(commitMessageDraftKey("C:\\repo"), JSON.stringify({
-      subject: "Saved subject",
-      body: "Saved body",
+    localStorage.setItem(commitMessageDraftKey(repoPath), JSON.stringify({
+      subject: "Review buoy telemetry",
+      body: "Capture the missing tide-window context.",
       updatedAt: 1,
     }));
 
-    renderCommitBox({repoPath: "C:\\repo"});
+    renderCommitBox({ repoPath });
 
-    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Saved subject");
-    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Saved body");
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Review buoy telemetry");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Capture the missing tide-window context.");
     expect(getCommitMessageRecovery).not.toHaveBeenCalled();
   });
 
   it("does not restore a saved draft over a merge message", () => {
-    localStorage.setItem(commitMessageDraftKey("C:\\repo"), JSON.stringify({
-      subject: "Saved subject",
-      body: "Saved body",
+    localStorage.setItem(commitMessageDraftKey(repoPath), JSON.stringify({
+      subject: "Review buoy telemetry",
+      body: "Capture the missing tide-window context.",
       updatedAt: 1,
     }));
 
     renderCommitBox({
-      repoPath: "C:\\repo",
+      repoPath,
       mergeInProgress: true,
       mergeMessage: "Merge branch 'main'\n\n# comment",
     });
@@ -204,58 +208,64 @@ describe("CommitBox", () => {
   });
 
   it("clears drafts after a successful commit", async () => {
-    const { onCommit } = renderCommitBox({repoPath: "C:\\repo"});
+    const { onCommit } = renderCommitBox({ repoPath });
     onCommit.mockResolvedValue(true);
 
     fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
-      target: { value: "Subject" },
+      target: { value: "Document sonar drift" },
     });
     fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
-      target: { value: "Body" },
+      target: { value: "Add the Atlantic calibration notes." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
 
     await waitFor(() => {
       expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("");
       expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("");
-      expect(localStorage.getItem(commitMessageDraftKey("C:\\repo"))).toBeNull();
+      expect(localStorage.getItem(commitMessageDraftKey(repoPath))).toBeNull();
     });
   });
 
   it("keeps drafts visible after a failed commit", async () => {
-    const { onCommit } = renderCommitBox({repoPath: "C:\\repo"});
+    const { onCommit } = renderCommitBox({ repoPath });
     onCommit.mockResolvedValue(false);
 
     fireEvent.change(screen.getByPlaceholderText("Commit subject..."), {
-      target: { value: "Subject" },
+      target: { value: "Document sonar drift" },
     });
     fireEvent.change(screen.getByPlaceholderText("Commit body..."), {
-      target: { value: "Body" },
+      target: { value: "Add the Atlantic calibration notes." },
     });
     fireEvent.click(screen.getByRole("button", { name: "Commit (2)" }));
 
     await waitFor(() => expect(onCommit).toHaveBeenCalled());
-    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Subject");
-    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Body");
-    expect(localStorage.getItem(commitMessageDraftKey("C:\\repo"))).not.toBeNull();
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Document sonar drift");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Add the Atlantic calibration notes.");
+    expect(localStorage.getItem(commitMessageDraftKey(repoPath))).not.toBeNull();
   });
 
   it("offers COMMIT_EDITMSG recovery when no local draft exists", async () => {
-    getCommitMessageRecovery.mockResolvedValue({message: "Recovered subject\n\nRecovered body", updatedAt: 1});
-    renderCommitBox({repoPath: "C:\\repo"});
+    getCommitMessageRecovery.mockResolvedValue({
+      message: "Restore buoy calibration\n\nRecovered after the interrupted commit.",
+      updatedAt: 1,
+    });
+    renderCommitBox({ repoPath });
 
     const restore = await screen.findByRole("button", {name: "Restore previous message"});
     fireEvent.click(restore);
 
-    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Recovered subject");
-    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Recovered body");
+    expect(screen.getByPlaceholderText("Commit subject...")).toHaveValue("Restore buoy calibration");
+    expect(screen.getByPlaceholderText("Commit body...")).toHaveValue("Recovered after the interrupted commit.");
   });
 
   it("does not offer COMMIT_EDITMSG recovery for the latest commit message", async () => {
-    getCommitMessageRecovery.mockResolvedValue({message: "Latest subject\n\nLatest body", updatedAt: 1});
+    getCommitMessageRecovery.mockResolvedValue({
+      message: "Publish tide report\n\nNo new recovery copy.",
+      updatedAt: 1,
+    });
     renderCommitBox({
-      repoPath: "C:\\repo",
-      lastCommitMessage: "Latest subject\n\nLatest body",
+      repoPath,
+      lastCommitMessage: "Publish tide report\n\nNo new recovery copy.",
     });
 
     await waitFor(() => expect(getCommitMessageRecovery).toHaveBeenCalled());

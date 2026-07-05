@@ -9,7 +9,7 @@ describe("getBranchNameError", () => {
 
   test("returns null for valid branch names", () => {
     expect(getBranchNameError("main")).toBeNull();
-    expect(getBranchNameError("feature/my-thing")).toBeNull();
+    expect(getBranchNameError("feature/payment-retry")).toBeNull();
     expect(getBranchNameError("fix-123")).toBeNull();
     expect(getBranchNameError("release/1.0.0")).toBeNull();
     expect(getBranchNameError("user/feature_branch")).toBeNull();
@@ -33,7 +33,7 @@ describe("getBranchNameError", () => {
 
   test("rejects names with spaces", () => {
     expect(getBranchNameError("my branch")).not.toBeNull();
-    expect(getBranchNameError("feature/ thing")).not.toBeNull();
+    expect(getBranchNameError("feature/ payment-retry")).not.toBeNull();
   });
 
   test("rejects names containing ..", () => {
