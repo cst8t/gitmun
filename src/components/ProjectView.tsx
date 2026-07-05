@@ -50,8 +50,10 @@ import type {
   ExportPatchFileSelection,
   ExportPatchScope,
   GitIdentity,
+  ImportPatchRequest,
   LongRunningOperation,
   LongRunningOperationKind,
+  OperationResult,
   PullAnalysis,
   PullStrategy,
   PushRequest,
@@ -63,7 +65,7 @@ import type {
   StagingOperationKind,
   StashEntry,
 } from "../types";
-import type { ResultLogEntry } from "../utils/resultLog";
+import type { ResultLogEntry, ResultLogLevel } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
@@ -121,6 +123,13 @@ const PATCH_EXPORT_ERROR_CODES = [
   "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID",
   "GITMUN_ERROR_PATCH_EXPORT_COMMIT_HASH_INVALID_CHARACTER",
 ] as const;
+const PATCH_IMPORT_APPLIED = "GITMUN_PATCH_IMPORT_APPLIED";
+const PATCH_IMPORT_CONFLICTS = "GITMUN_PATCH_IMPORT_CONFLICTS";
+const PATCH_IMPORT_MESSAGE_CODES = [
+  PATCH_IMPORT_APPLIED,
+  PATCH_IMPORT_CONFLICTS,
+  "GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED",
+] as const;
 
 function localiseExternalToolError(error: unknown, t: TFunction<"projectView">): string {
   const message = String(error);
@@ -136,6 +145,11 @@ function localiseExternalToolError(error: unknown, t: TFunction<"projectView">):
 function localisePatchExportError(message: string, t: TFunction<"projectView">): string {
   const code = PATCH_EXPORT_ERROR_CODES.find(code => message.includes(code));
   return code ? t(`patch.errors.${code}`) : message;
+}
+
+function localisePatchImportMessage(message: string, t: TFunction<"projectView">): string {
+  const code = PATCH_IMPORT_MESSAGE_CODES.find(code => message.includes(code));
+  return code ? t(`patch.import.${code}`) : message;
 }
 
 export function buildStashDropPrompt(
@@ -189,6 +203,67 @@ export function buildPushRequestForCurrentBranch(
     remote: upstream.remote,
     remoteBranch: upstream.branch,
   };
+}
+
+export type PatchImportOutcome = "applied" | "conflicts" | "cancelled" | "failed";
+
+export type PatchImportRecoveryDependencies = {
+  checkPatchFile: (request: ImportPatchRequest) => Promise<OperationResult>;
+  importPatchFile: (request: ImportPatchRequest) => Promise<OperationResult>;
+  confirmThreeWayApply: (message: string) => Promise<boolean>;
+  formatFailureMessage: (message: string) => string;
+  formatResultMessage: (message: string) => string;
+  appendLog: (level: ResultLogLevel, message: string, backend: ResultLogEntry["backend"]) => void;
+  onApplied: (result: OperationResult) => Promise<void>;
+  onConflicts: (result: OperationResult) => Promise<void>;
+  onError: (message: string) => void;
+};
+
+export function isPatchConflictResult(result: Pick<OperationResult, "message">): boolean {
+  return result.message.includes(PATCH_IMPORT_CONFLICTS);
+}
+
+export async function importPatchWithRecovery(
+  repoPath: string,
+  patchPath: string,
+  deps: PatchImportRecoveryDependencies,
+): Promise<PatchImportOutcome> {
+  const request = { repoPath, patchPath };
+
+  try {
+    await deps.checkPatchFile(request);
+    const result = await deps.importPatchFile(request);
+    deps.appendLog("success", deps.formatResultMessage(result.message), result.backendUsed);
+    await deps.onApplied(result);
+    return "applied";
+  } catch (error) {
+    const message = String(error);
+    deps.appendLog("error", deps.formatFailureMessage(message), "unknown");
+
+    const retry = await deps.confirmThreeWayApply(message);
+    if (!retry) {
+      return "cancelled";
+    }
+
+    try {
+      const result = await deps.importPatchFile({ ...request, threeWay: true });
+      const conflicts = isPatchConflictResult(result);
+      deps.appendLog(conflicts ? "info" : "success", deps.formatResultMessage(result.message), result.backendUsed);
+      if (conflicts) {
+        await deps.onConflicts(result);
+        return "conflicts";
+      }
+
+      await deps.onApplied(result);
+      return "applied";
+    } catch (retryError) {
+      const retryMessage = String(retryError);
+      const displayMessage = deps.formatResultMessage(retryMessage);
+      deps.onError(displayMessage);
+      deps.appendLog("error", deps.formatFailureMessage(displayMessage), "unknown");
+      return "failed";
+    }
+  }
 }
 
 export type ProjectViewProps = {
@@ -1709,17 +1784,30 @@ export function ProjectView({
     });
     if (!confirmed) return;
 
-    try {
-      await api.checkPatchFile({ repoPath, patchPath: selected });
-      const result = await api.importPatchFile({ repoPath, patchPath: selected });
-      showToast(t("toast.patchImported"), "success");
-      appendResultLog("success", result.message, result.backendUsed);
-      setCentreTab("changes");
-      await refreshAll();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.importPatchFailed", { message: String(e) }), "unknown");
-    }
+    await importPatchWithRecovery(repoPath, selected, {
+      checkPatchFile: api.checkPatchFile,
+      importPatchFile: api.importPatchFile,
+      confirmThreeWayApply: (message) => ask(t("ask.importPatchThreeWay.message", { message }), {
+        title: t("ask.importPatchThreeWay.title"),
+        kind: "warning",
+        okLabel: t("actions.tryThreeWayApply"),
+        cancelLabel: t("actions.cancel"),
+      }),
+      formatFailureMessage: (message) => t("log.importPatchFailed", { message }),
+      formatResultMessage: (message) => localisePatchImportMessage(message, t),
+      appendLog: appendResultLog,
+      onApplied: async () => {
+        showToast(t("toast.patchImported"), "success");
+        setCentreTab("changes");
+        await refreshAll();
+      },
+      onConflicts: async () => {
+        showToast(t("toast.patchImportedWithConflicts"), "info");
+        setCentreTab("changes");
+        await refreshAll();
+      },
+      onError: (message) => showToast(message, "error"),
+    });
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleExportPatch = useCallback(async (scope: ExportPatchScope) => {
@@ -1742,10 +1830,10 @@ export function ProjectView({
       const result = await api.exportPatchFile({ repoPath, patchPath: selected, scope, files });
       const patchName = getFileName(selected);
       showToast(t("toast.patchExported", { file: patchName }), "success");
-      appendResultLog("success", result.message, result.backendUsed);
+      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
     } catch (e) {
       const message = String(e);
-      if (message.includes(PATCH_EXPORT_NO_CHANGES) || message.includes(PATCH_EXPORT_NO_COMMITS_SELECTED)) {
+      if (message.includes(PATCH_EXPORT_NO_CHANGES)) {
         showToast(t("toast.noPatchChanges"), "info");
         appendResultLog("info", t("log.noPatchChanges"), "git-cli");
         return;
@@ -1777,7 +1865,7 @@ export function ProjectView({
       appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
     } catch (e) {
       const message = String(e);
-      if (message.includes(PATCH_EXPORT_NO_CHANGES)) {
+      if (message.includes(PATCH_EXPORT_NO_CHANGES) || message.includes(PATCH_EXPORT_NO_COMMITS_SELECTED)) {
         showToast(t("toast.noPatchChanges"), "info");
         appendResultLog("info", t("log.noPatchChanges"), "git-cli");
         return;
@@ -1797,7 +1885,7 @@ export function ProjectView({
     try {
       const result = await action({ repoPath, path, recursive: false });
       showToast(result.message, "success");
-      appendResultLog("success", t("toast.patchExported", { file: patchName }), result.backendUsed);
+      appendResultLog("success", result.message, result.backendUsed);
       await refreshStatus();
     } catch (e) {
       showToast(String(e), "error");

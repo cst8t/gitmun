@@ -296,6 +296,8 @@ pub struct Settings {
 pub struct ImportPatchRequest {
     pub repo_path: String,
     pub patch_path: String,
+    #[serde(default)]
+    pub three_way: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]

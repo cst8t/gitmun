@@ -67,6 +67,10 @@ impl CliGitHandler {
     const PATCH_EXPORT_NO_COMMITS_SELECTED: &'static str =
         "GITMUN_ERROR_PATCH_EXPORT_NO_COMMITS_SELECTED";
     const PATCH_EXPORT_WRITTEN: &'static str = "GITMUN_PATCH_EXPORT_WRITTEN";
+    const PATCH_IMPORT_APPLIED: &'static str = "GITMUN_PATCH_IMPORT_APPLIED";
+    const PATCH_IMPORT_CONFLICTS: &'static str = "GITMUN_PATCH_IMPORT_CONFLICTS";
+    const PATCH_IMPORT_THREE_WAY_BLOCKED: &'static str =
+        "GITMUN_ERROR_PATCH_IMPORT_THREE_WAY_BLOCKED";
 
     fn preferred_mime_from_path(file_path: &str) -> Option<String> {
         let mut first: Option<String> = None;
@@ -806,6 +810,7 @@ impl CliGitHandler {
         if staged {
             args.push("--cached");
         }
+        args.push("--full-index");
         args.push("--binary");
         args.push("--");
         args.extend(paths.iter().map(String::as_str));
@@ -817,6 +822,7 @@ impl CliGitHandler {
         if staged {
             args.push("--cached");
         }
+        args.push("--full-index");
         args.push("--binary");
         args.push("--");
         Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])
@@ -825,7 +831,15 @@ impl CliGitHandler {
     fn git_untracked_patch(repo_path: &Path, path: &str) -> GitResult<String> {
         let null_device = if cfg!(windows) { "NUL" } else { "/dev/null" };
         let output = Self::run_git_allow_exit_codes(
-            &["diff", "--no-index", "--binary", "--", null_device, path],
+            &[
+                "diff",
+                "--no-index",
+                "--full-index",
+                "--binary",
+                "--",
+                null_device,
+                path,
+            ],
             Some(repo_path),
             &[1],
         )?;
@@ -893,7 +907,14 @@ impl CliGitHandler {
         let base_hash = parts.next().unwrap_or(Self::EMPTY_TREE_HASH);
 
         Self::run_git_allow_exit_codes(
-            &["diff", "--binary", base_hash, resolved_hash, "--"],
+            &[
+                "diff",
+                "--full-index",
+                "--binary",
+                base_hash,
+                resolved_hash,
+                "--",
+            ],
             Some(repo_path),
             &[1],
         )
@@ -987,6 +1008,81 @@ impl CliGitHandler {
         }
 
         Ok(output)
+    }
+
+    fn patch_three_way_blocked_message() -> String {
+        Self::PATCH_IMPORT_THREE_WAY_BLOCKED.to_string()
+    }
+
+    fn status_has_tracked_changes(output: &str) -> bool {
+        output
+            .lines()
+            .map(str::trim)
+            .any(|line| !line.is_empty() && !line.starts_with("?? "))
+    }
+
+    fn status_has_unmerged_files(output: &str) -> bool {
+        output.lines().any(|line| {
+            let Some(status) = line.get(0..2) else {
+                return false;
+            };
+            matches!(status, "DD" | "AU" | "UD" | "UA" | "DU" | "AA" | "UU")
+        })
+    }
+
+    fn ensure_clean_for_three_way_patch(repo_path: &Path) -> GitResult<()> {
+        let output = Self::run_git(
+            &["status", "--porcelain=v1", "--untracked-files=no"],
+            Some(repo_path),
+        )?;
+        if Self::status_has_tracked_changes(&output) {
+            return Err(GitError::InvalidInput(
+                Self::patch_three_way_blocked_message(),
+            ));
+        }
+        Ok(())
+    }
+
+    fn apply_patch_three_way(repo_path: &Path, patch_path: &str) -> GitResult<OperationResult> {
+        Self::ensure_clean_for_three_way_patch(repo_path)?;
+
+        match Self::run_git(
+            &["apply", "--3way", "--binary", patch_path],
+            Some(repo_path),
+        ) {
+            Ok(output) => Ok(Self::operation_result(
+                Self::PATCH_IMPORT_APPLIED.to_string(),
+                output,
+                repo_path,
+            )),
+            Err(GitError::CommandFailed {
+                command,
+                stderr,
+                exit_code,
+            }) => {
+                let status_output = Self::run_git(&["status", "--porcelain=v1"], Some(repo_path))?;
+                if Self::status_has_unmerged_files(&status_output) {
+                    return Ok(Self::operation_result(
+                        Self::PATCH_IMPORT_CONFLICTS.to_string(),
+                        stderr,
+                        repo_path,
+                    ));
+                }
+
+                if stderr.contains("does not match index") {
+                    return Err(GitError::InvalidInput(
+                        Self::patch_three_way_blocked_message(),
+                    ));
+                }
+
+                Err(GitError::CommandFailed {
+                    command,
+                    stderr,
+                    exit_code,
+                })
+            }
+            Err(error) => Err(error),
+        }
     }
 
     fn submodule_index_commit(repo_path: &Path, path: &str) -> Option<String> {
@@ -2639,11 +2735,15 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn import_patch_file(&self, request: &ImportPatchRequest) -> GitResult<OperationResult> {
-        self.check_patch_file(request)?;
-
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let patch_path = Self::validate_patch_path(&request.patch_path)?;
         let patch_path_string = patch_path.to_string_lossy().to_string();
+
+        if request.three_way {
+            return Self::apply_patch_three_way(&repo_path, &patch_path_string);
+        }
+
+        self.check_patch_file(request)?;
         let output = Self::run_git(&["apply", "--binary", &patch_path_string], Some(&repo_path))?;
 
         Ok(Self::operation_result(
