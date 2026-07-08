@@ -439,6 +439,8 @@ pub struct CommitHistoryRequest {
     pub commit_date_mode: CommitDateMode,
     #[serde(default)]
     pub scope: CommitLogScope,
+    #[serde(default)]
+    pub topo_order: bool,
 }
 
 #[derive(Debug, Clone, Deserialize)]

@@ -8,6 +8,7 @@ export function useGitLog(
   repoPath: string | null,
   scope: CommitLogScope = "currentCheckout",
   windowFocused = true,
+  topoOrder = false,
 ) {
   const [commits, setCommits] = useState<CommitHistoryItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -21,6 +22,8 @@ export function useGitLog(
   currentRepoRef.current = repoPath;
   const currentScopeRef = useRef(scope);
   currentScopeRef.current = scope;
+  const currentTopoOrderRef = useRef(topoOrder);
+  currentTopoOrderRef.current = topoOrder;
 
   const refreshRequestId = useRef(0);
   const loadMoreRequestId = useRef(0);
@@ -39,7 +42,7 @@ export function useGitLog(
     setLoadMoreError(null);
     cursorRef.current = undefined;
     commitCountRef.current = 0;
-  }, [repoPath, scope]);
+  }, [repoPath, scope, topoOrder]);
 
   const refresh = useCallback(async (options?: { force?: boolean }) => {
     if (!windowFocused && options?.force !== true) {
@@ -60,10 +63,11 @@ export function useGitLog(
     setError(null);
     setLoadMoreError(null);
     try {
-      const page = await getCommitHistory(repoPath, requestedLimit, undefined, undefined, scope);
+      const page = await getCommitHistory(repoPath, requestedLimit, undefined, undefined, scope, topoOrder);
       if (
         currentRepoRef.current === repoPath
         && currentScopeRef.current === scope
+        && currentTopoOrderRef.current === topoOrder
         && refreshRequestId.current === myId
         && commitCountRef.current <= requestedLimit
       ) {
@@ -74,17 +78,17 @@ export function useGitLog(
         commitCountRef.current = page.length;
       }
     } catch (e) {
-      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && refreshRequestId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && currentTopoOrderRef.current === topoOrder && refreshRequestId.current === myId) {
         setError(String(e));
       }
     } finally {
-      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && refreshRequestId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && currentTopoOrderRef.current === topoOrder && refreshRequestId.current === myId) {
         setLoading(false);
       }
     }
-  }, [repoPath, scope, windowFocused]);
+  }, [repoPath, scope, topoOrder, windowFocused]);
 
-  useEffect(() => { refresh(); }, [repoPath, scope]);
+  useEffect(() => { refresh(); }, [repoPath, scope, topoOrder]);
 
   useEffect(() => {
     if (!windowFocused || !pendingBlurredRefreshRef.current) return;
@@ -101,10 +105,11 @@ export function useGitLog(
     setLoadMoreError(null);
     try {
       const offset = commitCountRef.current; // CLI fallback uses --skip
-      const page = await getCommitHistory(repoPath, PAGE_SIZE, afterHash, offset, scope);
+      const page = await getCommitHistory(repoPath, PAGE_SIZE, afterHash, offset, scope, topoOrder);
       if (
         currentRepoRef.current === repoPath
         && currentScopeRef.current === scope
+        && currentTopoOrderRef.current === topoOrder
         && loadMoreRequestId.current === myId
         && cursorRef.current === afterHash
         && commitCountRef.current === offset
@@ -124,15 +129,15 @@ export function useGitLog(
         }
       }
     } catch (e) {
-      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && loadMoreRequestId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && currentTopoOrderRef.current === topoOrder && loadMoreRequestId.current === myId) {
         setLoadMoreError(String(e));
       }
     } finally {
-      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && loadMoreRequestId.current === myId) {
+      if (currentRepoRef.current === repoPath && currentScopeRef.current === scope && currentTopoOrderRef.current === topoOrder && loadMoreRequestId.current === myId) {
         setLoadingMore(false);
       }
     }
-  }, [repoPath, scope, loadingMore, hasMore]);
+  }, [repoPath, scope, topoOrder, loadingMore, hasMore]);
 
   return { commits, loading, loadingMore, loadMoreError, hasMore, error, pageSize: PAGE_SIZE, refresh, loadMore };
 }

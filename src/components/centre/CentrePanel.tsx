@@ -68,6 +68,7 @@ type CentrePanelProps = {
   logScope: CommitLogScope;
   rowStriping: RowStriping;
   showCommitGraphButton: boolean;
+  onCommitGraphVisibilityChange?: (visible: boolean) => void;
   onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
   shallow: boolean;
@@ -218,6 +219,10 @@ export function CentrePanel(props: CentrePanelProps) {
     : null;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
+
+  React.useEffect(() => {
+    props.onCommitGraphVisibilityChange?.(effectiveShowCommitGraph);
+  }, [effectiveShowCommitGraph, props.onCommitGraphVisibilityChange]);
 
   const handleToggleCommitGraph = () => {
     setShowCommitGraph(previous => {

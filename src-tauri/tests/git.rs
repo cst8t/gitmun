@@ -190,6 +190,7 @@ fn history_request(dir: &TempDir) -> CommitHistoryRequest {
         offset: None,
         commit_date_mode: Default::default(),
         scope: Default::default(),
+        topo_order: false,
     }
 }
 
@@ -1190,6 +1191,7 @@ fn commit_creates_entry_in_log() {
             offset: None,
             commit_date_mode: Default::default(),
             scope: Default::default(),
+            topo_order: false,
         })
         .expect("get_commit_history");
     assert!(commits.iter().any(|c| c.message == "add b.txt"));
@@ -1564,6 +1566,7 @@ fn commit_history_all_refs_includes_branch_outside_detached_head() {
             offset: None,
             commit_date_mode: Default::default(),
             scope: CommitLogScope::CurrentCheckout,
+            topo_order: false,
         })
         .expect("get current checkout history");
 
@@ -1575,6 +1578,7 @@ fn commit_history_all_refs_includes_branch_outside_detached_head() {
             offset: None,
             commit_date_mode: Default::default(),
             scope: CommitLogScope::AllRefs,
+            topo_order: false,
         })
         .expect("get all refs history");
 
@@ -1630,6 +1634,7 @@ fn assert_commit_history_includes_merge_parents(handler: impl GitOperationHandle
             offset: None,
             commit_date_mode: Default::default(),
             scope: CommitLogScope::CurrentCheckout,
+            topo_order: false,
         })
         .expect("get commit history");
 
@@ -1672,6 +1677,7 @@ fn assert_commit_history_includes_ref_decorations(handler: impl GitOperationHand
             offset: None,
             commit_date_mode: Default::default(),
             scope: CommitLogScope::CurrentCheckout,
+            topo_order: false,
         })
         .expect("get commit history");
 
@@ -1791,6 +1797,7 @@ fn commit_history_respects_limit() {
             offset: None,
             commit_date_mode: Default::default(),
             scope: Default::default(),
+            topo_order: false,
         })
         .expect("get_commit_history");
     assert_eq!(commits.len(), 3);
@@ -1812,6 +1819,7 @@ fn commit_history_returns_commits_newest_first() {
             offset: None,
             commit_date_mode: Default::default(),
             scope: Default::default(),
+            topo_order: false,
         })
         .expect("get_commit_history");
     assert_eq!(commits[0].message, "third");
@@ -1952,15 +1960,18 @@ fn gix_commit_history_matches_git_log_order_for_merge_commits() {
         .map(ToString::to_string)
         .collect();
 
+    let history_request = |topo_order| CommitHistoryRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        limit: Some(5),
+        after_hash: None,
+        offset: None,
+        commit_date_mode: Default::default(),
+        scope: Default::default(),
+        topo_order,
+    };
+
     let commits = gix_handler()
-        .get_commit_history(&CommitHistoryRequest {
-            repo_path: dir.path().to_str().unwrap().to_string(),
-            limit: Some(5),
-            after_hash: None,
-            offset: None,
-            commit_date_mode: Default::default(),
-            scope: Default::default(),
-        })
+        .get_commit_history(&history_request(false))
         .expect("get gix commit history");
     let actual_messages: Vec<String> = commits
         .iter()
@@ -1968,6 +1979,30 @@ fn gix_commit_history_matches_git_log_order_for_merge_commits() {
         .collect();
 
     assert_eq!(actual_messages, expected_messages);
+
+    let expected_topo_messages: Vec<String> =
+        git_stdout(dir.path(), &["log", "--topo-order", "-5", "--format=%s"])
+            .lines()
+            .map(ToString::to_string)
+            .collect();
+
+    let cli_topo_commits = handler()
+        .get_commit_history(&history_request(true))
+        .expect("get cli topo commit history");
+    let cli_topo_messages: Vec<String> = cli_topo_commits
+        .iter()
+        .map(|commit| commit.message.clone())
+        .collect();
+    assert_eq!(cli_topo_messages, expected_topo_messages);
+
+    let gix_topo_commits = gix_handler()
+        .get_commit_history(&history_request(true))
+        .expect("get gix topo commit history");
+    let gix_topo_messages: Vec<String> = gix_topo_commits
+        .iter()
+        .map(|commit| commit.message.clone())
+        .collect();
+    assert_eq!(gix_topo_messages, expected_topo_messages);
 }
 
 // commit_details: CLI handler

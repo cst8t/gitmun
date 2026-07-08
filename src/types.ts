@@ -265,6 +265,7 @@ export type CommitHistoryRequest = RepoRequest & {
     afterHash?: string;
     offset?: number;
     scope?: CommitLogScope;
+    topoOrder?: boolean;
 };
 
 export type CommitFilesRequest = RepoRequest & {

@@ -844,24 +844,15 @@
 
 .log-view__graph-connector {
   stroke-width: 3;
+  stroke-linejoin: round;
+}
+
+.log-view__graph-connector--curve {
   stroke-linecap: round;
 }
 
-.log-view__graph-vertical {
-  position: absolute;
-  width: 3px;
-  margin-left: -1px;
-  border-radius: 999px;
-}
-
-.log-view__graph-vertical--top {
-  top: -1px;
-  height: calc(50% + 1px);
-}
-
-.log-view__graph-vertical--bottom {
-  top: 50%;
-  bottom: -1px;
+.log-view__graph-connector--vertical {
+  stroke-linecap: square;
 }
 
 .log-view__graph-node {
@@ -870,15 +861,11 @@
   border-radius: 50%;
   min-width: 8px;
   min-height: 8px;
-  box-shadow: 0 0 0 1.5px var(--bg-surface);
-}
-
-.log-view__row--selected .log-view__graph-node {
-  box-shadow: 0 0 0 1.5px var(--selection-bg);
 }
 
 .log-view__graph-piece--dimmed {
   background: var(--border-strong, var(--border)) !important;
+  fill: var(--border-strong, var(--border)) !important;
   stroke: var(--border-strong, var(--border)) !important;
 }
 

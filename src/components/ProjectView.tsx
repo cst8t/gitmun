@@ -83,6 +83,16 @@ const EMPTY_COMMIT_MARKERS: CommitMarkers = {
   upstreamRef: null,
 };
 
+const SHOW_COMMIT_GRAPH_KEY = "gitmun.showCommitGraph";
+
+function readShowCommitGraphPreference(): boolean {
+  try {
+    return localStorage.getItem(SHOW_COMMIT_GRAPH_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 function isStagingOperationKind(kind: LongRunningOperationKind): kind is StagingOperationKind {
   return kind === "stage" || kind === "stageAll" || kind === "unstage" || kind === "unstageAll";
 }
@@ -393,6 +403,7 @@ export function ProjectView({
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
+  const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
@@ -415,6 +426,9 @@ export function ProjectView({
   const initials = (displayName ?? "?")
     .split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
   const [identityAvatar, setIdentityAvatar] = useState<string | null>(null);
+  const handleCommitGraphVisibilityChange = useCallback((visible: boolean) => {
+    setShowCommitGraph(visible);
+  }, []);
 
   const currentBranch = status?.currentBranch ?? null;
   const {
@@ -427,7 +441,7 @@ export function ProjectView({
     loadMoreError: logLoadMoreError,
     pageSize: logPageSize,
     refresh: refreshLog,
-  } = useGitLog(repoPath, logScope, windowFocused);
+  } = useGitLog(repoPath, logScope, windowFocused, showCommitGraphButton && showCommitGraph);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -2623,6 +2637,7 @@ export function ProjectView({
                   logScope={logScope}
                   rowStriping={rowStriping}
                   showCommitGraphButton={showCommitGraphButton}
+                  onCommitGraphVisibilityChange={handleCommitGraphVisibilityChange}
                   onLogScopeChange={setLogScope}
                   detachedHead={status?.detachedHead ?? false}
                   shallow={status?.shallow ?? false}

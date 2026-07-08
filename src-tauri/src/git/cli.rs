@@ -2907,11 +2907,13 @@ impl GitOperationHandler for CliGitHandler {
             "--date=iso-strict",
             pretty.as_str(),
         ];
+        if request.topo_order || request.scope == CommitLogScope::AllRefs {
+            args.push("--topo-order");
+        }
         if request.scope == CommitLogScope::AllRefs {
             args.push("--branches");
             args.push("--tags");
             args.push("--remotes");
-            args.push("--topo-order");
         }
 
         let output = match Self::run_git(args.as_slice(), Some(&repo_path)) {
