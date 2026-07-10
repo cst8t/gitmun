@@ -199,7 +199,7 @@ const settingsPayload: Settings = {
   autoInstallUpdates: false,
   updateEndpoint: "",
   linuxGraphicsMode: "Auto",
-  linuxTerminalEmulator: "Auto",
+  linuxTerminalEmulator: "auto",
   linuxTerminalCustomCommand: "",
   repoOpenBehaviour: "Ask",
   gitExecutablePath: "",

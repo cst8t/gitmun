@@ -13,7 +13,7 @@ import type {
     CommitDateMode,
     ExternalDiffTool,
     LinuxGraphicsMode,
-    LinuxTerminalEmulator,
+    LinuxTerminalId,
     LinuxTerminalOption,
     RepoOpenBehaviour,
     RowStriping,
@@ -51,8 +51,8 @@ const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
 const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
 const MIN_ERROR_TOAST_CLEAR_DELAY_MS = 1000;
 const DEFAULT_LINUX_TERMINAL_OPTIONS: LinuxTerminalOption[] = [
-    {emulator: "Auto", label: "Terminal"},
-    {emulator: "Custom", label: "Terminal"},
+    {id: "auto", label: "Terminal"},
+    {id: "custom", label: "Terminal"},
 ];
 
 function normaliseOptionalGitConfig(value: string | null | undefined): string {
@@ -190,7 +190,7 @@ export function SettingsWindow() {
     const [updateEndpoint, setUpdateEndpointState] = useState(DEFAULT_UPDATE_ENDPOINT);
     const [linuxGraphicsMode, setLinuxGraphicsMode] = useState<LinuxGraphicsMode>("Auto");
     const [linuxTerminalOptions, setLinuxTerminalOptions] = useState<LinuxTerminalOption[]>(DEFAULT_LINUX_TERMINAL_OPTIONS);
-    const [linuxTerminalEmulator, setLinuxTerminalEmulator] = useState<LinuxTerminalEmulator>("Auto");
+    const [linuxTerminalEmulator, setLinuxTerminalEmulator] = useState<LinuxTerminalId>("auto");
     const [linuxTerminalCustomCommand, setLinuxTerminalCustomCommand] = useState("");
     const [repoOpenBehaviour, setRepoOpenBehaviour] = useState<RepoOpenBehaviour>("Ask");
     const [isLinux, setIsLinux] = useState(false);
@@ -227,10 +227,10 @@ export function SettingsWindow() {
         }
     }, [t]);
     const labelLinuxTerminal = useCallback((option: LinuxTerminalOption): string => {
-        switch (option.emulator) {
-            case "Auto":
+        switch (option.id) {
+            case "auto":
                 return t("options.linuxTerminalAuto");
-            case "Custom":
+            case "custom":
                 return t("options.linuxTerminalCustom");
             default:
                 return option.label;
@@ -366,7 +366,7 @@ export function SettingsWindow() {
             setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
             setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
             setLinuxGraphicsMode(settings.linuxGraphicsMode ?? "Auto");
-            setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "Auto");
+            setLinuxTerminalEmulator(settings.linuxTerminalEmulator ?? "auto");
             setLinuxTerminalCustomCommand(settings.linuxTerminalCustomCommand ?? "");
             setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
             setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
@@ -935,13 +935,13 @@ export function SettingsWindow() {
                                     id="settings-linux-terminal"
                                     className="settings-window__select"
                                     value={linuxTerminalEmulator}
-                                    onChange={e => setLinuxTerminalEmulator(e.target.value as LinuxTerminalEmulator)}
+                                    onChange={e => setLinuxTerminalEmulator(e.target.value)}
                                 >
                                     {linuxTerminalOptions.map(option => (
-                                        <option key={option.emulator} value={option.emulator}>{labelLinuxTerminal(option)}</option>
+                                        <option key={option.id} value={option.id}>{labelLinuxTerminal(option)}</option>
                                     ))}
                                 </select>
-                                {linuxTerminalEmulator === "Custom" && (
+                                {linuxTerminalEmulator === "custom" && (
                                     <input
                                         className="settings-window__input"
                                         type="text"

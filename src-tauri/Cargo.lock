@@ -3443,7 +3443,7 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 [[package]]
 name = "linux-terminal-launch"
 version = "0.1.0"
-source = "git+https://github.com/cst8t/linux-terminal-launch#1c2db9bb27d735fece63448cd3c0781e20a92437"
+source = "git+https://github.com/cst8t/linux-terminal-launch#d256bca7868c22a909ac2290f1bbce2e12db5b8c"
 
 [[package]]
 name = "litemap"

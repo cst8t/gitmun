@@ -112,29 +112,10 @@ impl Default for LinuxGraphicsMode {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-pub enum LinuxTerminalEmulator {
-    Auto,
-    Konsole,
-    GnomeTerminal,
-    GnomeConsole,
-    Xfce4Terminal,
-    MateTerminal,
-    Lxterminal,
-    Alacritty,
-    Ghostty,
-    Kitty,
-    WezTerm,
-    Foot,
-    Xterm,
-    Custom,
-}
+pub type LinuxTerminalId = String;
 
-impl Default for LinuxTerminalEmulator {
-    fn default() -> Self {
-        Self::Auto
-    }
-}
+pub const LINUX_TERMINAL_AUTO_ID: &str = "auto";
+pub const LINUX_TERMINAL_CUSTOM_ID: &str = "custom";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum RepoOpenBehaviour {
@@ -227,6 +208,38 @@ where
     Ok(normalise_ui_text_scale(scale))
 }
 
+fn default_linux_terminal_id() -> LinuxTerminalId {
+    LINUX_TERMINAL_AUTO_ID.to_string()
+}
+
+pub fn normalise_linux_terminal_id(value: &str) -> LinuxTerminalId {
+    match value.trim() {
+        "" | "Auto" | "auto" => LINUX_TERMINAL_AUTO_ID.to_string(),
+        "Custom" | "custom" => LINUX_TERMINAL_CUSTOM_ID.to_string(),
+        "Konsole" | "konsole" => "konsole".to_string(),
+        "GnomeTerminal" | "gnome-terminal" => "gnome-terminal".to_string(),
+        "GnomeConsole" | "gnome-console" => "gnome-console".to_string(),
+        "Xfce4Terminal" | "xfce4-terminal" => "xfce4-terminal".to_string(),
+        "MateTerminal" | "mate-terminal" => "mate-terminal".to_string(),
+        "Lxterminal" | "lxterminal" => "lxterminal".to_string(),
+        "Alacritty" | "alacritty" => "alacritty".to_string(),
+        "Ghostty" | "ghostty" => "ghostty".to_string(),
+        "Kitty" | "kitty" => "kitty".to_string(),
+        "WezTerm" | "wezterm" => "wezterm".to_string(),
+        "Foot" | "foot" => "foot".to_string(),
+        "Xterm" | "xterm" => "xterm".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn deserialise_linux_terminal_id<'de, D>(deserialiser: D) -> Result<LinuxTerminalId, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = String::deserialize(deserialiser)?;
+    Ok(normalise_linux_terminal_id(&value))
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Settings {
@@ -279,8 +292,11 @@ pub struct Settings {
     pub update_endpoint: String,
     #[serde(default)]
     pub linux_graphics_mode: LinuxGraphicsMode,
-    #[serde(default)]
-    pub linux_terminal_emulator: LinuxTerminalEmulator,
+    #[serde(
+        default = "default_linux_terminal_id",
+        deserialize_with = "deserialise_linux_terminal_id"
+    )]
+    pub linux_terminal_emulator: LinuxTerminalId,
     #[serde(default)]
     pub linux_terminal_custom_command: String,
     #[serde(default)]
@@ -352,7 +368,7 @@ impl Default for Settings {
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
             linux_graphics_mode: LinuxGraphicsMode::Auto,
-            linux_terminal_emulator: LinuxTerminalEmulator::Auto,
+            linux_terminal_emulator: default_linux_terminal_id(),
             linux_terminal_custom_command: String::new(),
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),

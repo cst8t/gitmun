@@ -54,7 +54,7 @@ import type {
     TagInfo,
     BackendMode,
     LinuxTerminalOption,
-    LinuxTerminalEmulator,
+    LinuxTerminalId,
     ThemeMode,
     ThemeBundle,
     UiTextScale,
@@ -502,7 +502,7 @@ export function getLinuxTerminalOptions(): Promise<LinuxTerminalOption[]> {
     return invoke<LinuxTerminalOption[]>("get_linux_terminal_options");
 }
 
-export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalEmulator): Promise<Settings> {
+export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalId): Promise<Settings> {
     return invoke<Settings>("set_linux_terminal_emulator", {linuxTerminalEmulator});
 }
 

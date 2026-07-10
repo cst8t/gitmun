@@ -213,6 +213,33 @@ mod tests {
     }
 
     #[test]
+    fn load_toml_normalises_old_linux_terminal_values() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(&toml_path, "linuxTerminalEmulator = \"GnomeTerminal\"\n");
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert_eq!(settings.linux_terminal_emulator, "gnome-terminal");
+    }
+
+    #[test]
+    fn load_toml_defaults_empty_linux_terminal_value() {
+        let settings: Settings = toml::from_str("linuxTerminalEmulator = \"\"\n").unwrap();
+
+        assert_eq!(settings.linux_terminal_emulator, "auto");
+    }
+
+    #[test]
+    fn load_toml_preserves_unknown_linux_terminal_id() {
+        let settings: Settings = toml::from_str("linuxTerminalEmulator = \"coolterm\"\n").unwrap();
+
+        assert_eq!(settings.linux_terminal_emulator, "coolterm");
+    }
+
+    #[test]
     fn load_toml_ignores_old_ms_store_update_flow_config() {
         let dir = TempDir::new().unwrap();
         let toml_path = dir.path().join("config.toml");

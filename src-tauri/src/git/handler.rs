@@ -352,12 +352,9 @@ impl GitService {
         })
     }
 
-    pub fn set_linux_terminal_emulator(
-        &self,
-        emulator: super::types::LinuxTerminalEmulator,
-    ) -> Settings {
+    pub fn set_linux_terminal_emulator(&self, id: super::types::LinuxTerminalId) -> Settings {
         self.update_settings(|settings| {
-            settings.linux_terminal_emulator = emulator;
+            settings.linux_terminal_emulator = id;
         })
     }
 
