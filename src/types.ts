@@ -26,23 +26,9 @@ export type OperationFeedbackContent = {
     message: string;
 };
 export type LinuxGraphicsMode = "Auto" | "Safe" | "Native";
-export type LinuxTerminalEmulator =
-    | "Auto"
-    | "Konsole"
-    | "GnomeTerminal"
-    | "GnomeConsole"
-    | "Xfce4Terminal"
-    | "MateTerminal"
-    | "Lxterminal"
-    | "Alacritty"
-    | "Ghostty"
-    | "Kitty"
-    | "WezTerm"
-    | "Foot"
-    | "Xterm"
-    | "Custom";
+export type LinuxTerminalId = string;
 export type LinuxTerminalOption = {
-    emulator: LinuxTerminalEmulator;
+    id: LinuxTerminalId;
     label: string;
 };
 export type RepoOpenBehaviour = "Ask" | "ExistingWindow" | "NewWindow";
@@ -102,7 +88,7 @@ export type Settings = {
     autoInstallUpdates: boolean;
     updateEndpoint: string;
     linuxGraphicsMode: LinuxGraphicsMode;
-    linuxTerminalEmulator: LinuxTerminalEmulator;
+    linuxTerminalEmulator: LinuxTerminalId;
     linuxTerminalCustomCommand: string;
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
@@ -265,6 +251,7 @@ export type CommitHistoryRequest = RepoRequest & {
     afterHash?: string;
     offset?: number;
     scope?: CommitLogScope;
+    topoOrder?: boolean;
 };
 
 export type CommitFilesRequest = RepoRequest & {

@@ -1,15 +1,14 @@
-#[cfg(target_os = "linux")]
-use crate::git::types::LinuxTerminalEmulator;
 use crate::git::types::{
     CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
     CommitMarkers, CommitMessageRecovery, CommitRequest, DiffRequest, ExportCommitPatchRequest,
-    ExportPatchRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
-    IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult, OperationResult,
-    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
-    SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
+    HunkStageRequest, IdentityRequest, ImportPatchRequest, NumstatRequest, NumstatResult,
+    OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest,
+    RepoStatus, SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest,
 };
+#[cfg(target_os = "linux")]
+use crate::git::types::{LINUX_TERMINAL_AUTO_ID, LINUX_TERMINAL_CUSTOM_ID};
 use crate::{AppState, CloneCancelFlag, configure_command};
 use serde::{Deserialize, Serialize};
 use std::io::Read;
@@ -268,7 +267,7 @@ fn default_file_manager_label() -> &'static str {
 fn default_terminal_label(settings: &crate::git::types::Settings) -> String {
     #[cfg(target_os = "linux")]
     {
-        return linux_terminal_label(settings).to_string();
+        return linux_terminal_label(settings);
     }
 
     #[cfg(not(target_os = "linux"))]
@@ -370,9 +369,10 @@ fn open_terminal_at_linux(
 }
 
 #[cfg(target_os = "linux")]
-fn linux_terminal_label(settings: &crate::git::types::Settings) -> &'static str {
-    linux_terminal_launch::terminal_label(linux_terminal_preference(
-        settings.linux_terminal_emulator,
+fn linux_terminal_label(settings: &crate::git::types::Settings) -> String {
+    let registry = linux_terminal_launch::TerminalRegistry::with_known_terminals();
+    registry.label_for_preference(&linux_terminal_preference(
+        settings.linux_terminal_emulator.as_str(),
     ))
 }
 
@@ -383,40 +383,20 @@ fn linux_terminal_launcher(
 ) -> linux_terminal_launch::TerminalLauncher {
     linux_terminal_launch::TerminalLauncher::new()
         .working_dir(path)
-        .preference(linux_terminal_preference(settings.linux_terminal_emulator))
+        .registry(linux_terminal_launch::TerminalRegistry::with_known_terminals())
+        .preference(linux_terminal_preference(
+            settings.linux_terminal_emulator.as_str(),
+        ))
         .custom_command(settings.linux_terminal_custom_command.clone())
         .detach_from_parent(true)
 }
 
 #[cfg(target_os = "linux")]
-fn linux_terminal_preference(
-    emulator: LinuxTerminalEmulator,
-) -> linux_terminal_launch::TerminalPreference {
-    use linux_terminal_launch::{KnownTerminal, TerminalPreference};
-
-    match emulator {
-        LinuxTerminalEmulator::Auto => TerminalPreference::Auto,
-        LinuxTerminalEmulator::Konsole => TerminalPreference::Known(KnownTerminal::Konsole),
-        LinuxTerminalEmulator::GnomeTerminal => {
-            TerminalPreference::Known(KnownTerminal::GnomeTerminal)
-        }
-        LinuxTerminalEmulator::GnomeConsole => {
-            TerminalPreference::Known(KnownTerminal::GnomeConsole)
-        }
-        LinuxTerminalEmulator::Xfce4Terminal => {
-            TerminalPreference::Known(KnownTerminal::Xfce4Terminal)
-        }
-        LinuxTerminalEmulator::MateTerminal => {
-            TerminalPreference::Known(KnownTerminal::MateTerminal)
-        }
-        LinuxTerminalEmulator::Lxterminal => TerminalPreference::Known(KnownTerminal::Lxterminal),
-        LinuxTerminalEmulator::Alacritty => TerminalPreference::Known(KnownTerminal::Alacritty),
-        LinuxTerminalEmulator::Ghostty => TerminalPreference::Known(KnownTerminal::Ghostty),
-        LinuxTerminalEmulator::Kitty => TerminalPreference::Known(KnownTerminal::Kitty),
-        LinuxTerminalEmulator::WezTerm => TerminalPreference::Known(KnownTerminal::WezTerm),
-        LinuxTerminalEmulator::Foot => TerminalPreference::Known(KnownTerminal::Foot),
-        LinuxTerminalEmulator::Xterm => TerminalPreference::Known(KnownTerminal::Xterm),
-        LinuxTerminalEmulator::Custom => TerminalPreference::Custom,
+fn linux_terminal_preference(id: &str) -> linux_terminal_launch::TerminalPreference {
+    match id {
+        LINUX_TERMINAL_AUTO_ID => linux_terminal_launch::TerminalPreference::Auto,
+        LINUX_TERMINAL_CUSTOM_ID => linux_terminal_launch::TerminalPreference::Custom,
+        other => linux_terminal_launch::TerminalPreference::registered(other),
     }
 }
 

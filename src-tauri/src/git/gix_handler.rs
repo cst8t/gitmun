@@ -1156,7 +1156,7 @@ impl GitOperationHandler for GixGitHandler {
         &self,
         request: &CommitHistoryRequest,
     ) -> GitResult<Vec<CommitHistoryItem>> {
-        if request.scope == CommitLogScope::AllRefs {
+        if request.topo_order || request.scope == CommitLogScope::AllRefs {
             return self.cli_fallback.get_commit_history(request);
         }
 

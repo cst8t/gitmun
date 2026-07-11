@@ -199,7 +199,7 @@ const settingsPayload: Settings = {
   autoInstallUpdates: false,
   updateEndpoint: "",
   linuxGraphicsMode: "Auto",
-  linuxTerminalEmulator: "Auto",
+  linuxTerminalEmulator: "auto",
   linuxTerminalCustomCommand: "",
   repoOpenBehaviour: "Ask",
   gitExecutablePath: "",
@@ -370,14 +370,32 @@ describe("LogView commit selection", () => {
     renderLog({ commits: [merge, feature, main] });
 
     const mergeRow = rowFor("Subject 1");
-    const sideConnector = mergeRow.querySelector(".log-view__graph-connectors line[x2='17']");
-    const bottomLaneOffsets = Array.from(mergeRow.querySelectorAll<HTMLElement>(".log-view__graph-vertical--bottom"))
-      .map(lane => lane.style.left);
+    const sideConnector = mergeRow.querySelector(".log-view__graph-connectors path[d='M 5 50 C 5 72 17 78 17 100']");
+    const firstParentContinuation = mergeRow.querySelector(".log-view__graph-connectors path[d='M 5 50 L 5 100']");
+    const prematureSideContinuation = mergeRow.querySelector(".log-view__graph-connectors path[d='M 17 50 L 17 100']");
 
-    expect(sideConnector).toHaveAttribute("x1", "5");
-    expect(sideConnector).toHaveAttribute("y2", "100");
-    expect(bottomLaneOffsets).toContain("5px");
-    expect(bottomLaneOffsets).not.toContain("17px");
+    expect(sideConnector).not.toBeNull();
+    expect(firstParentContinuation).not.toBeNull();
+    expect(prematureSideContinuation).toBeNull();
+  });
+
+  it("blends colours across lane-changing graph curves", () => {
+    const main = commit(3);
+    const feature = commit(2, { parentHashes: [main.hash] });
+    const merge = commit(1, { parentHashes: [main.hash, feature.hash] });
+    renderLog({ commits: [merge, feature, main] });
+
+    const mergeRow = rowFor("Subject 1");
+    const sideConnector = mergeRow.querySelector(".log-view__graph-connectors path[d='M 5 50 C 5 72 17 78 17 100']");
+    const stroke = sideConnector?.getAttribute("stroke") ?? "";
+    const gradientId = stroke.match(/^url\(#(.+)\)$/)?.[1];
+    const gradient = gradientId
+      ? mergeRow.querySelector(`linearGradient[id="${gradientId}"]`)
+      : null;
+    const stops = Array.from(gradient?.querySelectorAll("stop") ?? []);
+
+    expect(gradient).not.toBeNull();
+    expect(stops.map(stop => stop.getAttribute("stop-color"))).toEqual(["var(--accent)", "var(--green)"]);
   });
 
   it("keeps an active parent lane continuous through a branch join", () => {
@@ -387,10 +405,31 @@ describe("LogView commit selection", () => {
     renderLog({ commits: [merge, feature, main] });
 
     const joinRow = rowFor("Subject 2");
-    const bottomLaneOffsets = Array.from(joinRow.querySelectorAll<HTMLElement>(".log-view__graph-vertical--bottom"))
-      .map(lane => lane.style.left);
+    const collapsedLane = joinRow.querySelector(".log-view__graph-connectors path[d='M 17 50 C 17 72 5 78 5 100']");
+    const duplicateCollapsedContinuation = joinRow.querySelector(".log-view__graph-connectors path[d='M 5 50 L 5 100']");
 
-    expect(bottomLaneOffsets).toContain("5px");
+    expect(collapsedLane).not.toBeNull();
+    expect(duplicateCollapsedContinuation).toBeNull();
+  });
+
+  it("draws a transition when a new merge parent shifts an active lane", () => {
+    const base = commit(7);
+    const unrelatedBase = commit(6);
+    const feature = commit(5, { parentHashes: [base.hash] });
+    const main = commit(4, { parentHashes: [base.hash] });
+    const merge = commit(3, { parentHashes: [main.hash, feature.hash] });
+    const unrelatedTip = commit(2, { parentHashes: [unrelatedBase.hash] });
+    const afterMerge = commit(1, { parentHashes: [merge.hash] });
+    renderLog({ commits: [afterMerge, unrelatedTip, merge, main, feature, unrelatedBase, base] });
+
+    const mergeRow = rowFor("Subject 3");
+    const shiftedLane = mergeRow.querySelector(".log-view__graph-connectors path[d='M 17 50 C 17 72 29 78 29 100']");
+    const shiftedTopContinuation = mergeRow.querySelector(".log-view__graph-connectors path[d='M 17 0 L 17 50']");
+    const shiftedBottomContinuation = mergeRow.querySelector(".log-view__graph-connectors path[d='M 29 50 L 29 100']");
+
+    expect(shiftedLane).not.toBeNull();
+    expect(shiftedTopContinuation).not.toBeNull();
+    expect(shiftedBottomContinuation).toBeNull();
   });
 
   it("renders rows without the commit graph when hidden", () => {

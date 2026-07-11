@@ -170,7 +170,25 @@ describe("useGitLog", () => {
     rerender({ scope: "allRefs" });
     expect(result.current.commits).toHaveLength(0);
     await waitFor(() => expect(result.current.commits).toHaveLength(2));
-    expect(mockGetCommitHistory).toHaveBeenLastCalledWith("/repo", 100, undefined, undefined, "allRefs");
+    expect(mockGetCommitHistory).toHaveBeenLastCalledWith("/repo", 100, undefined, undefined, "allRefs", false);
+  });
+
+  test("refetches with topo order when requested", async () => {
+    mockGetCommitHistory
+      .mockResolvedValueOnce(makeCommits(1))
+      .mockResolvedValueOnce(makeCommits(2, 10));
+    const { result, rerender } = renderHook(
+      ({ topoOrder }) => useGitLog("/repo", "currentCheckout", true, topoOrder),
+      { initialProps: { topoOrder: false } },
+    );
+    await waitFor(() => expect(result.current.commits).toHaveLength(1));
+    expect(mockGetCommitHistory).toHaveBeenLastCalledWith("/repo", 100, undefined, undefined, "currentCheckout", false);
+
+    rerender({ topoOrder: true });
+
+    expect(result.current.commits).toHaveLength(0);
+    await waitFor(() => expect(result.current.commits).toHaveLength(2));
+    expect(mockGetCommitHistory).toHaveBeenLastCalledWith("/repo", 100, undefined, undefined, "currentCheckout", true);
   });
 
   test("sets error on fetch failure", async () => {

@@ -54,7 +54,7 @@ import type {
     TagInfo,
     BackendMode,
     LinuxTerminalOption,
-    LinuxTerminalEmulator,
+    LinuxTerminalId,
     ThemeMode,
     ThemeBundle,
     UiTextScale,
@@ -140,8 +140,9 @@ export function getCommitHistory(
     afterHash?: string,
     offset?: number,
     scope?: CommitLogScope,
+    topoOrder?: boolean,
 ): Promise<CommitHistoryItem[]> {
-    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset, scope}});
+    return invoke<CommitHistoryItem[]>("get_commit_history", {request: {repoPath, limit, afterHash, offset, scope, topoOrder}});
 }
 
 export function verifyCommits(repoPath: string, hashes: string[]): Promise<CommitVerification[]> {
@@ -501,7 +502,7 @@ export function getLinuxTerminalOptions(): Promise<LinuxTerminalOption[]> {
     return invoke<LinuxTerminalOption[]>("get_linux_terminal_options");
 }
 
-export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalEmulator): Promise<Settings> {
+export function setLinuxTerminalEmulator(linuxTerminalEmulator: LinuxTerminalId): Promise<Settings> {
     return invoke<Settings>("set_linux_terminal_emulator", {linuxTerminalEmulator});
 }
 

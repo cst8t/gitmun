@@ -82,6 +82,14 @@ updateEndpoint = "https://github.com/cst8t/gitmun/releases/latest/download/lates
 # "Native" applies no overrides; uses full hardware acceleration.
 linuxGraphicsMode = "Auto"
 
+# Terminal emulator for Linux repository opens.
+# Use "auto", "custom", or a known terminal ID such as "ghostty" or "gnome-terminal".
+linuxTerminalEmulator = "auto"
+
+# Custom Linux terminal command. Used only when linuxTerminalEmulator is "custom".
+# Use {path} where the repository path should be inserted.
+linuxTerminalCustomCommand = ""
+
 # Behaviour when opening a repository.
 # "Ask" prompts for which window to use.
 # "ExistingWindow" opens the repository in the current window.

@@ -23,6 +23,7 @@ import {
 } from "../../api/commands";
 import { buildCommitGraph, type CommitGraphRow } from "../../utils/commitGraph";
 import { ContextMenu } from "../shared/ContextMenu";
+import { CommitGraphGutter } from "./CommitGraphGutter";
 
 function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -33,20 +34,6 @@ function hashColour(name: string): string {
   for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
   const colours = ["#6ee7b7", "#93c5fd", "#fca5a5", "#c4b5fd", "#fcd34d", "#f0abfc"];
   return colours[Math.abs(h) % colours.length];
-}
-
-function graphLaneColour(lane: number): string {
-  const colours = [
-    "var(--accent)",
-    "var(--green)",
-    "var(--yellow)",
-    "var(--red)",
-    "#c4b5fd",
-    "#6ee7b7",
-    "#f0abfc",
-    "#93c5fd",
-  ];
-  return colours[lane % colours.length];
 }
 
 function relativeTime(dateStr: string, t: (key: string, options?: Record<string, unknown>) => string): string {
@@ -294,155 +281,9 @@ type CommitRowProps = {
   onBadgeClick: (rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
 };
 
-const GRAPH_LANE_WIDTH = 12;
-const GRAPH_NODE_RADIUS = 4;
 const MAX_VISIBLE_REF_CHIPS = 4;
 const MAX_VERIFICATION_BATCH_SIZE = 20;
 const BACKGROUND_VERIFICATION_PUMP_DELAY_MS = 25;
-
-function graphWidth(laneCount: number): number {
-  return Math.max(14, laneCount * GRAPH_LANE_WIDTH);
-}
-
-function graphX(lane: number, laneCount: number): number {
-  return 5 + Math.min(lane, laneCount - 1) * GRAPH_LANE_WIDTH;
-}
-
-function graphPieceClass(baseClass: string, active: boolean | null): string {
-  if (active === null) return baseClass;
-  return `${baseClass} ${active ? "log-view__graph-piece--active" : "log-view__graph-piece--dimmed"}`;
-}
-
-function graphTitle(
-  commit: CommitHistoryItem,
-  t: (key: string, options?: Record<string, unknown>) => string,
-): string {
-  const lines = [
-    t("log.graphCommit", { hash: commit.shortHash }),
-    t("log.graphLaneHint"),
-  ];
-  const firstParent = commit.parentHashes[0];
-  const mergedParents = commit.parentHashes.slice(1);
-  if (firstParent) {
-    lines.push(t("log.graphFirstParent", { hash: firstParent.slice(0, 7) }));
-  }
-  if (mergedParents.length > 0) {
-    lines.push(t("log.graphMergedParents", { hashes: mergedParents.map(hash => hash.slice(0, 7)).join(", ") }));
-  }
-  if (commit.refDecorations.length > 0) {
-    lines.push(t("log.graphRefs", { refs: commit.refDecorations.map(ref => ref.name).join(", ") }));
-  }
-  return lines.join("\n");
-}
-
-function CommitGraphGutter({
-  row,
-  laneCount,
-  commit,
-  highlightedHashes,
-}: {
-  row: CommitGraphRow | undefined;
-  laneCount: number;
-  commit: CommitHistoryItem;
-  highlightedHashes: Set<string> | null;
-}) {
-  const { t } = useTranslation("centre");
-  const width = graphWidth(laneCount);
-  if (!row) {
-    return <div className="log-view__graph" style={{ width }} aria-hidden="true" />;
-  }
-
-  const commitX = graphX(row.commitLane, laneCount);
-  const nodeSize = GRAPH_NODE_RADIUS * 2;
-  const hasHighlight = highlightedHashes !== null;
-  const graphTitleText = graphTitle(commit, t);
-  const isActiveHash = (hash: string): boolean | null => {
-    if (!highlightedHashes) return null;
-    return highlightedHashes.has(hash);
-  };
-  const topLaneKeys = new Set(row.topLanes.map(lane => `${lane.lane}:${lane.hash}`));
-  const connectedParentLaneKeys = new Set(
-    row.parentLanes
-      .filter(parent => (
-        parent.sourceLane !== undefined
-        || (parent.lane !== row.commitLane && !topLaneKeys.has(`${parent.lane}:${parent.hash}`))
-      ))
-      .map(parent => `${parent.lane}:${parent.hash}`),
-  );
-
-  return (
-    <div className="log-view__graph" style={{ width }} title={graphTitleText} aria-label={graphTitleText}>
-      {row.topLanes.map(lane => {
-        const x = graphX(lane.lane, laneCount);
-        return (
-          <span
-            key={`top-${lane.lane}-${lane.hash}`}
-            className={graphPieceClass(
-              "log-view__graph-vertical log-view__graph-vertical--top",
-              isActiveHash(lane.hash),
-            )}
-            style={{ left: x, background: graphLaneColour(lane.lane) }}
-          />
-        );
-      })}
-      <svg className="log-view__graph-connectors" width={width} height="100%" viewBox={`0 0 ${width} 100`} preserveAspectRatio="none">
-        {row.parentLanes.map(parent => {
-          const x = graphX(parent.lane, laneCount);
-          const sourceLane = parent.sourceLane;
-          const sourceX = sourceLane === undefined ? null : graphX(sourceLane, laneCount);
-          if (sourceLane !== undefined && sourceX !== null && sourceX !== x) {
-            return (
-              <polyline
-                key={`parent-${parent.lane}-${parent.hash}`}
-                points={`${sourceX},50 ${commitX},50 ${x},100`}
-                stroke={graphLaneColour(sourceLane)}
-                className={graphPieceClass("log-view__graph-connector", isActiveHash(parent.hash))}
-                vectorEffect="non-scaling-stroke"
-                fill="none"
-              />
-            );
-          }
-          if (x === commitX) return null;
-          return (
-            <line
-              key={`parent-${parent.lane}-${parent.hash}`}
-              x1={commitX}
-              y1="50"
-              x2={x}
-              y2="100"
-              stroke={graphLaneColour(parent.lane)}
-              className={graphPieceClass("log-view__graph-connector", isActiveHash(parent.hash))}
-              vectorEffect="non-scaling-stroke"
-            />
-          );
-        })}
-      </svg>
-      {row.bottomLanes.filter(lane => !connectedParentLaneKeys.has(`${lane.lane}:${lane.hash}`)).map(lane => {
-        const x = graphX(lane.lane, laneCount);
-        return (
-          <span
-            key={`bottom-${lane.lane}-${lane.hash}`}
-            className={graphPieceClass(
-              "log-view__graph-vertical log-view__graph-vertical--bottom",
-              isActiveHash(lane.hash),
-            )}
-            style={{ left: x, background: graphLaneColour(lane.lane) }}
-          />
-        );
-      })}
-      <span
-        className={graphPieceClass("log-view__graph-node", hasHighlight ? highlightedHashes.has(row.hash) : null)}
-        style={{
-          left: commitX - GRAPH_NODE_RADIUS,
-          top: `calc(50% - ${GRAPH_NODE_RADIUS}px)`,
-          width: nodeSize,
-          height: nodeSize,
-          background: graphLaneColour(row.commitLane),
-        }}
-      />
-    </div>
-  );
-}
 
 function refTitle(
   decoration: CommitRefDecoration,

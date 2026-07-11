@@ -37,7 +37,7 @@ const settings: Settings = {
     autoInstallUpdates: false,
     updateEndpoint: "https://github.com/cst8t/gitmun/releases/latest/download/latest.json",
     linuxGraphicsMode: "Auto",
-    linuxTerminalEmulator: "Auto",
+    linuxTerminalEmulator: "auto",
     linuxTerminalCustomCommand: "",
     repoOpenBehaviour: "Ask",
     gitExecutablePath: "",
@@ -94,9 +94,9 @@ vi.mock("../../api/commands", () => ({
     getGlobalDiffToolPath: vi.fn(async () => null),
     getGlobalGpgProgramPath: vi.fn(async () => null),
     getLinuxTerminalOptions: vi.fn(async () => [
-        {emulator: "Auto", label: "Terminal"},
-        {emulator: "Ghostty", label: "Ghostty"},
-        {emulator: "Custom", label: "Terminal"},
+        {id: "auto", label: "Terminal"},
+        {id: "ghostty", label: "Ghostty"},
+        {id: "custom", label: "Terminal"},
     ]),
     openResultLogWindow: vi.fn(async () => {}),
     setGlobalDiffToolWithPath: vi.fn(async () => ({message: "Updated diff tool."})),
@@ -221,7 +221,7 @@ describe("SettingsWindow", () => {
         expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
         expect(screen.queryByPlaceholderText("my-terminal --working-directory {path}")).not.toBeInTheDocument();
 
-        fireEvent.change(screen.getByLabelText("Terminal"), {target: {value: "Custom"}});
+        fireEvent.change(screen.getByLabelText("Terminal"), {target: {value: "custom"}});
 
         expect(screen.getByPlaceholderText("my-terminal --working-directory {path}")).toBeInTheDocument();
     });
@@ -229,7 +229,7 @@ describe("SettingsWindow", () => {
     it("saves Linux terminal settings", async () => {
         render(<SettingsWindow/>);
 
-        fireEvent.change(await screen.findByLabelText("Terminal"), {target: {value: "Custom"}});
+        fireEvent.change(await screen.findByLabelText("Terminal"), {target: {value: "custom"}});
         fireEvent.change(screen.getByPlaceholderText("my-terminal --working-directory {path}"), {
             target: {value: "kitty --directory {path}"},
         });
@@ -237,7 +237,7 @@ describe("SettingsWindow", () => {
 
         await waitFor(() => {
             expect(mocks.invoke).toHaveBeenCalledWith("set_linux_terminal_emulator", {
-                linuxTerminalEmulator: "Custom",
+                linuxTerminalEmulator: "custom",
             });
             expect(mocks.invoke).toHaveBeenCalledWith("set_linux_terminal_custom_command", {
                 linuxTerminalCustomCommand: "kitty --directory {path}",

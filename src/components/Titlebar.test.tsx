@@ -165,6 +165,25 @@ describe("Titlebar", () => {
     expect(within(disclosure).getByText("/home/conor/GitmunProjects/gitmun")).toBeInTheDocument();
   });
 
+  it("shows the full project name when the repository button clips the label", () => {
+    const projectName = "Project Atlas With A Long Display Name";
+    renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
+      repoDisplayName: projectName,
+    });
+
+    const repoButton = screen.getByLabelText("Copy repository path");
+    const repoName = screen.getByText(projectName);
+    setRenderedWidth(repoName, 180, 180);
+    setRenderedWidth(repoButton, 320, 200);
+    fireEvent.mouseEnter(repoButton);
+
+    const disclosure = screen.getByRole("tooltip");
+    expect(within(disclosure).getByText("Project")).toBeInTheDocument();
+    expect(within(disclosure).getByText(projectName)).toBeInTheDocument();
+    expect(within(disclosure).getByText("Repository path")).toBeInTheDocument();
+    expect(within(disclosure).getByText("/home/conor/GitmunProjects/gitmun")).toBeInTheDocument();
+  });
+
   it("keeps the project copy affordance without repeating the project name when the label fits", () => {
     renderTitlebar([makeBranch()], "Push", "/home/conor/GitmunProjects/gitmun", vi.fn(), {
       repoDisplayName: "Project Atlas",
