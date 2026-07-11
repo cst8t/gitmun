@@ -62,6 +62,7 @@ export function Titlebar({
   const [searchFocused, setSearchFocused] = useState(false);
   const [repoPathCopied, setRepoPathCopied] = useState(false);
   const [openDisclosure, setOpenDisclosure] = useState<{ kind: "repo" | "branch"; truncated: boolean } | null>(null);
+  const repoButtonRef = useRef<HTMLButtonElement>(null);
   const repoNameRef = useRef<HTMLSpanElement>(null);
   const branchNameRef = useRef<HTMLSpanElement>(null);
   const repoPathCopiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -82,7 +83,10 @@ export function Titlebar({
   };
 
   const showRepoDisclosure = () => {
-    setOpenDisclosure({ kind: "repo", truncated: isOverflowing(repoNameRef.current) });
+    setOpenDisclosure({
+      kind: "repo",
+      truncated: isOverflowing(repoNameRef.current) || isOverflowing(repoButtonRef.current),
+    });
   };
 
   const showBranchDisclosure = () => {
@@ -132,6 +136,7 @@ export function Titlebar({
         <div className="titlebar__repo-area">
           <div className="titlebar__repo-wrap" onMouseLeave={closeDisclosure}>
             <button
+              ref={repoButtonRef}
               type="button"
               className="titlebar__repo"
               onClick={copyRepoPath}
