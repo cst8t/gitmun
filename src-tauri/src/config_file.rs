@@ -443,6 +443,7 @@ mod tests {
             "missing key gained its template comment"
         );
         assert!(updated.contains("showCommitGraphButton = false"));
+        assert!(updated.contains("enableLocalCopy = false"));
         assert!(!updated.contains("enableUpdateWithMSStoreFlow"));
     }
 
@@ -451,6 +452,27 @@ mod tests {
         let settings: Settings = toml::from_str("backendMode = \"Default\"\n").unwrap();
 
         assert!(!settings.show_commit_graph_button);
+    }
+
+    #[test]
+    fn missing_local_copy_setting_defaults_to_false() {
+        let settings: Settings = toml::from_str("backendMode = \"Default\"\n").unwrap();
+
+        assert!(!settings.enable_local_copy);
+    }
+
+    #[test]
+    fn persist_writes_local_copy_setting() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+
+        let mut settings = Settings::default();
+        settings.enable_local_copy = true;
+
+        persist(&toml_path, &settings).unwrap();
+
+        let updated = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(updated.contains("enableLocalCopy = true"));
     }
 
     #[test]

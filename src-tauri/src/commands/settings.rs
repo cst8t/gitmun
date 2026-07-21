@@ -243,6 +243,16 @@ pub fn set_show_commit_graph_button(
 }
 
 #[tauri::command]
+pub fn set_enable_local_copy(
+    enable_local_copy: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    let settings = state.git_service.set_enable_local_copy(enable_local_copy);
+    crate::instance_coordinator::broadcast_settings_updated();
+    settings
+}
+
+#[tauri::command]
 pub fn set_persistent_error_toasts(
     persistent_error_toasts: bool,
     state: tauri::State<'_, AppState>,

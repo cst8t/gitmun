@@ -152,6 +152,7 @@ export function SettingsWindow() {
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
     const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
     const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
+    const [enableLocalCopy, setEnableLocalCopy] = useState(false);
     const [persistentErrorToasts, setPersistentErrorToasts] = useState(false);
     const [errorToastClearDelayMs, setErrorToastClearDelayMs] = useState(String(DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
@@ -353,6 +354,7 @@ export function SettingsWindow() {
             setWrapDiffLines(settings.wrapDiffLines ?? false);
             setRowStriping(settings.rowStriping ?? "Off");
             setShowCommitGraphButton(settings.showCommitGraphButton ?? false);
+            setEnableLocalCopy(settings.enableLocalCopy ?? false);
             setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
             setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
             setOpenResultLogOnLaunch(settings.showResultLog);
@@ -446,6 +448,7 @@ export function SettingsWindow() {
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
             await invoke<Settings>("set_row_striping", {rowStriping});
             await invoke<Settings>("set_show_commit_graph_button", {showCommitGraphButton});
+            await invoke<Settings>("set_enable_local_copy", {enableLocalCopy});
             await invoke<Settings>("set_persistent_error_toasts", {persistentErrorToasts});
             const parsedErrorToastClearDelayMs = Number.parseInt(errorToastClearDelayMs, 10);
             const savedErrorToastClearDelayMs = Number.isFinite(parsedErrorToastClearDelayMs)
@@ -635,6 +638,8 @@ export function SettingsWindow() {
         openResultLogOnLaunch,
         wrapDiffLines,
         rowStriping,
+        showCommitGraphButton,
+        enableLocalCopy,
         showCommitGraphButton,
         persistentErrorToasts,
         errorToastClearDelayMs,
@@ -1185,6 +1190,24 @@ export function SettingsWindow() {
                             </label>
                             <div className="settings-window__section-note">
                                 {t("notes.commitGraphExperimental")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.localCopy")}</label>
+                            <label className="settings-window__switch-row">
+              <span className="settings-window__switch">
+                <input
+                    type="checkbox"
+                    checked={enableLocalCopy}
+                    onChange={event => setEnableLocalCopy(event.target.checked)}
+                />
+                <span className="settings-window__switch-track"/>
+              </span>
+                                <span className="settings-window__switch-label">{t("switches.enableLocalCopy")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {t("notes.localCopyExperimental")}
                             </div>
                         </div>
                     </section>

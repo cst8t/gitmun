@@ -22,6 +22,7 @@ const settings: Settings = {
     wrapDiffLines: false,
     rowStriping: "Off",
     showCommitGraphButton: false,
+    enableLocalCopy: false,
     persistentErrorToasts: false,
     errorToastClearDelayMs: 8000,
     leftPaneWidth: 300,
@@ -64,6 +65,7 @@ const defaultInvoke = async (command: string) => {
         case "set_wrap_diff_lines":
         case "set_row_striping":
         case "set_show_commit_graph_button":
+        case "set_enable_local_copy":
         case "set_persistent_error_toasts":
         case "set_error_toast_clear_delay_ms":
         case "set_git_executable_path":
@@ -168,6 +170,7 @@ describe("SettingsWindow", () => {
         expect(toggle).not.toBeChecked();
 
         fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toBeChecked());
         fireEvent.click(screen.getByText("Save"));
 
         await waitFor(() => {
@@ -175,6 +178,23 @@ describe("SettingsWindow", () => {
                 showCommitGraphButton: true,
             });
             expect(mocks.emit).toHaveBeenCalledWith("settings-updated", settings);
+        });
+    });
+
+    it("loads Local Copy off by default and saves changes", async () => {
+        render(<SettingsWindow/>);
+
+        const toggle = await screen.findByLabelText("Enable Local Copy");
+        expect(toggle).not.toBeChecked();
+
+        fireEvent.click(toggle);
+        await waitFor(() => expect(toggle).toBeChecked());
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.invoke).toHaveBeenCalledWith("set_enable_local_copy", {
+                enableLocalCopy: true,
+            });
         });
     });
 

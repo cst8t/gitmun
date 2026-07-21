@@ -1,21 +1,22 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { emit, listen } from "@tauri-apps/api/event";
-import { open } from "@tauri-apps/plugin-dialog";
+import { ask, open } from "@tauri-apps/plugin-dialog";
 import { platform } from "@tauri-apps/plugin-os";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useTranslation } from "react-i18next";
-import type { CloneStartupOptions, OperationResult, Settings } from "../../types";
+import type { CloneStartupOptions, CloneWindowStartupOptions, LocalCopyDestinationMode, LocalCopyError, LocalCopyMode, LocalCopyProgress, LocalCopyStartupOptions, OperationResult, Settings } from "../../types";
 import { CloseIcon, FolderIcon } from "../icons";
 import { appendResultLog } from "../../utils/resultLog";
 import { getCloneRepoUrlError } from "../../utils/gitInputValidation";
-import { takePendingCloneOptions } from "../../api/commands";
+import { localCopyRepo, takePendingCloneWindowOptions } from "../../api/commands";
 import { applyThemeMode } from "../../utils/theme";
 import { applyUiTextScale } from "../../utils/uiTextScale";
 import "./CloneWindow.css";
 
 const CLONE_BASE_KEY = "gitmun.cloneBaseDir";
 const THEME_MODE_KEY = "gitmun.themeMode";
+type OperationMode = "clone" | "copy";
 
 function safePlatform(): string {
   try {
@@ -47,13 +48,19 @@ function destinationForRepo(base: string, repoUrl: string): string {
 export function CloneWindow() {
   const { t } = useTranslation("clone");
   const useNativeWindowBar = true;
+  const [operationMode, setOperationMode] = useState<OperationMode>("clone");
+  const [localCopyEnabled, setLocalCopyEnabled] = useState(false);
   const [repoUrl, setRepoUrl] = useState("");
+  const [copySource, setCopySource] = useState("");
+  const [copyMode, setCopyMode] = useState<LocalCopyMode>("filesOnly");
+  const [destinationMode, setDestinationMode] = useState<LocalCopyDestinationMode>("dropOnTop");
   const [destination, setDestination] = useState("");
   const [status, setStatus] = useState(() => t("log.ready"));
   const [cloning, setCloning] = useState(false);
   const [progressLines, setProgressLines] = useState<string[]>([]);
   const [repoUrlError, setRepoUrlError] = useState<string | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
+  const localCopyEnabledRef = useRef(false);
 
   // isAutoRef: true when destination was last set by our logic (mount/URL change/browse),
   // false when user manually typed in the field. Controls whether URL changes update the path.
@@ -121,7 +128,88 @@ export function CloneWindow() {
     }
   }, [t]);
 
+  const copyWithValues = useCallback(async (
+    sourceValue: string,
+    destinationValue: string,
+    modeValue: LocalCopyMode,
+    destinationModeValue: LocalCopyDestinationMode,
+  ) => {
+    if (!localCopyEnabledRef.current) {
+      setStatus(t("errors.featureDisabled"));
+      return;
+    }
+    if (!sourceValue.trim()) {
+      setStatus(t("log.sourceRequired"));
+      return;
+    }
+    if (!destinationValue.trim()) {
+      setStatus(t("log.destinationRequired"));
+      return;
+    }
+    if (modeValue === "filesOnly" && destinationModeValue === "deleteExisting") {
+      const confirmed = await ask(t("ask.deleteExisting.message", { path: destinationValue }), {
+        title: t("ask.deleteExisting.title"),
+        kind: "warning",
+        okLabel: t("actions.deleteExisting"),
+        cancelLabel: t("actions.cancel"),
+      });
+      if (!confirmed) return;
+    }
+
+    setCloning(true);
+    setStatus(t("log.copying"));
+    setProgressLines([]);
+
+    const onProgress = new Channel<LocalCopyProgress>();
+    onProgress.onmessage = progress => {
+      const line = progress.kind === "externalOutput"
+        ? progress.line
+        : t(`progress.phases.${progress.phase}`);
+      setProgressLines(prev => [...prev.slice(-99), line]);
+    };
+
+    try {
+      const result = await localCopyRepo({
+        source: sourceValue,
+        destination: destinationValue,
+        copyMode: modeValue,
+        destinationMode: destinationModeValue,
+      }, onProgress);
+
+      await emit("repository-selected", { repoPath: result.destinationPath });
+      const completionMessage = t("log.copyComplete", {path: result.destinationPath});
+      appendResultLog("success", completionMessage, result.backend, result.destinationPath);
+      if (result.warning) {
+        const warningMessage = t(`warnings.${result.warning.code}`, {
+          path: result.warning.path ?? result.destinationPath,
+          defaultValue: t("warnings.unknown", {path: result.warning.path ?? result.destinationPath}),
+        });
+        setStatus(warningMessage);
+        appendResultLog("info", warningMessage, result.backend, result.warning.path ?? result.destinationPath, result.warning.detail);
+      } else {
+        setStatus(completionMessage);
+        await getCurrentWindow().close();
+      }
+    } catch (e) {
+      const error: Partial<LocalCopyError> = typeof e === "object" && e !== null ? e : {};
+      const errorCode = typeof error.code === "string" ? error.code : "unknown";
+      if (errorCode === "cancelled") {
+        setStatus(t("log.copyCancelled"));
+      } else {
+        const message = t(`errors.${errorCode}`, {
+          path: error.path ?? destinationValue,
+          defaultValue: t("errors.unknown"),
+        });
+        setStatus(message);
+        appendResultLog("error", message, "unknown", error.path ?? destinationValue, error.detail);
+      }
+    } finally {
+      setCloning(false);
+    }
+  }, [t]);
+
   const applyCloneOptions = useCallback((options: CloneStartupOptions, fallbackDestination: string) => {
+    setOperationMode("clone");
     const nextRepoUrl = options.repoUrl ?? "";
     const nextDestination = options.destination
       ?? (nextRepoUrl ? destinationForRepo(fallbackDestination, nextRepoUrl) : fallbackDestination);
@@ -140,6 +228,47 @@ export function CloneWindow() {
     }
   }, [cloneWithValues]);
 
+  const applyCopyOptions = useCallback((options: LocalCopyStartupOptions, fallbackDestination: string) => {
+    if (!localCopyEnabledRef.current) {
+      setOperationMode("clone");
+      setStatus(t("errors.featureDisabled"));
+      return;
+    }
+    setOperationMode("copy");
+    const nextSource = options.source ?? "";
+    const nextDestination = options.destination ?? fallbackDestination;
+    const nextCopyMode = options.copyMode ?? "filesOnly";
+
+    if (options.source != null) {
+      setCopySource(options.source);
+    }
+    if (nextDestination) {
+      setDestination(nextDestination);
+      isAutoRef.current = false;
+    }
+    if (options.copyMode != null) {
+      setCopyMode(options.copyMode);
+    }
+    setDestinationMode(options.destinationMode);
+
+    if (options.startCopy) {
+      void copyWithValues(
+        nextSource,
+        nextDestination,
+        nextCopyMode,
+        options.destinationMode,
+      );
+    }
+  }, [copyWithValues, t]);
+
+  const applyWindowOptions = useCallback((startup: CloneWindowStartupOptions, fallbackDestination: string) => {
+    if (startup.operationMode === "clone") {
+      applyCloneOptions(startup.options, fallbackDestination);
+    } else {
+      applyCopyOptions(startup.options, fallbackDestination);
+    }
+  }, [applyCloneOptions, applyCopyOptions]);
+
   useEffect(() => {
     (async () => {
       try {
@@ -148,6 +277,8 @@ export function CloneWindow() {
           await invoke("set_theme_mode", { themeMode: persistedTheme });
         }
         const settings = await invoke<Settings>("get_settings");
+        localCopyEnabledRef.current = settings.enableLocalCopy ?? false;
+        setLocalCopyEnabled(localCopyEnabledRef.current);
         await applyThemeMode(settings.themeMode);
         applyUiTextScale(settings.uiTextScale);
 
@@ -156,22 +287,55 @@ export function CloneWindow() {
         baseDirRef.current = fallbackDestination;
         setDestination(fallbackDestination);
 
-        const pendingOptions = await takePendingCloneOptions();
+        const pendingOptions = await takePendingCloneWindowOptions();
         if (pendingOptions) {
-          applyCloneOptions(pendingOptions, fallbackDestination);
+          applyWindowOptions(pendingOptions, fallbackDestination);
         }
       } catch (e) {
         setStatus(t("log.loadFailed", { message: String(e) }));
       }
     })();
-  }, [applyCloneOptions, t]);
+  }, [applyWindowOptions, t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const removeListeners: Array<() => void> = [];
+    const updateLocalCopySetting = async (settings?: Settings) => {
+      const currentSettings = settings ?? await invoke<Settings>("get_settings");
+      if (cancelled) return;
+      localCopyEnabledRef.current = currentSettings.enableLocalCopy ?? false;
+      setLocalCopyEnabled(localCopyEnabledRef.current);
+    };
+    void (async () => {
+      removeListeners.push(await listen<Settings>("settings-updated", event => {
+        void updateLocalCopySetting(event.payload);
+      }));
+      removeListeners.push(await listen("instance-settings-updated", () => {
+        void updateLocalCopySetting();
+      }));
+    })();
+    return () => {
+      cancelled = true;
+      removeListeners.forEach(removeListener => removeListener());
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!localCopyEnabled && !cloning && operationMode === "copy") {
+      setOperationMode("clone");
+      setStatus(t("errors.featureDisabled"));
+    }
+  }, [cloning, localCopyEnabled, operationMode, t]);
 
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
-      const fn = await listen<CloneStartupOptions>("clone-options-updated", (event) => {
-        applyCloneOptions(event.payload, destination || baseDirRef.current);
+      const fn = await listen("clone-window-options-updated", async () => {
+        const pendingOptions = await takePendingCloneWindowOptions();
+        if (pendingOptions) {
+          applyWindowOptions(pendingOptions, destination || baseDirRef.current);
+        }
       });
       if (cancelled) fn(); else unlisten = fn;
     })();
@@ -179,7 +343,7 @@ export function CloneWindow() {
       cancelled = true;
       unlisten?.();
     };
-  }, [applyCloneOptions, destination]);
+  }, [applyWindowOptions, destination]);
 
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -245,9 +409,48 @@ export function CloneWindow() {
     }
   }, [destination, repoUrl, t]);
 
+  const handleSourceBrowse = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("picker.source"),
+        defaultPath: copySource || undefined,
+      });
+      if (typeof selected === "string") {
+        setCopySource(selected);
+        setStatus(t("log.sourceSet", { path: selected }));
+      }
+    } catch (e) {
+      setStatus(t("log.browseFailed", { message: String(e) }));
+    }
+  }, [copySource, t]);
+
+  const handleCopyDestinationBrowse = useCallback(async () => {
+    try {
+      const selected = await open({
+        directory: true,
+        multiple: false,
+        title: t("picker.copyDestination"),
+        defaultPath: destination || undefined,
+      });
+      if (typeof selected === "string") {
+        setDestination(selected);
+        isAutoRef.current = false;
+        setStatus(t("log.destinationSet", { path: selected }));
+      }
+    } catch (e) {
+      setStatus(t("log.browseFailed", { message: String(e) }));
+    }
+  }, [destination, t]);
+
   const handleClone = useCallback(async () => {
-    await cloneWithValues(repoUrl, destination);
-  }, [cloneWithValues, destination, repoUrl]);
+    if (operationMode === "clone") {
+      await cloneWithValues(repoUrl, destination);
+    } else {
+      await copyWithValues(copySource, destination, copyMode, destinationMode);
+    }
+  }, [cloneWithValues, copyMode, copySource, copyWithValues, destination, destinationMode, operationMode, repoUrl]);
 
   const handleCancel = useCallback(async () => {
     await invoke("cancel_clone");
@@ -259,7 +462,11 @@ export function CloneWindow() {
     getCurrentWindow().close();
   }, []);
 
-  const canClone = !cloning && !!repoUrl.trim() && !!destination.trim() && !repoUrlError;
+  const canClone = operationMode === "clone"
+    ? !cloning && !!repoUrl.trim() && !!destination.trim() && !repoUrlError
+    : !cloning && !!copySource.trim() && !!destination.trim();
+  const actionLabel = operationMode === "clone" ? t("actions.clone") : t("actions.copy");
+  const busyLabel = operationMode === "clone" ? t("actions.cloning") : t("actions.copying");
 
   return (
     <div className="clone-window">
@@ -273,18 +480,110 @@ export function CloneWindow() {
       )}
 
       <div className="clone-window__body">
-        <div className="clone-window__row">
-          <label className="clone-window__label">{t("labels.repositoryUrl")}</label>
-          <input
-            className="clone-window__input"
-            type="text"
-            value={repoUrl}
-            onChange={e => handleRepoUrlChange(e.target.value)}
-            placeholder={t("placeholders.url")}
-            disabled={cloning}
-          />
-          {repoUrlError && <div className="clone-window__error">{t(repoUrlError, { ns: "git", defaultValue: repoUrlError })}</div>}
-        </div>
+        {localCopyEnabled && (
+          <div className="clone-window__mode-tabs" role="tablist" aria-label={t("labels.operation")}>
+            <button
+              type="button"
+              className={`clone-window__mode-tab${operationMode === "clone" ? " clone-window__mode-tab--active" : ""}`}
+              onClick={() => setOperationMode("clone")}
+              disabled={cloning}
+            >
+              {t("modes.clone")}
+            </button>
+            <button
+              type="button"
+              className={`clone-window__mode-tab${operationMode === "copy" ? " clone-window__mode-tab--active" : ""}`}
+              onClick={() => setOperationMode("copy")}
+              disabled={cloning}
+            >
+              {t("modes.copy")}
+            </button>
+          </div>
+        )}
+
+        {operationMode === "clone" ? (
+          <div className="clone-window__row">
+            <label className="clone-window__label">{t("labels.repositoryUrl")}</label>
+            <input
+              className="clone-window__input"
+              type="text"
+              value={repoUrl}
+              onChange={e => handleRepoUrlChange(e.target.value)}
+              placeholder={t("placeholders.url")}
+              disabled={cloning}
+            />
+            {repoUrlError && <div className="clone-window__error">{t(repoUrlError, { ns: "git", defaultValue: repoUrlError })}</div>}
+          </div>
+        ) : (
+          <>
+            <div className="clone-window__row">
+              <label className="clone-window__label">{t("labels.source")}</label>
+              <div className="clone-window__inline-field">
+                <input
+                  className="clone-window__input"
+                  type="text"
+                  value={copySource}
+                  onChange={e => setCopySource(e.target.value)}
+                  placeholder={t("placeholders.source")}
+                  disabled={cloning}
+                />
+                <button className="clone-window__browse-btn" onClick={handleSourceBrowse} disabled={cloning} title={t("actions.browse")}>
+                  <FolderIcon />
+                </button>
+              </div>
+            </div>
+
+            <div className="clone-window__row">
+              <label className="clone-window__label">{t("labels.copyMode")}</label>
+              <div className="clone-window__option-grid">
+                <button
+                  type="button"
+                  className={`clone-window__option${copyMode === "filesOnly" ? " clone-window__option--active" : ""}`}
+                  onClick={() => setCopyMode("filesOnly")}
+                  disabled={cloning}
+                >
+                  {t("copyModes.filesOnly")}
+                </button>
+                <button
+                  type="button"
+                  className={`clone-window__option${copyMode === "completeRepository" ? " clone-window__option--active" : ""}`}
+                  onClick={() => setCopyMode("completeRepository")}
+                  disabled={cloning}
+                >
+                  {t("copyModes.completeRepository")}
+                </button>
+              </div>
+              <div className="clone-window__option-description">
+                {t(`copyModeDescriptions.${copyMode}`)}
+              </div>
+            </div>
+
+            <div className="clone-window__row">
+              <label className="clone-window__label">{t("labels.destinationMode")}</label>
+              <div className={`clone-window__option-grid${copyMode === "completeRepository" ? " clone-window__option-grid--disabled" : ""}`}>
+                <button
+                  type="button"
+                  className={`clone-window__option${destinationMode === "dropOnTop" ? " clone-window__option--active" : ""}`}
+                  onClick={() => setDestinationMode("dropOnTop")}
+                  disabled={cloning || copyMode === "completeRepository"}
+                >
+                  {t("destinationModes.dropOnTop")}
+                </button>
+                <button
+                  type="button"
+                  className={`clone-window__option${destinationMode === "deleteExisting" ? " clone-window__option--active" : ""}`}
+                  onClick={() => setDestinationMode("deleteExisting")}
+                  disabled={cloning || copyMode === "completeRepository"}
+                >
+                  {t("destinationModes.deleteExisting")}
+                </button>
+              </div>
+              <div className="clone-window__option-description">
+                {t(`destinationModeDescriptions.${destinationMode}`)}
+              </div>
+            </div>
+          </>
+        )}
 
         <div className="clone-window__row">
           <label className="clone-window__label">{t("labels.destination")}</label>
@@ -297,7 +596,12 @@ export function CloneWindow() {
               placeholder={destinationPlaceholder}
               disabled={cloning}
             />
-            <button className="clone-window__browse-btn" onClick={handleBrowse} disabled={cloning}>
+            <button
+              className="clone-window__browse-btn"
+              onClick={operationMode === "clone" ? handleBrowse : handleCopyDestinationBrowse}
+              disabled={cloning}
+              title={t("actions.browse")}
+            >
               <FolderIcon />
             </button>
           </div>
@@ -308,8 +612,8 @@ export function CloneWindow() {
             ? <span className="clone-window__progress-idle">{t("placeholders.output")}</span>
             : progressLines.length === 0
               ? <span className="clone-window__progress-waiting">{t("progress.connecting")}</span>
-              : progressLines.map((line, i) => (
-                  <div key={i} className="clone-window__progress-line">{line}</div>
+              : progressLines.map((line, lineIndex) => (
+                  <div key={lineIndex} className="clone-window__progress-line">{line}</div>
                 ))
           }
         </div>
@@ -323,7 +627,7 @@ export function CloneWindow() {
             disabled={!canClone}
           >
             {cloning && <span className="clone-window__spinner" />}
-            {cloning ? t("actions.cloning") : t("actions.clone")}
+            {cloning ? busyLabel : actionLabel}
           </button>
           {cloning ? (
             <button className="clone-window__btn clone-window__btn--danger" onClick={handleCancel}>

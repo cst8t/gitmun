@@ -258,6 +258,8 @@ pub struct Settings {
     #[serde(default)]
     pub show_commit_graph_button: bool,
     #[serde(default)]
+    pub enable_local_copy: bool,
+    #[serde(default)]
     pub persistent_error_toasts: bool,
     #[serde(
         default = "default_error_toast_clear_delay_ms",
@@ -352,6 +354,7 @@ impl Default for Settings {
             wrap_diff_lines: false,
             row_striping: RowStriping::Off,
             show_commit_graph_button: false,
+            enable_local_copy: false,
             persistent_error_toasts: false,
             error_toast_clear_delay_ms: DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS,
             left_pane_width: 300,
@@ -408,6 +411,72 @@ impl Settings {
 pub struct CloneRequest {
     pub repo_url: String,
     pub destination: String,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalCopyMode {
+    CompleteRepository,
+    FilesOnly,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalCopyDestinationMode {
+    DeleteExisting,
+    DropOnTop,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCopyRequest {
+    pub source: String,
+    pub destination: String,
+    pub copy_mode: LocalCopyMode,
+    pub destination_mode: LocalCopyDestinationMode,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCopyResult {
+    pub destination_path: String,
+    pub backend: String,
+    pub warning: Option<LocalCopyWarning>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCopyWarning {
+    pub code: String,
+    pub path: Option<String>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LocalCopyError {
+    pub code: String,
+    pub path: Option<String>,
+    pub detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum LocalCopyProgressPhase {
+    Preparing,
+    Scanning,
+    Cloning,
+    Copying,
+    Initialising,
+    Finalising,
+    RollingBack,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum LocalCopyProgress {
+    Phase { phase: LocalCopyProgressPhase },
+    ExternalOutput { line: String },
 }
 
 #[derive(Debug, Clone, Deserialize)]

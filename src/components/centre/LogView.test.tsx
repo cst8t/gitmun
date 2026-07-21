@@ -183,6 +183,7 @@ const settingsPayload: Settings = {
   wrapDiffLines: false,
   rowStriping: "Off",
   showCommitGraphButton: false,
+  enableLocalCopy: false,
   persistentErrorToasts: false,
   errorToastClearDelayMs: 5000,
   leftPaneWidth: 300,

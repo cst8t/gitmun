@@ -255,6 +255,12 @@ impl GitService {
         })
     }
 
+    pub fn set_enable_local_copy(&self, enable_local_copy: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.enable_local_copy = enable_local_copy;
+        })
+    }
+
     pub fn set_persistent_error_toasts(&self, persistent_error_toasts: bool) -> Settings {
         self.update_settings(|settings| {
             settings.persistent_error_toasts = persistent_error_toasts;
@@ -540,5 +546,15 @@ mod tests {
 
         assert!(settings.show_commit_graph_button);
         assert!(service.get_settings().show_commit_graph_button);
+    }
+
+    #[test]
+    fn set_enable_local_copy_updates_settings() {
+        let service = GitService::new();
+
+        let settings = service.set_enable_local_copy(true);
+
+        assert!(settings.enable_local_copy);
+        assert!(service.get_settings().enable_local_copy);
     }
 }

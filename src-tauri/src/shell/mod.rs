@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 pub enum ContextAction {
     OpenRepo,
     CloneRepo,
+    LocalCopyRepo,
     InitialiseRepo,
 }
 

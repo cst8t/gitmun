@@ -55,6 +55,9 @@ import type {
     BackendMode,
     LinuxTerminalOption,
     LinuxTerminalId,
+    LocalCopyProgress,
+    LocalCopyRequest,
+    LocalCopyResult,
     ThemeMode,
     ThemeBundle,
     UiTextScale,
@@ -70,7 +73,7 @@ import type {
     SetRemoteUrlRequest,
     PruneRemoteRequest,
     StashEntry,
-    CloneStartupOptions,
+    CloneWindowStartupOptions,
     ShellStartupAction,
 } from "../types";
 
@@ -591,6 +594,10 @@ export function initRepo(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("init_repo", {repoPath});
 }
 
+export function localCopyRepo(request: LocalCopyRequest, onProgress: Channel<LocalCopyProgress>): Promise<LocalCopyResult> {
+    return invoke<LocalCopyResult>("local_copy_repo", {request, onProgress});
+}
+
 export function detectDesktopEnvironment(): Promise<string> {
     return invoke<string>("detect_desktop_environment");
 }
@@ -672,14 +679,12 @@ export function openRepoInNewWindow(path: string): Promise<void> {
     return invoke("open_repo_in_new_window", {path});
 }
 
-export function openCloneWindowWithOptions(options: CloneStartupOptions = {}): Promise<void> {
-    return invoke("open_clone_window", {
-        repoUrl: options.repoUrl ?? null,
-        destination: options.destination ?? null,
-        startClone: options.startClone ?? false,
-    });
+export function openCloneWindowWithOptions(
+    options: CloneWindowStartupOptions = {operationMode: "clone", options: {}},
+): Promise<void> {
+    return invoke("open_clone_window", {options});
 }
 
-export function takePendingCloneOptions(): Promise<CloneStartupOptions | null> {
-    return invoke<CloneStartupOptions | null>("take_pending_clone_options");
+export function takePendingCloneWindowOptions(): Promise<CloneWindowStartupOptions | null> {
+    return invoke<CloneWindowStartupOptions | null>("take_pending_clone_window_options");
 }

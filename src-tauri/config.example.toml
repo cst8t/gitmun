@@ -23,6 +23,9 @@ wrapDiffLines = false
 # Experimental: show the commit graph toolbar button.
 showCommitGraphButton = false
 
+# Experimental: enable Local Copy in the Clone window and CLI.
+enableLocalCopy = false
+
 # Whether error messages stay open until dismissed.
 persistentErrorToasts = false
 

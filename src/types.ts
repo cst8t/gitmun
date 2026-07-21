@@ -72,6 +72,7 @@ export type Settings = {
     wrapDiffLines: boolean;
     rowStriping: RowStriping;
     showCommitGraphButton: boolean;
+    enableLocalCopy: boolean;
     persistentErrorToasts: boolean;
     errorToastClearDelayMs: number;
     leftPaneWidth: number;
@@ -276,6 +277,38 @@ export type CloneRequest = {
     repoUrl: string;
     destination: string;
 };
+
+export type LocalCopyMode = "completeRepository" | "filesOnly";
+export type LocalCopyDestinationMode = "deleteExisting" | "dropOnTop";
+
+export type LocalCopyRequest = {
+    source: string;
+    destination: string;
+    copyMode: LocalCopyMode;
+    destinationMode: LocalCopyDestinationMode;
+};
+
+export type LocalCopyWarning = {
+    code: string;
+    path?: string | null;
+    detail?: string | null;
+};
+
+export type LocalCopyResult = {
+    destinationPath: string;
+    backend: "git-cli" | "gix" | "gix+cli-fallback";
+    warning?: LocalCopyWarning | null;
+};
+
+export type LocalCopyError = {
+    code: string;
+    path?: string | null;
+    detail?: string | null;
+};
+
+export type LocalCopyProgress =
+    | {kind: "phase"; phase: "preparing" | "scanning" | "cloning" | "copying" | "initialising" | "finalising" | "rollingBack"}
+    | {kind: "externalOutput"; line: string};
 
 export type DiffRequest = {
     repoPath: string;
@@ -708,16 +741,14 @@ export type RemoteInfo = {
     url: string;
 };
 
-export type ContextAction = "openRepo" | "cloneRepo" | "initialiseRepo";
+export type ContextAction = "openRepo" | "cloneRepo" | "localCopyRepo" | "initialiseRepo";
 export type WindowRouting = "newWindow" | "reuseWindow";
 
 export type ShellStartupAction = {
     action: ContextAction;
     path: string;
     routing?: WindowRouting;
-    repoUrl?: string;
-    destination?: string;
-    startClone?: boolean;
+    windowOptions?: CloneWindowStartupOptions;
 };
 
 export type CloneStartupOptions = {
@@ -725,6 +756,18 @@ export type CloneStartupOptions = {
     destination?: string;
     startClone?: boolean;
 };
+
+export type LocalCopyStartupOptions = {
+    source?: string;
+    destination?: string;
+    copyMode?: LocalCopyMode;
+    destinationMode: LocalCopyDestinationMode;
+    startCopy?: boolean;
+};
+
+export type CloneWindowStartupOptions =
+    | {operationMode: "clone"; options: CloneStartupOptions}
+    | {operationMode: "copy"; options: LocalCopyStartupOptions};
 
 export type RepositorySelectedPayload = {
     repoPath: string;

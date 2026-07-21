@@ -53,6 +53,32 @@
   gap: 4px;
 }
 
+.clone-window__mode-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+}
+
+.clone-window__mode-tab {
+  border: 0;
+  border-radius: 4px;
+  padding: 6px 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.clone-window__mode-tab--active {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
 .clone-window__label {
   font-size: var(--font-size-xs);
   color: var(--text-secondary);
@@ -84,10 +110,13 @@
 .clone-window__inline-field {
   display: flex;
   gap: 6px;
+  align-items: stretch;
 }
 
 .clone-window__inline-field .clone-window__input {
-  flex: 1;
+  flex: 1 1 auto;
+  min-width: 0;
+  width: auto;
 }
 
 .clone-window__browse-btn {
@@ -99,12 +128,54 @@
   padding: 4px 8px;
   display: flex;
   align-items: center;
+  flex: 0 0 auto;
   transition: background 0.12s;
 }
 
 .clone-window__browse-btn:hover {
   background: var(--bg-hover);
   color: var(--text-primary);
+}
+
+.clone-window__option-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.clone-window__option-grid--disabled {
+  opacity: 0.55;
+}
+
+.clone-window__option-description {
+  margin-top: 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.35;
+}
+
+.clone-window__option {
+  min-height: 30px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.clone-window__option--active {
+  border-color: var(--accent);
+  background: var(--accent-selection-bg, var(--bg-hover));
+  color: var(--text-primary);
+}
+
+.clone-window__mode-tab:disabled,
+.clone-window__option:disabled,
+.clone-window__browse-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .clone-window__footer {
@@ -177,7 +248,8 @@
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
   padding: 8px 10px;
-  height: 90%;
+  min-height: 82px;
+  flex: 1;
   overflow-y: auto;
   color: var(--text-secondary);
 }

@@ -290,12 +290,12 @@ pub fn show_window(
 
         #[cfg(target_os = "linux")]
         {
-            // Tao's set_visible(true) only calls show_all(), which doesn't
-            // signal the compositor to fully manage the window. KWin needs
-            // gtk_window_present() to properly attach interactive server-side
-            // decorations (close / minimise / maximise buttons).
+            // Hidden Tao windows reject focus until their first draw, so enable
+            // it before presenting. KWin also needs present() to attach its
+            // interactive server-side decorations.
             if let Ok(gtk_win) = window.gtk_window() {
                 use gtk::prelude::GtkWindowExt;
+                gtk_win.set_accept_focus(true);
                 gtk_win.present();
             }
         }

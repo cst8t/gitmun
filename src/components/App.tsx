@@ -275,13 +275,31 @@ export function App() {
                 }
             });
         } else if (action.action === "cloneRepo") {
-            api.openCloneWindowWithOptions({
-                repoUrl: action.repoUrl,
-                destination: action.destination ?? action.path,
-                startClone: action.startClone,
-            }).catch(e => {
+            const options = action.windowOptions ?? {
+                operationMode: "clone" as const,
+                options: {destination: action.path},
+            };
+            api.openCloneWindowWithOptions(options).catch(e => {
                 showToast(String(e), "error");
                 appendResultLog("error", t("log.cloneWindowFailed", {message: String(e)}), "unknown");
+            });
+        } else if (action.action === "localCopyRepo") {
+            const options = action.windowOptions ?? {
+                operationMode: "copy" as const,
+                options: {destinationMode: "dropOnTop" as const},
+            };
+            api.getSettings().then(settings => {
+                if (!settings.enableLocalCopy) {
+                    showToast(t("errors.featureDisabled", {ns: "clone"}), "error");
+                    return;
+                }
+                return api.openCloneWindowWithOptions(options);
+            }).catch(e => {
+                const message = String(e).includes("localCopy.featureDisabled")
+                    ? t("errors.featureDisabled", {ns: "clone"})
+                    : String(e);
+                showToast(message, "error");
+                appendResultLog("error", t("log.cloneWindowFailed", {message}), "unknown");
             });
         } else if (action.action === "initialiseRepo") {
             api.initRepo(action.path).then(async (result) => {

@@ -46,6 +46,7 @@
     "gpgKeyserverVerification": "GPG keyserver verification",
     "gpgProgram": "GPG executable",
     "layout": "Layout",
+    "localCopy": "Local Copy",
     "loadErrorTitle": "Settings could not be loaded",
     "lineEndings": "Line endings",
     "openAtLaunch": "Open at launch",
@@ -82,6 +83,7 @@
     "linuxTerminal": "Custom commands can use {path}. If omitted, Gitmun still starts the terminal from the repository folder.",
     "commitMessageRecommendedLength": "Recommended maximum for the first line of a commit message. Set to 0 to disable.",
     "commitGraphExperimental": "The commit graph is experimental and may show visually incorrect graph lines.",
+    "localCopyExperimental": "Local Copy is experimental. Files only includes hidden, ignored, untracked, and tracked files, so it can copy local secrets. It excludes Git metadata, preserves symbolic links, and may need temporary space equal to the resulting working tree.",
     "errorToastClearDelayMs": "Applies when error messages are not kept open. Minimum 1000 ms.",
     "persistentErrorToasts": "Only error messages stay open. Success and information messages still close automatically.",
     "repoOpenBehaviour": "Controls in-app repository opens, including recent repositories. Shell and file manager launches open a new window unless the launcher asks to reuse one.",
@@ -193,6 +195,7 @@
   },
   "switches": {
     "autoCheckUpdates": "Automatically check for updates on launch",
+    "enableLocalCopy": "Enable Local Copy",
     "followTags": "Include annotated tags when pushing (`--follow-tags`)",
     "gpgKeyserverVerification": "Fetch missing GPG public keys during verification",
     "persistentErrorToasts": "Keep error messages open until dismissed",
