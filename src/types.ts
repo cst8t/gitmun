@@ -94,6 +94,7 @@ export type Settings = {
     repoOpenBehaviour: RepoOpenBehaviour;
     gitExecutablePath: string;
     gpgKeyserverVerificationEnabled: boolean;
+    extensions: {ai: AiExtensionSettings};
 };
 
 export type ThemeBundle = {
@@ -778,3 +779,20 @@ export type StashEntry = {
     message: string;
     shortHash: string;
 };
+import type {AiExtensionSettings} from "./features/ai";
+
+export type {
+    AiCommitMessageResult,
+    AiConfigurationView,
+    AiConflictEligibility,
+    AiConflictProposalResult,
+    AiConflictResolutionResult,
+    AiConnectionTestResult,
+    AiEffortCapability,
+    AiError,
+    AiProfile,
+    AiProvider,
+    AiReasoningPreference,
+    AiUsage,
+    SaveAiConfigurationRequest,
+} from "./features/ai";

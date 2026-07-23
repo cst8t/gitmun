@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { ask } from "@tauri-apps/plugin-dialog";
 import type { CommitPrimaryAction } from "../../types";
-import { getCommitMessageRecovery } from "../../api/commands";
+import { getCommitMessageRecovery, openSettingsWindow } from "../../api/commands";
+import {AiCommitComposerDialog, type AiCommitWorkflow} from "../../features/ai";
 import {
   clearCommitMessageDraft,
   loadCommitMessageDraft,
@@ -24,6 +26,9 @@ type CommitBoxProps = {
   mergeInProgress?: boolean;
   rebaseInProgress?: boolean;
   cherryPickInProgress?: boolean;
+  revertInProgress?: boolean;
+  aiEnabled?: boolean;
+  aiConfigured?: boolean;
 };
 
 type CommitBoxDragState = {
@@ -117,6 +122,8 @@ export function CommitBox({
   mergeInProgress,
   rebaseInProgress,
   cherryPickInProgress,
+  revertInProgress,
+  aiEnabled = false, aiConfigured = false,
 }: CommitBoxProps) {
   const { t } = useTranslation("centre");
   const [subject, setSubject] = useState("");
@@ -124,6 +131,7 @@ export function CommitBox({
   const [amend, setAmend] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const [showAiComposer, setShowAiComposer] = useState(false);
   const [draftReady, setDraftReady] = useState(false);
   const [commitBoxHeight, setCommitBoxHeight] = useState<number | null>(null);
   const [dragState, setDragState] = useState<CommitBoxDragState | null>(null);
@@ -132,6 +140,18 @@ export function CommitBox({
   const commitBoxHeightRef = useRef<number>(MIN_COMMIT_BOX_HEIGHT);
   const commitBoxRatioRef = useRef<number | null>(parseCommitBoxRatio(getCommitBoxStorage()?.getItem(COMMIT_BOX_RATIO_KEY) ?? null));
   const activeAction = allowCommitAndPush ? selectedAction : "commit";
+  const aiWorkflow: AiCommitWorkflow = amend
+    ? "Amend"
+    : mergeInProgress
+      ? "Merge"
+      : rebaseInProgress
+        ? "Rebase"
+        : cherryPickInProgress
+          ? "CherryPick"
+          : revertInProgress
+            ? "Revert"
+            : "Normal";
+  const currentMessage = body.trim() ? `${subject}\n\n${body}` : subject;
 
   useEffect(() => {
     setDraftReady(false);
@@ -296,6 +316,22 @@ export function CommitBox({
     setRecoveryMessage(null);
   };
 
+  const handleAcceptAiMessage = async (message: string): Promise<boolean> => {
+    if (subject.trim() || body.trim()) {
+      const replace = await ask(t("commitBox.aiReplaceMessage"), {
+        title: t("commitBox.aiReplaceTitle"),
+        kind: "warning",
+        okLabel: t("commitBox.aiReplace"),
+        cancelLabel: t("actions.cancel", {ns: "common"}),
+      });
+      if (!replace) return false;
+    }
+    const nextMessage = splitCommitMessage(message);
+    setSubject(nextMessage.subject);
+    setBody(nextMessage.body);
+    return true;
+  };
+
   const handleCommit = async () => {
     if (actionDisabled) return;
     const message = trimmedBody === "" ? trimmedSubject : `${trimmedSubject}\n\n${trimmedBody}`;
@@ -371,13 +407,26 @@ export function CommitBox({
       />
 
       <div className="commit-box__meta">
-        <div className="commit-box__amend" onClick={handleAmendToggle}>
-          <div className={`commit-box__checkbox ${amend ? "commit-box__checkbox--active" : ""}`}>
-            {amend && <CheckIcon size={10} />}
+        <div className="commit-box__meta-actions">
+          <div className="commit-box__amend" onClick={handleAmendToggle}>
+            <div className={`commit-box__checkbox ${amend ? "commit-box__checkbox--active" : ""}`}>
+              {amend && <CheckIcon size={10} />}
+            </div>
+            <span className={`commit-box__amend-label ${amend ? "commit-box__amend-label--active" : ""}`}>
+              {t("commitBox.amend")}
+            </span>
           </div>
-          <span className={`commit-box__amend-label ${amend ? "commit-box__amend-label--active" : ""}`}>
-            {t("commitBox.amend")}
-          </span>
+          {aiEnabled && (
+            <button
+              type="button"
+              className="commit-box__ai-generate"
+              onClick={() => aiConfigured ? setShowAiComposer(true) : void openSettingsWindow()}
+              disabled={aiConfigured && (stagedCount === 0 || isCommitting)}
+              title={aiConfigured ? t("commitBox.aiGenerateTitle") : t("commitBox.aiConfigureTitle")}
+            >
+              {aiConfigured ? t("commitBox.aiGenerate") : t("commitBox.aiConfigure")}
+            </button>
+          )}
         </div>
 
         <div className="commit-box__hints">
@@ -456,6 +505,16 @@ export function CommitBox({
           </div>
         )}
       </div>
+      {aiEnabled && showAiComposer && repoPath && (
+        <AiCommitComposerDialog
+          repoPath={repoPath}
+          subjectLimit={commitMessageRecommendedLength}
+          workflow={aiWorkflow}
+          existingMessage={currentMessage}
+          onAccept={handleAcceptAiMessage}
+          onClose={() => setShowAiComposer(false)}
+        />
+      )}
     </div>
   );
 }

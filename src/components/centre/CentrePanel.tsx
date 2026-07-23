@@ -118,6 +118,7 @@ type CentrePanelProps = {
   onRevertAbort: () => void;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
+  onConflictResolveWithAi: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
@@ -126,6 +127,9 @@ type CentrePanelProps = {
   isCherryPickActionRunning: boolean;
   isRevertActionRunning: boolean;
   lastCommitMessage: string;
+  aiEnabled: boolean;
+  aiConfigured: boolean;
+  aiResolvingPath: string | null;
 };
 
 function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
@@ -351,6 +355,7 @@ export function CentrePanel(props: CentrePanelProps) {
           mergeMessage={props.mergeMessage}
           rebaseInProgress={props.rebaseInProgress}
           cherryPickInProgress={props.cherryPickInProgress}
+          revertInProgress={props.revertInProgress}
           selectedFile={props.selectedFile}
           selectedSubmodulePath={props.selectedSubmodulePath}
           selectedStaged={props.selectedStagedFiles}
@@ -382,12 +387,16 @@ export function CentrePanel(props: CentrePanelProps) {
           onCommit={props.onCommit}
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
+          onConflictResolveWithAi={props.onConflictResolveWithAi}
           onOpenMergeTool={props.onOpenMergeTool}
           stagingOperation={props.stagingOperation}
           inlineOperation={inlineOperationContent}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
           rowStriping={props.rowStriping}
+          aiEnabled={props.aiEnabled}
+          aiConfigured={props.aiConfigured}
+          aiResolvingPath={props.aiResolvingPath}
         />
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>

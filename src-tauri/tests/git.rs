@@ -392,11 +392,18 @@ fn status_reports_untracked_item_kinds() {
     let cli_status = handler()
         .get_repo_status(&repo_request(&dir))
         .expect("cli get_repo_status");
-    assert!(cli_status.unversioned_files.iter().any(|path| path == "new.txt"));
-    assert!(cli_status
-        .unversioned_files
-        .iter()
-        .any(|path| path == "notes/"));
+    assert!(
+        cli_status
+            .unversioned_files
+            .iter()
+            .any(|path| path == "new.txt")
+    );
+    assert!(
+        cli_status
+            .unversioned_files
+            .iter()
+            .any(|path| path == "notes/")
+    );
     assert_unversioned_item(&cli_status, "new.txt", UnversionedItemKind::File);
     assert_unversioned_item(&cli_status, "tracked/new.txt", UnversionedItemKind::File);
     assert_unversioned_item(&cli_status, "notes/", UnversionedItemKind::Directory);
@@ -404,11 +411,18 @@ fn status_reports_untracked_item_kinds() {
     let gix_status = gix_handler()
         .get_repo_status(&repo_request(&dir))
         .expect("gix get_repo_status");
-    assert!(gix_status.unversioned_files.iter().any(|path| path == "new.txt"));
-    assert!(gix_status
-        .unversioned_files
-        .iter()
-        .any(|path| path == "notes/"));
+    assert!(
+        gix_status
+            .unversioned_files
+            .iter()
+            .any(|path| path == "new.txt")
+    );
+    assert!(
+        gix_status
+            .unversioned_files
+            .iter()
+            .any(|path| path == "notes/")
+    );
     assert_unversioned_item(&gix_status, "new.txt", UnversionedItemKind::File);
     assert_unversioned_item(&gix_status, "tracked/new.txt", UnversionedItemKind::File);
     assert_unversioned_item(&gix_status, "notes/", UnversionedItemKind::Directory);
@@ -510,7 +524,11 @@ fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch()
     git(dir.path(), &["commit", "-m", "add calibration baseline"]);
     let base_hash = head_hash(dir.path());
 
-    write_file(dir.path(), "calibration-report.txt", "incoming calibration\n");
+    write_file(
+        dir.path(),
+        "calibration-report.txt",
+        "incoming calibration\n",
+    );
     git(dir.path(), &["add", "calibration-report.txt"]);
     git(dir.path(), &["commit", "-m", "record incoming calibration"]);
     let patch = dir.path().join("sonar-calibration.patch");
@@ -521,7 +539,11 @@ fn import_patch_three_way_returns_conflict_result_for_drifted_full_index_patch()
     fs::write(&patch, format!("{patch_content}\n")).expect("write patch");
 
     git(dir.path(), &["reset", "--hard", &base_hash]);
-    write_file(dir.path(), "calibration-report.txt", "operator correction\n");
+    write_file(
+        dir.path(),
+        "calibration-report.txt",
+        "operator correction\n",
+    );
     git(dir.path(), &["add", "calibration-report.txt"]);
     git(dir.path(), &["commit", "-m", "record operator correction"]);
 
@@ -581,7 +603,11 @@ fn import_patch_three_way_blocks_dirty_tracked_files() {
     git(dir.path(), &["commit", "-m", "add calibration baseline"]);
     let base_hash = head_hash(dir.path());
 
-    write_file(dir.path(), "calibration-report.txt", "incoming calibration\n");
+    write_file(
+        dir.path(),
+        "calibration-report.txt",
+        "incoming calibration\n",
+    );
     git(dir.path(), &["add", "calibration-report.txt"]);
     git(dir.path(), &["commit", "-m", "record incoming calibration"]);
     let patch = dir.path().join("sonar-calibration.patch");
@@ -1368,7 +1394,8 @@ fn commit_message_recovery_ignores_missing_or_comment_only_file() {
             .is_none()
     );
 
-    fs::write(commit_editmsg_path, "# comment only\n\n# still comment\n").expect("write COMMIT_EDITMSG");
+    fs::write(commit_editmsg_path, "# comment only\n\n# still comment\n")
+        .expect("write COMMIT_EDITMSG");
 
     assert!(
         handler()

@@ -23,6 +23,7 @@ import {
 } from "../../api/commands";
 import { buildCommitGraph, type CommitGraphRow } from "../../utils/commitGraph";
 import { ContextMenu } from "../shared/ContextMenu";
+import { CloseIcon } from "../icons";
 import { CommitGraphGutter } from "./CommitGraphGutter";
 
 function getInitials(name: string): string {
@@ -194,7 +195,9 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
 
   return (
     <div ref={ref} className={`sig-popover sig-popover--${mod}`} role="dialog" aria-modal="false">
-      <button className="sig-popover__close" onClick={onClose} aria-label={t("log.close")}>✕</button>
+      <button type="button" className="sig-popover__close" onClick={onClose} aria-label={t("log.close")}>
+        <CloseIcon />
+      </button>
       <div className="sig-popover__header">
         <ShieldIcon status={status} />
         <span>{heading}</span>

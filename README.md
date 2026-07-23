@@ -86,8 +86,12 @@ Linux-only helper setup (if needed):
 npm run linux:setup
 ```
 
+### Experimental AI extension
+
+Gitmun includes an opt-in AI extension for commit-message previews and conflict-resolution proposals. It is disabled by default and supports hosted, local and OpenAI-compatible providers. See [AI extension configuration](docs/ai-extension.md) for provider profiles, privacy controls and launch-time environment overrides.
+
 ## Notes
 
 - Gitmun uses your system Git authentication setup (SSH agent, credential helpers, HTTPS tokens).
-- Settings are stored in a JSON config file; the path is shown in the Settings window.
+- Settings are stored in a TOML config file; the path is shown in the Settings window.
 - macOS bundles are built in CI but are currently untested because I do not have access to macOS hardware. Any help testing macOS releases is greatly appreciated.

@@ -176,9 +176,7 @@ impl CliGitHandler {
         let home = std::env::var_os("HOME")
             .or_else(|| std::env::var_os("USERPROFILE"))
             .ok_or_else(|| {
-                GitError::InvalidInput(
-                    Self::SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE.to_string(),
-                )
+                GitError::InvalidInput(Self::SSH_ALLOWED_SIGNERS_HOME_UNAVAILABLE.to_string())
             })?;
         Ok(PathBuf::from(home)
             .join(".config")
@@ -3984,11 +3982,7 @@ impl GitOperationHandler for CliGitHandler {
                 }
             };
         let email = Self::scoped_config_get(&repo_path, &request.scope, "user.email")?.ok_or_else(
-            || {
-                GitError::InvalidInput(
-                    Self::SSH_ALLOWED_SIGNERS_MISSING_EMAIL.to_string(),
-                )
-            },
+            || GitError::InvalidInput(Self::SSH_ALLOWED_SIGNERS_MISSING_EMAIL.to_string()),
         )?;
         let public_key = Self::resolve_ssh_signing_public_key(&signing_key)?;
         let target_path = PathBuf::from(target_path);

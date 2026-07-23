@@ -42,6 +42,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
+  AiError,
   BranchInfo,
   CommitLogScope,
   CommitMarkers,
@@ -72,6 +73,8 @@ import type { ToastType } from "../hooks/useToast";
 import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
 import { getRemoteActionState, splitUpstreamRef } from "../utils/remoteActionState";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
+import {AiConflictProposalDialog, AiWritingDialog} from "../features/ai";
+import type {AiConflictProposalResult} from "../features/ai";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
 // (lives outside the component so repo switches don't reset it).
@@ -160,6 +163,23 @@ function localisePatchExportError(message: string, t: TFunction<"projectView">):
 function localisePatchImportMessage(message: string, t: TFunction<"projectView">): string {
   const code = PATCH_IMPORT_MESSAGE_CODES.find(code => message.includes(code));
   return code ? t(`patch.import.${code}`) : message;
+}
+
+export function localiseAiError(error: unknown, t: TFunction<"projectView">): string {
+  const aiError = typeof error === "object" && error !== null && "code" in error
+    ? error as AiError
+    : null;
+  if (
+    aiError?.code === "contextTooLarge"
+    && Number.isFinite(aiError.contextSizeKib)
+    && Number.isFinite(aiError.contextLimitKib)
+  ) {
+    return t("aiErrors.contextTooLargeWithSize", {
+      actual: aiError.contextSizeKib,
+      limit: aiError.contextLimitKib,
+    });
+  }
+  return t(`aiErrors.${aiError?.code ?? "unknown"}`);
 }
 
 export function buildStashDropPrompt(
@@ -340,6 +360,7 @@ export function ProjectView({
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
   const { t: tGitAdvice } = useTranslation("gitAdvice");
+  const { t: tAi } = useTranslation("ai");
   const emptyStateRecentRepos = !repoPath ? recentRepos.slice(0, 5) : [];
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
@@ -404,11 +425,23 @@ export function ProjectView({
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
+  const [aiConflictProposal, setAiConflictProposal] = useState<AiConflictProposalResult | null>(null);
+  const [aiConflictApplying, setAiConflictApplying] = useState(false);
+  const [showAiWriting, setShowAiWriting] = useState(false);
+  const aiConflictOperationIdRef = useRef("");
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => {
+    const operationId = aiConflictOperationIdRef.current;
+    if (operationId) void api.cancelAiOperation(operationId).catch(() => {});
+  }, []);
 
   const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity, refreshIdentity: refreshLocalIdentity } =
     useGitIdentity(repoPath, "Local");
@@ -632,6 +665,34 @@ export function ProjectView({
 
     return () => {
       cancelled = true;
+    };
+  }, [settingsRevision]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refreshAiConfiguration = () => {
+      api.getAiConfiguration()
+        .then(configuration => {
+          if (!cancelled) {
+            setAiEnabled(configuration.enabled);
+            setAiConfigured(configuration.configured);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAiEnabled(false);
+            setAiConfigured(false);
+          }
+        });
+    };
+    refreshAiConfiguration();
+    let unlisten: (() => void) | null = null;
+    listen("ai-configuration-updated", refreshAiConfiguration).then(remove => {
+      if (cancelled) remove(); else unlisten = remove;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
     };
   }, [settingsRevision]);
 
@@ -2299,6 +2360,113 @@ export function ProjectView({
     }
   }, [repoPath, refreshStatus, showToast, t]);
 
+  const handleConflictResolveWithAi = useCallback(async (path: string) => {
+    if (!repoPath) return;
+    if (aiResolvingPath === path && aiConflictOperationIdRef.current) {
+      await api.cancelAiOperation(aiConflictOperationIdRef.current).catch(() => {});
+      return;
+    }
+    if (aiResolvingPath) return;
+    const operationId = `conflict-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    aiConflictOperationIdRef.current = operationId;
+    setAiResolvingPath(path);
+    try {
+      const configuration = await api.getAiConfiguration();
+      if (configuration.consentRequired) {
+        const preview = await api.getAiConflictContextPreview(repoPath, path);
+        const confirmed = await ask([
+          tAi("context.destination", {
+            provider: preview.provider,
+            authority: preview.destinationAuthority,
+          }),
+          tAi("context.files", {count: preview.files.length}),
+          tAi("context.size", {
+            size: preview.contextSizeKib,
+            limit: preview.contextLimitKib,
+          }),
+          "",
+          tAi("context.consent", {authority: preview.destinationAuthority}),
+        ].join("\n"), {
+          title: tAi("context.title"),
+          kind: "warning",
+        });
+        if (!confirmed) return;
+        await api.grantAiConsent();
+      }
+      const result = await api.resolveConflictWithAi(repoPath, path, operationId);
+      setAiConflictProposal(result);
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "code" in error && error.code === "operationCancelled") return;
+      const message = localiseAiError(error, t);
+      showToast(message, "error");
+    } finally {
+      aiConflictOperationIdRef.current = "";
+      setAiResolvingPath(null);
+    }
+  }, [aiResolvingPath, repoPath, showToast, t, tAi]);
+
+  const handleApplyAiConflictProposal = useCallback(async (regionIds: string[]) => {
+    if (!aiConflictProposal || aiConflictApplying) return;
+    setAiConflictApplying(true);
+    try {
+      const result = await api.applyAiConflictProposal(aiConflictProposal.proposalId, regionIds);
+      showToast(t("toast.aiConflictResolved", {
+        file: getFileName(result.filePath),
+        count: result.resolvedRegions,
+      }), "success");
+      await refreshStatus();
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictApplying(false);
+    }
+  }, [aiConflictApplying, aiConflictProposal, refreshStatus, showToast, t]);
+
+  const handleRegenerateAiConflictProposal = useCallback(async (regionIds?: string[]) => {
+    if (!aiConflictProposal || !repoPath || aiConflictApplying) return;
+    setAiConflictApplying(true);
+    try {
+      if (!regionIds?.length) {
+        setAiConflictProposal(await api.resolveConflictWithAi(repoPath, aiConflictProposal.filePath));
+        return;
+      }
+      const refreshed = await api.regenerateAiConflictRegions(aiConflictProposal.proposalId, regionIds);
+      const replacements = new Map(refreshed.regions.map(region => [region.id, region]));
+      setAiConflictProposal(current => current && current.proposalId === refreshed.proposalId
+        ? {
+            ...current,
+            usage: refreshed.usage,
+            requestId: refreshed.requestId,
+            generationId: refreshed.generationId,
+            routedProvider: refreshed.routedProvider,
+            routedModel: refreshed.routedModel,
+            regions: current.regions.map(region => replacements.get(region.id) ?? region),
+          }
+        : current);
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictApplying(false);
+    }
+  }, [aiConflictApplying, aiConflictProposal, repoPath, showToast, t]);
+
+  const handleUndoAiConflictProposal = useCallback(async () => {
+    if (!aiConflictProposal || aiConflictApplying) return;
+    setAiConflictApplying(true);
+    try {
+      await api.undoAiConflictProposal(aiConflictProposal.proposalId);
+      await refreshStatus();
+      setAiConflictProposal(null);
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictApplying(false);
+    }
+  }, [aiConflictApplying, aiConflictProposal, refreshStatus, showToast, t]);
+
   const handleOpenMergeTool = useCallback(async (path: string) => {
     if (!repoPath) return;
     try {
@@ -2519,6 +2687,9 @@ export function ProjectView({
           selectedPatchExportEnabled={selectedPatchFiles.length > 0}
           remoteOp={remoteOp}
           identityOpen={identityOpen}
+          aiEnabled={aiEnabled}
+          aiConfigured={aiConfigured}
+          onAiWriting={() => setShowAiWriting(true)}
         />
 
         <div className="app__body" ref={appBodyRef}>
@@ -2693,6 +2864,7 @@ export function ProjectView({
                   onRevertAbort={handleRevertAbort}
                   onConflictAcceptTheirs={handleConflictAcceptTheirs}
                   onConflictAcceptOurs={handleConflictAcceptOurs}
+                  onConflictResolveWithAi={handleConflictResolveWithAi}
                   onOpenMergeTool={handleOpenMergeTool}
                   stagingOperation={stagingOperation}
                   operationLock={operationLock}
@@ -2701,6 +2873,9 @@ export function ProjectView({
                   isCherryPickActionRunning={isCherryPickActionRunning}
                   isRevertActionRunning={isRevertActionRunning}
                   lastCommitMessage={lastCommitMessage}
+                  aiEnabled={aiEnabled}
+                  aiConfigured={aiConfigured}
+                  aiResolvingPath={aiResolvingPath}
                 />
               </div>
 
@@ -2785,6 +2960,19 @@ export function ProjectView({
           )}
         </div>
       </div>
+      {aiEnabled && aiConflictProposal && (
+        <AiConflictProposalDialog
+          proposal={aiConflictProposal}
+          applying={aiConflictApplying}
+          onApply={handleApplyAiConflictProposal}
+          onRegenerate={handleRegenerateAiConflictProposal}
+          onUndo={handleUndoAiConflictProposal}
+          onClose={() => setAiConflictProposal(null)}
+        />
+      )}
+      {aiEnabled && showAiWriting && repoPath && (
+        <AiWritingDialog repoPath={repoPath} onClose={() => setShowAiWriting(false)} />
+      )}
     </>
   );
 }

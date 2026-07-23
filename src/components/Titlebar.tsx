@@ -28,6 +28,9 @@ type TitlebarProps = {
   onSearchChange: (query: string) => void;
   onAboutClick: () => void;
   onSettingsClick: () => void;
+  aiEnabled?: boolean;
+  aiConfigured?: boolean;
+  onAiWriting?: () => void;
   onIdentityClick: () => void;
   onCloneClick: () => void;
   onInitRepoClick: () => void;
@@ -56,7 +59,7 @@ export function Titlebar({
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
   onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled,
-  identityOpen, remoteOp,
+  identityOpen, remoteOp, aiEnabled = false, aiConfigured = false, onAiWriting,
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -209,6 +212,10 @@ export function Titlebar({
           onImportPatch={onImportPatch}
           onExportPatch={onExportPatch}
           selectedPatchExportEnabled={selectedPatchExportEnabled}
+          aiEnabled={aiEnabled}
+          aiConfigured={aiConfigured}
+          onAiWriting={onAiWriting}
+          onConfigureAi={onSettingsClick}
         />
       </div>
       <div className="titlebar__sep" />
@@ -305,12 +312,16 @@ function DisclosureRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled }: {
+function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled, aiEnabled, aiConfigured, onAiWriting, onConfigureAi }: {
   repoPath: string | null;
   onReset: (mode: Extract<ResetMode, "mixed" | "hard">) => void;
   onImportPatch: () => void;
   onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
   selectedPatchExportEnabled: boolean;
+  aiEnabled: boolean;
+  aiConfigured: boolean;
+  onAiWriting?: () => void;
+  onConfigureAi: () => void;
 }) {
   const { t } = useTranslation("titlebar");
   const [open, setOpen] = useState(false);
@@ -379,6 +390,14 @@ function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selecte
               </div>
             </div>
           </div>
+          {aiEnabled && onAiWriting && (
+            <>
+              <div className="titlebar__open-menu-heading">{t("ai.heading")}</div>
+              <div className="titlebar__open-menu-item" onClick={() => run(aiConfigured ? onAiWriting : onConfigureAi)}>
+                <span>{t(aiConfigured ? "ai.writingTools" : "ai.configure")}</span>
+              </div>
+            </>
+          )}
           <div className="titlebar__open-menu-heading">{t("reset.heading")}</div>
           <div className="titlebar__open-menu-item" onClick={() => run(() => onReset("mixed"))}>
             <span>{t("reset.mixed")}</span>

@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import type { FileStatusItem } from "../../types";
@@ -7,6 +7,7 @@ import "../../i18n";
 import { StagingView } from "./StagingView";
 
 vi.mock("../../api/commands", () => ({
+  getAiConflictEligibility: vi.fn(async () => ({eligible: true, reason: null})),
   getCommitMessageRecovery: vi.fn(() => new Promise(() => {})),
   getNumstat: vi.fn(),
 }));
@@ -76,6 +77,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     mergeMessage: null,
     rebaseInProgress: false,
     cherryPickInProgress: false,
+    revertInProgress: false,
     selectedFile: null,
     selectedSubmodulePath: null,
     selectedUnstaged: {},
@@ -107,12 +109,16 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     onCommit: vi.fn(),
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
+    onConflictResolveWithAi: vi.fn(),
     onOpenMergeTool: vi.fn(),
     stagingOperation: null,
     inlineOperation: null,
     isCommitting: false,
     lastCommitMessage: "",
     rowStriping: "Off",
+    aiEnabled: false,
+    aiConfigured: false,
+    aiResolvingPath: null,
     ...overrides,
   };
 }
@@ -137,6 +143,24 @@ function StatefulStagingView(props: Partial<React.ComponentProps<typeof StagingV
 }
 
 describe("StagingView file tree", () => {
+  it("hides conflict AI actions when the AI extension is disabled", () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+
+    renderStagingView({conflictedFiles: [conflict], mergeInProgress: true});
+
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure AI")).not.toBeInTheDocument();
+  });
+
+  it("shows the appropriate conflict AI action when the extension is enabled", async () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+    const unconfigured = renderStagingView({conflictedFiles: [conflict], mergeInProgress: true, aiEnabled: true});
+    expect(within(screen.getByText(conflict.path).closest(".staging__conflict-row")!).getByText("Configure AI")).toBeInTheDocument();
+    unconfigured.unmount();
+
+    renderStagingView({conflictedFiles: [conflict], mergeInProgress: true, aiEnabled: true, aiConfigured: true});
+    await waitFor(() => expect(screen.getByText("AI")).toBeEnabled());
+  });
   it("renders common folders as expanded collapsible rows", () => {
     renderStagingView({
       unstagedFiles: [

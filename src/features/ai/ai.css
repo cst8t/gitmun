@@ -1,0 +1,473 @@
+.ai-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.1s ease;
+}
+
+.ai-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: hidden;
+  color-scheme: dark;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-2xl);
+  background: var(--bg-surface);
+  box-shadow: var(--shadow-dialog);
+  animation: dialogIn 0.15s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+:root[data-theme="light"] .ai-dialog {
+  color-scheme: light;
+}
+
+.ai-dialog button {
+  appearance: none;
+  padding: 6px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-medium);
+}
+
+.ai-dialog button:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+
+.ai-dialog button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.ai-dialog button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.ai-dialog .ai-dialog__button--primary {
+  border-color: transparent;
+  color: var(--text-on-accent);
+  background: var(--accent);
+}
+
+.ai-dialog .ai-dialog__button--primary:hover:not(:disabled) {
+  color: var(--text-on-accent);
+  background: var(--accent-hover);
+}
+
+.ai-dialog__header,
+.ai-dialog__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px;
+}
+
+.ai-dialog__header {
+  border-bottom: 1px solid var(--border);
+}
+
+.ai-dialog .ai-dialog__close {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  padding: 0;
+  border-color: transparent;
+  color: var(--text-muted);
+  background: transparent;
+}
+
+.ai-dialog__header h2,
+.ai-dialog__header p,
+.ai-conflict-region h3,
+.ai-conflict-region p {
+  margin: 0;
+}
+
+.ai-dialog__header h2 {
+  color: var(--text-primary);
+  font-size: var(--font-size-base);
+  font-weight: var(--font-weight-semibold);
+  line-height: 1.3;
+}
+
+.ai-dialog__header p {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.ai-dialog__content {
+  overflow: auto;
+  padding: 16px;
+}
+
+.ai-dialog__error {
+  color: var(--red);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.ai-dialog--commit {
+  width: min(900px, 100%);
+}
+
+.ai-commit-composer,
+.ai-context-preview,
+.ai-candidates {
+  display: grid;
+  gap: 12px;
+}
+
+.ai-context-preview,
+.ai-consent {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.ai-consent {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-consent button {
+  justify-self: start;
+}
+
+.ai-context-preview h3,
+.ai-context-preview p,
+.ai-consent p {
+  margin: 0;
+}
+
+.ai-context-preview h3,
+.ai-writing-result h3,
+.ai-conflict-region h3 {
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ai-context-preview p,
+.ai-consent p,
+.ai-conflict-region p {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.ai-context-preview summary,
+.ai-conflict-region summary {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  cursor: pointer;
+}
+
+.ai-context-preview__files[open] > summary {
+  margin-bottom: 8px;
+}
+
+.ai-context-preview__files ul {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding-left: 20px;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.5;
+}
+
+.ai-commit-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.ai-commit-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.ai-commit-controls input:not([type="checkbox"]),
+.ai-commit-controls select,
+.ai-commit-controls textarea {
+  min-width: 0;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background-color: var(--bg-elevated);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.ai-commit-controls select {
+  appearance: none;
+  padding-right: 30px;
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text-muted) 50%),
+    linear-gradient(135deg, var(--text-muted) 50%, transparent 50%);
+  background-position:
+    calc(100% - 13px) calc(50% - 2px),
+    calc(100% - 8px) calc(50% - 2px);
+  background-repeat: no-repeat;
+  background-size: 5px 5px;
+}
+
+.ai-commit-controls select option {
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+}
+
+.ai-commit-controls input:not([type="checkbox"]):focus,
+.ai-commit-controls select:focus,
+.ai-commit-controls textarea:focus {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus-ring);
+}
+
+.ai-commit-controls textarea {
+  resize: vertical;
+}
+
+.ai-dialog .ai-dialog__toggle {
+  color: var(--text-secondary);
+}
+
+.ai-dialog .ai-dialog__toggle[aria-pressed="true"] {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--selection-bg);
+}
+
+.ai-commit-controls__wide {
+  grid-column: 1 / -1;
+}
+
+.ai-candidates {
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.ai-candidates legend {
+  margin-bottom: 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.ai-dialog .ai-candidates__option {
+  display: grid;
+  width: 100%;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  text-align: left;
+  background: var(--bg-elevated);
+}
+
+.ai-dialog button.ai-candidates__option:hover {
+  border-color: var(--selection-border);
+  background: var(--bg-hover);
+}
+
+.ai-dialog .ai-candidates__option--selected {
+  border-color: var(--accent);
+  background: var(--selection-bg);
+}
+
+.ai-candidates__option-title {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ai-candidates pre {
+  min-width: 0;
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.ai-conflict-region input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin-top: 3px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.ai-writing-result {
+  display: grid;
+  gap: 8px;
+}
+
+.ai-writing-result h3,
+.ai-writing-result pre {
+  margin: 0;
+}
+
+.ai-repository-policy {
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.ai-repository-policy > summary {
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ai-repository-policy[open] > summary {
+  margin-bottom: 12px;
+}
+
+.ai-repository-policy__actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.ai-writing-result pre {
+  max-height: 320px;
+  overflow: auto;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.ai-dialog__actions {
+  justify-content: flex-end;
+  border-top: 1px solid var(--border);
+}
+
+.ai-dialog__actions > span:first-child {
+  margin-right: auto;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.ai-conflict-region {
+  display: grid;
+  gap: 12px;
+  padding: 14px 0;
+}
+
+.ai-conflict-region + .ai-conflict-region {
+  border-top: 1px solid var(--border);
+}
+
+.ai-conflict-region__choice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+}
+
+.ai-conflict-region__versions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.ai-conflict-region__versions section:last-child {
+  grid-column: 1 / -1;
+}
+
+.ai-conflict-region > button {
+  justify-self: start;
+}
+
+.ai-conflict-region pre {
+  max-height: 240px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  white-space: pre-wrap;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  line-height: 1.45;
+}
+
+@media (max-width: 760px) {
+  .ai-dialog-backdrop {
+    padding: 12px;
+  }
+
+  .ai-dialog {
+    max-height: calc(100vh - 24px);
+  }
+
+  .ai-dialog__header,
+  .ai-dialog__content,
+  .ai-dialog__actions {
+    padding: 12px;
+  }
+
+  .ai-dialog__actions {
+    flex-wrap: wrap;
+  }
+
+  .ai-dialog__actions > span:first-child {
+    width: 100%;
+  }
+
+  .ai-commit-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-commit-controls__wide {
+    grid-column: auto;
+  }
+
+  .ai-conflict-region__versions {
+    grid-template-columns: 1fr;
+  }
+
+  .ai-conflict-region__versions section:last-child {
+    grid-column: auto;
+  }
+}

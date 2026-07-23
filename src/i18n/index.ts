@@ -1,6 +1,7 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
 import about from "./locales/en/about.json";
+import ai from "./locales/en/ai.json";
 import app from "./locales/en/app.json";
 import centre from "./locales/en/centre.json";
 import clone from "./locales/en/clone.json";
@@ -18,6 +19,7 @@ import update from "./locales/en/update.json";
 
 export const namespaces = [
   "about",
+  "ai",
   "app",
   "centre",
   "clone",
@@ -45,6 +47,7 @@ i18n
     resources: {
       en: {
         about,
+        ai,
         app,
         centre,
         clone,

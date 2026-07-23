@@ -515,6 +515,33 @@
   min-width: 0;
 }
 
+.commit-box__meta-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.commit-box__ai-generate {
+  border: 1px solid var(--border-subtle);
+  border-radius: 5px;
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  padding: 3px 7px;
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.commit-box__ai-generate:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.commit-box__ai-generate:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .commit-box__checkbox {
   width: 14px;
   height: 14px;
@@ -1178,14 +1205,16 @@
   position: absolute;
   top: 8px;
   right: 10px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--font-size-xs);
-  padding: 2px 4px;
+  padding: 0;
   border-radius: var(--radius-sm);
-  line-height: 1;
 }
 
 .sig-popover__close:hover { color: var(--text-primary); }
@@ -1449,6 +1478,21 @@
 
 .staging__conflict-btn--theirs:hover {
   background: rgba(251, 191, 36, 0.22);
+}
+
+.staging__conflict-btn--ai {
+  background: var(--accent-dim);
+  border-color: var(--selection-border);
+  color: var(--accent);
+}
+
+.staging__conflict-btn--ai:hover:not(:disabled) {
+  background: var(--selection-bg);
+}
+
+.staging__conflict-btn--ai:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .staging__conflict-btn--resolve {

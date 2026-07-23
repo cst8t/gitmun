@@ -1,3 +1,4 @@
+pub mod ai;
 mod avatar;
 pub mod commands;
 mod config_file;
@@ -21,6 +22,7 @@ use tauri::{Emitter, Manager};
 pub struct AppState {
     pub git_service: GitService,
     pub avatar_service: Arc<avatar::AvatarService>,
+    pub(crate) ai_extension: ai::AiExtensionState,
 }
 
 pub struct CloneCancelFlag(pub Arc<AtomicBool>);
@@ -1416,6 +1418,7 @@ pub fn run() {
                 AvatarProviderMode::default(),
                 true,
             )),
+            ai_extension: ai::AiExtensionState::new(),
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(FsWatcherState(Mutex::new(None)))
@@ -1487,6 +1490,35 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            ai::commands::get_ai_configuration,
+            ai::commands::save_ai_configuration,
+            ai::commands::set_ai_api_key,
+            ai::commands::clear_ai_api_key,
+            ai::commands::connect_openrouter,
+            ai::commands::grant_ai_consent,
+            ai::commands::set_ai_repository_policy,
+            ai::commands::get_ai_repository_policy,
+            ai::commands::set_ai_privacy_settings,
+            ai::commands::test_ai_connection,
+            ai::commands::test_ai_connection_draft,
+            ai::commands::discover_ai_models,
+            ai::commands::discover_ai_models_draft,
+            ai::commands::discover_ai_model_details_draft,
+            ai::commands::delete_ai_profile,
+            ai::commands::generate_ai_commit_message,
+            ai::commands::generate_ai_commit_messages,
+            ai::commands::cancel_ai_operation,
+            ai::commands::get_ai_usage_history,
+            ai::commands::clear_ai_usage_history,
+            ai::commands::get_ai_commit_context_preview,
+            ai::commands::get_ai_writing_context_preview,
+            ai::commands::generate_ai_writing,
+            ai::commands::get_ai_conflict_eligibility,
+            ai::commands::resolve_conflict_with_ai,
+            ai::commands::regenerate_ai_conflict_regions,
+            ai::commands::get_ai_conflict_context_preview,
+            ai::commands::apply_ai_conflict_proposal,
+            ai::commands::undo_ai_conflict_proposal,
             commands::settings::get_settings,
             commands::settings::set_backend_mode,
             commands::settings::set_show_result_log,
@@ -1499,6 +1531,12 @@ pub fn run() {
             commands::settings::set_enable_local_copy,
             commands::settings::set_persistent_error_toasts,
             commands::settings::set_error_toast_clear_delay_ms,
+            commands::settings::set_ai_commit_context_limit_kib,
+            commands::settings::set_ai_conflict_context_limit_kib,
+            commands::settings::set_ai_commit_message_max_tokens,
+            commands::settings::set_ai_conflict_resolution_max_tokens,
+            commands::settings::set_ai_commit_message_prompt,
+            commands::settings::set_ai_conflict_resolution_prompt,
             commands::settings::set_panel_layout,
             commands::settings::set_confirm_revert,
             commands::settings::get_config_file_path,

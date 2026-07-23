@@ -13,7 +13,7 @@ import type {
   SubmoduleStatus,
   UnversionedItem,
 } from "../../types";
-import { getNumstat } from "../../api/commands";
+import { getAiConflictEligibility, getNumstat, openSettingsWindow } from "../../api/commands";
 import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
@@ -29,6 +29,7 @@ type StagingViewProps = {
   mergeMessage: string | null;
   rebaseInProgress: boolean;
   cherryPickInProgress: boolean;
+  revertInProgress: boolean;
   selectedFile: string | null;
   selectedSubmodulePath: string | null;
   selectedUnstaged: Record<string, boolean>;
@@ -60,12 +61,16 @@ type StagingViewProps = {
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
+  onConflictResolveWithAi: (path: string) => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   inlineOperation: OperationFeedbackContent | null;
   isCommitting: boolean;
   lastCommitMessage: string;
   rowStriping: RowStriping;
+  aiEnabled: boolean;
+  aiConfigured: boolean;
+  aiResolvingPath: string | null;
 };
 
 type CachedNumstat = {
@@ -320,19 +325,40 @@ function DirectoryRow({
 
 export function StagingView({
   repoPath,
-  stagedFiles, unstagedFiles, unversionedFiles, unversionedItems, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
+  stagedFiles, unstagedFiles, unversionedFiles, unversionedItems, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress, revertInProgress,
   selectedFile, selectedSubmodulePath, selectedUnstaged, selectedStaged, onSelectedUnstagedChange, onSelectedStagedChange,
   onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
-  onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
-  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping,
+  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onOpenMergeTool,
+  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
   const [numstatLoading, setNumstatLoading] = useState<Record<string, boolean>>({});
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [aiEligibility, setAiEligibility] = useState<Record<string, {eligible: boolean; reason: string | null}>>({});
+
+  useEffect(() => {
+    if (!repoPath || !aiConfigured || conflictedFiles.length === 0) {
+      setAiEligibility({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(conflictedFiles.map(async file => {
+      try {
+        return [file.path, await getAiConflictEligibility(repoPath, file.path)] as const;
+      } catch {
+        return [file.path, {eligible: false, reason: "unknown"}] as const;
+      }
+    })).then(entries => {
+      if (!cancelled) setAiEligibility(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiConfigured, conflictedFiles, repoPath]);
 
   useEffect(() => {
     setNumstatCache({});
@@ -580,7 +606,7 @@ export function StagingView({
       })));
     }
 
-    if ((mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0) {
+    if ((mergeInProgress || rebaseInProgress || cherryPickInProgress || revertInProgress) && conflictedFiles.length > 0) {
       rows.push({ type: "section", key: "section:conflicts", section: "conflicts" });
       rows.push(...conflictedFiles.map((file, index) => ({
         type: "conflict" as const,
@@ -618,6 +644,7 @@ export function StagingView({
   }, [
     allUnstaged.length,
     cherryPickInProgress,
+    revertInProgress,
     conflictedFiles,
     mergeInProgress,
     mergedStaged.length,
@@ -730,6 +757,7 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--open"
                 title={t("staging.openInMergeTool")}
                 onClick={() => onOpenMergeTool(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("actions.open", {ns: "common"})}
               </button>
@@ -737,6 +765,7 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--ours"
                 title={t("staging.acceptOurs")}
                 onClick={() => onConflictAcceptOurs(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.ours")}
               </button>
@@ -744,13 +773,37 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--theirs"
                 title={t("staging.acceptTheirs")}
                 onClick={() => onConflictAcceptTheirs(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.theirs")}
               </button>
+              {aiEnabled && (
+                aiConfigured ? (
+                  <button
+                    className="staging__conflict-btn staging__conflict-btn--ai"
+                    title={aiEligibility[file.path]?.reason
+                      ? t(`aiErrors.${aiEligibility[file.path].reason}`)
+                      : t("staging.resolveWithAiTitle")}
+                    onClick={() => onConflictResolveWithAi(file.path)}
+                    disabled={(aiResolvingPath !== null && aiResolvingPath !== file.path) || aiEligibility[file.path]?.eligible !== true}
+                  >
+                    {aiResolvingPath === file.path ? t("staging.cancelAiResolution") : t("staging.aiResolve")}
+                  </button>
+                ) : (
+                  <button
+                    className="staging__conflict-btn staging__conflict-btn--ai"
+                    title={t("staging.configureAiTitle")}
+                    onClick={() => void openSettingsWindow()}
+                  >
+                    {t("staging.configureAi")}
+                  </button>
+                )
+              )}
               <button
                 className="staging__conflict-btn staging__conflict-btn--resolve"
                 title={t("staging.markResolved")}
                 onClick={() => onStageFile(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.resolve")}
               </button>
@@ -827,6 +880,9 @@ export function StagingView({
         mergeInProgress={mergeInProgress}
         rebaseInProgress={rebaseInProgress}
         cherryPickInProgress={cherryPickInProgress}
+        revertInProgress={revertInProgress}
+        aiEnabled={aiEnabled}
+        aiConfigured={aiConfigured}
       />
     </div>
   );

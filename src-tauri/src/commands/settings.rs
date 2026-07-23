@@ -273,6 +273,66 @@ pub fn set_error_toast_clear_delay_ms(
 }
 
 #[tauri::command]
+pub fn set_ai_commit_context_limit_kib(
+    ai_commit_context_limit_kib: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_context_limit_kib(ai_commit_context_limit_kib)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_context_limit_kib(
+    ai_conflict_context_limit_kib: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_context_limit_kib(ai_conflict_context_limit_kib)
+}
+
+#[tauri::command]
+pub fn set_ai_commit_message_max_tokens(
+    ai_commit_message_max_tokens: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_message_max_tokens(ai_commit_message_max_tokens)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_resolution_max_tokens(
+    ai_conflict_resolution_max_tokens: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_resolution_max_tokens(ai_conflict_resolution_max_tokens)
+}
+
+#[tauri::command]
+pub fn set_ai_commit_message_prompt(
+    ai_commit_message_prompt: String,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_message_prompt(ai_commit_message_prompt)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_resolution_prompt(
+    ai_conflict_resolution_prompt: String,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_resolution_prompt(ai_conflict_resolution_prompt)
+}
+
+#[tauri::command]
 pub fn set_panel_layout(
     left_pane_width: u32,
     right_pane_width: u32,

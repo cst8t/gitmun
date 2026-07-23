@@ -133,6 +133,7 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     onRevertAbort: vi.fn(),
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
+    onConflictResolveWithAi: vi.fn(),
     onOpenMergeTool: vi.fn(),
     stagingOperation: null,
     operationLock: null,
@@ -141,6 +142,9 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     isCherryPickActionRunning: false,
     isRevertActionRunning: false,
     lastCommitMessage: "",
+    aiEnabled: false,
+    aiConfigured: false,
+    aiResolvingPath: null,
     ...overrides,
   };
 

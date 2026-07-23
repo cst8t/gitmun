@@ -205,6 +205,22 @@ const settingsPayload: Settings = {
   repoOpenBehaviour: "Ask",
   gitExecutablePath: "",
   gpgKeyserverVerificationEnabled: false,
+  extensions: {ai: {
+    enabled: false,
+    selectedProfileId: "",
+    profiles: [],
+    commitContextLimitKib: 24,
+    conflictContextLimitKib: 48,
+    commitMessageMaxTokens: 512,
+    conflictResolutionMaxTokens: 4096,
+    commitMessagePrompt: "Write a concise commit message.",
+    conflictResolutionPrompt: "Resolve the conflict.",
+    includeCommitHistory: true,
+    globalExclusions: [],
+    consentedDestinations: [],
+    repositoryPolicies: {},
+    usageHistory: [],
+  }},
 };
 
 function commit(index: number, overrides: Partial<CommitHistoryItem> = {}): CommitHistoryItem {
@@ -1132,6 +1148,7 @@ describe("LogView commit selection", () => {
 
     await screen.findByText("Signed");
     fireEvent.click(screen.getByRole("button", { name: "Signed" }));
+    expect((await screen.findByRole("button", { name: "Close" })).querySelector("svg")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Copy signer" }));
     fireEvent.click(screen.getByRole("button", { name: "Copy fingerprint" }));
 

@@ -7,6 +7,7 @@ import {
   getEffectiveCommitAction,
   importPatchWithRecovery,
   isPatchConflictResult,
+  localiseAiError,
   shouldForceWithLeaseAfterRebase,
 } from "./ProjectView";
 
@@ -31,6 +32,21 @@ describe("getEffectiveCommitAction", () => {
 
   it("keeps the selected action when commit and push is available", () => {
     expect(getEffectiveCommitAction("commitAndPush", true)).toBe("commitAndPush");
+  });
+});
+
+describe("localiseAiError", () => {
+  it("reports measured and configured conflict context sizes", () => {
+    expect(localiseAiError({
+      code: "contextTooLarge",
+      contextSizeKib: 57,
+      contextLimitKib: 48,
+    }, t)).toBe("Conflict context is 57 KiB; the configured limit is 48 KiB.");
+  });
+
+  it("keeps the generic context error when size metadata is absent", () => {
+    expect(localiseAiError({code: "contextTooLarge"}, t))
+      .toBe("This conflict exceeds the safe AI request limit.");
   });
 });
 

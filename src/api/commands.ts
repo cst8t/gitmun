@@ -77,6 +77,38 @@ import type {
     ShellStartupAction,
 } from "../types";
 
+export {
+    applyAiConflictProposal,
+    cancelAiOperation,
+    clearAiUsageHistory,
+    clearAiApiKey,
+    connectOpenRouter,
+    deleteAiProfile,
+    discoverAiModels,
+    discoverAiModelsDraft,
+    discoverAiModelDetailsDraft,
+    generateAiCommitMessage,
+    generateAiCommitMessages,
+    generateAiWriting,
+    getAiCommitContextPreview,
+    getAiWritingContextPreview,
+    getAiConfiguration,
+    getAiRepositoryPolicy,
+    getAiUsageHistory,
+    getAiConflictContextPreview,
+    getAiConflictEligibility,
+    grantAiConsent,
+    regenerateAiConflictRegions,
+    resolveConflictWithAi,
+    saveAiConfiguration,
+    setAiApiKey,
+    setAiRepositoryPolicy,
+    setAiPrivacySettings,
+    testAiConnection,
+    testAiConnectionDraft,
+    undoAiConflictProposal,
+} from "../features/ai";
+
 export function getRepoStatus(repoPath: string): Promise<RepoStatus> {
     return invoke<RepoStatus>("get_repo_status", {request: {repoPath}});
 }

@@ -70,6 +70,7 @@ describe("DiffPanel commit details", () => {
     const message = screen.getByText("First paragraph.", { exact: false });
 
     expect(screen.getByText("Message")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Close" }).querySelector("svg")).toBeInTheDocument();
     expect(message).toHaveClass("commit-details-popover__value--message");
     expect(message.textContent).toBe("First paragraph.\n\nSecond paragraph.");
     expect(dialog).toHaveTextContent("Reviewed-by");

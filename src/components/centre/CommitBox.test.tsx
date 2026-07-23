@@ -8,10 +8,32 @@ import "../../i18n";
 
 const COMMIT_BOX_RATIO_KEY = "gitmun.commitBoxRatio";
 const getCommitMessageRecovery = vi.fn();
+const getAiCommitContextPreview = vi.fn();
+const getAiConfiguration = vi.fn();
 const repoPath = "C:\\marine-lab\\reports";
 
 vi.mock("../../api/commands", () => ({
   getCommitMessageRecovery: (...args: unknown[]) => getCommitMessageRecovery(...args),
+}));
+
+vi.mock("../../features/ai/commands", () => ({
+  cancelAiOperation: vi.fn(async () => {}),
+  generateAiCommitMessages: vi.fn(async () => ({candidates: []})),
+  getAiCommitContextPreview: (...args: unknown[]) => getAiCommitContextPreview(...args),
+  getAiConfiguration: (...args: unknown[]) => getAiConfiguration(...args),
+  getAiRepositoryPolicy: vi.fn(async () => ({
+    exclusions: [],
+    includeCommitHistory: null,
+    conventionalCommits: false,
+    defaultLanguage: "",
+    commitPromptFile: "",
+    conflictPromptFile: "",
+  })),
+  grantAiConsent: vi.fn(async () => {}),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async () => () => {}),
 }));
 
 function commitMessageDraftKey(repoPath: string) {
@@ -39,6 +61,8 @@ type RenderCommitBoxOptions = {
   lastCommitMessage?: string;
   mergeMessage?: string | null;
   mergeInProgress?: boolean;
+  aiEnabled?: boolean;
+  aiConfigured?: boolean;
 };
 
 function renderCommitBox({
@@ -49,6 +73,8 @@ function renderCommitBox({
   lastCommitMessage = "",
   mergeMessage,
   mergeInProgress,
+  aiEnabled = false,
+  aiConfigured = false,
 }: RenderCommitBoxOptions = {}) {
   const onCommit = vi.fn(() => false);
   const onSelectAction = vi.fn();
@@ -67,6 +93,8 @@ function renderCommitBox({
         lastCommitMessage={lastCommitMessage}
         mergeMessage={mergeMessage}
         mergeInProgress={mergeInProgress}
+        aiEnabled={aiEnabled}
+        aiConfigured={aiConfigured}
       />
     </div>,
   );
@@ -80,11 +108,53 @@ describe("CommitBox", () => {
     localStorage.removeItem(COMMIT_BOX_RATIO_KEY);
     getCommitMessageRecovery.mockClear();
     getCommitMessageRecovery.mockReturnValue(new Promise(() => {}));
+    getAiConfiguration.mockReset();
+    getAiConfiguration.mockResolvedValue({consentRequired: false});
+    getAiCommitContextPreview.mockReset();
+    getAiCommitContextPreview.mockResolvedValue({
+      provider: "OpenAi",
+      destinationAuthority: "api.openai.com",
+      files: [],
+      contextSizeKib: 1,
+      contextLimitKib: 24,
+      includesCommitHistory: false,
+    });
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
     vi.unstubAllGlobals();
+  });
+
+  it("hides the AI action when the AI extension is disabled", () => {
+    renderCommitBox();
+
+    expect(screen.queryByText("Generate")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure AI")).not.toBeInTheDocument();
+  });
+
+  it("shows the appropriate AI action when the AI extension is enabled", () => {
+    const unconfigured = renderCommitBox({aiEnabled: true});
+    expect(screen.getByText("Configure AI")).toBeInTheDocument();
+    unconfigured.unmount();
+
+    renderCommitBox({aiEnabled: true, aiConfigured: true});
+    expect(screen.getByText("Generate")).toBeInTheDocument();
+  });
+
+  it("reports the measured and configured staged context sizes", async () => {
+    getAiCommitContextPreview.mockRejectedValue({
+      code: "contextTooLarge",
+      contextSizeKib: 31,
+      contextLimitKib: 24,
+    });
+    renderCommitBox({aiEnabled: true, aiConfigured: true});
+
+    fireEvent.click(screen.getByText("Generate"));
+
+    expect(await screen.findByText(
+      "Outbound context is 31 KiB; the configured limit is 24 KiB.",
+    )).toBeInTheDocument();
   });
 
   it("shows Commit as the default primary action", () => {
@@ -372,6 +442,26 @@ describe("CommitBox", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Amend (2)" }));
     expect(onCommit).toHaveBeenCalledWith("Existing subject\n\nExisting body", true, "commit");
+  });
+
+  it("passes the amend workflow and existing message to the AI preview", async () => {
+    renderCommitBox({
+      lastCommitMessage: "Existing subject\n\nExisting body",
+      aiEnabled: true,
+      aiConfigured: true,
+    });
+
+    fireEvent.click(screen.getByText("Amend latest commit"));
+    fireEvent.click(screen.getByText("Generate"));
+
+    await waitFor(() => {
+      expect(getAiCommitContextPreview).toHaveBeenCalledWith(
+        repoPath,
+        72,
+        "Amend",
+        "Existing subject\n\nExisting body",
+      );
+    });
   });
 
   it("prefills merge message without comment lines", () => {

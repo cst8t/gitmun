@@ -1,6 +1,12 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use super::error_interpretation::InterpretedGitError;
+pub use crate::ai::types::{AiEffortCapability, AiProvider, AiReasoningPreference};
+use crate::ai::types::{
+    AiProfile, DEFAULT_COMMIT_CONTEXT_LIMIT_KIB, DEFAULT_COMMIT_MESSAGE_MAX_TOKENS,
+    DEFAULT_COMMIT_MESSAGE_PROMPT, DEFAULT_CONFLICT_CONTEXT_LIMIT_KIB,
+    DEFAULT_CONFLICT_RESOLUTION_MAX_TOKENS, DEFAULT_CONFLICT_RESOLUTION_PROMPT,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum CommitDateMode {
@@ -176,6 +182,30 @@ fn normalise_error_toast_clear_delay_ms(value: u32) -> u32 {
     value.max(MIN_ERROR_TOAST_CLEAR_DELAY_MS)
 }
 
+fn legacy_commit_context_limit() -> u32 {
+    DEFAULT_COMMIT_CONTEXT_LIMIT_KIB
+}
+
+fn legacy_conflict_context_limit() -> u32 {
+    DEFAULT_CONFLICT_CONTEXT_LIMIT_KIB
+}
+
+fn legacy_commit_max_tokens() -> u32 {
+    DEFAULT_COMMIT_MESSAGE_MAX_TOKENS
+}
+
+fn legacy_conflict_max_tokens() -> u32 {
+    DEFAULT_CONFLICT_RESOLUTION_MAX_TOKENS
+}
+
+fn legacy_commit_prompt() -> String {
+    DEFAULT_COMMIT_MESSAGE_PROMPT.to_string()
+}
+
+fn legacy_conflict_prompt() -> String {
+    DEFAULT_CONFLICT_RESOLUTION_PROMPT.to_string()
+}
+
 fn deserialise_error_toast_clear_delay_ms<'de, D>(deserialiser: D) -> Result<u32, D::Error>
 where
     D: Deserializer<'de>,
@@ -307,6 +337,30 @@ pub struct Settings {
     pub git_executable_path: String,
     #[serde(default)]
     pub gpg_keyserver_verification_enabled: bool,
+    #[serde(default)]
+    pub extensions: crate::ai::types::ExtensionSettings,
+    #[serde(default, skip_serializing)]
+    pub ai_provider: AiProvider,
+    #[serde(default, skip_serializing)]
+    pub ai_endpoint: String,
+    #[serde(default, skip_serializing)]
+    pub ai_model: String,
+    #[serde(default, skip_serializing)]
+    pub ai_reasoning_preference: AiReasoningPreference,
+    #[serde(default, skip_serializing)]
+    pub ai_effort_capability: AiEffortCapability,
+    #[serde(default = "legacy_commit_context_limit", skip_serializing)]
+    pub ai_commit_context_limit_kib: u32,
+    #[serde(default = "legacy_conflict_context_limit", skip_serializing)]
+    pub ai_conflict_context_limit_kib: u32,
+    #[serde(default = "legacy_commit_max_tokens", skip_serializing)]
+    pub ai_commit_message_max_tokens: u32,
+    #[serde(default = "legacy_conflict_max_tokens", skip_serializing)]
+    pub ai_conflict_resolution_max_tokens: u32,
+    #[serde(default = "legacy_commit_prompt", skip_serializing)]
+    pub ai_commit_message_prompt: String,
+    #[serde(default = "legacy_conflict_prompt", skip_serializing)]
+    pub ai_conflict_resolution_prompt: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -376,6 +430,18 @@ impl Default for Settings {
             repo_open_behaviour: RepoOpenBehaviour::Ask,
             git_executable_path: String::new(),
             gpg_keyserver_verification_enabled: false,
+            extensions: crate::ai::types::ExtensionSettings::default(),
+            ai_provider: AiProvider::Disabled,
+            ai_endpoint: String::new(),
+            ai_model: String::new(),
+            ai_reasoning_preference: AiReasoningPreference::Automatic,
+            ai_effort_capability: AiEffortCapability::Unknown,
+            ai_commit_context_limit_kib: legacy_commit_context_limit(),
+            ai_conflict_context_limit_kib: legacy_conflict_context_limit(),
+            ai_commit_message_max_tokens: legacy_commit_max_tokens(),
+            ai_conflict_resolution_max_tokens: legacy_conflict_max_tokens(),
+            ai_commit_message_prompt: legacy_commit_prompt(),
+            ai_conflict_resolution_prompt: legacy_conflict_prompt(),
         }
     }
 }
@@ -387,6 +453,67 @@ impl Settings {
 
     pub fn normalised_error_toast_clear_delay_ms(value: u32) -> u32 {
         normalise_error_toast_clear_delay_ms(value)
+    }
+
+    pub fn normalised_ai_context_limit_kib(value: u32) -> u32 {
+        crate::ai::types::normalise_context_limit(value)
+    }
+
+    pub fn normalised_ai_output_tokens(value: u32) -> u32 {
+        crate::ai::types::normalise_output_tokens(value)
+    }
+
+    pub fn normalised_ai_commit_message_prompt(value: String) -> String {
+        crate::ai::types::normalise_prompt(value, DEFAULT_COMMIT_MESSAGE_PROMPT)
+    }
+
+    pub fn normalised_ai_conflict_resolution_prompt(value: String) -> String {
+        crate::ai::types::normalise_prompt(value, DEFAULT_CONFLICT_RESOLUTION_PROMPT)
+    }
+
+    pub fn migrate_legacy_ai(&mut self, legacy_configuration_present: bool) -> bool {
+        if !legacy_configuration_present {
+            return false;
+        }
+
+        let ai = &mut self.extensions.ai;
+        ai.commit_context_limit_kib =
+            crate::ai::types::normalise_context_limit(self.ai_commit_context_limit_kib);
+        ai.conflict_context_limit_kib =
+            crate::ai::types::normalise_context_limit(self.ai_conflict_context_limit_kib);
+        ai.commit_message_max_tokens =
+            crate::ai::types::normalise_output_tokens(self.ai_commit_message_max_tokens);
+        ai.conflict_resolution_max_tokens =
+            crate::ai::types::normalise_output_tokens(self.ai_conflict_resolution_max_tokens);
+        ai.commit_message_prompt = crate::ai::types::normalise_prompt(
+            self.ai_commit_message_prompt.clone(),
+            DEFAULT_COMMIT_MESSAGE_PROMPT,
+        );
+        ai.conflict_resolution_prompt = crate::ai::types::normalise_prompt(
+            self.ai_conflict_resolution_prompt.clone(),
+            DEFAULT_CONFLICT_RESOLUTION_PROMPT,
+        );
+
+        if ai.profiles.is_empty()
+            && (self.ai_provider != AiProvider::Disabled
+                || !self.ai_endpoint.trim().is_empty()
+                || !self.ai_model.trim().is_empty())
+        {
+            let profile = AiProfile {
+                id: "migrated-default".to_string(),
+                provider: self.ai_provider,
+                endpoint: self.ai_endpoint.trim().to_string(),
+                model: self.ai_model.trim().to_string(),
+                reasoning_preference: self.ai_reasoning_preference,
+                effort_capability: self.ai_effort_capability.clone(),
+                ..AiProfile::default()
+            };
+            ai.enabled = profile.provider != AiProvider::Disabled;
+            ai.selected_profile_id = profile.id.clone();
+            ai.profiles.push(profile);
+        }
+
+        true
     }
 
     fn default_confirm_revert() -> bool {

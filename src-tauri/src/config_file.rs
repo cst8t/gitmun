@@ -12,9 +12,10 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
     if toml_path.exists() {
         match std::fs::read_to_string(toml_path) {
             Ok(text) => match toml::from_str::<Settings>(&text) {
-                Ok(settings) => {
+                Ok(mut settings) => {
+                    let migrated = settings.migrate_legacy_ai(contains_legacy_ai_keys(&text));
                     archive_migrated_json_config(json_path);
-                    return (settings, false);
+                    return (settings, migrated);
                 }
                 Err(_) => {
                     // Malformed TOML - use defaults but don't overwrite the file.
@@ -26,10 +27,9 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
     }
 
     if json_path.exists() {
-        let settings = std::fs::read_to_string(json_path)
-            .ok()
-            .and_then(|text| serde_json::from_str::<Settings>(&text).ok())
-            .unwrap_or_default();
+        let text = std::fs::read_to_string(json_path).unwrap_or_default();
+        let mut settings = serde_json::from_str::<Settings>(&text).unwrap_or_default();
+        settings.migrate_legacy_ai(contains_legacy_ai_keys(&text));
 
         let created = create_from_template(toml_path, &settings).is_ok();
         if created {
@@ -41,6 +41,24 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
     let settings = Settings::default();
     let created = create_from_template(toml_path, &settings).is_ok();
     (settings, !created)
+}
+
+fn contains_legacy_ai_keys(text: &str) -> bool {
+    [
+        "aiProvider",
+        "aiEndpoint",
+        "aiModel",
+        "aiReasoningPreference",
+        "aiEffortCapability",
+        "aiCommitContextLimitKib",
+        "aiConflictContextLimitKib",
+        "aiCommitMessageMaxTokens",
+        "aiConflictResolutionMaxTokens",
+        "aiCommitMessagePrompt",
+        "aiConflictResolutionPrompt",
+    ]
+    .iter()
+    .any(|key| text.contains(key))
 }
 
 fn archive_migrated_json_config(json_path: &Path) {
@@ -101,33 +119,79 @@ fn apply_settings_to_doc(doc: &mut toml_edit::DocumentMut, settings: &Settings) 
         return;
     };
 
-    let table = doc.as_table_mut();
-    let fresh_table = fresh_doc.as_table();
-    let template_table = template_doc.as_table();
+    merge_table(
+        doc.as_table_mut(),
+        fresh_doc.as_table(),
+        template_doc.as_table(),
+    );
 
-    for (key, fresh_item) in fresh_table.iter() {
-        let Some(new_val) = fresh_item.as_value() else {
+    for key in [
+        "aiProvider",
+        "aiEndpoint",
+        "aiModel",
+        "aiReasoningPreference",
+        "aiEffortCapability",
+        "aiCommitContextLimitKib",
+        "aiConflictContextLimitKib",
+        "aiCommitMessageMaxTokens",
+        "aiConflictResolutionMaxTokens",
+        "aiCommitMessagePrompt",
+        "aiConflictResolutionPrompt",
+    ] {
+        doc.as_table_mut().remove(key);
+    }
+}
+
+fn merge_table(
+    target: &mut toml_edit::Table,
+    fresh: &toml_edit::Table,
+    template: &toml_edit::Table,
+) {
+    for (key, fresh_item) in fresh.iter() {
+        if let Some(fresh_table) = fresh_item.as_table() {
+            if target
+                .get(key)
+                .and_then(toml_edit::Item::as_table)
+                .is_none()
+            {
+                let item = template
+                    .get(key)
+                    .cloned()
+                    .unwrap_or_else(|| toml_edit::Item::Table(toml_edit::Table::new()));
+                target.insert(key, item);
+            }
+            let Some(target_table) = target.get_mut(key).and_then(toml_edit::Item::as_table_mut)
+            else {
+                continue;
+            };
+            let empty_template = toml_edit::Table::new();
+            let template_table = template
+                .get(key)
+                .and_then(toml_edit::Item::as_table)
+                .unwrap_or(&empty_template);
+            merge_table(target_table, fresh_table, template_table);
             continue;
-        };
+        }
 
-        if let Some((_keymut, item)) = table.get_key_value_mut(key) {
-            if let Some(v) = item.as_value_mut() {
-                *v = new_val.clone();
+        if let Some(fresh_value) = fresh_item.as_value() {
+            if let Some(target_value) = target.get_mut(key).and_then(toml_edit::Item::as_value_mut)
+            {
+                let decor = target_value.decor().clone();
+                *target_value = fresh_value.clone();
+                *target_value.decor_mut() = decor;
+            } else if let Some((template_key, template_item)) = template.get_key_value(key) {
+                let mut item = template_item.clone();
+                if let Some(value) = item.as_value_mut() {
+                    *value = fresh_value.clone();
+                }
+                target.insert_formatted(template_key, item);
             } else {
-                *item = toml_edit::value(new_val.clone());
+                target.insert(key, toml_edit::value(fresh_value.clone()));
             }
             continue;
         }
 
-        if let Some((template_key, template_item)) = template_table.get_key_value(key) {
-            let mut new_item = template_item.clone();
-            if let Some(v) = new_item.as_value_mut() {
-                *v = new_val.clone();
-            }
-            table.insert_formatted(template_key, new_item);
-        } else {
-            table.insert(key, toml_edit::value(new_val.clone()));
-        }
+        target.insert(key, fresh_item.clone());
     }
 }
 
@@ -194,6 +258,97 @@ mod tests {
         assert_eq!(settings.error_toast_clear_delay_ms, 8000);
         assert_eq!(settings.commit_message_recommended_length, 72);
         assert_eq!(settings.ui_text_scale, 1.0);
+        assert_eq!(
+            settings.ai_provider,
+            crate::git::types::AiProvider::Disabled
+        );
+        assert_eq!(settings.ai_commit_context_limit_kib, 24);
+        assert_eq!(settings.ai_conflict_context_limit_kib, 48);
+        assert_eq!(settings.ai_commit_message_max_tokens, 512);
+        assert_eq!(settings.ai_conflict_resolution_max_tokens, 4096);
+        assert!(
+            settings
+                .ai_commit_message_prompt
+                .starts_with("Write a concise")
+        );
+        assert!(
+            settings
+                .ai_conflict_resolution_prompt
+                .starts_with("Resolve the supplied")
+        );
+    }
+
+    #[test]
+    fn load_toml_normalises_ai_context_limits() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(
+            &toml_path,
+            "aiCommitContextLimitKib = 1\naiConflictContextLimitKib = 2048\naiCommitMessageMaxTokens = 0\naiConflictResolutionMaxTokens = 100000\naiCommitMessagePrompt = \"\"\naiConflictResolutionPrompt = \"  \"\n",
+        );
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(should_persist);
+        assert_eq!(settings.extensions.ai.commit_context_limit_kib, 8);
+        assert_eq!(settings.extensions.ai.conflict_context_limit_kib, 1024);
+        assert_eq!(settings.extensions.ai.commit_message_max_tokens, 1);
+        assert_eq!(
+            settings.extensions.ai.conflict_resolution_max_tokens,
+            65_536
+        );
+        assert!(
+            settings
+                .extensions
+                .ai
+                .commit_message_prompt
+                .starts_with("Write a concise")
+        );
+        assert!(
+            settings
+                .extensions
+                .ai
+                .conflict_resolution_prompt
+                .starts_with("Resolve the supplied")
+        );
+    }
+
+    #[test]
+    fn persists_ai_configuration_without_a_secret() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = crate::ai::AiProfile {
+            provider: crate::git::types::AiProvider::OpenAiCompatible,
+            endpoint: "https://example.test/v1".to_string(),
+            model: "example-model".to_string(),
+            effort_capability: crate::git::types::AiEffortCapability::Supported(vec![
+                crate::git::types::AiReasoningPreference::Low,
+                crate::git::types::AiReasoningPreference::High,
+            ]),
+            ..crate::ai::AiProfile::default()
+        };
+        settings.extensions.ai.selected_profile_id = profile.id.clone();
+        settings.extensions.ai.profiles.push(profile.clone());
+
+        create_from_template(&toml_path, &settings).unwrap();
+
+        let contents = std::fs::read_to_string(&toml_path).unwrap();
+        assert!(contents.contains("provider = \"OpenAiCompatible\""));
+        assert!(contents.contains("model = \"example-model\""));
+        assert!(!contents.to_ascii_lowercase().contains("api key"));
+        let loaded: Settings = toml::from_str(&contents).unwrap();
+        assert_eq!(
+            loaded.extensions.ai.profiles[0].provider,
+            crate::git::types::AiProvider::OpenAiCompatible
+        );
+        assert_eq!(loaded.extensions.ai.profiles[0].model, "example-model");
+        assert_eq!(
+            loaded.extensions.ai.profiles[0].effort_capability,
+            profile.effort_capability
+        );
     }
 
     #[test]
@@ -444,6 +599,18 @@ mod tests {
         );
         assert!(updated.contains("showCommitGraphButton = false"));
         assert!(updated.contains("enableLocalCopy = false"));
+        assert!(updated.contains("# Maximum context sent in each AI commit-message request"));
+        assert!(updated.contains("commitContextLimitKib = 24"));
+        assert!(updated.contains("# Maximum conflict context sent"));
+        assert!(updated.contains("conflictContextLimitKib = 48"));
+        assert!(updated.contains("# Maximum provider output for AI commit messages"));
+        assert!(updated.contains("commitMessageMaxTokens = 512"));
+        assert!(updated.contains("# Maximum provider output for AI conflict resolution"));
+        assert!(updated.contains("conflictResolutionMaxTokens = 4096"));
+        assert!(updated.contains("# Instructions used to generate commit messages."));
+        assert!(updated.contains("commitMessagePrompt = "));
+        assert!(updated.contains("# Instructions used to resolve conflicts."));
+        assert!(updated.contains("conflictResolutionPrompt = "));
         assert!(!updated.contains("enableUpdateWithMSStoreFlow"));
     }
 
