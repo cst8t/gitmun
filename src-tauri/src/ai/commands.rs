@@ -1,5 +1,6 @@
 //! Tauri command surface owned by the bundled AI extension.
 
+use std::collections::{HashMap, HashSet};
 use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
 use std::process::Stdio;
@@ -12,10 +13,12 @@ use url::Url;
 
 use crate::AppState;
 use crate::ai::{
-    AiApiStyle, AiAuthMode, AiConfigurationSource, AiError, AiExtensionSettings, AiModelInfo,
-    AiModelPage, AiModelQuery, AiProfile, AiRepositoryPolicy, AiTask, AiUsage,
+    AiApiStyle, AiAuthMode, AiCommitMessageMode, AiConfigurationSource, AiError,
+    AiExtensionSettings, AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiProfile,
+    AiRepositoryPolicy, AiRequestBudget, AiStructuredOutputMode, AiTask, AiUsage,
     EffectiveAiConfiguration, OpenRouterSettings, ProviderResult, api_key_optional,
     discover_effort, discover_models, discover_openrouter_model_details, run_provider,
+    run_provider_with_output,
 };
 use crate::git::types::{AiEffortCapability, AiProvider, AiReasoningPreference};
 
@@ -26,8 +29,6 @@ const COMMIT_PATH_LIST_MAX_BYTES: usize = 1536;
 const COMMIT_STYLE_EXAMPLES_MAX_BYTES: usize = 2048;
 const MAX_GIT_PATH_OUTPUT_BYTES: usize = 256 * 1024;
 const MAX_GIT_METADATA_OUTPUT_BYTES: usize = 64 * 1024;
-const MAX_AI_OPERATION_REQUESTS: usize = 64;
-const MAX_AI_OPERATION_OUTBOUND_BYTES: usize = 2 * 1024 * 1024;
 const AI_OPERATION_TIMEOUT: Duration = Duration::from_secs(10 * 60);
 const COMMIT_SUMMARY_PROMPT: &str = "Summarise this staged Git diff chunk for a later commit-message writer in at most 120 words. State only concrete changes and their purpose. Do not review the code, give advice, or write a commit message. Return concise plain text.";
 const COMMIT_SUMMARY_REDUCTION_PROMPT: &str = "Consolidate these staged-change summaries for a later commit-message writer in at most 120 words. Preserve concrete changes and their purpose. Do not review the code, give advice, or write a commit message. Return concise plain text.";
@@ -147,14 +148,6 @@ pub struct AiCommitMessageResult {
     pub generation_id: Option<String>,
     pub routed_provider: Option<String>,
     pub routed_model: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-pub enum AiCommitMessageMode {
-    #[default]
-    RepositoryStyle,
-    ConventionalCommits,
-    FreeForm,
 }
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
@@ -363,6 +356,59 @@ fn record_ai_usage(
     });
 }
 
+fn record_conflict_usage(
+    state: &AppState,
+    started_at: Instant,
+    result: &Result<AiConflictProposalResult, AiError>,
+) {
+    match result {
+        Ok(result) => record_ai_usage(
+            state,
+            "conflictResolution",
+            started_at,
+            Some(&result.usage),
+            result.request_id.as_deref(),
+            result.generation_id.as_deref(),
+            result.routed_provider.as_deref(),
+            result.routed_model.as_deref(),
+            None,
+            "completed",
+        ),
+        Err(error) => {
+            let provider_response = error.provider_response.as_ref();
+            let mut diagnostics = error.detail.iter().cloned().collect::<Vec<_>>();
+            if let Some(finish_reason) = provider_response
+                .and_then(|response| response.finish_reason.as_deref())
+                .filter(|finish_reason| {
+                    finish_reason.len() <= 64
+                        && finish_reason.chars().all(|character| {
+                            character.is_ascii_alphanumeric()
+                                || matches!(character, '-' | '_' | '.' | ' ')
+                        })
+                })
+            {
+                diagnostics.push(format!("finish={finish_reason}"));
+            }
+            if let Some(response) = provider_response {
+                diagnostics.push(format!("responseBytes={}", response.response_bytes));
+            }
+            let diagnostic = (!diagnostics.is_empty()).then(|| diagnostics.join("; "));
+            record_ai_usage(
+                state,
+                "conflictResolution",
+                started_at,
+                provider_response.map(|response| &response.usage),
+                provider_response.and_then(|response| response.request_id.as_deref()),
+                provider_response.and_then(|response| response.generation_id.as_deref()),
+                provider_response.and_then(|response| response.routed_provider.as_deref()),
+                provider_response.and_then(|response| response.routed_model.as_deref()),
+                diagnostic.as_deref(),
+                error.code,
+            );
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResolveConflictWithAiRequest {
@@ -446,34 +492,6 @@ struct WritingContext {
     snapshot: md5::Digest,
 }
 
-struct RequestBudget {
-    requests: usize,
-    outbound_bytes: usize,
-}
-
-impl RequestBudget {
-    fn new() -> Self {
-        Self {
-            requests: 0,
-            outbound_bytes: 0,
-        }
-    }
-
-    fn charge(&mut self, system_prompt: &str, user_prompt: &str) -> Result<(), AiError> {
-        self.requests += 1;
-        self.outbound_bytes = self
-            .outbound_bytes
-            .saturating_add(system_prompt.len())
-            .saturating_add(user_prompt.len());
-        if self.requests > MAX_AI_OPERATION_REQUESTS
-            || self.outbound_bytes > MAX_AI_OPERATION_OUTBOUND_BYTES
-        {
-            return Err(AiError::new("operationBudgetExceeded"));
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 struct ConflictRegion {
     id: String,
@@ -495,16 +513,17 @@ struct PreparedConflict {
 }
 
 #[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ModelConflictResponse {
     regions: Vec<ModelConflictReplacement>,
 }
 
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
 struct ModelConflictReplacement {
     id: String,
     replacement: String,
-    #[serde(default)]
-    explanation: Option<String>,
+    explanation: String,
 }
 
 async fn configuration_view(state: &AppState) -> Result<AiConfigurationView, AiError> {
@@ -1309,6 +1328,7 @@ pub async fn test_ai_connection(
         .ok_or_else(|| AiError::new("network"))?;
     require_consent(&state, &configuration)?;
     let discovered = discover_effort(runtime, &configuration, &api_key).await;
+    let mut budget = AiRequestBudget::new();
     let (result, tested_capability) = run_provider(
         runtime,
         &configuration,
@@ -1317,6 +1337,7 @@ pub async fn test_ai_connection(
         "Reply with OK only.",
         64,
         AiTask::ConnectionTest,
+        &mut budget,
     )
     .await?;
     if result.output_truncated {
@@ -1352,6 +1373,7 @@ pub async fn test_ai_connection_draft(
         .as_ref()
         .ok_or_else(|| AiError::new("network"))?;
     let discovered = discover_effort(runtime, &configuration, &api_key).await;
+    let mut budget = AiRequestBudget::new();
     let (result, tested_capability) = run_provider(
         runtime,
         &configuration,
@@ -1360,6 +1382,7 @@ pub async fn test_ai_connection_draft(
         "Reply with OK only.",
         64,
         AiTask::ConnectionTest,
+        &mut budget,
     )
     .await?;
     if result.output_truncated || result.text.trim().is_empty() {
@@ -2055,7 +2078,7 @@ fn combined_usage(left: AiUsage, right: AiUsage) -> AiUsage {
 async fn run_commit_provider(
     runtime: &crate::ai::AiRuntime,
     configuration: &mut EffectiveAiConfiguration,
-    budget: &mut RequestBudget,
+    budget: &mut AiRequestBudget,
     api_key: &str,
     system_prompt: &str,
     user_prompt: &str,
@@ -2065,7 +2088,6 @@ async fn run_commit_provider(
         system_prompt.len().saturating_add(user_prompt.len()),
         configuration.commit_context_limit_kib,
     )?;
-    budget.charge(system_prompt, user_prompt)?;
     let (result, capability) = run_provider(
         runtime,
         configuration,
@@ -2074,6 +2096,7 @@ async fn run_commit_provider(
         user_prompt,
         max_tokens,
         AiTask::CommitMessage,
+        budget,
     )
     .await?;
     if capability == AiEffortCapability::Unsupported {
@@ -2085,7 +2108,7 @@ async fn run_commit_provider(
 async fn summarise_commit_diff(
     runtime: &crate::ai::AiRuntime,
     configuration: &mut EffectiveAiConfiguration,
-    budget: &mut RequestBudget,
+    budget: &mut AiRequestBudget,
     api_key: &str,
     diff: &str,
 ) -> Result<(Vec<String>, AiUsage), AiError> {
@@ -2126,7 +2149,7 @@ async fn summarise_commit_diff(
 async fn reduce_commit_summaries(
     runtime: &crate::ai::AiRuntime,
     configuration: &mut EffectiveAiConfiguration,
-    budget: &mut RequestBudget,
+    budget: &mut AiRequestBudget,
     api_key: &str,
     summaries: Vec<String>,
 ) -> Result<(Vec<String>, AiUsage), AiError> {
@@ -2190,7 +2213,7 @@ async fn generate_commit_message_from_context(
     api_key: &str,
     context: CommitContext,
     system_prompt: &str,
-    budget: &mut RequestBudget,
+    budget: &mut AiRequestBudget,
 ) -> Result<AiCommitMessageResult, AiError> {
     let full_context = render_commit_context(&context);
     let request_context_bytes = commit_request_context_bytes(&configuration);
@@ -2403,7 +2426,7 @@ async fn generate_ai_commit_messages_inner(
         "commitMessage",
         "contactingProvider",
     );
-    let mut budget = RequestBudget::new();
+    let mut budget = AiRequestBudget::new();
     let mut candidates = Vec::with_capacity(request.candidate_count as usize);
     for _ in 0..request.candidate_count {
         candidates.push(
@@ -2659,8 +2682,7 @@ async fn generate_ai_writing_inner(
         .runtime
         .as_ref()
         .ok_or_else(|| AiError::new("network"))?;
-    let mut budget = RequestBudget::new();
-    budget.charge(&system_prompt, &context.content)?;
+    let mut budget = AiRequestBudget::new();
     emit_ai_progress(
         app,
         &request.operation_id,
@@ -2675,6 +2697,7 @@ async fn generate_ai_writing_inner(
         &context.content,
         configuration.commit_message_max_tokens,
         AiTask::CommitMessage,
+        &mut budget,
     )
     .await?;
     if result.output_truncated {
@@ -2941,34 +2964,56 @@ fn build_conflict_prompt(file_path: &str, operation: &str, regions: &[ConflictRe
 fn parse_conflict_replacements(
     response: &str,
     regions: &[ConflictRegion],
+    mode: AiStructuredOutputMode,
 ) -> Result<Vec<ModelConflictReplacement>, AiError> {
-    let parsed: ModelConflictResponse =
-        serde_json::from_str(response.trim()).map_err(|_| AiError::new("invalidResponse"))?;
-    if parsed.regions.len() != regions.len() {
-        return Err(AiError::new("invalidResponse"));
-    }
-    let mut replacements = Vec::with_capacity(regions.len());
-    for region in regions {
-        let matching = parsed
-            .regions
-            .iter()
-            .filter(|replacement| replacement.id == region.id)
-            .collect::<Vec<_>>();
-        if matching.len() != 1 {
-            return Err(AiError::new("invalidResponse"));
+    let response = response.trim();
+    let response = if mode == AiStructuredOutputMode::PromptOnly {
+        if let Some(fenced) = response
+            .strip_prefix("```json")
+            .and_then(|response| response.strip_suffix("```"))
+        {
+            if fenced.contains("```") {
+                return Err(AiError::new("malformedStructuredOutput"));
+            }
+            fenced.trim()
+        } else {
+            response
         }
-        let replacement = matching[0];
+    } else {
+        response
+    };
+    let parsed: ModelConflictResponse =
+        serde_json::from_str(response).map_err(|_| AiError::new("malformedStructuredOutput"))?;
+    let expected = regions
+        .iter()
+        .map(|region| region.id.as_str())
+        .collect::<HashSet<_>>();
+    let mut replacements_by_id = HashMap::with_capacity(parsed.regions.len());
+    for replacement in parsed.regions {
+        if !expected.contains(replacement.id.as_str()) {
+            return Err(AiError::new("unknownConflictRegion"));
+        }
         if replacement.replacement.contains("<<<<<<<")
             || replacement.replacement.contains("=======")
             || replacement.replacement.contains(">>>>>>>")
         {
-            return Err(AiError::new("invalidResponse"));
+            return Err(AiError::new("unresolvedConflictMarkers"));
         }
-        replacements.push(ModelConflictReplacement {
-            id: replacement.id.clone(),
-            replacement: replacement.replacement.clone(),
-            explanation: replacement.explanation.clone(),
-        });
+        let id = replacement.id.clone();
+        if replacements_by_id.insert(id, replacement).is_some() {
+            return Err(AiError::new("duplicateConflictRegion"));
+        }
+    }
+    if replacements_by_id.len() != regions.len() {
+        return Err(AiError::new("missingConflictRegions"));
+    }
+    let mut replacements = Vec::with_capacity(regions.len());
+    for region in regions {
+        replacements.push(
+            replacements_by_id
+                .remove(&region.id)
+                .ok_or_else(|| AiError::new("missingConflictRegions"))?,
+        );
     }
     Ok(replacements)
 }
@@ -3146,7 +3191,31 @@ async fn resolve_conflict_with_ai_inner(
         "conflictResolution",
         "contactingProvider",
     );
-    let (result, _) = run_provider(
+    let mut budget = AiRequestBudget::new();
+    let output_contract = AiOutputContract::JsonSchema {
+        name: "gitmun_conflict_resolution",
+        schema: serde_json::json!({
+            "type": "object",
+            "properties": {
+                "regions": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "string"},
+                            "replacement": {"type": "string"},
+                            "explanation": {"type": "string"}
+                        },
+                        "required": ["id", "replacement", "explanation"],
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "required": ["regions"],
+            "additionalProperties": false
+        }),
+    };
+    let (result, _, structured_output_mode) = run_provider_with_output(
         runtime,
         &configuration,
         &api_key,
@@ -3154,12 +3223,19 @@ async fn resolve_conflict_with_ai_inner(
         &prompt,
         configuration.conflict_resolution_max_tokens,
         AiTask::ConflictResolution,
+        &mut budget,
+        &output_contract,
     )
     .await?;
     if result.output_truncated {
-        return Err(AiError::new("outputTruncated"));
+        return Err(AiError::new("outputTruncated").with_provider_response(result.metadata()));
     }
-    let replacements = parse_conflict_replacements(&result.text, &prepared.regions)?;
+    let replacements = parse_conflict_replacements(
+        &result.text,
+        &prepared.regions,
+        structured_output_mode.unwrap_or(AiStructuredOutputMode::PromptOnly),
+    )
+    .map_err(|error| error.with_provider_response(result.metadata()))?;
     let proposal_id = proposal_id(&prepared.original_bytes);
     let proposals = prepared
         .regions
@@ -3172,7 +3248,7 @@ async fn resolve_conflict_with_ai_inner(
             theirs: region.theirs.clone(),
             ancestor: region.ancestor.clone(),
             proposed: replacement.replacement.clone(),
-            explanation: replacement.explanation.clone(),
+            explanation: Some(replacement.explanation.clone()),
         })
         .collect::<Vec<_>>();
     let session_replacements = prepared
@@ -3228,32 +3304,7 @@ pub async fn resolve_conflict_with_ai(
         },
     };
     state.ai_extension.operations.finish(&operation_id);
-    match &result {
-        Ok(result) => record_ai_usage(
-            &state,
-            "conflictResolution",
-            started_at,
-            Some(&result.usage),
-            result.request_id.as_deref(),
-            result.generation_id.as_deref(),
-            result.routed_provider.as_deref(),
-            result.routed_model.as_deref(),
-            None,
-            "completed",
-        ),
-        Err(error) => record_ai_usage(
-            &state,
-            "conflictResolution",
-            started_at,
-            None,
-            None,
-            None,
-            None,
-            None,
-            error.detail.as_deref(),
-            error.code,
-        ),
-    }
+    record_conflict_usage(&state, started_at, &result);
     result
 }
 
@@ -3290,6 +3341,7 @@ pub async fn regenerate_ai_conflict_regions(
         file_path: session.file_path.clone(),
         operation_id: operation_id.clone(),
     };
+    let started_at = Instant::now();
     let cancellation = state.ai_extension.operations.begin(&operation_id)?;
     let result = tokio::select! {
         _ = cancellation.cancelled() => Err(AiError::new("operationCancelled")),
@@ -3298,6 +3350,7 @@ pub async fn regenerate_ai_conflict_regions(
         },
     };
     state.ai_extension.operations.finish(&operation_id);
+    record_conflict_usage(&state, started_at, &result);
     let mut result = result?;
     let generated_session = state
         .ai_extension
@@ -3673,14 +3726,90 @@ mod tests {
             }]
         })
         .to_string();
-        let replacements = parse_conflict_replacements(&response, &regions).unwrap();
+        let replacements =
+            parse_conflict_replacements(&response, &regions, AiStructuredOutputMode::JsonSchema)
+                .unwrap();
 
         assert_eq!(replacements[0].replacement, "resolved\n");
+        assert_eq!(replacements[0].explanation, "Kept both changes.");
         assert_eq!(
-            replacements[0].explanation.as_deref(),
-            Some("Kept both changes.")
+            parse_conflict_replacements(
+                r#"{"regions":[]}"#,
+                &regions,
+                AiStructuredOutputMode::JsonSchema,
+            )
+            .unwrap_err()
+            .code,
+            "missingConflictRegions"
         );
-        assert!(parse_conflict_replacements(r#"{"regions":[]}"#, &regions).is_err());
+    }
+
+    #[test]
+    fn prompt_only_conflict_output_accepts_one_outer_json_fence() {
+        let regions =
+            parse_conflict_regions("<<<<<<< HEAD\none\n=======\ntwo\n>>>>>>> branch\n").unwrap();
+        let response = format!(
+            "```json\n{{\"regions\":[{{\"id\":\"{}\",\"replacement\":\"resolved\",\"explanation\":\"Kept both.\"}}]}}\n```",
+            regions[0].id
+        );
+
+        assert!(
+            parse_conflict_replacements(&response, &regions, AiStructuredOutputMode::PromptOnly,)
+                .is_ok()
+        );
+        assert_eq!(
+            parse_conflict_replacements(&response, &regions, AiStructuredOutputMode::JsonSchema,)
+                .unwrap_err()
+                .code,
+            "malformedStructuredOutput"
+        );
+    }
+
+    #[test]
+    fn conflict_output_reports_structural_validation_failures() {
+        let regions =
+            parse_conflict_regions("<<<<<<< HEAD\none\n=======\ntwo\n>>>>>>> branch\n").unwrap();
+        let id = &regions[0].id;
+        for (response, expected_code) in [
+            (
+                format!(
+                    r#"{{"regions":[{{"id":"{id}","replacement":"one","explanation":"first"}},{{"id":"{id}","replacement":"two","explanation":"second"}}]}}"#
+                ),
+                "duplicateConflictRegion",
+            ),
+            (
+                r#"{"regions":[{"id":"unknown","replacement":"resolved","explanation":"reason"}]}"#
+                    .to_string(),
+                "unknownConflictRegion",
+            ),
+            (
+                format!(
+                    r#"{{"regions":[{{"id":"{id}","replacement":"<<<<<<< HEAD\nstill conflicted","explanation":"reason"}}]}}"#
+                ),
+                "unresolvedConflictMarkers",
+            ),
+            (
+                format!(r#"{{"regions":[{{"id":"{id}","replacement":"resolved"}}]}}"#),
+                "malformedStructuredOutput",
+            ),
+            (
+                format!(
+                    r#"Commentary before JSON {{"regions":[{{"id":"{id}","replacement":"resolved","explanation":"reason"}}]}}"#
+                ),
+                "malformedStructuredOutput",
+            ),
+        ] {
+            assert_eq!(
+                parse_conflict_replacements(
+                    &response,
+                    &regions,
+                    AiStructuredOutputMode::PromptOnly,
+                )
+                .unwrap_err()
+                .code,
+                expected_code
+            );
+        }
     }
 
     #[test]
@@ -4016,7 +4145,7 @@ mod tests {
             staged_snapshot: md5::compute("snapshot"),
         };
         let runtime = crate::ai::AiRuntime::new().unwrap();
-        let mut budget = RequestBudget::new();
+        let mut budget = AiRequestBudget::new();
 
         let result = tauri::async_runtime::block_on(generate_commit_message_from_context(
             &runtime,
@@ -4089,7 +4218,7 @@ mod tests {
             staged_snapshot: md5::compute("snapshot"),
         };
         let runtime = crate::ai::AiRuntime::new().unwrap();
-        let mut budget = RequestBudget::new();
+        let mut budget = AiRequestBudget::new();
 
         let result = tauri::async_runtime::block_on(generate_commit_message_from_context(
             &runtime,

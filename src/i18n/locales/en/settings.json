@@ -153,7 +153,7 @@
     "aiCommitMessagePrompt": "Gitmun also supplies the active subject limit, recent commit messages, staged file list, and staged diff. Clear this prompt and save to restore the default.",
     "aiConflictResolutionPrompt": "Gitmun supplies stable region IDs and requires structured JSON proposals. Clear this prompt and save to restore the default.",
     "aiEnvironmentManaged": "This value is controlled by a launch-time environment variable and is read-only.",
-    "aiExperimental": "AI is bundled but opt-in. Disabling it hides actions and prevents requests without deleting profiles or credentials.",
+    "aiExperimental": "AI is bundled but opt-in. Disabling it hides AI settings and actions, and prevents requests without deleting profiles or credentials.",
     "aiGlobalExclusions": "Matching paths are omitted from all AI context. Sensitive-path checks remain enabled in addition to these patterns.",
     "aiKeyConfigured": "An API key is stored securely in the operating system credential store.",
     "aiKeyMissing": "No API key is configured.",

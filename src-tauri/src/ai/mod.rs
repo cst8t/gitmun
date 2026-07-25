@@ -18,13 +18,14 @@ pub(crate) use configuration::{AiLaunchOverrides, EffectiveAiConfiguration, vali
 pub(crate) use credentials::{AiCredentialStore, KeyringAiCredentialStore};
 pub(crate) use operations::AiOperationRegistry;
 pub(crate) use provider::{
-    AiModelInfo, AiModelPage, AiModelQuery, AiRuntime, AiTask, ProviderResult, api_key_optional,
-    discover_effort, discover_models, discover_openrouter_model_details, run_provider,
+    AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiRequestBudget, AiRuntime,
+    AiStructuredOutputMode, AiTask, ProviderResult, api_key_optional, discover_effort,
+    discover_models, discover_openrouter_model_details, run_provider, run_provider_with_output,
 };
 pub use types::{
-    AiApiStyle, AiAuthMode, AiEffortCapability, AiExtensionSettings, AiProfile, AiProvider,
-    AiReasoningPreference, AiRepositoryPolicy, AiUsageRecord, ExtensionSettings, OpenRouterPrivacy,
-    OpenRouterRoutingStrategy, OpenRouterSettings,
+    AiApiStyle, AiAuthMode, AiCommitMessageMode, AiEffortCapability, AiExtensionSettings,
+    AiProfile, AiProvider, AiReasoningPreference, AiRepositoryPolicy, AiUsageRecord,
+    ExtensionSettings, OpenRouterPrivacy, OpenRouterRoutingStrategy, OpenRouterSettings,
 };
 
 pub(crate) struct AiExtensionState {
@@ -34,6 +35,17 @@ pub(crate) struct AiExtensionState {
     pub conflict_sessions: ConflictSessionStore,
     pub operations: AiOperationRegistry,
     pub openrouter_oauth_active: AtomicBool,
+}
+
+#[derive(Debug, Clone)]
+pub(crate) struct AiProviderResponseMetadata {
+    pub usage: AiUsage,
+    pub request_id: Option<String>,
+    pub generation_id: Option<String>,
+    pub routed_provider: Option<String>,
+    pub routed_model: Option<String>,
+    pub finish_reason: Option<String>,
+    pub response_bytes: usize,
 }
 
 impl AiExtensionState {
@@ -59,6 +71,8 @@ pub struct AiError {
     pub context_size_kib: Option<usize>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub context_limit_kib: Option<u32>,
+    #[serde(skip)]
+    pub(crate) provider_response: Option<Box<AiProviderResponseMetadata>>,
 }
 
 impl AiError {
@@ -68,6 +82,7 @@ impl AiError {
             detail: None,
             context_size_kib: None,
             context_limit_kib: None,
+            provider_response: None,
         }
     }
 
@@ -77,6 +92,7 @@ impl AiError {
             detail: Some(detail.into()),
             context_size_kib: None,
             context_limit_kib: None,
+            provider_response: None,
         }
     }
 
@@ -86,7 +102,16 @@ impl AiError {
             detail: None,
             context_size_kib: Some(context_bytes.div_ceil(1024)),
             context_limit_kib: Some(context_limit_kib),
+            provider_response: None,
         }
+    }
+
+    pub(crate) fn with_provider_response(
+        mut self,
+        provider_response: AiProviderResponseMetadata,
+    ) -> Self {
+        self.provider_response = Some(Box::new(provider_response));
+        self
     }
 }
 
@@ -99,4 +124,14 @@ pub struct AiUsage {
     pub cached_tokens: Option<u64>,
     pub cost: Option<f64>,
     pub byok: Option<bool>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AiError;
+
+    #[test]
+    fn provider_metadata_does_not_inflate_ai_errors() {
+        assert!(std::mem::size_of::<AiError>() <= 80);
+    }
 }

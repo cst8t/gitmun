@@ -172,6 +172,12 @@ vi.mock("../../api/commands", () => ({
 
 import {SettingsWindow} from "./SettingsWindow";
 
+function openAiSettings() {
+    const toggle = screen.getByLabelText<HTMLInputElement>("Enable experimental AI extension");
+    if (!toggle.checked) fireEvent.click(toggle);
+    fireEvent.click(screen.getByRole("button", {name: "AI"}));
+}
+
 describe("SettingsWindow", () => {
     beforeEach(() => {
         mocks.discoverAiModelDetailsDraft.mockReset();
@@ -242,7 +248,7 @@ describe("SettingsWindow", () => {
 
         expect(screen.getByText("Application")).toBeInTheDocument();
         expect(screen.getByText("Git")).toBeInTheDocument();
-        expect(screen.getByText("AI")).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "AI"})).not.toBeInTheDocument();
         expect(screen.getByTestId("settings-skeleton")).toBeInTheDocument();
         expect(screen.queryByLabelText("Terminal")).not.toBeInTheDocument();
     });
@@ -252,14 +258,29 @@ describe("SettingsWindow", () => {
 
         expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
         expect(screen.getByText("Experimental")).toBeInTheDocument();
+        expect(screen.getByLabelText("Enable experimental AI extension")).not.toBeChecked();
+        expect(screen.queryByRole("button", {name: "AI"})).not.toBeInTheDocument();
         expect(screen.queryByTestId("settings-skeleton")).not.toBeInTheDocument();
+    });
+
+    it("shows the AI settings tab only while the experimental AI extension is enabled", async () => {
+        render(<SettingsWindow/>);
+
+        const toggle = await screen.findByLabelText("Enable experimental AI extension");
+        expect(screen.queryByRole("button", {name: "AI"})).not.toBeInTheDocument();
+
+        fireEvent.click(toggle);
+        expect(screen.getByRole("button", {name: "AI"})).toBeInTheDocument();
+
+        fireEvent.click(toggle);
+        expect(screen.queryByRole("button", {name: "AI"})).not.toBeInTheDocument();
     });
 
     it("uses the shared field styling for global AI exclusions", async () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
 
         expect(screen.getByLabelText("Global excluded paths")).toHaveClass(
             "settings-window__input",
@@ -271,7 +292,7 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
         fireEvent.change(screen.getByLabelText("AI provider"), {target: {value: "OpenAiCompatible"}});
 
         const provider = screen.getByLabelText("AI provider");
@@ -321,7 +342,7 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
         fireEvent.change(screen.getByLabelText("AI provider"), {target: {value: "OpenRouter"}});
         const modelSearch = screen.getByLabelText("Model catalogue");
         const discoverModels = screen.getByRole("button", {name: "Discover models"});
@@ -355,7 +376,7 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
         fireEvent.change(screen.getByLabelText("AI provider"), {target: {value: "OpenRouter"}});
         fireEvent.click(screen.getByRole("button", {name: "Sign in with OpenRouter"}));
 
@@ -381,7 +402,7 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
         fireEvent.change(screen.getByLabelText("AI provider"), {target: {value: "OpenAiCompatible"}});
         fireEvent.change(screen.getByLabelText("Model"), {target: {value: "gemma4:latest"}});
         expect(screen.getByText("Test connection")).toBeDisabled();
@@ -400,7 +421,7 @@ describe("SettingsWindow", () => {
         render(<SettingsWindow/>);
         await screen.findByLabelText("Terminal");
 
-        fireEvent.click(screen.getByText("AI"));
+        openAiSettings();
         fireEvent.change(screen.getByLabelText("AI provider"), {target: {value: "OpenAiCompatible"}});
 
         const commitLimit = screen.getByLabelText("Commit message context limit (KiB)");

@@ -1426,12 +1426,14 @@ export function SettingsWindow() {
                     >
                         {t("labels.git")}
                     </button>
-                    <button
-                        className={`settings-window__tab ${tab === "ai" ? "settings-window__tab--active" : ""}`}
-                        onClick={() => setTab("ai")}
-                    >
-                        {t("labels.ai")}
-                    </button>
+                    {aiEnabled && (
+                        <button
+                            className={`settings-window__tab ${tab === "ai" ? "settings-window__tab--active" : ""}`}
+                            onClick={() => setTab("ai")}
+                        >
+                            {t("labels.ai")}
+                        </button>
+                    )}
                 </div>
 
                 {loadState.status === "loading" && (
@@ -1792,6 +1794,25 @@ export function SettingsWindow() {
                                 {t("notes.localCopyExperimental")}
                             </div>
                         </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__switch-row">
+                                <span className="settings-window__switch">
+                                    <input
+                                        id="settings-ai-enabled"
+                                        type="checkbox"
+                                        checked={aiEnabled}
+                                        onChange={event => setAiEnabled(event.target.checked)}
+                                        disabled={aiFieldManaged("enabled")}
+                                    />
+                                    <span className="settings-window__switch-track"/>
+                                </span>
+                                <span className="settings-window__switch-label">{t("labels.aiEnabled")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {aiFieldManaged("enabled") ? t("notes.aiEnvironmentManaged") : t("notes.aiExperimental")}
+                            </div>
+                        </div>
                     </section>
 
                     <section className="settings-window__section">
@@ -1856,29 +1877,10 @@ export function SettingsWindow() {
                 </div>
                 )}
 
-                {loadState.status === "loaded" && tab === "ai" && (
+                {loadState.status === "loaded" && aiEnabled && tab === "ai" && (
                 <div className="settings-window__column">
                     <section className="settings-window__section">
                         <div className="settings-window__section-title">{t("labels.aiGroupProvider")}</div>
-
-                        <div className="settings-window__row">
-                            <label className="settings-window__switch-row">
-                                <span className="settings-window__switch">
-                                    <input
-                                        id="settings-ai-enabled"
-                                        type="checkbox"
-                                        checked={aiEnabled}
-                                        onChange={event => setAiEnabled(event.target.checked)}
-                                        disabled={aiFieldManaged("enabled")}
-                                    />
-                                    <span className="settings-window__switch-track"/>
-                                </span>
-                                <span className="settings-window__switch-label">{t("labels.aiEnabled")}</span>
-                            </label>
-                            <div className="settings-window__section-note">
-                                {aiFieldManaged("enabled") ? t("notes.aiEnvironmentManaged") : t("notes.aiExperimental")}
-                            </div>
-                        </div>
 
                         <div className="settings-window__row">
                             <label className="settings-window__label" htmlFor="settings-ai-profile">{t("labels.aiProfile")}</label>

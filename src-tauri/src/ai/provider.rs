@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
@@ -13,10 +14,11 @@ use super::types::{
     AiApiStyle, AiAuthMode, AiEffortCapability, AiProvider, AiReasoningPreference,
     OpenRouterPrivacy, OpenRouterRoutingStrategy,
 };
-use super::{AiError, AiUsage};
+use super::{AiError, AiProviderResponseMetadata, AiUsage};
 
 pub(crate) const CONNECTION_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
+const CONFLICT_RESOLUTION_REQUEST_TIMEOUT: Duration = Duration::from_secs(5 * 60);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 const MAX_OAUTH_RESPONSE_BYTES: usize = 64 * 1024;
@@ -24,6 +26,8 @@ const MAX_MODELS_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const MODEL_DISCOVERY_ATTEMPTS: usize = 3;
 const OPENROUTER_CATALOGUE_PAGE_SIZE: usize = 1000;
 const MAX_OPENROUTER_CATALOGUE_PAGES: usize = 16;
+const MAX_AI_OPERATION_REQUESTS: usize = 64;
+const MAX_AI_OPERATION_OUTBOUND_BYTES: usize = 2 * 1024 * 1024;
 const OPENROUTER_APP_URL: &str = "https://gitmun.org";
 const OPENROUTER_APP_TITLE: &str = "Gitmun";
 const OPENROUTER_APP_CATEGORIES: &str = "programming-app";
@@ -39,7 +43,8 @@ impl AiTask {
     pub(crate) fn request_timeout(self) -> Duration {
         match self {
             Self::ConnectionTest => CONNECTION_TEST_TIMEOUT,
-            Self::CommitMessage | Self::ConflictResolution => REQUEST_TIMEOUT,
+            Self::CommitMessage => REQUEST_TIMEOUT,
+            Self::ConflictResolution => CONFLICT_RESOLUTION_REQUEST_TIMEOUT,
         }
     }
 }
@@ -47,6 +52,7 @@ impl AiTask {
 #[derive(Clone)]
 pub(crate) struct AiRuntime {
     client: Client,
+    structured_output_modes: Arc<Mutex<HashMap<String, AiStructuredOutputMode>>>,
 }
 
 impl AiRuntime {
@@ -58,7 +64,86 @@ impl AiRuntime {
             .user_agent("gitmun-ai")
             .build()
             .map_err(|_| AiError::new("network"))?;
-        Ok(Self { client })
+        Ok(Self {
+            client,
+            structured_output_modes: Arc::new(Mutex::new(HashMap::new())),
+        })
+    }
+
+    fn structured_output_mode(
+        &self,
+        configuration: &EffectiveAiConfiguration,
+    ) -> Option<AiStructuredOutputMode> {
+        let key = structured_output_cache_key(configuration).ok()?;
+        self.structured_output_modes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .get(&key)
+            .copied()
+    }
+
+    fn remember_structured_output_mode(
+        &self,
+        configuration: &EffectiveAiConfiguration,
+        mode: AiStructuredOutputMode,
+    ) {
+        let Ok(key) = structured_output_cache_key(configuration) else {
+            return;
+        };
+        self.structured_output_modes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .insert(key, mode);
+    }
+}
+
+#[derive(Debug, Clone)]
+pub(crate) enum AiOutputContract {
+    Text,
+    JsonSchema { name: &'static str, schema: Value },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum AiStructuredOutputMode {
+    JsonSchema,
+    JsonObject,
+    PromptOnly,
+}
+
+impl AiStructuredOutputMode {
+    fn fallback(self, adapter: &dyn ProtocolAdapter) -> Option<Self> {
+        match self {
+            Self::JsonSchema if adapter.supports_json_object() => Some(Self::JsonObject),
+            Self::JsonSchema | Self::JsonObject => Some(Self::PromptOnly),
+            Self::PromptOnly => None,
+        }
+    }
+}
+
+pub(crate) struct AiRequestBudget {
+    requests: usize,
+    outbound_bytes: usize,
+}
+
+impl AiRequestBudget {
+    pub(crate) fn new() -> Self {
+        Self {
+            requests: 0,
+            outbound_bytes: 0,
+        }
+    }
+
+    fn charge(&mut self, body: &Value) -> Result<(), AiError> {
+        self.requests += 1;
+        self.outbound_bytes = self
+            .outbound_bytes
+            .saturating_add(serde_json::to_vec(body).map_or(usize::MAX, |body| body.len()));
+        if self.requests > MAX_AI_OPERATION_REQUESTS
+            || self.outbound_bytes > MAX_AI_OPERATION_OUTBOUND_BYTES
+        {
+            return Err(AiError::new("operationBudgetExceeded"));
+        }
+        Ok(())
     }
 }
 
@@ -108,8 +193,23 @@ pub(crate) struct ProviderResult {
     pub(crate) generation_id: Option<String>,
     pub(crate) routed_provider: Option<String>,
     pub(crate) routed_model: Option<String>,
-    pub(crate) effort_rejected: bool,
     pub(crate) output_truncated: bool,
+    pub(crate) finish_reason: Option<String>,
+    pub(crate) response_bytes: usize,
+}
+
+impl ProviderResult {
+    pub(crate) fn metadata(&self) -> AiProviderResponseMetadata {
+        AiProviderResponseMetadata {
+            usage: self.usage.clone(),
+            request_id: self.request_id.clone(),
+            generation_id: self.generation_id.clone(),
+            routed_provider: self.routed_provider.clone(),
+            routed_model: self.routed_model.clone(),
+            finish_reason: self.finish_reason.clone(),
+            response_bytes: self.response_bytes,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -187,6 +287,8 @@ trait ProtocolAdapter: Send + Sync {
         user_prompt: &str,
         max_tokens: u32,
         effort: Option<&str>,
+        output_contract: &AiOutputContract,
+        structured_output_mode: Option<AiStructuredOutputMode>,
     ) -> Value;
 
     fn parse_response(
@@ -198,6 +300,10 @@ trait ProtocolAdapter: Send + Sync {
 
     fn add_protocol_headers(&self, request: RequestBuilder) -> RequestBuilder {
         request
+    }
+
+    fn supports_json_object(&self) -> bool {
+        false
     }
 }
 
@@ -244,6 +350,8 @@ impl ProtocolAdapter for OpenAiAdapter {
         user_prompt: &str,
         max_tokens: u32,
         effort: Option<&str>,
+        output_contract: &AiOutputContract,
+        structured_output_mode: Option<AiStructuredOutputMode>,
     ) -> Value {
         let mut body = match configuration.api_style {
             AiApiStyle::ChatCompletions => json!({
@@ -262,6 +370,40 @@ impl ProtocolAdapter for OpenAiAdapter {
         body[&configuration.max_tokens_field] = json!(max_tokens);
         if let Some(effort) = effort {
             body["reasoning_effort"] = json!(effort);
+        }
+        if let (AiOutputContract::JsonSchema { name, schema }, Some(structured_output_mode)) =
+            (output_contract, structured_output_mode)
+        {
+            let format = match structured_output_mode {
+                AiStructuredOutputMode::JsonSchema => Some(json!({
+                    "type": "json_schema",
+                    "name": name,
+                    "strict": true,
+                    "schema": schema,
+                })),
+                AiStructuredOutputMode::JsonObject => Some(json!({"type": "json_object"})),
+                AiStructuredOutputMode::PromptOnly => None,
+            };
+            if let Some(format) = format {
+                match configuration.api_style {
+                    AiApiStyle::ChatCompletions => {
+                        body["response_format"] =
+                            if structured_output_mode == AiStructuredOutputMode::JsonSchema {
+                                json!({
+                                    "type": "json_schema",
+                                    "json_schema": {
+                                        "name": name,
+                                        "strict": true,
+                                        "schema": schema,
+                                    }
+                                })
+                            } else {
+                                format
+                            };
+                    }
+                    AiApiStyle::Responses => body["text"] = json!({"format": format}),
+                }
+            }
         }
         if let (Some(extension), Some(object)) =
             (extension_for(configuration.provider), body.as_object_mut())
@@ -318,14 +460,21 @@ impl ProtocolAdapter for OpenAiAdapter {
             generation_id: value.get("id").and_then(Value::as_str).map(str::to_string),
             routed_provider: None,
             routed_model: None,
-            effort_rejected: false,
             output_truncated: matches!(finish_reason, Some("length"))
                 || value.get("status").and_then(Value::as_str) == Some("incomplete"),
+            finish_reason: finish_reason
+                .or_else(|| value.get("status").and_then(Value::as_str))
+                .map(str::to_string),
+            response_bytes: 0,
         };
         if let Some(extension) = provider_extension {
             extension.extend_result(&value, &mut result);
         }
         Ok(result)
+    }
+
+    fn supports_json_object(&self) -> bool {
+        true
     }
 }
 
@@ -337,6 +486,8 @@ impl ProtocolAdapter for ClaudeAdapter {
         user_prompt: &str,
         max_tokens: u32,
         effort: Option<&str>,
+        output_contract: &AiOutputContract,
+        structured_output_mode: Option<AiStructuredOutputMode>,
     ) -> Value {
         let mut body = json!({
             "model": configuration.model,
@@ -344,8 +495,22 @@ impl ProtocolAdapter for ClaudeAdapter {
             "messages": [{"role": "user", "content": user_prompt}],
             "max_tokens": max_tokens
         });
+        let mut output_config = Map::new();
         if let Some(effort) = effort {
-            body["output_config"] = json!({"effort": effort});
+            output_config.insert("effort".to_string(), json!(effort));
+        }
+        if let (
+            AiOutputContract::JsonSchema { schema, .. },
+            Some(AiStructuredOutputMode::JsonSchema),
+        ) = (output_contract, structured_output_mode)
+        {
+            output_config.insert(
+                "format".to_string(),
+                json!({"type": "json_schema", "schema": schema}),
+            );
+        }
+        if !output_config.is_empty() {
+            body["output_config"] = Value::Object(output_config);
         }
         body
     }
@@ -381,9 +546,13 @@ impl ProtocolAdapter for ClaudeAdapter {
                 .get("model")
                 .and_then(Value::as_str)
                 .map(str::to_string),
-            effort_rejected: false,
             output_truncated: value.get("stop_reason").and_then(Value::as_str)
                 == Some("max_tokens"),
+            finish_reason: value
+                .get("stop_reason")
+                .and_then(Value::as_str)
+                .map(str::to_string),
+            response_bytes: 0,
         })
     }
 
@@ -635,6 +804,18 @@ fn endpoint_with_path(
     Ok(endpoint)
 }
 
+fn structured_output_cache_key(
+    configuration: &EffectiveAiConfiguration,
+) -> Result<String, AiError> {
+    Ok(format!(
+        "{:?}\0{}\0{:?}\0{}",
+        configuration.provider,
+        endpoint_with_path(configuration, &configuration.request_path)?,
+        configuration.api_style,
+        configuration.model,
+    ))
+}
+
 pub(crate) fn api_key_optional(configuration: &EffectiveAiConfiguration) -> bool {
     configuration
         .provider
@@ -734,6 +915,52 @@ fn rejected_effort(status: StatusCode, body: &[u8]) -> bool {
             .contains("effort")
 }
 
+fn rejected_structured_output(
+    status: StatusCode,
+    body: &[u8],
+    mode: Option<AiStructuredOutputMode>,
+) -> bool {
+    if !matches!(status.as_u16(), 400 | 422)
+        || !matches!(
+            mode,
+            Some(AiStructuredOutputMode::JsonSchema | AiStructuredOutputMode::JsonObject)
+        )
+    {
+        return false;
+    }
+    let body = String::from_utf8_lossy(body).to_ascii_lowercase();
+    let identifies_format = [
+        "response_format",
+        "json_schema",
+        "structured_output",
+        "structured output",
+        "text.format",
+        "output_config.format",
+        "output_config",
+        "invalid format",
+        "unsupported format",
+    ]
+    .iter()
+    .any(|field| body.contains(field));
+    let identifies_rejection = [
+        "unsupported",
+        "not supported",
+        "unknown parameter",
+        "unknown",
+        "unrecognized",
+        "unrecognised",
+        "invalid parameter",
+        "invalid value",
+        "must be",
+        "not allowed",
+        "not permitted",
+        "extra inputs",
+    ]
+    .iter()
+    .any(|reason| body.contains(reason));
+    identifies_format && (identifies_rejection || status == StatusCode::UNPROCESSABLE_ENTITY)
+}
+
 fn response_error(status: StatusCode) -> AiError {
     match status.as_u16() {
         401 | 403 => AiError::new("authentication"),
@@ -814,6 +1041,12 @@ fn redacted_diagnostic_value(value: &str) -> Option<String> {
     .then(|| value.to_string())
 }
 
+enum ProviderAttempt {
+    Completed(ProviderResult),
+    EffortRejected,
+    StructuredOutputRejected,
+}
+
 async fn send_provider_request(
     runtime: &AiRuntime,
     configuration: &EffectiveAiConfiguration,
@@ -823,7 +1056,10 @@ async fn send_provider_request(
     max_tokens: u32,
     effort: Option<&str>,
     task: AiTask,
-) -> Result<ProviderResult, AiError> {
+    output_contract: &AiOutputContract,
+    structured_output_mode: Option<AiStructuredOutputMode>,
+    budget: &mut AiRequestBudget,
+) -> Result<ProviderAttempt, AiError> {
     let adapter = adapter_for(configuration)?;
     let endpoint = endpoint_with_path(configuration, &configuration.request_path)?;
     let body = adapter.request_body(
@@ -832,7 +1068,10 @@ async fn send_provider_request(
         user_prompt,
         max_tokens,
         effort,
+        output_contract,
+        structured_output_mode,
     );
+    budget.charge(&body)?;
     let request = runtime
         .client
         .post(endpoint)
@@ -852,16 +1091,10 @@ async fn send_provider_request(
     let (status, headers, bytes) = read_response(response, MAX_RESPONSE_BYTES).await?;
     if !status.is_success() {
         if rejected_effort(status, &bytes) {
-            return Ok(ProviderResult {
-                text: String::new(),
-                usage: AiUsage::default(),
-                request_id: None,
-                generation_id: None,
-                routed_provider: None,
-                routed_model: None,
-                effort_rejected: true,
-                output_truncated: false,
-            });
+            return Ok(ProviderAttempt::EffortRejected);
+        }
+        if rejected_structured_output(status, &bytes, structured_output_mode) {
+            return Ok(ProviderAttempt::StructuredOutputRejected);
         }
         return Err(provider_response_error(
             configuration,
@@ -877,7 +1110,10 @@ async fn send_provider_request(
         .or_else(|| headers.get("request-id"))
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    adapter.parse_response(value, request_id, extension_for(configuration.provider))
+    let mut result =
+        adapter.parse_response(value, request_id, extension_for(configuration.provider))?;
+    result.response_bytes = bytes.len();
+    Ok(ProviderAttempt::Completed(result))
 }
 
 pub(crate) async fn run_provider(
@@ -888,7 +1124,41 @@ pub(crate) async fn run_provider(
     user_prompt: &str,
     max_tokens: u32,
     task: AiTask,
+    budget: &mut AiRequestBudget,
 ) -> Result<(ProviderResult, AiEffortCapability), AiError> {
+    let result = run_provider_with_output(
+        runtime,
+        configuration,
+        api_key,
+        system_prompt,
+        user_prompt,
+        max_tokens,
+        task,
+        budget,
+        &AiOutputContract::Text,
+    )
+    .await?;
+    Ok((result.0, result.1))
+}
+
+pub(crate) async fn run_provider_with_output(
+    runtime: &AiRuntime,
+    configuration: &EffectiveAiConfiguration,
+    api_key: &str,
+    system_prompt: &str,
+    user_prompt: &str,
+    max_tokens: u32,
+    task: AiTask,
+    budget: &mut AiRequestBudget,
+    output_contract: &AiOutputContract,
+) -> Result<
+    (
+        ProviderResult,
+        AiEffortCapability,
+        Option<AiStructuredOutputMode>,
+    ),
+    AiError,
+> {
     if matches!(
         configuration.reasoning_preference,
         AiReasoningPreference::Low | AiReasoningPreference::Medium | AiReasoningPreference::High
@@ -904,43 +1174,64 @@ pub(crate) async fn run_provider(
             return Err(AiError::new("reasoningUnsupported"));
         }
     }
-    let effort = effort_for(configuration, task);
-    let result = send_provider_request(
-        runtime,
-        configuration,
-        api_key,
-        system_prompt,
-        user_prompt,
-        max_tokens,
-        effort,
-        task,
-    )
-    .await?;
-    if !result.effort_rejected {
-        let capability = if effort.is_some() {
-            AiEffortCapability::Accepted
-        } else {
-            configuration.effort_capability.clone()
-        };
-        return Ok((result, capability));
+    let adapter = adapter_for(configuration)?;
+    let mut effort = effort_for(configuration, task);
+    let mut effort_capability = configuration.effort_capability.clone();
+    let mut structured_output_mode = match output_contract {
+        AiOutputContract::Text => None,
+        AiOutputContract::JsonSchema { .. } => Some(
+            runtime
+                .structured_output_mode(configuration)
+                .unwrap_or(AiStructuredOutputMode::JsonSchema),
+        ),
+    };
+    loop {
+        match send_provider_request(
+            runtime,
+            configuration,
+            api_key,
+            system_prompt,
+            user_prompt,
+            max_tokens,
+            effort,
+            task,
+            output_contract,
+            structured_output_mode,
+            budget,
+        )
+        .await?
+        {
+            ProviderAttempt::Completed(result) => {
+                if effort.is_some() {
+                    effort_capability = AiEffortCapability::Accepted;
+                }
+                if let Some(mode) = structured_output_mode {
+                    runtime.remember_structured_output_mode(configuration, mode);
+                }
+                return Ok((result, effort_capability, structured_output_mode));
+            }
+            ProviderAttempt::EffortRejected => {
+                if effort.is_none() {
+                    return Err(AiError::new("requestRejected"));
+                }
+                if configuration.reasoning_preference != AiReasoningPreference::Automatic
+                    && !matches!(task, AiTask::ConnectionTest)
+                {
+                    return Err(AiError::new("reasoningUnsupported"));
+                }
+                effort = None;
+                effort_capability = AiEffortCapability::Unsupported;
+            }
+            ProviderAttempt::StructuredOutputRejected => {
+                let Some(fallback) = structured_output_mode.and_then(|mode| mode.fallback(adapter))
+                else {
+                    return Err(AiError::new("requestRejected"));
+                };
+                structured_output_mode = Some(fallback);
+                runtime.remember_structured_output_mode(configuration, fallback);
+            }
+        }
     }
-    if configuration.reasoning_preference != AiReasoningPreference::Automatic
-        && !matches!(task, AiTask::ConnectionTest)
-    {
-        return Err(AiError::new("reasoningUnsupported"));
-    }
-    let fallback = send_provider_request(
-        runtime,
-        configuration,
-        api_key,
-        system_prompt,
-        user_prompt,
-        max_tokens,
-        None,
-        task,
-    )
-    .await?;
-    Ok((fallback, AiEffortCapability::Unsupported))
 }
 
 pub(crate) async fn discover_effort(
@@ -1062,7 +1353,33 @@ pub(crate) async fn discover_openrouter_model_details(
     }
     let endpoint = endpoint_with_path(configuration, &format!("/models/{model_id}/endpoints"))?;
     let value = fetch_openrouter_metadata(runtime, configuration, api_key, endpoint).await?;
-    normalise_openrouter_endpoint_details(&value, model_id)
+    let model = normalise_openrouter_endpoint_details(&value, model_id)?;
+    if configuration.model == model_id {
+        if let Some(mode) = discovered_structured_output_mode(&model.supported_parameters) {
+            runtime.remember_structured_output_mode(configuration, mode);
+        }
+    }
+    Ok(model)
+}
+
+fn discovered_structured_output_mode(
+    supported_parameters: &[String],
+) -> Option<AiStructuredOutputMode> {
+    if supported_parameters
+        .iter()
+        .any(|parameter| parameter == "structured_outputs")
+    {
+        Some(AiStructuredOutputMode::JsonSchema)
+    } else if supported_parameters
+        .iter()
+        .any(|parameter| parameter == "response_format")
+    {
+        Some(AiStructuredOutputMode::JsonObject)
+    } else if supported_parameters.is_empty() {
+        None
+    } else {
+        Some(AiStructuredOutputMode::PromptOnly)
+    }
 }
 
 async fn fetch_openrouter_metadata(
@@ -1158,7 +1475,10 @@ fn normalise_openrouter_endpoint_details(
             first_f64(endpoint, &["/performance/latency", "/latency"])
                 .map(|milliseconds| milliseconds / 1000.0)
         });
-        model.latency = minimum_f64(model.latency, endpoint_latency);
+        model.latency = match (model.latency, endpoint_latency) {
+            (Some(current), Some(candidate)) => Some(current.min(candidate)),
+            (current, candidate) => current.or(candidate),
+        };
         model.throughput = maximum_f64(
             model.throughput,
             first_f64(
@@ -1200,13 +1520,6 @@ fn push_unique(values: &mut Vec<String>, value: Option<&str>) {
 fn maximum_u64(left: Option<u64>, right: Option<u64>) -> Option<u64> {
     match (left, right) {
         (Some(left), Some(right)) => Some(left.max(right)),
-        (left, right) => left.or(right),
-    }
-}
-
-fn minimum_f64(left: Option<f64>, right: Option<f64>) -> Option<f64> {
-    match (left, right) {
-        (Some(left), Some(right)) => Some(left.min(right)),
         (left, right) => left.or(right),
     }
 }
@@ -1442,6 +1755,10 @@ fn claude_effort_capability(value: &Value) -> Option<AiEffortCapability> {
 
 #[cfg(test)]
 mod tests {
+    use std::io::{Read, Write};
+    use std::net::{TcpListener, TcpStream};
+    use std::sync::mpsc;
+
     use super::*;
     use crate::ai::types::OpenRouterSettings;
 
@@ -1478,6 +1795,68 @@ mod tests {
         }
     }
 
+    fn conflict_contract() -> AiOutputContract {
+        AiOutputContract::JsonSchema {
+            name: "gitmun_conflict_resolution",
+            schema: json!({
+                "type": "object",
+                "properties": {"regions": {"type": "array"}},
+                "required": ["regions"],
+                "additionalProperties": false
+            }),
+        }
+    }
+
+    fn read_http_request(stream: &mut TcpStream) -> String {
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 4096];
+        loop {
+            let read = stream.read(&mut buffer).unwrap();
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&buffer[..read]);
+            if let Some(header_end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length:")
+                            .map(str::trim)
+                            .and_then(|value| value.parse::<usize>().ok())
+                    })
+                    .unwrap_or_default();
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+        }
+        String::from_utf8(request).unwrap()
+    }
+
+    fn mock_provider(
+        responses: Vec<(&'static str, String)>,
+    ) -> (String, mpsc::Receiver<Vec<String>>) {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let endpoint = format!("http://{}/v1", listener.local_addr().unwrap());
+        let (sender, receiver) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut requests = Vec::new();
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                requests.push(read_http_request(&mut stream));
+                let response = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+            drop(sender.send(requests));
+        });
+        (endpoint, receiver)
+    }
+
     #[test]
     fn mistral_and_gemini_use_the_openai_request_shape() {
         for provider in [AiProvider::Mistral, AiProvider::GoogleGemini] {
@@ -1488,6 +1867,8 @@ mod tests {
                 "user",
                 128,
                 None,
+                &AiOutputContract::Text,
+                None,
             );
 
             assert_eq!(body.pointer("/messages/0/role"), Some(&json!("system")));
@@ -1496,11 +1877,366 @@ mod tests {
     }
 
     #[test]
+    fn openai_compatible_providers_share_structured_chat_requests() {
+        for provider in [
+            AiProvider::OpenAi,
+            AiProvider::Mistral,
+            AiProvider::GoogleGemini,
+            AiProvider::OpenRouter,
+            AiProvider::AzureOpenAi,
+            AiProvider::Ollama,
+            AiProvider::LmStudio,
+            AiProvider::OpenAiCompatible,
+        ] {
+            let configuration = configuration(provider);
+            let body = adapter_for(&configuration).unwrap().request_body(
+                &configuration,
+                "system",
+                "user",
+                128,
+                None,
+                &conflict_contract(),
+                Some(AiStructuredOutputMode::JsonSchema),
+            );
+
+            assert_eq!(
+                body.pointer("/response_format/type"),
+                Some(&json!("json_schema")),
+                "{provider:?}"
+            );
+            assert_eq!(
+                body.pointer("/response_format/json_schema/strict"),
+                Some(&json!(true)),
+                "{provider:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn responses_and_claude_use_their_structured_output_shapes() {
+        let mut responses = configuration(AiProvider::OpenAi);
+        responses.api_style = AiApiStyle::Responses;
+        responses.request_path = "/responses".to_string();
+        let responses_body = OPEN_AI_ADAPTER.request_body(
+            &responses,
+            "system",
+            "user",
+            128,
+            None,
+            &conflict_contract(),
+            Some(AiStructuredOutputMode::JsonSchema),
+        );
+        assert_eq!(
+            responses_body.pointer("/text/format/type"),
+            Some(&json!("json_schema"))
+        );
+        assert_eq!(
+            responses_body.pointer("/text/format/name"),
+            Some(&json!("gitmun_conflict_resolution"))
+        );
+
+        let claude = configuration(AiProvider::Claude);
+        let claude_body = CLAUDE_ADAPTER.request_body(
+            &claude,
+            "system",
+            "user",
+            128,
+            Some("medium"),
+            &conflict_contract(),
+            Some(AiStructuredOutputMode::JsonSchema),
+        );
+        assert_eq!(
+            claude_body.pointer("/output_config/format/type"),
+            Some(&json!("json_schema"))
+        );
+        assert_eq!(
+            claude_body.pointer("/output_config/effort"),
+            Some(&json!("medium"))
+        );
+    }
+
+    #[test]
+    fn json_object_and_prompt_only_modes_remove_strict_schema_fields() {
+        let configuration = configuration(AiProvider::OpenAi);
+        let json_object = OPEN_AI_ADAPTER.request_body(
+            &configuration,
+            "system",
+            "user",
+            128,
+            None,
+            &conflict_contract(),
+            Some(AiStructuredOutputMode::JsonObject),
+        );
+        let prompt_only = OPEN_AI_ADAPTER.request_body(
+            &configuration,
+            "system",
+            "user",
+            128,
+            None,
+            &conflict_contract(),
+            Some(AiStructuredOutputMode::PromptOnly),
+        );
+
+        assert_eq!(
+            json_object.pointer("/response_format/type"),
+            Some(&json!("json_object"))
+        );
+        assert!(
+            json_object
+                .pointer("/response_format/json_schema")
+                .is_none()
+        );
+        assert!(prompt_only.get("response_format").is_none());
+        assert_eq!(
+            AiStructuredOutputMode::JsonSchema.fallback(&CLAUDE_ADAPTER),
+            Some(AiStructuredOutputMode::PromptOnly)
+        );
+    }
+
+    #[test]
+    fn conflict_resolution_allows_slow_reasoning_responses() {
+        assert_eq!(
+            AiTask::ConflictResolution.request_timeout(),
+            Duration::from_secs(5 * 60)
+        );
+        assert_eq!(
+            AiTask::CommitMessage.request_timeout(),
+            Duration::from_secs(120)
+        );
+    }
+
+    #[tokio::test]
+    async fn structured_output_falls_back_once_and_caches_the_supported_mode() {
+        let completed = json!({
+            "id": "generation-1",
+            "choices": [{
+                "message": {"content": "{\"regions\":[]}"},
+                "finish_reason": "stop"
+            }],
+            "usage": {"prompt_tokens": 4, "completion_tokens": 2}
+        })
+        .to_string();
+        let (endpoint, requests) = mock_provider(vec![
+            (
+                "400 Bad Request",
+                r#"{"error":{"message":"response_format json_schema is not supported"}}"#
+                    .to_string(),
+            ),
+            ("200 OK", completed.clone()),
+            ("200 OK", completed),
+        ]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut configuration = configuration(AiProvider::OpenAiCompatible);
+        configuration.endpoint = endpoint;
+        configuration.auth_mode = AiAuthMode::None;
+        configuration.reasoning_preference = AiReasoningPreference::ProviderDefault;
+        let contract = conflict_contract();
+
+        let mut first_budget = AiRequestBudget::new();
+        let (_, _, first_mode) = run_provider_with_output(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::ConflictResolution,
+            &mut first_budget,
+            &contract,
+        )
+        .await
+        .unwrap();
+        let mut second_budget = AiRequestBudget::new();
+        let (_, _, second_mode) = run_provider_with_output(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::ConflictResolution,
+            &mut second_budget,
+            &contract,
+        )
+        .await
+        .unwrap();
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        let bodies = requests
+            .iter()
+            .map(|request| {
+                serde_json::from_str::<Value>(request.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(first_mode, Some(AiStructuredOutputMode::JsonObject));
+        assert_eq!(second_mode, Some(AiStructuredOutputMode::JsonObject));
+        assert_eq!(first_budget.requests, 2);
+        assert_eq!(second_budget.requests, 1);
+        assert_eq!(
+            bodies[0].pointer("/response_format/type"),
+            Some(&json!("json_schema"))
+        );
+        assert_eq!(
+            bodies[1].pointer("/response_format/type"),
+            Some(&json!("json_object"))
+        );
+        assert_eq!(
+            bodies[2].pointer("/response_format/type"),
+            Some(&json!("json_object"))
+        );
+    }
+
+    #[tokio::test]
+    async fn automatic_effort_is_removed_only_once() {
+        let rejection = r#"{"error":{"message":"reasoning effort is not supported"}}"#;
+        let (endpoint, requests) = mock_provider(vec![
+            ("400 Bad Request", rejection.to_string()),
+            ("400 Bad Request", rejection.to_string()),
+        ]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut configuration = configuration(AiProvider::OpenAiCompatible);
+        configuration.endpoint = endpoint;
+        configuration.auth_mode = AiAuthMode::None;
+        let mut budget = AiRequestBudget::new();
+
+        let error = match run_provider(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::CommitMessage,
+            &mut budget,
+        )
+        .await
+        {
+            Ok(_) => panic!("a second effort rejection must fail"),
+            Err(error) => error,
+        };
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        let bodies = requests
+            .iter()
+            .map(|request| {
+                serde_json::from_str::<Value>(request.split("\r\n\r\n").nth(1).unwrap()).unwrap()
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(error.code, "requestRejected");
+        assert_eq!(budget.requests, 2);
+        assert_eq!(bodies[0].get("reasoning_effort"), Some(&json!("low")));
+        assert!(bodies[1].get("reasoning_effort").is_none());
+    }
+
+    #[tokio::test]
+    async fn unsupported_schema_and_json_mode_fall_back_to_prompt_only() {
+        let completed = json!({
+            "choices": [{"message": {"content": "{\"regions\":[]}"}, "finish_reason": "stop"}]
+        })
+        .to_string();
+        let (endpoint, requests) = mock_provider(vec![
+            (
+                "400 Bad Request",
+                r#"{"error":{"message":"response_format json_schema is unsupported"}}"#.to_string(),
+            ),
+            (
+                "422 Unprocessable Entity",
+                r#"{"error":{"message":"invalid value for response_format"}}"#.to_string(),
+            ),
+            ("200 OK", completed),
+        ]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut configuration = configuration(AiProvider::OpenAiCompatible);
+        configuration.endpoint = endpoint;
+        configuration.auth_mode = AiAuthMode::None;
+        configuration.reasoning_preference = AiReasoningPreference::ProviderDefault;
+        let mut budget = AiRequestBudget::new();
+
+        let (_, _, mode) = run_provider_with_output(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::ConflictResolution,
+            &mut budget,
+            &conflict_contract(),
+        )
+        .await
+        .unwrap();
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        let final_body: Value =
+            serde_json::from_str(requests[2].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+
+        assert_eq!(mode, Some(AiStructuredOutputMode::PromptOnly));
+        assert_eq!(budget.requests, 3);
+        assert!(final_body.get("response_format").is_none());
+    }
+
+    #[tokio::test]
+    async fn completed_generation_is_not_retried_for_invalid_content() {
+        let completed = json!({
+            "choices": [{"message": {"content": "not json"}, "finish_reason": "stop"}]
+        })
+        .to_string();
+        let (endpoint, requests) = mock_provider(vec![("200 OK", completed)]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut configuration = configuration(AiProvider::OpenAiCompatible);
+        configuration.endpoint = endpoint;
+        configuration.auth_mode = AiAuthMode::None;
+        configuration.reasoning_preference = AiReasoningPreference::ProviderDefault;
+        let mut budget = AiRequestBudget::new();
+
+        let (result, _, mode) = run_provider_with_output(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::ConflictResolution,
+            &mut budget,
+            &conflict_contract(),
+        )
+        .await
+        .unwrap();
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+
+        assert_eq!(result.text, "not json");
+        assert_eq!(mode, Some(AiStructuredOutputMode::JsonSchema));
+        assert_eq!(budget.requests, 1);
+        assert_eq!(requests.len(), 1);
+    }
+
+    #[test]
+    fn unrelated_client_errors_do_not_trigger_structured_output_fallback() {
+        assert!(!rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"model is unavailable"}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+        assert!(!rejected_structured_output(
+            StatusCode::TOO_MANY_REQUESTS,
+            br#"{"error":{"message":"response_format is temporarily unavailable"}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
     fn openrouter_extension_adds_privacy_and_routing_fields() {
         let mut configuration = configuration(AiProvider::OpenRouter);
         configuration.open_router.privacy = OpenRouterPrivacy::StrictZdr;
         configuration.open_router.max_prompt_price = "2.5".to_string();
-        let body = OPEN_AI_ADAPTER.request_body(&configuration, "system", "user", 100, None);
+        let body = OPEN_AI_ADAPTER.request_body(
+            &configuration,
+            "system",
+            "user",
+            100,
+            None,
+            &AiOutputContract::Text,
+            None,
+        );
 
         assert_eq!(
             body.pointer("/provider/data_collection"),
@@ -1656,6 +2392,23 @@ mod tests {
         assert!(model.structured_output);
         assert_eq!(model.latency, Some(0.4));
         assert_eq!(model.uptime, Some(99.9));
+    }
+
+    #[test]
+    fn openrouter_endpoint_parameters_select_the_best_structured_output_mode() {
+        assert_eq!(
+            discovered_structured_output_mode(&["structured_outputs".to_string()]),
+            Some(AiStructuredOutputMode::JsonSchema)
+        );
+        assert_eq!(
+            discovered_structured_output_mode(&["response_format".to_string()]),
+            Some(AiStructuredOutputMode::JsonObject)
+        );
+        assert_eq!(
+            discovered_structured_output_mode(&["temperature".to_string()]),
+            Some(AiStructuredOutputMode::PromptOnly)
+        );
+        assert_eq!(discovered_structured_output_mode(&[]), None);
     }
 
     #[test]

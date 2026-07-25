@@ -60,6 +60,14 @@ pub enum AiApiStyle {
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub enum AiCommitMessageMode {
+    #[default]
+    RepositoryStyle,
+    ConventionalCommits,
+    FreeForm,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum AiAuthMode {
     #[default]
     Bearer,
