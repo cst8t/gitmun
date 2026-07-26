@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import React from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CommitBox } from "./CommitBox";
 import type { CommitPrimaryAction } from "../../types";
@@ -50,7 +50,7 @@ function renderCommitBox({
   mergeMessage,
   mergeInProgress,
 }: RenderCommitBoxOptions = {}) {
-  const onCommit = vi.fn();
+  const onCommit = vi.fn(() => false);
   const onSelectAction = vi.fn();
 
   const view = render(
@@ -79,7 +79,7 @@ describe("CommitBox", () => {
     vi.stubGlobal("localStorage", makeLocalStorage());
     localStorage.removeItem(COMMIT_BOX_RATIO_KEY);
     getCommitMessageRecovery.mockClear();
-    getCommitMessageRecovery.mockResolvedValue(null);
+    getCommitMessageRecovery.mockReturnValue(new Promise(() => {}));
   });
 
   afterEach(() => {
@@ -259,16 +259,20 @@ describe("CommitBox", () => {
   });
 
   it("does not offer COMMIT_EDITMSG recovery for the latest commit message", async () => {
-    getCommitMessageRecovery.mockResolvedValue({
+    const recovery = Promise.resolve({
       message: "Publish tide report\n\nNo new recovery copy.",
       updatedAt: 1,
     });
+    getCommitMessageRecovery.mockReturnValue(recovery);
     renderCommitBox({
       repoPath,
       lastCommitMessage: "Publish tide report\n\nNo new recovery copy.",
     });
 
-    await waitFor(() => expect(getCommitMessageRecovery).toHaveBeenCalled());
+    await act(async () => {
+      await recovery;
+    });
+    expect(getCommitMessageRecovery).toHaveBeenCalled();
     expect(screen.queryByRole("button", {name: "Restore previous message"})).not.toBeInTheDocument();
   });
 

@@ -7,7 +7,7 @@ import "../../i18n";
 import { StagingView } from "./StagingView";
 
 vi.mock("../../api/commands", () => ({
-  getCommitMessageRecovery: vi.fn(async () => null),
+  getCommitMessageRecovery: vi.fn(() => new Promise(() => {})),
   getNumstat: vi.fn(),
 }));
 

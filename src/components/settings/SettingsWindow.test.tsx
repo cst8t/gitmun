@@ -1,13 +1,14 @@
 // @vitest-environment jsdom
 import React from "react";
 import {fireEvent, render, screen, waitFor} from "@testing-library/react";
-import {beforeEach, describe, expect, it, vi} from "vitest";
+import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import type {Settings} from "../../types";
 import "../../i18n";
 
 const mocks = vi.hoisted(() => ({
     close: vi.fn(),
     emit: vi.fn(async () => {}),
+    getAppUpdateChannel: vi.fn(async () => "SystemManaged"),
     openDialog: vi.fn(),
     openPath: vi.fn(),
     invoke: vi.fn(),
@@ -88,7 +89,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({open: mocks.openDialog}));
 vi.mock("@tauri-apps/plugin-opener", () => ({openPath: mocks.openPath}));
 vi.mock("@tauri-apps/plugin-os", () => ({platform: () => "linux"}));
 vi.mock("../../api/commands", () => ({
-    getAppUpdateChannel: vi.fn(async () => "SystemManaged"),
+    getAppUpdateChannel: mocks.getAppUpdateChannel,
     getConfigFilePath: vi.fn(async () => "/home/conor/.config/gitmun/config.toml"),
     getConfigFolderPath: vi.fn(async () => "/home/conor/.config/gitmun"),
     getGlobalDiffToolPath: vi.fn(async () => null),
@@ -111,6 +112,8 @@ describe("SettingsWindow", () => {
         mocks.invoke.mockClear();
         mocks.invoke.mockImplementation(defaultInvoke);
         mocks.emit.mockClear();
+        mocks.getAppUpdateChannel.mockClear();
+        mocks.getAppUpdateChannel.mockResolvedValue("SystemManaged");
         mocks.close.mockClear();
         const store = new Map<string, string>();
         vi.stubGlobal("localStorage", {
@@ -135,14 +138,12 @@ describe("SettingsWindow", () => {
         });
     });
 
-    it("shows a skeleton while settings are loading", () => {
-        mocks.invoke.mockImplementation((command: string) => {
-            if (command === "get_settings") {
-                return new Promise(() => {});
-            }
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
 
-            return defaultInvoke(command);
-        });
+    it("shows a skeleton while settings are loading", () => {
+        mocks.getAppUpdateChannel.mockReturnValue(new Promise(() => {}));
 
         render(<SettingsWindow/>);
 
@@ -178,9 +179,11 @@ describe("SettingsWindow", () => {
     });
 
     it("shows an error when settings fail to load", async () => {
+        const loadError = new Error("config unavailable");
+        const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
         mocks.invoke.mockImplementation((command: string) => {
             if (command === "get_settings") {
-                return Promise.reject(new Error("config unavailable"));
+                return Promise.reject(loadError);
             }
 
             return defaultInvoke(command);
@@ -191,15 +194,18 @@ describe("SettingsWindow", () => {
         expect(await screen.findByRole("alert")).toHaveTextContent("Settings could not be loaded");
         expect(screen.getByRole("button", {name: "Retry"})).toBeInTheDocument();
         expect(screen.queryByTestId("settings-skeleton")).not.toBeInTheDocument();
+        expect(consoleError).toHaveBeenCalledWith("Failed to load settings", loadError);
     });
 
     it("retries loading settings when retry is clicked", async () => {
+        const loadError = new Error("config unavailable");
+        const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
         let getSettingsCalls = 0;
         mocks.invoke.mockImplementation((command: string) => {
             if (command === "get_settings") {
                 getSettingsCalls += 1;
                 if (getSettingsCalls === 1) {
-                    return Promise.reject(new Error("config unavailable"));
+                    return Promise.reject(loadError);
                 }
             }
 
@@ -213,6 +219,7 @@ describe("SettingsWindow", () => {
         expect(await screen.findByLabelText("Terminal")).toBeInTheDocument();
         expect(screen.queryByRole("alert")).not.toBeInTheDocument();
         expect(getSettingsCalls).toBe(2);
+        expect(consoleError).toHaveBeenCalledWith("Failed to load settings", loadError);
     });
 
     it("shows the Linux custom terminal command only for Custom", async () => {
