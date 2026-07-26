@@ -72,6 +72,30 @@ fn write_file(repo: &Path, name: &str, content: &str) {
     fs::write(repo.join(name), content).expect("write file");
 }
 
+fn make_index_entry_stale(repo: &Path, file_path: &str) -> (std::path::PathBuf, Vec<u8>) {
+    let raw_index_path = git_stdout(repo, &["rev-parse", "--git-path", "index"]);
+    let index_path = {
+        let path = std::path::PathBuf::from(raw_index_path);
+        if path.is_absolute() {
+            path
+        } else {
+            repo.join(path)
+        }
+    };
+    let index_before = fs::read(&index_path).expect("read index");
+    let tracked_file = fs::OpenOptions::new()
+        .write(true)
+        .open(repo.join(file_path))
+        .expect("open tracked file");
+    tracked_file
+        .set_times(
+            fs::FileTimes::new()
+                .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+        )
+        .expect("set tracked file timestamp");
+    (index_path, index_before)
+}
+
 fn read_file(repo: &Path, name: &str) -> String {
     fs::read_to_string(repo.join(name)).expect("read file")
 }
@@ -308,6 +332,27 @@ fn status_clean_repo() {
     assert!(status.changed_files.is_empty());
     assert!(status.unversioned_files.is_empty());
     assert!(status.submodules.is_empty());
+}
+
+#[test]
+fn status_read_does_not_rewrite_index() {
+    let dir = init_repo();
+    write_file(dir.path(), "inspection-record.txt", "stable");
+    git(dir.path(), &["add", "inspection-record.txt"]);
+    git(dir.path(), &["commit", "-m", "add inspection record"]);
+    let (index_path, index_before) = make_index_entry_stale(dir.path(), "inspection-record.txt");
+
+    let status = handler()
+        .get_repo_status(&repo_request(&dir))
+        .expect("get_repo_status");
+
+    assert!(status.staged_files.is_empty());
+    assert!(status.changed_files.is_empty());
+    assert_eq!(
+        fs::read(&index_path).expect("read index after status"),
+        index_before
+    );
+    assert!(!index_path.with_file_name("index.lock").exists());
 }
 
 #[test]
@@ -788,6 +833,10 @@ fn export_commit_patch_rejects_invalid_commit_hash() {
 #[test]
 fn discard_file_removes_untracked_directory() {
     let dir = init_repo();
+    write_file(dir.path(), "inspection-record.txt", "stable");
+    git(dir.path(), &["add", "inspection-record.txt"]);
+    git(dir.path(), &["commit", "-m", "add inspection record"]);
+    let (index_path, index_before) = make_index_entry_stale(dir.path(), "inspection-record.txt");
     fs::create_dir_all(dir.path().join("new-dir")).expect("create directory");
     write_file(dir.path(), "new-dir/file.txt", "new");
 
@@ -796,6 +845,11 @@ fn discard_file_removes_untracked_directory() {
         .expect("discard_file");
 
     assert!(!dir.path().join("new-dir").exists());
+    assert_eq!(
+        fs::read(&index_path).expect("read index after discard"),
+        index_before
+    );
+    assert!(!index_path.with_file_name("index.lock").exists());
 }
 
 #[test]
@@ -982,19 +1036,26 @@ fn hard_reset_to_head_discards_tracked_changes_and_keeps_untracked_files() {
 #[test]
 fn status_detects_clean_submodule() {
     let (parent, _submodule) = repo_with_submodule();
-    let status = handler()
-        .get_repo_status(&repo_request(&parent))
-        .expect("get_repo_status");
+    let statuses = [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI get_repo_status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix get_repo_status"),
+    ];
 
-    assert_eq!(status.submodules.len(), 1);
-    let submodule = &status.submodules[0];
-    assert_eq!(submodule.path, "deps/lib");
-    assert_eq!(submodule.state, SubmoduleState::Clean);
-    assert!(submodule.initialised);
-    assert!(!submodule.dirty);
-    assert!(!submodule.out_of_sync);
-    assert!(submodule.expected_commit.is_some());
-    assert_eq!(submodule.expected_commit, submodule.checked_out_commit);
+    for status in statuses {
+        assert_eq!(status.submodules.len(), 1);
+        let submodule = &status.submodules[0];
+        assert_eq!(submodule.path, "deps/lib");
+        assert_eq!(submodule.state, SubmoduleState::Clean);
+        assert!(submodule.initialised);
+        assert!(!submodule.dirty);
+        assert!(!submodule.out_of_sync);
+        assert!(submodule.expected_commit.is_some());
+        assert_eq!(submodule.expected_commit, submodule.checked_out_commit);
+    }
 }
 
 #[test]
@@ -1018,33 +1079,48 @@ fn status_detects_uninitialised_submodule() {
 #[test]
 fn status_detects_dirty_submodule_without_normal_file_entry() {
     let (parent, _submodule) = repo_with_submodule();
-    write_file(&parent.path().join("deps/lib"), "lib.txt", "dirty");
+    let submodule_path = parent.path().join("deps/lib");
+    let (submodule_index, index_before) = make_index_entry_stale(&submodule_path, "lib.txt");
+    write_file(&submodule_path, "field-notes.txt", "dirty");
 
-    let status = handler()
-        .get_repo_status(&repo_request(&parent))
-        .expect("get_repo_status");
+    let statuses = [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI get_repo_status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix get_repo_status"),
+    ];
 
-    let submodule = &status.submodules[0];
-    assert_eq!(submodule.state, SubmoduleState::Dirty);
-    assert!(submodule.dirty);
-    assert!(
-        status
-            .changed_files
-            .iter()
-            .all(|file| file.path != "deps/lib")
+    for status in statuses {
+        let submodule = &status.submodules[0];
+        assert_eq!(submodule.state, SubmoduleState::Dirty);
+        assert!(submodule.dirty);
+        assert!(
+            status
+                .changed_files
+                .iter()
+                .all(|file| file.path != "deps/lib")
+        );
+        assert!(
+            status
+                .staged_files
+                .iter()
+                .all(|file| file.path != "deps/lib")
+        );
+        assert!(
+            status
+                .unversioned_files
+                .iter()
+                .all(|path| path != "deps/lib")
+        );
+    }
+
+    assert_eq!(
+        fs::read(&submodule_index).expect("read submodule index after status"),
+        index_before
     );
-    assert!(
-        status
-            .staged_files
-            .iter()
-            .all(|file| file.path != "deps/lib")
-    );
-    assert!(
-        status
-            .unversioned_files
-            .iter()
-            .all(|path| path != "deps/lib")
-    );
+    assert!(!submodule_index.with_file_name("index.lock").exists());
 }
 
 #[test]
@@ -1061,20 +1137,60 @@ fn status_detects_out_of_sync_submodule() {
     git(&submodule_path, &["add", "lib.txt"]);
     git(&submodule_path, &["commit", "-m", "advance submodule"]);
 
-    let status = handler()
-        .get_repo_status(&repo_request(&parent))
-        .expect("get_repo_status");
+    let statuses = [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI get_repo_status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix get_repo_status"),
+    ];
 
-    let submodule = &status.submodules[0];
-    assert_eq!(submodule.state, SubmoduleState::OutOfSync);
-    assert!(submodule.out_of_sync);
-    assert_ne!(submodule.expected_commit, submodule.checked_out_commit);
-    assert!(
-        status
-            .changed_files
-            .iter()
-            .all(|file| file.path != "deps/lib")
+    for status in statuses {
+        let submodule = &status.submodules[0];
+        assert_eq!(submodule.state, SubmoduleState::OutOfSync);
+        assert!(submodule.out_of_sync);
+        assert!(!submodule.dirty);
+        assert_ne!(submodule.expected_commit, submodule.checked_out_commit);
+        assert!(
+            status
+                .changed_files
+                .iter()
+                .all(|file| file.path != "deps/lib")
+        );
+    }
+}
+
+#[test]
+fn gix_status_detects_staged_submodule_change() {
+    let (parent, _submodule) = repo_with_submodule();
+    let submodule_path = parent.path().join("deps/lib");
+    write_file(&submodule_path, "lib.txt", "staged");
+    git(&submodule_path, &["add", "lib.txt"]);
+
+    let status = gix_handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("gix get_repo_status");
+
+    assert_eq!(status.submodules[0].state, SubmoduleState::Dirty);
+    assert!(status.submodules[0].dirty);
+}
+
+#[test]
+fn gix_status_detects_untracked_submodule_change() {
+    let (parent, _submodule) = repo_with_submodule();
+    write_file(
+        &parent.path().join("deps/lib"),
+        "local-notes.txt",
+        "untracked",
     );
+
+    let status = gix_handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("gix get_repo_status");
+
+    assert_eq!(status.submodules[0].state, SubmoduleState::Dirty);
+    assert!(status.submodules[0].dirty);
 }
 
 #[test]

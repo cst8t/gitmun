@@ -318,7 +318,15 @@ impl CliGitHandler {
         args: &[&str],
         current_dir: Option<&Path>,
     ) -> GitResult<String> {
-        Self::run_git_allow_exit_codes_with_optional_locks(args, current_dir, &[], false)
+        Self::run_git_allow_exit_codes_without_optional_locks(args, current_dir, &[])
+    }
+
+    fn run_git_allow_exit_codes_without_optional_locks(
+        args: &[&str],
+        current_dir: Option<&Path>,
+        extra_ok_codes: &[i32],
+    ) -> GitResult<String> {
+        Self::run_git_allow_exit_codes_with_optional_locks(args, current_dir, extra_ok_codes, false)
     }
 
     fn run_git_bytes(args: &[&str], current_dir: Option<&Path>) -> GitResult<Vec<u8>> {
@@ -1031,7 +1039,7 @@ impl CliGitHandler {
     }
 
     fn ensure_clean_for_three_way_patch(repo_path: &Path) -> GitResult<()> {
-        let output = Self::run_git(
+        let output = Self::run_git_without_optional_locks(
             &["status", "--porcelain=v1", "--untracked-files=no"],
             Some(repo_path),
         )?;
@@ -1060,7 +1068,10 @@ impl CliGitHandler {
                 stderr,
                 exit_code,
             }) => {
-                let status_output = Self::run_git(&["status", "--porcelain=v1"], Some(repo_path))?;
+                let status_output = Self::run_git_without_optional_locks(
+                    &["status", "--porcelain=v1"],
+                    Some(repo_path),
+                )?;
                 if Self::status_has_unmerged_files(&status_output) {
                     return Ok(Self::operation_result(
                         Self::PATCH_IMPORT_CONFLICTS.to_string(),
@@ -1129,7 +1140,7 @@ impl CliGitHandler {
 
     fn submodule_is_dirty(repo_path: &Path, path: &str) -> bool {
         let submodule_path = repo_path.join(path);
-        Self::run_git_allow_exit_codes(
+        Self::run_git_allow_exit_codes_without_optional_locks(
             &["-c", "core.quotepath=false", "status", "--porcelain=v1"],
             Some(&submodule_path),
             &[128],
@@ -1163,7 +1174,10 @@ impl CliGitHandler {
         }
     }
 
-    pub(crate) fn collect_submodules_for_status(repo_path: &Path) -> Vec<SubmoduleStatus> {
+    pub(crate) fn collect_submodules_for_status(
+        repo_path: &Path,
+        dirty_submodule_paths: Option<&HashSet<String>>,
+    ) -> Vec<SubmoduleStatus> {
         let configured = Self::collect_configured_submodules(repo_path).unwrap_or_default();
         configured
             .into_iter()
@@ -1178,7 +1192,10 @@ impl CliGitHandler {
                 let uninitialised = status_prefix == Some('-')
                     || (!initialised && expected_commit.is_some() && status_prefix != Some('U'));
                 let missing = !worktree_path.exists() && !uninitialised;
-                let dirty = initialised && Self::submodule_is_dirty(repo_path, &submodule.path);
+                let dirty = initialised
+                    && dirty_submodule_paths
+                        .map(|paths| paths.contains(&submodule.path))
+                        .unwrap_or_else(|| Self::submodule_is_dirty(repo_path, &submodule.path));
                 let out_of_sync = status_prefix == Some('+')
                     || expected_commit
                         .as_ref()
@@ -2808,7 +2825,7 @@ impl GitOperationHandler for CliGitHandler {
         )?;
         let mut status = Self::parse_repo_status(&output);
         Self::refresh_unversioned_items(&mut status, &repo_path);
-        status.submodules = Self::collect_submodules_for_status(&repo_path);
+        status.submodules = Self::collect_submodules_for_status(&repo_path, None);
         Self::remove_submodule_file_entries(&mut status);
         status.current_branch = Self::detect_current_branch(&repo_path);
         status.detached_head = status
@@ -2856,7 +2873,7 @@ impl GitOperationHandler for CliGitHandler {
 
         // Gather numstat for unstaged changes
         let unstaged_numstat =
-            Self::run_git_without_optional_locks(&["diff", "--numstat"], Some(&repo_path))
+            Self::run_git_without_optional_locks(&["diff-files", "--numstat"], Some(&repo_path))
                 .unwrap_or_default();
         let unstaged_stats = Self::parse_numstat(&unstaged_numstat);
 
@@ -3424,7 +3441,7 @@ impl GitOperationHandler for CliGitHandler {
         let file_path = request.file_path.trim();
 
         // Check if the file is untracked
-        let status_output = Self::run_git(
+        let status_output = Self::run_git_without_optional_locks(
             &[
                 "-c",
                 "core.quotepath=false",
@@ -5403,7 +5420,7 @@ impl CliGitHandler {
     }
 
     fn is_untracked_file(repo_path: &Path, file_path: &str) -> bool {
-        let output = match Self::run_git(
+        let output = match Self::run_git_without_optional_locks(
             &[
                 "-c",
                 "core.quotepath=false",
@@ -5987,6 +6004,38 @@ impl CliGitHandler {
 mod tests {
     use super::*;
 
+    fn repo_with_stale_index_entry() -> (tempfile::TempDir, PathBuf, Vec<u8>) {
+        let repo = tempfile::TempDir::new().expect("create temporary repository");
+        let run_git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .status()
+                .expect("run git");
+            assert!(status.success(), "git {args:?} failed");
+        };
+        run_git(&["init", "-b", "main"]);
+        run_git(&["config", "user.email", "test@gitmun.test"]);
+        run_git(&["config", "user.name", "Gitmun Test"]);
+        run_git(&["config", "commit.gpgsign", "false"]);
+        fs::write(repo.path().join("inspection-record.txt"), "stable").expect("write tracked file");
+        run_git(&["add", "inspection-record.txt"]);
+        run_git(&["commit", "-m", "initial"]);
+
+        let index_path = repo.path().join(".git/index");
+        let index_before = fs::read(&index_path).expect("read index");
+        let tracked_file = fs::OpenOptions::new()
+            .write(true)
+            .open(repo.path().join("inspection-record.txt"))
+            .expect("open tracked file");
+        tracked_file
+            .set_times(
+                fs::FileTimes::new().set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            )
+            .expect("set tracked file timestamp");
+        (repo, index_path, index_before)
+    }
+
     #[test]
     fn hunk_header_standard() {
         assert_eq!(
@@ -6095,6 +6144,36 @@ UD deleted_by_them.rs
         let output = " M regular.rs\n?? untracked.rs\n";
         let result = CliGitHandler::parse_conflicted_files(output);
         assert!(result.is_empty());
+    }
+
+    #[test]
+    fn three_way_patch_cleanliness_check_does_not_rewrite_index() {
+        let (repo, index_path, index_before) = repo_with_stale_index_entry();
+
+        CliGitHandler::ensure_clean_for_three_way_patch(repo.path())
+            .expect("check clean repository");
+
+        assert_eq!(
+            fs::read(&index_path).expect("read index after cleanliness check"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    #[test]
+    fn untracked_file_check_does_not_rewrite_index() {
+        let (repo, index_path, index_before) = repo_with_stale_index_entry();
+        fs::write(repo.path().join("field-notes.txt"), "untracked").expect("write untracked file");
+
+        assert!(CliGitHandler::is_untracked_file(
+            repo.path(),
+            "field-notes.txt"
+        ));
+        assert_eq!(
+            fs::read(&index_path).expect("read index after untracked file check"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
     }
 
     #[test]

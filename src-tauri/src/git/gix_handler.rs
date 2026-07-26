@@ -143,6 +143,20 @@ impl GixGitHandler {
         }
     }
 
+    fn conflict_type(conflict: gix::status::plumbing::index_as_worktree::Conflict) -> &'static str {
+        use gix::status::plumbing::index_as_worktree::Conflict;
+
+        match conflict {
+            Conflict::BothDeleted => "both_deleted",
+            Conflict::AddedByUs => "added_by_us",
+            Conflict::DeletedByThem => "deleted_by_them",
+            Conflict::AddedByThem => "added_by_them",
+            Conflict::DeletedByUs => "deleted_by_us",
+            Conflict::BothAdded => "both_added",
+            Conflict::BothModified => "both_modified",
+        }
+    }
+
     fn current_branch(repo: &gix::Repository) -> Option<String> {
         match repo.head_name() {
             Ok(Some(name)) => Some(Self::bstr_to_string(name.shorten())),
@@ -728,42 +742,6 @@ impl GixGitHandler {
         })
     }
 
-    fn detect_conflicted_files(git_dir: &Path) -> Vec<ConflictFileItem> {
-        let repo_path = git_dir.parent().unwrap_or(git_dir);
-        let output = crate::configured_git_command()
-            .args(["-c", "core.quotepath=false", "status", "--porcelain=v1"])
-            .current_dir(repo_path)
-            .output()
-            .ok()
-            .and_then(|o| String::from_utf8(o.stdout).ok())
-            .unwrap_or_default();
-
-        let mut conflicts = Vec::new();
-        for line in output.lines() {
-            if line.len() < 4 {
-                continue;
-            }
-            let x = line.as_bytes()[0] as char;
-            let y = line.as_bytes()[1] as char;
-            let path = line[3..].to_string();
-            let conflict_type = match (x, y) {
-                ('U', 'U') => "both_modified",
-                ('A', 'A') => "both_added",
-                ('D', 'D') => "both_deleted",
-                ('A', 'U') => "added_by_us",
-                ('U', 'A') => "added_by_them",
-                ('D', 'U') => "deleted_by_us",
-                ('U', 'D') => "deleted_by_them",
-                _ => continue,
-            };
-            conflicts.push(ConflictFileItem {
-                path,
-                conflict_type: conflict_type.to_string(),
-            });
-        }
-        conflicts
-    }
-
     fn parse_numstat(output: &str) -> HashMap<String, (u32, u32)> {
         let mut stats = HashMap::new();
         for line in output.lines().filter(|line| !line.trim().is_empty()) {
@@ -782,9 +760,16 @@ impl GixGitHandler {
     fn collect_numstat(repo_path: &Path, staged: bool) -> HashMap<String, (u32, u32)> {
         let mut command = crate::configured_git_command();
         command.env("GIT_OPTIONAL_LOCKS", "0");
-        command.arg("-c").arg("core.quotepath=false").arg("diff");
         if staged {
-            command.arg("--cached");
+            command
+                .arg("-c")
+                .arg("core.quotepath=false")
+                .args(["diff", "--cached"]);
+        } else {
+            command
+                .arg("-c")
+                .arg("core.quotepath=false")
+                .arg("diff-files");
         }
         command.arg("--numstat").current_dir(repo_path);
 
@@ -824,6 +809,8 @@ impl GixGitHandler {
         let mut changed_by_path: HashMap<String, &'static str> = HashMap::new();
         let mut staged_by_path: HashMap<String, &'static str> = HashMap::new();
         let mut unversioned_paths: HashSet<String> = HashSet::new();
+        let mut dirty_submodule_paths: HashSet<String> = HashSet::new();
+        let mut gix_conflicted_files = Vec::new();
         let repo_path = repo.workdir().unwrap_or(repo.path());
         let tracked_paths: Vec<String> = repo
             .index()
@@ -839,6 +826,10 @@ impl GixGitHandler {
         let mut status_iter = repo
             .status(gix::progress::Discard)
             .map_err(|error| Self::gix_error(None, error))?
+            .index_worktree_submodules(gix::status::Submodule::Given {
+                ignore: gix::submodule::config::Ignore::None,
+                check_dirty: false,
+            })
             .into_iter(Vec::<gix::bstr::BString>::new())
             .map_err(|error| Self::gix_error(None, error))?;
 
@@ -847,6 +838,34 @@ impl GixGitHandler {
 
             match item {
                 gix::status::Item::IndexWorktree(worktree_item) => {
+                    if let gix::status::index_worktree::Item::Modification {
+                        rela_path,
+                        status,
+                        ..
+                    } = &worktree_item
+                    {
+                        use gix::status::plumbing::index_as_worktree::{Change, EntryStatus};
+
+                        match status {
+                            EntryStatus::Conflict { summary, .. } => {
+                                gix_conflicted_files.push(ConflictFileItem {
+                                    path: Self::bstr_to_string(rela_path.as_ref()),
+                                    conflict_type: Self::conflict_type(*summary).to_string(),
+                                });
+                            }
+                            EntryStatus::Change(Change::SubmoduleModification(status))
+                                if status
+                                    .changes
+                                    .as_ref()
+                                    .is_some_and(|changes| !changes.is_empty()) =>
+                            {
+                                dirty_submodule_paths
+                                    .insert(Self::bstr_to_string(rela_path.as_ref()));
+                            }
+                            _ => {}
+                        }
+                    }
+
                     if let gix::status::index_worktree::Item::DirectoryContents { entry, .. } =
                         &worktree_item
                     {
@@ -915,6 +934,7 @@ impl GixGitHandler {
 
         let mut unversioned_files: Vec<String> = unversioned_paths.into_iter().collect();
         unversioned_files.sort();
+        gix_conflicted_files.sort_by(|left, right| left.path.cmp(&right.path));
 
         // Detect merge state via filesystem (same approach as CLI handler)
         let git_dir = repo.git_dir();
@@ -944,7 +964,7 @@ impl GixGitHandler {
 
         let conflicted_files = if merge_in_progress || rebase_in_progress || cherry_pick_in_progress
         {
-            Self::detect_conflicted_files(git_dir)
+            gix_conflicted_files
         } else {
             vec![]
         };
@@ -964,7 +984,10 @@ impl GixGitHandler {
             staged_files,
             unversioned_files,
             unversioned_items: vec![],
-            submodules: CliGitHandler::collect_submodules_for_status(repo_path),
+            submodules: CliGitHandler::collect_submodules_for_status(
+                repo_path,
+                Some(&dirty_submodule_paths),
+            ),
             current_branch: Self::current_branch(repo),
             detached_head: matches!(repo.head_name(), Ok(None)),
             shallow: CliGitHandler::repo_is_shallow(repo_path),
@@ -1548,5 +1571,179 @@ impl GitOperationHandler for GixGitHandler {
 
     fn open_merge_tool(&self, request: &FileRequest) -> GitResult<OperationResult> {
         self.cli_fallback.open_merge_tool(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::GixGitHandler;
+    use crate::git::types::SubmoduleState;
+    use gix::status::plumbing::index_as_worktree::Conflict;
+    use std::fs;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
+    use tempfile::TempDir;
+
+    fn run_git(repo: &Path, args: &[&str]) {
+        let status = Command::new("git")
+            .args(args)
+            .current_dir(repo)
+            .status()
+            .expect("run git");
+        assert!(status.success(), "git {args:?} failed");
+    }
+
+    fn init_repo() -> TempDir {
+        let repo = TempDir::new().expect("create temporary repository");
+        run_git(repo.path(), &["init", "-b", "main"]);
+        run_git(repo.path(), &["config", "user.email", "test@gitmun.test"]);
+        run_git(repo.path(), &["config", "user.name", "Gitmun Test"]);
+        run_git(repo.path(), &["config", "commit.gpgsign", "false"]);
+        run_git(repo.path(), &["config", "core.autocrlf", "false"]);
+        run_git(repo.path(), &["commit", "--allow-empty", "-m", "initial"]);
+        repo
+    }
+
+    fn make_index_entry_stale(repo: &Path, file_path: &str) -> (PathBuf, Vec<u8>) {
+        let output = Command::new("git")
+            .args(["rev-parse", "--git-path", "index"])
+            .current_dir(repo)
+            .output()
+            .expect("resolve index path");
+        assert!(output.status.success(), "resolve index path");
+        let raw_index_path =
+            String::from_utf8(output.stdout).expect("index path should be valid UTF-8");
+        let index_path = {
+            let path = PathBuf::from(raw_index_path.trim());
+            if path.is_absolute() {
+                path
+            } else {
+                repo.join(path)
+            }
+        };
+        let index_before = fs::read(&index_path).expect("read index");
+        let tracked_file = fs::OpenOptions::new()
+            .write(true)
+            .open(repo.join(file_path))
+            .expect("open tracked file");
+        tracked_file
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(std::time::UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            )
+            .expect("set tracked file timestamp");
+        (index_path, index_before)
+    }
+
+    #[test]
+    fn maps_all_conflict_types() {
+        let cases = [
+            (Conflict::BothDeleted, "both_deleted"),
+            (Conflict::AddedByUs, "added_by_us"),
+            (Conflict::DeletedByThem, "deleted_by_them"),
+            (Conflict::AddedByThem, "added_by_them"),
+            (Conflict::DeletedByUs, "deleted_by_us"),
+            (Conflict::BothAdded, "both_added"),
+            (Conflict::BothModified, "both_modified"),
+        ];
+
+        for (conflict, expected) in cases {
+            assert_eq!(GixGitHandler::conflict_type(conflict), expected);
+        }
+    }
+
+    #[test]
+    fn gix_collector_reads_conflicts_without_rewriting_index() {
+        let repo_dir = init_repo();
+        fs::write(repo_dir.path().join("calibration-report.txt"), "baseline\n")
+            .expect("write calibration report");
+        fs::write(repo_dir.path().join("inspection-record.txt"), "stable\n")
+            .expect("write inspection record");
+        run_git(
+            repo_dir.path(),
+            &["add", "calibration-report.txt", "inspection-record.txt"],
+        );
+        run_git(
+            repo_dir.path(),
+            &["commit", "-m", "add calibration records"],
+        );
+        run_git(repo_dir.path(), &["switch", "-c", "recalibrate"]);
+        fs::write(
+            repo_dir.path().join("calibration-report.txt"),
+            "branch reading\n",
+        )
+        .expect("write branch reading");
+        run_git(repo_dir.path(), &["commit", "-am", "record branch reading"]);
+        run_git(repo_dir.path(), &["switch", "main"]);
+        fs::write(
+            repo_dir.path().join("calibration-report.txt"),
+            "main reading\n",
+        )
+        .expect("write main reading");
+        run_git(repo_dir.path(), &["commit", "-am", "record main reading"]);
+
+        let merge_status = Command::new("git")
+            .args(["merge", "recalibrate"])
+            .current_dir(repo_dir.path())
+            .status()
+            .expect("run git merge");
+        assert!(!merge_status.success(), "merge should produce a conflict");
+        let (index_path, index_before) =
+            make_index_entry_stale(repo_dir.path(), "inspection-record.txt");
+
+        let repo = gix::discover(repo_dir.path()).expect("discover repository");
+        let status =
+            GixGitHandler::collect_repo_status_with_gix(&repo).expect("collect gix status");
+
+        assert!(status.merge_in_progress);
+        assert_eq!(status.conflicted_files.len(), 1);
+        assert_eq!(status.conflicted_files[0].path, "calibration-report.txt");
+        assert_eq!(status.conflicted_files[0].conflict_type, "both_modified");
+        assert_eq!(
+            fs::read(&index_path).expect("read index after status"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    #[test]
+    fn gix_collector_reads_dirty_submodule_without_rewriting_index() {
+        let source = init_repo();
+        fs::write(source.path().join("lib.txt"), "v1").expect("write library file");
+        run_git(source.path(), &["add", "lib.txt"]);
+        run_git(source.path(), &["commit", "-m", "add library file"]);
+
+        let parent = init_repo();
+        run_git(
+            parent.path(),
+            &[
+                "-c",
+                "protocol.file.allow=always",
+                "submodule",
+                "add",
+                source.path().to_str().expect("source path"),
+                "deps/lib",
+            ],
+        );
+        run_git(parent.path(), &["commit", "-m", "add submodule"]);
+
+        let submodule_path = parent.path().join("deps/lib");
+        let (index_path, index_before) = make_index_entry_stale(&submodule_path, "lib.txt");
+        fs::write(submodule_path.join("field-notes.txt"), "untracked")
+            .expect("write untracked submodule file");
+
+        let repo = gix::discover(parent.path()).expect("discover repository");
+        let status =
+            GixGitHandler::collect_repo_status_with_gix(&repo).expect("collect gix status");
+
+        assert_eq!(status.submodules.len(), 1);
+        assert_eq!(status.submodules[0].path, "deps/lib");
+        assert_eq!(status.submodules[0].state, SubmoduleState::Dirty);
+        assert!(status.submodules[0].dirty);
+        assert_eq!(
+            fs::read(&index_path).expect("read submodule index after status"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
     }
 }
