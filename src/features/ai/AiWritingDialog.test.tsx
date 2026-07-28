@@ -7,6 +7,7 @@ import {AiWritingDialog} from "./AiWritingDialog";
 const getAiConfiguration = vi.fn();
 const getAiWritingContextPreview = vi.fn();
 const generateAiWriting = vi.fn();
+const setAiRepositoryPolicy = vi.fn();
 
 vi.mock("./commands", () => ({
     cancelAiOperation: vi.fn(async () => {}),
@@ -16,13 +17,16 @@ vi.mock("./commands", () => ({
         exclusions: [],
         includeCommitHistory: null,
         conventionalCommits: false,
+        commitMessageMode: null,
+        defaultCommitType: "",
+        defaultCommitScope: "",
         defaultLanguage: "",
         commitPromptFile: "",
         conflictPromptFile: "",
     })),
     getAiWritingContextPreview: (...args: unknown[]) => getAiWritingContextPreview(...args),
     grantAiConsent: vi.fn(async () => {}),
-    setAiRepositoryPolicy: vi.fn(async () => {}),
+    setAiRepositoryPolicy: (...args: unknown[]) => setAiRepositoryPolicy(...args),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -49,6 +53,8 @@ describe("AiWritingDialog", () => {
             routedProvider: null,
             routedModel: null,
         });
+        setAiRepositoryPolicy.mockReset();
+        setAiRepositoryPolicy.mockResolvedValue(undefined);
     });
 
     afterEach(() => {
@@ -63,6 +69,14 @@ describe("AiWritingDialog", () => {
         expect(conventionalCommits).toHaveAttribute("aria-pressed", "false");
         fireEvent.click(conventionalCommits);
         expect(conventionalCommits).toHaveAttribute("aria-pressed", "true");
+        fireEvent.click(screen.getByRole("button", {name: "Save repository policy"}));
+        await waitFor(() => expect(setAiRepositoryPolicy).toHaveBeenCalledWith(
+            "/work/repository",
+            expect.objectContaining({
+                conventionalCommits: true,
+                commitMessageMode: "ConventionalCommits",
+            }),
+        ));
         expect(screen.getByRole("button", {name: "Generate"})).toBeDisabled();
         fireEvent.click(screen.getByRole("button", {name: "Preview context"}));
 

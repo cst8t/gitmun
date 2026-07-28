@@ -1,6 +1,5 @@
 import {useEffect, useRef, useState} from "react";
 import {useTranslation} from "react-i18next";
-import type {TFunction} from "i18next";
 import {listen} from "@tauri-apps/api/event";
 import {CloseIcon} from "../../components/icons";
 import {
@@ -10,8 +9,11 @@ import {
     getAiConfiguration,
     getAiRepositoryPolicy,
     grantAiConsent,
+    setAiRepositoryPolicy,
 } from "./commands";
-import type {AiCommitMessageMode, AiCommitMessageResult, AiCommitWorkflow, AiContextPreview, AiError} from "./types";
+import {resolveAiCommitDefaults} from "./commitDefaults";
+import {localiseAiError} from "./errors";
+import type {AiCommitMessageMode, AiCommitMessageResult, AiCommitWorkflow, AiContextPreview, AiRepositoryPolicy} from "./types";
 import "./ai.css";
 
 type Props = {
@@ -40,6 +42,8 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [progressStage, setProgressStage] = useState("collectingContext");
     const [error, setError] = useState<string | null>(null);
+    const [repositoryPolicy, setRepositoryPolicy] = useState<AiRepositoryPolicy | null>(null);
+    const [defaultsSaved, setDefaultsSaved] = useState(false);
     const closeButtonRef = useRef<HTMLButtonElement>(null);
     const operationIdRef = useRef("");
 
@@ -54,10 +58,14 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
             if (cancelled) return;
             setConsentRequired(configuration.consentRequired);
             setContextPreview(preview);
-            if (policy.conventionalCommits) setMode("ConventionalCommits");
-            if (policy.defaultLanguage) setLanguage(policy.defaultLanguage);
+            setRepositoryPolicy(policy);
+            const defaults = resolveAiCommitDefaults(policy);
+            setMode(defaults.mode);
+            setCommitType(defaults.commitType);
+            setScope(defaults.scope);
+            setLanguage(defaults.language);
         }).catch(caught => {
-            if (!cancelled) setError(localiseError(caught, t));
+            if (!cancelled) setError(localiseAiError(caught, t));
         });
         return () => {
             cancelled = true;
@@ -116,7 +124,7 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
             setCandidates(result.candidates);
             setSelectedCandidate(0);
         } catch (caught) {
-            setError(localiseError(caught, t));
+            setError(localiseAiError(caught, t));
         } finally {
             setGenerating(false);
         }
@@ -143,7 +151,31 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
             await grantAiConsent();
             setConsentRequired(false);
         } catch (caught) {
-            setError(localiseError(caught, t));
+            setError(localiseAiError(caught, t));
+        }
+    };
+
+    const saveDefaults = async () => {
+        if (!repositoryPolicy) return;
+        setDefaultsSaved(false);
+        setError(null);
+        const nextPolicy: AiRepositoryPolicy = {
+            ...repositoryPolicy,
+            conventionalCommits: mode === "ConventionalCommits",
+            commitMessageMode: mode,
+            defaultCommitType: commitType.trim(),
+            defaultCommitScope: scope.trim(),
+            defaultLanguage: language.trim(),
+        };
+        try {
+            await setAiRepositoryPolicy(repoPath, nextPolicy);
+            setCommitType(nextPolicy.defaultCommitType);
+            setScope(nextPolicy.defaultCommitScope);
+            setLanguage(nextPolicy.defaultLanguage);
+            setRepositoryPolicy(nextPolicy);
+            setDefaultsSaved(true);
+        } catch (caught) {
+            setError(localiseAiError(caught, t));
         }
     };
 
@@ -252,11 +284,14 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
                 </div>
 
                 <footer className="ai-dialog__actions" aria-live="polite">
-                    <span>{generating ? t("commit.progress", {
-                        stage: t(`progress.${progressStage}`),
-                        count: elapsedSeconds,
-                    }) : ""}</span>
+                    <span>{generating
+                        ? t("commit.progress", {
+                            stage: t(`progress.${progressStage}`),
+                            count: elapsedSeconds,
+                        })
+                        : defaultsSaved ? t("commit.defaultsSaved") : ""}</span>
                     {generating && <button type="button" onClick={cancel}>{t("actions.cancel")}</button>}
+                    <button type="button" onClick={saveDefaults} disabled={generating || !repositoryPolicy}>{t("actions.saveCommitDefaults")}</button>
                     <button type="button" onClick={close}>{t("actions.discard")}</button>
                     <button className={candidates.length === 0 ? "ai-dialog__button--primary" : undefined} type="button" onClick={generate} disabled={generating || consentRequired || !contextPreview}>
                         {generating ? t("actions.generating") : candidates.length ? t("actions.regenerate") : t("actions.generate")}
@@ -266,17 +301,4 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
             </section>
         </div>
     );
-}
-
-function localiseError(error: unknown, t: TFunction<"ai">): string {
-    const aiError = typeof error === "object" && error !== null && "code" in error
-        ? error as AiError
-        : null;
-    if (aiError?.code === "contextTooLarge" && aiError.contextSizeKib && aiError.contextLimitKib) {
-        return t("errors.contextTooLargeWithSize", {
-            actual: aiError.contextSizeKib,
-            limit: aiError.contextLimitKib,
-        });
-    }
-    return t(`errors.${aiError?.code ?? "unknown"}`);
 }

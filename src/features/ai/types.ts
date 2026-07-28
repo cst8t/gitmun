@@ -62,6 +62,9 @@ export type AiRepositoryPolicy = {
     exclusions: string[];
     includeCommitHistory: boolean | null;
     conventionalCommits: boolean;
+    commitMessageMode: AiCommitMessageMode | null;
+    defaultCommitType: string;
+    defaultCommitScope: string;
     defaultLanguage: string;
     commitPromptFile: string;
     conflictPromptFile: string;

@@ -1176,41 +1176,47 @@ pub async fn grant_ai_consent(
     configuration_view(&state).await
 }
 
+fn normalise_repository_policy(policy: &mut AiRepositoryPolicy) -> Result<(), AiError> {
+    if policy.exclusions.len() > 100 {
+        return Err(AiError::new("invalidRepositoryPolicy"));
+    }
+    policy.exclusions = std::mem::take(&mut policy.exclusions)
+        .into_iter()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .collect();
+    if policy
+        .exclusions
+        .iter()
+        .any(|value| value.len() > 256 || value.chars().any(char::is_control))
+        || !valid_optional_repository_path(&policy.commit_prompt_file)
+        || !valid_optional_repository_path(&policy.conflict_prompt_file)
+    {
+        return Err(AiError::new("invalidRepositoryPolicy"));
+    }
+    policy.default_commit_type = policy.default_commit_type.trim().to_string();
+    policy.default_commit_scope = policy.default_commit_scope.trim().to_string();
+    policy.default_language = policy.default_language.trim().to_string();
+    if validate_commit_control(&policy.default_commit_type, 32).is_err()
+        || validate_commit_control(&policy.default_commit_scope, 64).is_err()
+        || validate_commit_control(&policy.default_language, 64).is_err()
+    {
+        return Err(AiError::new("invalidRepositoryPolicy"));
+    }
+    policy.commit_prompt_file = policy.commit_prompt_file.trim().to_string();
+    policy.conflict_prompt_file = policy.conflict_prompt_file.trim().to_string();
+    if let Some(mode) = policy.commit_message_mode {
+        policy.conventional_commits = mode == AiCommitMessageMode::ConventionalCommits;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn set_ai_repository_policy(
     mut request: SetAiRepositoryPolicyRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<(), AiError> {
-    if request.policy.exclusions.len() > 100
-        || request.policy.default_language.len() > 64
-        || request
-            .policy
-            .default_language
-            .chars()
-            .any(char::is_control)
-    {
-        return Err(AiError::new("invalidRepositoryPolicy"));
-    }
-    request.policy.exclusions = request
-        .policy
-        .exclusions
-        .into_iter()
-        .map(|value| value.trim().to_string())
-        .filter(|value| !value.is_empty())
-        .collect();
-    if request
-        .policy
-        .exclusions
-        .iter()
-        .any(|value| value.len() > 256 || value.chars().any(char::is_control))
-        || !valid_optional_repository_path(&request.policy.commit_prompt_file)
-        || !valid_optional_repository_path(&request.policy.conflict_prompt_file)
-    {
-        return Err(AiError::new("invalidRepositoryPolicy"));
-    }
-    request.policy.default_language = request.policy.default_language.trim().to_string();
-    request.policy.commit_prompt_file = request.policy.commit_prompt_file.trim().to_string();
-    request.policy.conflict_prompt_file = request.policy.conflict_prompt_file.trim().to_string();
+    normalise_repository_policy(&mut request.policy)?;
     let repository = tauri::async_runtime::spawn_blocking(move || {
         Path::new(&request.repo_path)
             .canonicalize()
@@ -3620,6 +3626,49 @@ mod tests {
         assert!(!openrouter_oauth_endpoint_allowed(
             &Url::parse("https://example.com/api/v1").unwrap()
         ));
+    }
+
+    #[test]
+    fn repository_commit_defaults_are_trimmed_and_mirrored() {
+        let mut policy = AiRepositoryPolicy {
+            commit_message_mode: Some(AiCommitMessageMode::ConventionalCommits),
+            default_commit_type: " docs ".to_string(),
+            default_commit_scope: " ai ".to_string(),
+            default_language: " British English ".to_string(),
+            ..AiRepositoryPolicy::default()
+        };
+
+        normalise_repository_policy(&mut policy).unwrap();
+
+        assert!(policy.conventional_commits);
+        assert_eq!(policy.default_commit_type, "docs");
+        assert_eq!(policy.default_commit_scope, "ai");
+        assert_eq!(policy.default_language, "British English");
+    }
+
+    #[test]
+    fn repository_commit_defaults_reject_invalid_controls() {
+        let mut long_type = AiRepositoryPolicy {
+            default_commit_type: "x".repeat(33),
+            ..AiRepositoryPolicy::default()
+        };
+        assert_eq!(
+            normalise_repository_policy(&mut long_type)
+                .unwrap_err()
+                .code,
+            "invalidRepositoryPolicy"
+        );
+
+        let mut control_scope = AiRepositoryPolicy {
+            default_commit_scope: "ai\nsettings".to_string(),
+            ..AiRepositoryPolicy::default()
+        };
+        assert_eq!(
+            normalise_repository_policy(&mut control_scope)
+                .unwrap_err()
+                .code,
+            "invalidRepositoryPolicy"
+        );
     }
 
     fn run_git(repo: &Path, arguments: &[&str]) {

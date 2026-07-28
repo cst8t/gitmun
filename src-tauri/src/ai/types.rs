@@ -349,9 +349,23 @@ pub struct AiRepositoryPolicy {
     pub exclusions: Vec<String>,
     pub include_commit_history: Option<bool>,
     pub conventional_commits: bool,
+    pub commit_message_mode: Option<AiCommitMessageMode>,
+    pub default_commit_type: String,
+    pub default_commit_scope: String,
     pub default_language: String,
     pub commit_prompt_file: String,
     pub conflict_prompt_file: String,
+}
+
+impl AiRepositoryPolicy {
+    pub fn effective_commit_message_mode(&self) -> AiCommitMessageMode {
+        self.commit_message_mode
+            .unwrap_or(if self.conventional_commits {
+                AiCommitMessageMode::ConventionalCommits
+            } else {
+                AiCommitMessageMode::RepositoryStyle
+            })
+    }
 }
 
 impl Default for AiExtensionSettings {
@@ -463,5 +477,54 @@ mod tests {
         assert_eq!(settings.privacy, OpenRouterPrivacy::NoDataCollection);
         assert!(settings.allow_fallbacks);
         assert!(settings.require_parameters);
+    }
+
+    #[test]
+    fn legacy_repository_policy_uses_conventional_commit_mode() {
+        let policy: AiRepositoryPolicy = serde_json::from_value(serde_json::json!({
+            "conventionalCommits": true,
+            "defaultLanguage": "English"
+        }))
+        .unwrap();
+
+        assert_eq!(policy.commit_message_mode, None);
+        assert_eq!(
+            policy.effective_commit_message_mode(),
+            AiCommitMessageMode::ConventionalCommits
+        );
+        assert_eq!(policy.default_language, "English");
+    }
+
+    #[test]
+    fn repository_commit_defaults_round_trip() {
+        let policy = AiRepositoryPolicy {
+            commit_message_mode: Some(AiCommitMessageMode::FreeForm),
+            default_commit_type: "docs".to_string(),
+            default_commit_scope: "ai".to_string(),
+            default_language: "British English".to_string(),
+            ..AiRepositoryPolicy::default()
+        };
+
+        let restored: AiRepositoryPolicy =
+            serde_json::from_value(serde_json::to_value(&policy).unwrap()).unwrap();
+
+        assert_eq!(restored, policy);
+        assert_eq!(
+            restored.effective_commit_message_mode(),
+            AiCommitMessageMode::FreeForm
+        );
+    }
+
+    #[test]
+    fn custom_conflict_prompt_is_preserved() {
+        let custom: AiExtensionSettings = serde_json::from_value(serde_json::json!({
+            "conflictResolutionPrompt": "Resolve conflicts using the repository conventions."
+        }))
+        .unwrap();
+
+        assert_eq!(
+            custom.conflict_resolution_prompt,
+            "Resolve conflicts using the repository conventions."
+        );
     }
 }

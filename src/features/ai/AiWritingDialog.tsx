@@ -25,6 +25,9 @@ const DEFAULT_REPOSITORY_POLICY: AiRepositoryPolicy = {
     exclusions: [],
     includeCommitHistory: null,
     conventionalCommits: false,
+    commitMessageMode: null,
+    defaultCommitType: "",
+    defaultCommitScope: "",
     defaultLanguage: "",
     commitPromptFile: "",
     conflictPromptFile: "",
@@ -229,7 +232,14 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
                                 <input value={policy.defaultLanguage} onChange={event => setPolicy(current => ({...current, defaultLanguage: event.target.value}))}/>
                             </label>
                             <div className="ai-commit-controls__wide">
-                                <button className="ai-dialog__toggle" type="button" aria-pressed={policy.conventionalCommits} onClick={() => setPolicy(current => ({...current, conventionalCommits: !current.conventionalCommits}))}>{t("writing.conventionalCommits")}</button>
+                                <button className="ai-dialog__toggle" type="button" aria-pressed={policy.conventionalCommits} onClick={() => setPolicy(current => {
+                                    const conventionalCommits = !current.conventionalCommits;
+                                    return {
+                                        ...current,
+                                        conventionalCommits,
+                                        commitMessageMode: conventionalCommits ? "ConventionalCommits" : "RepositoryStyle",
+                                    };
+                                })}>{t("writing.conventionalCommits")}</button>
                             </div>
                             <label className="ai-commit-controls__wide">{t("writing.repositoryExclusions")}
                                 <textarea rows={3} value={policy.exclusions.join("\n")} onChange={event => setPolicy(current => ({

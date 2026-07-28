@@ -11,19 +11,32 @@
     "discard": "Discard",
     "generate": "Generate",
     "generating": "Generating...",
+    "nextFile": "Next file",
+    "openComposer": "Open composer...",
     "previewContext": "Preview context",
     "regenerate": "Regenerate proposal",
     "regenerateRegion": "Regenerate region",
     "savePolicy": "Save repository policy",
-    "undo": "Undo applied changes"
+    "saveCommitDefaults": "Save as repository defaults",
+    "undo": "Undo applied changes",
+    "undoing": "Undoing..."
   },
   "commit": {
     "additionalInstruction": "Additional instruction",
     "candidate": "Candidate {{count}}",
     "candidateCount": "Candidates",
     "candidates": "Generated candidates",
+    "configure": "Configure AI",
+    "configureTitle": "Open Settings to configure the AI extension",
+    "defaultsSaved": "Repository commit defaults saved",
+    "editorChanged": "The commit message changed while Gitmun was generating. Generate again.",
+    "generateTitle": "Generate a commit message with the configured AI provider",
+    "options": "AI commit message options",
     "progress_one": "{{stage}} · {{count}} second",
     "progress_other": "{{stage}} · {{count}} seconds",
+    "replace": "Replace",
+    "replaceMessage": "Replace the current commit message with an AI-generated message?",
+    "replaceTitle": "Replace commit message",
     "issueKey": "Issue key",
     "language": "Language",
     "mode": "Style",
@@ -35,7 +48,8 @@
     "scope": "Scope",
     "subtitle": "Nothing is placed in the commit editor until you accept a candidate.",
     "title": "Generate commit message",
-    "type": "Type"
+    "type": "Type",
+    "undo": "Undo AI message"
   },
   "context": {
     "consent": "Allow Gitmun to send this previewed context to {{authority}}. Credentials and authentication headers are never included in the preview.",
@@ -125,13 +139,15 @@
     "stagedChangesChanged": "The staged changes changed while the message was generated. Generate again.",
     "timeout": "The AI request timed out.",
     "unknown": "The AI request failed.",
+    "unknownConflictRegion": "The provider returned a conflict region that was not requested.",
+    "unresolvedConflictMarkers": "The provider returned a resolution that still contains conflict markers.",
     "unsafeRedirect": "The provider attempted an unsafe redirect.",
     "unsupportedFile": "The file type cannot be handled safely."
   },
   "progress": {
     "collectingContext": "Collecting bounded context",
     "complete": "Complete",
-    "contactingProvider": "Waiting for provider"
+    "contactingProvider": "Waiting for AI provider"
   },
   "writing": {
     "additionalInstruction": "Additional instruction",
