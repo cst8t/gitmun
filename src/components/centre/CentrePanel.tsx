@@ -119,6 +119,8 @@ type CentrePanelProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onConflictResolveWithAi: (path: string) => void;
+  onConflictResolveAllWithAi: (paths: string[]) => void;
+  onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
@@ -130,6 +132,8 @@ type CentrePanelProps = {
   aiEnabled: boolean;
   aiConfigured: boolean;
   aiResolvingPath: string | null;
+  aiConflictOperationId: string | null;
+  aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
 };
 
 function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
@@ -258,6 +262,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onMergeAbort={props.onMergeAbort}
           onCommitMerge={handleCommitMerge}
           isCommitting={props.isCommitting}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && props.rebaseInProgress && (
@@ -268,6 +273,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onRebaseContinue={props.onRebaseContinue}
           onRebaseAbort={props.onRebaseAbort}
           isRunning={props.isRebaseActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && !props.rebaseInProgress && props.cherryPickInProgress && (
@@ -278,6 +284,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onCherryPickContinue={props.onCherryPickContinue}
           onCherryPickAbort={props.onCherryPickAbort}
           isRunning={props.isCherryPickActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && !props.rebaseInProgress && !props.cherryPickInProgress && props.revertInProgress && (
@@ -287,6 +294,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onRevertContinue={props.onRevertContinue}
           onRevertAbort={props.onRevertAbort}
           isRunning={props.isRevertActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       <div className="centre__tabs">
@@ -388,6 +396,8 @@ export function CentrePanel(props: CentrePanelProps) {
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
           onConflictResolveWithAi={props.onConflictResolveWithAi}
+          onConflictResolveAllWithAi={props.onConflictResolveAllWithAi}
+          onCancelAiConflict={props.onCancelAiConflict}
           onOpenMergeTool={props.onOpenMergeTool}
           stagingOperation={props.stagingOperation}
           inlineOperation={inlineOperationContent}
@@ -397,6 +407,8 @@ export function CentrePanel(props: CentrePanelProps) {
           aiEnabled={props.aiEnabled}
           aiConfigured={props.aiConfigured}
           aiResolvingPath={props.aiResolvingPath}
+          aiConflictOperationId={props.aiConflictOperationId}
+          aiConflictBatchProgress={props.aiConflictBatchProgress}
         />
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>

@@ -10,6 +10,7 @@ type MergeBannerProps = {
   onMergeAbort: () => void;
   onCommitMerge: () => void;
   isCommitting: boolean;
+  interactionLocked: boolean;
 };
 
 export function MergeBanner({
@@ -20,6 +21,7 @@ export function MergeBanner({
   onMergeAbort,
   onCommitMerge,
   isCommitting,
+  interactionLocked,
 }: MergeBannerProps) {
   const { t } = useTranslation("centre");
   const resolved = conflictedFiles.length === 0;
@@ -45,12 +47,12 @@ export function MergeBanner({
         )}
       </div>
       <div className="merge-banner__actions">
-        <button className="merge-banner__btn merge-banner__btn--abort" onClick={onMergeAbort}>
+        <button className="merge-banner__btn merge-banner__btn--abort" onClick={onMergeAbort} disabled={interactionLocked}>
           {t("banners.merge.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
-          disabled={!resolved || stagedCount === 0 || isCommitting}
+          disabled={!resolved || stagedCount === 0 || isCommitting || interactionLocked}
           onClick={onCommitMerge}
         >
           {isCommitting ? t("commitBox.committing") : t("banners.merge.commit")}

@@ -134,6 +134,8 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
     onConflictResolveWithAi: vi.fn(),
+    onConflictResolveAllWithAi: vi.fn(),
+    onCancelAiConflict: vi.fn(),
     onOpenMergeTool: vi.fn(),
     stagingOperation: null,
     operationLock: null,
@@ -145,6 +147,8 @@ function renderCentrePanel(overrides: Partial<React.ComponentProps<typeof Centre
     aiEnabled: false,
     aiConfigured: false,
     aiResolvingPath: null,
+    aiConflictOperationId: null,
+    aiConflictBatchProgress: null,
     ...overrides,
   };
 
@@ -317,5 +321,19 @@ describe("CentrePanel operation feedback", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Creating commit");
     expect(screen.getByRole("status")).toHaveTextContent("This operation is still running.");
+  });
+});
+
+describe("CentrePanel AI conflict lock", () => {
+  it("disables merge workflow actions while AI conflict resolution is active", () => {
+    renderCentrePanel({
+      activeTab: "changes",
+      mergeInProgress: true,
+      conflictedFiles: [{path: "src/payment.ts", conflictType: "both_modified"}],
+      aiResolvingPath: "src/payment.ts",
+    });
+
+    expect(screen.getByRole("button", {name: "Abort Merge"})).toBeDisabled();
+    expect(screen.getByRole("button", {name: "Commit Merge"})).toBeDisabled();
   });
 });

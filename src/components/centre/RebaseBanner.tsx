@@ -9,6 +9,7 @@ type RebaseBannerProps = {
   onRebaseContinue: () => void;
   onRebaseAbort: () => void;
   isRunning: boolean;
+  interactionLocked: boolean;
 };
 
 export function RebaseBanner({
@@ -18,6 +19,7 @@ export function RebaseBanner({
   onRebaseContinue,
   onRebaseAbort,
   isRunning,
+  interactionLocked,
 }: RebaseBannerProps) {
   const { t } = useTranslation("centre");
   const targetLabel = rebaseOnto ? `'${rebaseOnto}'` : t("banners.unknownBranch");
@@ -42,14 +44,14 @@ export function RebaseBanner({
         <button
           className="merge-banner__btn merge-banner__btn--abort"
           onClick={onRebaseAbort}
-          disabled={isRunning}
+          disabled={isRunning || interactionLocked}
         >
           {t("banners.rebase.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
           onClick={onRebaseContinue}
-          disabled={hasConflicts || isRunning}
+          disabled={hasConflicts || isRunning || interactionLocked}
         >
           {isRunning ? t("actions.working", {ns: "common"}) : t("banners.rebase.continue")}
         </button>

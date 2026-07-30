@@ -8,6 +8,7 @@ type RevertBannerProps = {
   onRevertContinue: () => void;
   onRevertAbort: () => void;
   isRunning: boolean;
+  interactionLocked: boolean;
 };
 
 export function RevertBanner({
@@ -16,6 +17,7 @@ export function RevertBanner({
   onRevertContinue,
   onRevertAbort,
   isRunning,
+  interactionLocked,
 }: RevertBannerProps) {
   const { t } = useTranslation("centre");
   const hasConflicts = conflictedFiles.length > 0;
@@ -39,14 +41,14 @@ export function RevertBanner({
         <button
           className="merge-banner__btn merge-banner__btn--abort"
           onClick={onRevertAbort}
-          disabled={isRunning}
+          disabled={isRunning || interactionLocked}
         >
           {t("banners.revert.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
           onClick={onRevertContinue}
-          disabled={hasConflicts || isRunning}
+          disabled={hasConflicts || isRunning || interactionLocked}
         >
           {isRunning ? t("actions.working", {ns: "common"}) : t("banners.revert.continue")}
         </button>

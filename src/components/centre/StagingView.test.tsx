@@ -4,7 +4,19 @@ import { describe, expect, it, vi } from "vitest";
 import React from "react";
 import type { FileStatusItem } from "../../types";
 import "../../i18n";
+import { getAiConflictEligibility } from "../../api/commands";
 import { StagingView } from "./StagingView";
+
+const aiProgressListeners = vi.hoisted(() => new Set<(
+  event: {payload: {operationId: string; stage: string}},
+) => void>());
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_event: string, listener: (event: {payload: {operationId: string; stage: string}}) => void) => {
+    aiProgressListeners.add(listener);
+    return () => aiProgressListeners.delete(listener);
+  }),
+}));
 
 vi.mock("../../api/commands", () => ({
   getAiConflictEligibility: vi.fn(async () => ({eligible: true, reason: null})),
@@ -110,6 +122,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
     onConflictResolveWithAi: vi.fn(),
+    onConflictResolveAllWithAi: vi.fn(),
+    onCancelAiConflict: vi.fn(),
     onOpenMergeTool: vi.fn(),
     stagingOperation: null,
     inlineOperation: null,
@@ -119,6 +133,8 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     aiEnabled: false,
     aiConfigured: false,
     aiResolvingPath: null,
+    aiConflictOperationId: null,
+    aiConflictBatchProgress: null,
     ...overrides,
   };
 }
@@ -148,7 +164,7 @@ describe("StagingView file tree", () => {
 
     renderStagingView({conflictedFiles: [conflict], mergeInProgress: true});
 
-    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("AI Resolve")).not.toBeInTheDocument();
     expect(screen.queryByText("Configure AI")).not.toBeInTheDocument();
   });
 
@@ -159,7 +175,105 @@ describe("StagingView file tree", () => {
     unconfigured.unmount();
 
     renderStagingView({conflictedFiles: [conflict], mergeInProgress: true, aiEnabled: true, aiConfigured: true});
-    await waitFor(() => expect(screen.getByText("AI")).toBeEnabled());
+    await waitFor(() => expect(screen.getByText("AI Resolve")).toBeEnabled());
+  });
+
+  it("keeps an ineligible first conflict in the bulk review request", async () => {
+    const onConflictResolveAllWithAi = vi.fn();
+    const conflicts = [
+      {path: "src/report.ts", conflictType: "both_modified"},
+      {path: "src/summary.ts", conflictType: "both_modified"},
+    ];
+    vi.mocked(getAiConflictEligibility)
+      .mockResolvedValueOnce({eligible: false, reason: "unsupportedFile"})
+      .mockResolvedValueOnce({eligible: true, reason: null});
+    renderStagingView({
+      conflictedFiles: conflicts,
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      onConflictResolveAllWithAi,
+    });
+
+    const generateAll = await screen.findByRole("button", {name: "AI Resolve All"});
+    await waitFor(() => expect(generateAll).toBeEnabled());
+    fireEvent.click(generateAll);
+
+    expect(onConflictResolveAllWithAi).toHaveBeenCalledWith([
+      "src/report.ts",
+      "src/summary.ts",
+    ]);
+  });
+
+  it("identifies progress and cancellation for a multi-file AI batch", async () => {
+    const onCancelAiConflict = vi.fn();
+    const onOpenMergeTool = vi.fn();
+    const conflicts = [
+      {path: "src/report.ts", conflictType: "both_modified"},
+      {path: "src/summary.ts", conflictType: "both_modified"},
+    ];
+    renderStagingView({
+      conflictedFiles: conflicts,
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: conflicts[1].path,
+      aiConflictOperationId: "conflict-batch-2",
+      aiConflictBatchProgress: {current: 2, total: 2, preparing: false},
+      onCancelAiConflict,
+      onOpenMergeTool,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Generating AI conflict proposals (2 of 2)");
+    const cancelButton = screen.getByRole("button", {name: "Cancel AI Resolve All"});
+    expect(cancelButton).toBeEnabled();
+
+    const activeRow = screen.getByText(conflicts[1].path).closest<HTMLElement>(".staging__conflict-row")!;
+    expect(within(activeRow).getByRole("button", {name: "Resolving..."})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Open"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Ours"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Theirs"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Resolve"})).toBeDisabled();
+    fireEvent.doubleClick(activeRow);
+    expect(onOpenMergeTool).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", {name: "AI Resolve All"})).toBeDisabled();
+    fireEvent.click(cancelButton);
+    expect(onCancelAiConflict).toHaveBeenCalledOnce();
+  });
+
+  it("shows clear progress while waiting for an AI conflict proposal", async () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+    const onCancelAiConflict = vi.fn();
+    renderStagingView({
+      conflictedFiles: [conflict],
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: conflict.path,
+      aiConflictOperationId: "conflict-operation",
+      onCancelAiConflict,
+    });
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Generating AI conflict proposal");
+    expect(status).toHaveTextContent("Collecting bounded context · 0 seconds");
+    expect(screen.getByText(conflict.path).closest(".staging__conflict-row")).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(aiProgressListeners.size).toBeGreaterThan(0));
+
+    act(() => {
+      for (const listener of aiProgressListeners) {
+        listener({payload: {operationId: "conflict-operation", stage: "contactingProvider"}});
+      }
+    });
+
+    await waitFor(() => expect(status).toHaveTextContent("Waiting for AI provider · 0 seconds"));
+    const cancelButton = screen.getByRole("button", {name: "Cancel AI Resolve"});
+    expect(cancelButton).toBeEnabled();
+    fireEvent.click(cancelButton);
+    expect(onCancelAiConflict).toHaveBeenCalledOnce();
   });
   it("renders common folders as expanded collapsible rows", () => {
     renderStagingView({

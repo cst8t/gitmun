@@ -423,6 +423,7 @@ pub struct ResolveConflictWithAiRequest {
 pub struct AiConflictResolutionResult {
     pub file_path: String,
     pub resolved_regions: usize,
+    pub marked_resolved: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -508,7 +509,7 @@ struct PreparedConflict {
     repository: PathBuf,
     original_bytes: Vec<u8>,
     operation: &'static str,
-    index_hash: md5::Digest,
+    unmerged_index: Vec<u8>,
     regions: Vec<ConflictRegion>,
 }
 
@@ -3070,7 +3071,7 @@ fn read_bounded_file(path: &Path, maximum_bytes: usize) -> Result<Vec<u8>, AiErr
     Ok(bytes)
 }
 
-fn unmerged_index_hash(repo_path: &str, file_path: &str) -> Result<md5::Digest, AiError> {
+fn unmerged_index_entries(repo_path: &str, file_path: &str) -> Result<Vec<u8>, AiError> {
     let output = git_output(
         repo_path,
         &["ls-files", "-u", "-z", "--", file_path],
@@ -3079,7 +3080,88 @@ fn unmerged_index_hash(repo_path: &str, file_path: &str) -> Result<md5::Digest, 
     if output.is_empty() {
         return Err(AiError::new("noUnmergedIndex"));
     }
-    Ok(md5::compute(output))
+    Ok(output)
+}
+
+fn file_index_entries(repo_path: &str, file_path: &str) -> Result<Vec<u8>, AiError> {
+    git_output(
+        repo_path,
+        &["ls-files", "--stage", "-z", "--", file_path],
+        MAX_GIT_METADATA_OUTPUT_BYTES,
+    )
+}
+
+fn stage_conflict_file(repo_path: &str, file_path: &str) -> Result<Vec<u8>, AiError> {
+    let status = crate::git_command()
+        .arg("-C")
+        .arg(repo_path)
+        .args(["add", "--", file_path])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map_err(|_| AiError::new("gitUnavailable"))?;
+    if !status.success() {
+        return Err(AiError::new("conflictStageFailed"));
+    }
+    let entries = file_index_entries(repo_path, file_path)?;
+    if entries.is_empty() {
+        return Err(AiError::new("conflictStageFailed"));
+    }
+    Ok(entries)
+}
+
+fn restore_unmerged_index(
+    repo_path: &str,
+    file_path: &str,
+    unmerged_index: &[u8],
+) -> Result<(), AiError> {
+    let first_entry = unmerged_index
+        .split(|byte| *byte == 0)
+        .next()
+        .ok_or_else(|| AiError::new("conflictUndoFailed"))?;
+    let mut fields = first_entry.split(|byte| *byte == b' ');
+    fields
+        .next()
+        .ok_or_else(|| AiError::new("conflictUndoFailed"))?;
+    let object_id = fields
+        .next()
+        .ok_or_else(|| AiError::new("conflictUndoFailed"))?;
+    if object_id.is_empty() || !object_id.iter().all(u8::is_ascii_hexdigit) {
+        return Err(AiError::new("conflictUndoFailed"));
+    }
+
+    let mut input =
+        Vec::with_capacity(unmerged_index.len() + file_path.len() + object_id.len() + 4);
+    input.extend_from_slice(b"0 ");
+    input.extend(std::iter::repeat_n(b'0', object_id.len()));
+    input.push(b'\t');
+    input.extend_from_slice(file_path.as_bytes());
+    input.push(0);
+    input.extend_from_slice(unmerged_index);
+
+    let mut child = crate::git_command()
+        .arg("-C")
+        .arg(repo_path)
+        .args(["update-index", "-z", "--index-info"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|_| AiError::new("gitUnavailable"))?;
+    child
+        .stdin
+        .take()
+        .ok_or_else(|| AiError::new("conflictUndoFailed"))?
+        .write_all(&input)
+        .map_err(|_| AiError::new("conflictUndoFailed"))?;
+    let status = child
+        .wait()
+        .map_err(|_| AiError::new("conflictUndoFailed"))?;
+    if !status.success() {
+        return Err(AiError::new("conflictUndoFailed"));
+    }
+    Ok(())
 }
 
 fn prepare_conflict(
@@ -3090,7 +3172,7 @@ fn prepare_conflict(
     let repository = Path::new(repo_path)
         .canonicalize()
         .map_err(|_| AiError::new("invalidRepository"))?;
-    let index_hash = unmerged_index_hash(repo_path, file_path)?;
+    let unmerged_index = unmerged_index_entries(repo_path, file_path)?;
     let operation = repository_operation(repo_path)?.unwrap_or("unmerged index");
     let path = safe_repository_file(repo_path, file_path)?;
     let original_bytes = read_bounded_file(&path, maximum_bytes)?;
@@ -3104,7 +3186,7 @@ fn prepare_conflict(
         repository,
         original_bytes,
         operation,
-        index_hash,
+        unmerged_index,
         regions,
     })
 }
@@ -3274,7 +3356,7 @@ async fn resolve_conflict_with_ai_inner(
             prepared.repository,
             request.file_path.clone(),
             prepared.original_bytes,
-            prepared.index_hash,
+            prepared.unmerged_index,
             session_replacements,
         ),
     )?;
@@ -3437,6 +3519,77 @@ pub async fn get_ai_conflict_context_preview(
     })
 }
 
+fn apply_conflict_session(
+    mut session: crate::ai::ConflictSession,
+) -> Result<(crate::ai::ConflictSession, bool), AiError> {
+    let repository = session.repository.to_string_lossy().to_string();
+    let path = safe_repository_file(&repository, &session.file_path)?;
+    let current = read_bounded_file(&path, MAX_COMMIT_TOTAL_CONTEXT_BYTES)?;
+    if md5::compute(&current) != session.current_hash {
+        return Err(AiError::new("fileChanged"));
+    }
+    if unmerged_index_entries(&repository, &session.file_path)? != session.unmerged_index {
+        return Err(AiError::new("indexChanged"));
+    }
+
+    let original =
+        String::from_utf8(session.original.clone()).map_err(|_| AiError::new("unsupportedFile"))?;
+    let mut resolved = original.clone();
+    for replacement in session.replacements.iter().rev() {
+        if session.applied_ids.contains(&replacement.id) {
+            let replacement_text =
+                normalise_replacement_line_endings(&replacement.replacement, &original);
+            resolved.replace_range(replacement.start..replacement.end, &replacement_text);
+        }
+    }
+    write_atomically(&path, resolved.as_bytes())?;
+
+    let marked_resolved = session.applied_ids.len() == session.replacements.len();
+    if marked_resolved {
+        match stage_conflict_file(&repository, &session.file_path) {
+            Ok(resolved_index) => session.resolved_index = Some(resolved_index),
+            Err(_) => {
+                drop(restore_unmerged_index(
+                    &repository,
+                    &session.file_path,
+                    &session.unmerged_index,
+                ));
+                drop(write_atomically(&path, &current));
+                return Err(AiError::new("conflictStageFailed"));
+            }
+        }
+    }
+    session.current_hash = md5::compute(resolved.as_bytes());
+    Ok((session, marked_resolved))
+}
+
+fn undo_conflict_session(session: &crate::ai::ConflictSession) -> Result<(), AiError> {
+    let repository = session.repository.to_string_lossy().to_string();
+    let path = safe_repository_file(&repository, &session.file_path)?;
+    let current = read_bounded_file(&path, MAX_COMMIT_TOTAL_CONTEXT_BYTES)?;
+    if md5::compute(&current) != session.current_hash {
+        return Err(AiError::new("fileChanged"));
+    }
+
+    if let Some(resolved_index) = &session.resolved_index {
+        if file_index_entries(&repository, &session.file_path)? != *resolved_index {
+            return Err(AiError::new("indexChanged"));
+        }
+        write_atomically(&path, &session.original)?;
+        if restore_unmerged_index(&repository, &session.file_path, &session.unmerged_index).is_err()
+        {
+            drop(write_atomically(&path, &current));
+            return Err(AiError::new("conflictUndoFailed"));
+        }
+    } else {
+        if unmerged_index_entries(&repository, &session.file_path)? != session.unmerged_index {
+            return Err(AiError::new("indexChanged"));
+        }
+        write_atomically(&path, &session.original)?;
+    }
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn apply_ai_conflict_proposal(
     request: ApplyAiConflictProposalRequest,
@@ -3459,32 +3612,9 @@ pub async fn apply_ai_conflict_proposal(
     }
     session.applied_ids.extend(request.region_ids);
     let proposal_id = request.proposal_id.clone();
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        let repository = session.repository.to_string_lossy().to_string();
-        let path = safe_repository_file(&repository, &session.file_path)?;
-        let current = read_bounded_file(&path, MAX_COMMIT_TOTAL_CONTEXT_BYTES)?;
-        if md5::compute(&current) != session.current_hash {
-            return Err(AiError::new("fileChanged"));
-        }
-        if unmerged_index_hash(&repository, &session.file_path)? != session.index_hash {
-            return Err(AiError::new("indexChanged"));
-        }
-        let original = String::from_utf8(session.original.clone())
-            .map_err(|_| AiError::new("unsupportedFile"))?;
-        let mut resolved = original.clone();
-        for replacement in session.replacements.iter().rev() {
-            if session.applied_ids.contains(&replacement.id) {
-                let replacement_text =
-                    normalise_replacement_line_endings(&replacement.replacement, &original);
-                resolved.replace_range(replacement.start..replacement.end, &replacement_text);
-            }
-        }
-        write_atomically(&path, resolved.as_bytes())?;
-        session.current_hash = md5::compute(resolved.as_bytes());
-        Ok((session, path))
-    })
-    .await
-    .map_err(|_| AiError::new("fileWriteFailed"))??;
+    let result = tauri::async_runtime::spawn_blocking(move || apply_conflict_session(session))
+        .await
+        .map_err(|_| AiError::new("fileWriteFailed"))??;
     let resolved_regions = result.0.applied_ids.len();
     let file_path = result.0.file_path.clone();
     state
@@ -3494,6 +3624,7 @@ pub async fn apply_ai_conflict_proposal(
     Ok(AiConflictResolutionResult {
         file_path,
         resolved_regions,
+        marked_resolved: result.1,
     })
 }
 
@@ -3504,21 +3635,14 @@ pub async fn undo_ai_conflict_proposal(
 ) -> Result<AiConflictResolutionResult, AiError> {
     let session = state.ai_extension.conflict_sessions.get(&proposal_id)?;
     let file_path = session.file_path.clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let repository = session.repository.to_string_lossy().to_string();
-        let path = safe_repository_file(&repository, &session.file_path)?;
-        let current = read_bounded_file(&path, MAX_COMMIT_TOTAL_CONTEXT_BYTES)?;
-        if md5::compute(&current) != session.current_hash {
-            return Err(AiError::new("fileChanged"));
-        }
-        write_atomically(&path, &session.original)
-    })
-    .await
-    .map_err(|_| AiError::new("fileWriteFailed"))??;
+    tauri::async_runtime::spawn_blocking(move || undo_conflict_session(&session))
+        .await
+        .map_err(|_| AiError::new("fileWriteFailed"))??;
     state.ai_extension.conflict_sessions.remove(&proposal_id)?;
     Ok(AiConflictResolutionResult {
         file_path,
         resolved_regions: 0,
+        marked_resolved: false,
     })
 }
 
@@ -3755,6 +3879,113 @@ mod tests {
         assert_eq!(regions.len(), 2);
         assert!(regions[0].prompt.contains("before"));
         assert!(regions[1].prompt.contains("after"));
+    }
+
+    #[test]
+    fn stages_a_complete_proposal_and_undo_restores_the_unmerged_index() {
+        let repository = tempfile::tempdir().unwrap();
+        run_git(repository.path(), &["init", "-b", "main"]);
+        run_git(
+            repository.path(),
+            &["config", "user.email", "test@example.com"],
+        );
+        run_git(repository.path(), &["config", "user.name", "Test"]);
+        run_git(repository.path(), &["config", "commit.gpgsign", "false"]);
+
+        let middle = (0..20)
+            .map(|index| format!("unchanged {index}\n"))
+            .collect::<String>();
+        std::fs::write(
+            repository.path().join("conflicted.txt"),
+            format!("first base\n{middle}second base\n"),
+        )
+        .unwrap();
+        run_git(repository.path(), &["add", "conflicted.txt"]);
+        run_git(repository.path(), &["commit", "-m", "base"]);
+        run_git(repository.path(), &["checkout", "-b", "incoming"]);
+        std::fs::write(
+            repository.path().join("conflicted.txt"),
+            format!("first incoming\n{middle}second incoming\n"),
+        )
+        .unwrap();
+        run_git(repository.path(), &["commit", "-am", "incoming"]);
+        run_git(repository.path(), &["checkout", "main"]);
+        std::fs::write(
+            repository.path().join("conflicted.txt"),
+            format!("first current\n{middle}second current\n"),
+        )
+        .unwrap();
+        run_git(repository.path(), &["commit", "-am", "current"]);
+        let merge_status = std::process::Command::new("git")
+            .arg("-C")
+            .arg(repository.path())
+            .args(["merge", "incoming"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap();
+        assert!(!merge_status.success());
+
+        let repository_path = repository.path().to_string_lossy().to_string();
+        let prepared = prepare_conflict(
+            &repository_path,
+            "conflicted.txt",
+            MAX_COMMIT_TOTAL_CONTEXT_BYTES,
+        )
+        .unwrap();
+        assert_eq!(prepared.regions.len(), 2);
+        let replacements = prepared
+            .regions
+            .iter()
+            .enumerate()
+            .map(|(index, region)| crate::ai::ConflictReplacement {
+                id: region.id.clone(),
+                start: region.start,
+                end: region.end,
+                replacement: format!("resolved {index}\n"),
+            })
+            .collect::<Vec<_>>();
+        let original = prepared.original_bytes.clone();
+        let original_index = prepared.unmerged_index.clone();
+        let mut session = crate::ai::ConflictSession::new(
+            prepared.repository,
+            "conflicted.txt".to_string(),
+            prepared.original_bytes,
+            prepared.unmerged_index,
+            replacements,
+        );
+        session
+            .applied_ids
+            .insert(session.replacements[0].id.clone());
+
+        let (mut session, marked_resolved) = apply_conflict_session(session).unwrap();
+        assert!(!marked_resolved);
+        assert_eq!(
+            unmerged_index_entries(&repository_path, "conflicted.txt").unwrap(),
+            original_index
+        );
+
+        session
+            .applied_ids
+            .insert(session.replacements[1].id.clone());
+        let (session, marked_resolved) = apply_conflict_session(session).unwrap();
+        assert!(marked_resolved);
+        assert_eq!(
+            unmerged_index_entries(&repository_path, "conflicted.txt")
+                .unwrap_err()
+                .code,
+            "noUnmergedIndex"
+        );
+
+        undo_conflict_session(&session).unwrap();
+        assert_eq!(
+            std::fs::read(repository.path().join("conflicted.txt")).unwrap(),
+            original
+        );
+        assert_eq!(
+            unmerged_index_entries(&repository_path, "conflicted.txt").unwrap(),
+            original_index
+        );
     }
 
     #[test]

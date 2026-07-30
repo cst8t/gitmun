@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
@@ -62,6 +63,8 @@ type StagingViewProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onConflictResolveWithAi: (path: string) => void;
+  onConflictResolveAllWithAi: (paths: string[]) => void;
+  onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   inlineOperation: OperationFeedbackContent | null;
@@ -71,6 +74,8 @@ type StagingViewProps = {
   aiEnabled: boolean;
   aiConfigured: boolean;
   aiResolvingPath: string | null;
+  aiConflictOperationId: string | null;
+  aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
 };
 
 type CachedNumstat = {
@@ -159,15 +164,78 @@ function shortHash(hash: string | null): string {
   return hash ? hash.slice(0, 8) : "-";
 }
 
-function OperationInlineFeedback({ operation }: { operation: OperationFeedbackContent }) {
+function OperationInlineFeedback({
+  title,
+  message,
+  action,
+}: Pick<OperationFeedbackContent, "title" | "message"> & {action?: React.ReactNode}) {
   return (
-    <div className="staging__operation-inline" aria-live="polite">
+    <div className="staging__operation-inline" role="status" aria-live="polite">
       <div className="staging__operation-spinner" aria-hidden="true" />
       <div className="staging__operation-copy">
-        <div className="staging__operation-title">{operation.title}</div>
-        <div className="staging__operation-message">{operation.message}</div>
+        <div className="staging__operation-title">{title}</div>
+        <div className="staging__operation-message">{message}</div>
       </div>
+      {action}
     </div>
+  );
+}
+
+function AiConflictOperationFeedback({
+  operationId,
+  batchProgress,
+  onCancel,
+}: {
+  operationId: string;
+  batchProgress: {current: number; total: number; preparing: boolean} | null;
+  onCancel: () => void;
+}) {
+  const { t } = useTranslation("ai");
+  const [stage, setStage] = useState("collectingContext");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [operationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void listen<{operationId: string; stage: string}>("ai-operation-progress", event => {
+      if (event.payload.operationId === operationId) setStage(event.payload.stage);
+    }).then(remove => {
+      if (cancelled) remove(); else unlisten = remove;
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [operationId]);
+
+  return (
+    <OperationInlineFeedback
+      title={batchProgress
+        ? t(batchProgress.preparing ? "conflict.preparingBatch" : "conflict.generatingBatch", batchProgress)
+        : t("conflict.generatingProposal")}
+      message={t("conflict.generationProgress", {
+        stage: t(`progress.${stage}`),
+        count: elapsedSeconds,
+      })}
+      action={(
+        <button
+          className="staging__operation-cancel"
+          type="button"
+          title={t("conflict.cancelTitle")}
+          onClick={onCancel}
+        >
+          {t(batchProgress ? "actions.cancelResolveAll" : "actions.cancelResolve")}
+        </button>
+      )}
+    />
   );
 }
 
@@ -331,8 +399,9 @@ export function StagingView({
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
-  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onOpenMergeTool,
+  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
   stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
+  aiConflictOperationId, aiConflictBatchProgress,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
@@ -359,6 +428,15 @@ export function StagingView({
       cancelled = true;
     };
   }, [aiConfigured, conflictedFiles, repoPath]);
+
+  const eligibleConflictPaths = useMemo(
+    () => conflictedFiles
+      .filter(file => aiEligibility[file.path]?.eligible === true)
+      .map(file => file.path),
+    [aiEligibility, conflictedFiles],
+  );
+  const aiEligibilityPending = aiConfigured
+    && conflictedFiles.some(file => aiEligibility[file.path] === undefined);
 
   useEffect(() => {
     setNumstatCache({});
@@ -492,7 +570,7 @@ export function StagingView({
     () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders, allUnstaged.length),
     [unstagedTree, expandedFolders, allUnstaged.length],
   );
-  const stagingBusy = stagingOperation != null;
+  const stagingBusy = stagingOperation != null || aiResolvingPath !== null;
   const inlineOperationIsCommit = inlineOperation?.kind === "commit" || inlineOperation?.kind === "commitAndPush";
 
   const toggleUnstaged = (path: string) => {
@@ -583,7 +661,9 @@ export function StagingView({
           depth={row.depth}
           onToggleChecked={() => isStaged ? toggleStaged(f.path) : toggleUnstaged(f.path)}
           onSelect={() => onFileSelect(f.path, isStaged)}
-          onDoubleClick={() => onExternalDiff(f.path, isStaged)}
+          onDoubleClick={() => {
+            if (!aiResolvingPath) onExternalDiff(f.path, isStaged);
+          }}
           onStage={isStaged ? undefined : () => onStageFile(f.path)}
           onUnstage={isStaged ? () => onUnstageFile(f.path) : undefined}
           onDiscard={isStaged ? undefined : () => onDiscardFile(f.path)}
@@ -674,6 +754,19 @@ export function StagingView({
             <span className="staging__section-label staging__section-label--conflict">
               {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
             </span>
+            {aiEnabled && aiConfigured && conflictedFiles.length > 1 && (
+              <div className="staging__section-actions">
+                <button
+                  className="staging__section-action staging__section-action--accent"
+                  type="button"
+                  title={t("staging.generateAllAiTitle")}
+                  onClick={() => onConflictResolveAllWithAi(conflictedFiles.map(file => file.path))}
+                  disabled={aiEligibilityPending || eligibleConflictPaths.length === 0 || aiResolvingPath !== null}
+                >
+                  {t("staging.generateAllAi")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -741,13 +834,17 @@ export function StagingView({
 
   const renderConflictRow = (file: ConflictFileItem, index: number) => {
     const rowStripe = striped(index);
+    const resolvingWithAi = aiResolvingPath === file.path;
     return (
       <div className="staging__list-row">
         <div className="staging__row-anim">
           <div
-            className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === file.path ? "staging__conflict-row--selected" : ""}`}
+            className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === file.path ? "staging__conflict-row--selected" : ""}${resolvingWithAi ? " staging__conflict-row--ai-resolving" : ""}`}
+            aria-busy={resolvingWithAi || undefined}
             onClick={() => onFileSelect(file.path, false)}
-            onDoubleClick={() => onOpenMergeTool(file.path)}
+            onDoubleClick={() => {
+              if (!aiResolvingPath) onOpenMergeTool(file.path);
+            }}
           >
             <span className="staging__conflict-badge">C</span>
             <span className="staging__conflict-path">{file.path}</span>
@@ -781,13 +878,17 @@ export function StagingView({
                 aiConfigured ? (
                   <button
                     className="staging__conflict-btn staging__conflict-btn--ai"
-                    title={aiEligibility[file.path]?.reason
-                      ? t(`aiErrors.${aiEligibility[file.path].reason}`)
-                      : t("staging.resolveWithAiTitle")}
+                    title={resolvingWithAi
+                      ? t("staging.aiResolving")
+                      : aiEligibility[file.path]?.reason
+                        ? t(`aiErrors.${aiEligibility[file.path].reason}`)
+                        : t("staging.resolveWithAiTitle")}
                     onClick={() => onConflictResolveWithAi(file.path)}
-                    disabled={(aiResolvingPath !== null && aiResolvingPath !== file.path) || aiEligibility[file.path]?.eligible !== true}
+                    disabled={aiResolvingPath !== null || aiEligibility[file.path]?.eligible !== true}
                   >
-                    {aiResolvingPath === file.path ? t("staging.cancelAiResolution") : t("staging.aiResolve")}
+                    {resolvingWithAi
+                      ? t("staging.aiResolving")
+                      : t("staging.aiResolve")}
                   </button>
                 ) : (
                   <button
@@ -854,7 +955,15 @@ export function StagingView({
 
   return (
     <div className="staging">
-      {inlineOperation && !inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
+      {inlineOperation && !inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
+      {aiResolvingPath && aiConflictOperationId && (
+        <AiConflictOperationFeedback
+          key={aiConflictOperationId}
+          operationId={aiConflictOperationId}
+          batchProgress={aiConflictBatchProgress}
+          onCancel={onCancelAiConflict}
+        />
+      )}
       <div className="staging__files">
         <Virtuoso
           className="staging__virtual-list"
@@ -865,7 +974,7 @@ export function StagingView({
         />
       </div>
 
-      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
+      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
       <CommitBox
         repoPath={repoPath}
         stagedCount={stagedFiles.length}

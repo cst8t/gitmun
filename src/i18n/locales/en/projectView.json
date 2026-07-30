@@ -191,7 +191,10 @@
     "update": "Update"
   },
   "toast": {
-    "aiConflictResolved": "Resolved {{count}} conflict region(s) in {{file}}. Review and mark the file resolved.",
+    "aiConflictFileResolved_one": "Applied 1 conflict region in {{file}} and marked the file resolved.",
+    "aiConflictFileResolved_other": "Applied {{count}} conflict regions in {{file}} and marked the file resolved.",
+    "aiConflictRegionsApplied_one": "Applied 1 conflict region in {{file}}. Remaining conflicts are still unresolved.",
+    "aiConflictRegionsApplied_other": "Applied {{count}} conflict regions in {{file}}. Remaining conflicts are still unresolved.",
     "acceptedOurs": "Accepted ours for {{file}}",
     "acceptedTheirs": "Accepted theirs for {{file}}",
     "alreadyUpToDate": "Already up to date",
@@ -290,10 +293,13 @@
     "conflictProposalExpired": "This AI proposal expired. Generate it again.",
     "conflictRegionUnknown": "The selected conflict region is no longer available.",
     "conflictSessionUnavailable": "The conflict proposal session is unavailable.",
+    "conflictStageFailed": "Gitmun could not mark the file resolved. Review the working file and index before continuing.",
+    "conflictUndoFailed": "Gitmun could not restore the original conflict state.",
     "consentRequired": "Review and allow the AI destination before generating.",
     "contextTooLarge": "This conflict exceeds the safe AI request limit.",
     "contextTooLargeWithSize": "Conflict context is {{actual}} KiB; the configured limit is {{limit}} KiB.",
     "credentialStoreUnavailable": "The operating system credential store is unavailable.",
+    "duplicateConflictRegion": "The AI provider returned the same conflict region more than once.",
     "fileChanged": "The file changed while the AI request was running. Nothing was applied.",
     "fileUnavailable": "The conflicted file could not be read.",
     "fileWriteFailed": "The resolved file could not be written.",
@@ -302,6 +308,8 @@
     "invalidResponse": "The AI provider returned an invalid conflict resolution.",
     "indexChanged": "The Git index changed while AI was running. Nothing was applied.",
     "malformedConflict": "The file contains malformed conflict markers.",
+    "malformedStructuredOutput": "The AI provider did not return valid structured conflict data.",
+    "missingConflictRegions": "The AI provider did not resolve every requested conflict region.",
     "network": "The AI provider could not be reached.",
     "noConflictRegionsSelected": "Select at least one conflict region.",
     "noConflictMarkers": "The file no longer contains conflict markers.",
@@ -320,6 +328,8 @@
     "sensitivePath": "This path may contain credentials and was not sent.",
     "stagedChangesChanged": "The staged changes changed while AI was running. Generate again.",
     "timeout": "The AI provider request timed out.",
+    "unknownConflictRegion": "The AI provider returned a conflict region that was not requested.",
+    "unresolvedConflictMarkers": "The AI provider returned a resolution that still contains conflict markers.",
     "unsupportedFile": "AI conflict resolution supports regular UTF-8 text files only.",
     "unknown": "The AI request failed."
   }

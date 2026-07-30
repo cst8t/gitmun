@@ -230,9 +230,16 @@ export type AiConflictProposalResult = AiProviderResultMetadata & {
     regions: AiConflictRegionProposal[];
 };
 
+export type AiConflictReviewItem =
+    | {status: "ready"; filePath: string; proposal: AiConflictProposalResult}
+    | {status: "failed"; filePath: string; message: string};
+
+export type AiConflictOperation = "apply" | "regenerate" | "undo" | null;
+
 export type AiConflictResolutionResult = {
     filePath: string;
     resolvedRegions: number;
+    markedResolved: boolean;
 };
 
 export type AiConflictEligibility = {
@@ -322,9 +329,12 @@ export type AiErrorCode =
     | "conflictProposalExpired"
     | "conflictRegionUnknown"
     | "conflictSessionUnavailable"
+    | "conflictStageFailed"
+    | "conflictUndoFailed"
     | "contextTooLarge"
     | "credentialStoreUnavailable"
     | "deploymentRequired"
+    | "duplicateConflictRegion"
     | "endpointCredentialsForbidden"
     | "endpointInvalid"
     | "endpointRequired"
@@ -343,6 +353,8 @@ export type AiErrorCode =
     | "invalidRepository"
     | "invalidRepositoryPolicy"
     | "malformedConflict"
+    | "malformedStructuredOutput"
+    | "missingConflictRegions"
     | "modelCatalogueTooLarge"
     | "modelDiscoveryUnavailable"
     | "modelRequired"
@@ -373,6 +385,8 @@ export type AiErrorCode =
     | "timeout"
     | "unsafeRedirect"
     | "unsupportedFile"
+    | "unknownConflictRegion"
+    | "unresolvedConflictMarkers"
     | "invalidResponse"
     | "environmentManaged"
     | "network"

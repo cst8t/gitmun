@@ -9,6 +9,7 @@ type CherryPickBannerProps = {
   onCherryPickContinue: () => void;
   onCherryPickAbort: () => void;
   isRunning: boolean;
+  interactionLocked: boolean;
 };
 
 export function CherryPickBanner({
@@ -18,6 +19,7 @@ export function CherryPickBanner({
   onCherryPickContinue,
   onCherryPickAbort,
   isRunning,
+  interactionLocked,
 }: CherryPickBannerProps) {
   const { t } = useTranslation("centre");
   const hasConflicts = conflictedFiles.length > 0;
@@ -42,14 +44,14 @@ export function CherryPickBanner({
         <button
           className="merge-banner__btn merge-banner__btn--abort"
           onClick={onCherryPickAbort}
-          disabled={isRunning}
+          disabled={isRunning || interactionLocked}
         >
           {t("banners.cherryPick.abort")}
         </button>
         <button
           className="merge-banner__btn merge-banner__btn--commit"
           onClick={onCherryPickContinue}
-          disabled={hasConflicts || isRunning}
+          disabled={hasConflicts || isRunning || interactionLocked}
         >
           {isRunning ? t("actions.working", {ns: "common"}) : t("banners.cherryPick.continue")}
         </button>

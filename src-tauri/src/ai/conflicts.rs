@@ -21,7 +21,8 @@ pub(crate) struct ConflictSession {
     pub file_path: String,
     pub original: Vec<u8>,
     pub current_hash: md5::Digest,
-    pub index_hash: md5::Digest,
+    pub unmerged_index: Vec<u8>,
+    pub resolved_index: Option<Vec<u8>>,
     pub replacements: Vec<ConflictReplacement>,
     pub applied_ids: HashSet<String>,
     created_at: Instant,
@@ -32,7 +33,7 @@ impl ConflictSession {
         repository: PathBuf,
         file_path: String,
         original: Vec<u8>,
-        index_hash: md5::Digest,
+        unmerged_index: Vec<u8>,
         replacements: Vec<ConflictReplacement>,
     ) -> Self {
         Self {
@@ -40,7 +41,8 @@ impl ConflictSession {
             file_path,
             current_hash: md5::compute(&original),
             original,
-            index_hash,
+            unmerged_index,
+            resolved_index: None,
             replacements,
             applied_ids: HashSet::new(),
             created_at: Instant::now(),
