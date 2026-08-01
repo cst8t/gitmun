@@ -11,6 +11,7 @@ type Props = {
     onRegenerate: (proposalId: string, regionIds?: string[]) => Promise<void>;
     onRetry: (filePath: string) => Promise<void>;
     onUndo: (proposalId: string) => Promise<void>;
+    onBatchUndo: (proposalIds: string[]) => Promise<void>;
     onClose: () => void;
 };
 
@@ -23,7 +24,7 @@ function initialRegionSelections(items: AiConflictReviewItem[]): Record<string, 
     ]] : []));
 }
 
-export function AiConflictProposalDialog({items, operation, onApply, onRegenerate, onRetry, onUndo, onClose}: Props) {
+export function AiConflictProposalDialog({items, operation, onApply, onRegenerate, onRetry, onUndo, onBatchUndo, onClose}: Props) {
     const {t} = useTranslation("ai");
     const [selectedIdsByProposal, setSelectedIdsByProposal] = useState(() => initialRegionSelections(items));
     const [appliedIdsByProposal, setAppliedIdsByProposal] = useState<Record<string, string[]>>({});
@@ -137,6 +138,13 @@ export function AiConflictProposalDialog({items, operation, onApply, onRegenerat
 
     const undo = () => {
         if (activeProposal) void onUndo(activeProposal.proposalId).catch(() => {});
+    };
+
+    const batchUndo = () => {
+        const appliedProposalIds = Object.entries(appliedIdsByProposal)
+            .filter(([, ids]) => ids.length > 0)
+            .map(([proposalId]) => proposalId);
+        if (appliedProposalIds.length > 0) void onBatchUndo(appliedProposalIds).catch(() => {});
     };
 
     const retry = () => {
@@ -406,6 +414,11 @@ export function AiConflictProposalDialog({items, operation, onApply, onRegenerat
                     )}
                     {activeItem?.status === "ready" && hasApplied && (
                         <button type="button" onClick={undo} disabled={busy}>{operation === "undo" ? t("actions.undoing") : t("actions.undo")}</button>
+                    )}
+                    {items.length > 1 && anyApplied && (
+                        <button type="button" onClick={batchUndo} disabled={busy}>
+                            {t("actions.undoAll")}
+                        </button>
                     )}
                     {activeItem?.status === "failed" ? (
                         <button className="ai-dialog__button--primary" type="button" onClick={retry} disabled={busy}>

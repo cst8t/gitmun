@@ -134,6 +134,9 @@ type CentrePanelProps = {
   aiResolvingPath: string | null;
   aiConflictOperationId: string | null;
   aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
+  aiConflictBatchFailure?: {filePath: string; message: string} | null;
+  onSkipAiConflictBatchFailure?: () => void;
+  onStopAiConflictBatchFailure?: () => void;
 };
 
 function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
@@ -407,9 +410,12 @@ export function CentrePanel(props: CentrePanelProps) {
           aiEnabled={props.aiEnabled}
           aiConfigured={props.aiConfigured}
           aiResolvingPath={props.aiResolvingPath}
-          aiConflictOperationId={props.aiConflictOperationId}
-          aiConflictBatchProgress={props.aiConflictBatchProgress}
-        />
+           aiConflictOperationId={props.aiConflictOperationId}
+           aiConflictBatchProgress={props.aiConflictBatchProgress}
+           aiConflictBatchFailure={props.aiConflictBatchFailure ?? null}
+           onSkipAiConflictBatchFailure={props.onSkipAiConflictBatchFailure ?? (() => {})}
+           onStopAiConflictBatchFailure={props.onStopAiConflictBatchFailure ?? (() => {})}
+         />
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>
         <LogView

@@ -78,16 +78,20 @@ impl ConflictSessionStore {
             .ok_or_else(|| AiError::new("conflictProposalExpired"))
     }
 
-    pub fn update(&self, id: &str, session: ConflictSession) -> Result<(), AiError> {
+    pub fn mutate<T>(
+        &self,
+        id: &str,
+        f: impl FnOnce(&mut ConflictSession) -> Result<T, AiError>,
+    ) -> Result<T, AiError> {
         let mut sessions = self
             .sessions
             .lock()
             .map_err(|_| AiError::new("conflictSessionUnavailable"))?;
-        if !sessions.contains_key(id) {
-            return Err(AiError::new("conflictProposalExpired"));
-        }
-        sessions.insert(id.to_string(), session);
-        Ok(())
+        let session = sessions
+            .get_mut(id)
+            .filter(|session| session.created_at.elapsed() <= SESSION_LIFETIME)
+            .ok_or_else(|| AiError::new("conflictProposalExpired"))?;
+        f(session)
     }
 
     pub fn remove(&self, id: &str) -> Result<(), AiError> {
@@ -96,5 +100,63 @@ impl ConflictSessionStore {
             .map_err(|_| AiError::new("conflictSessionUnavailable"))?
             .remove(id);
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::thread;
+
+    #[test]
+    fn mutate_serialises_concurrent_updates() {
+        let store = Arc::new(ConflictSessionStore::default());
+        store
+            .insert(
+                "proposal".to_string(),
+                ConflictSession::new(
+                    PathBuf::from("/tmp/repo"),
+                    "conflicted.txt".to_string(),
+                    b"original".to_vec(),
+                    b"index".to_vec(),
+                    vec![
+                        ConflictReplacement {
+                            id: "a".to_string(),
+                            start: 0,
+                            end: 1,
+                            replacement: "one".to_string(),
+                        },
+                        ConflictReplacement {
+                            id: "b".to_string(),
+                            start: 2,
+                            end: 3,
+                            replacement: "two".to_string(),
+                        },
+                    ],
+                ),
+            )
+            .unwrap();
+
+        let left = Arc::clone(&store);
+        let right = Arc::clone(&store);
+        let first = thread::spawn(move || {
+            left.mutate("proposal", |session| {
+                session.applied_ids.insert("a".to_string());
+                Ok(())
+            })
+        });
+        let second = thread::spawn(move || {
+            right.mutate("proposal", |session| {
+                session.applied_ids.insert("b".to_string());
+                Ok(())
+            })
+        });
+        first.join().unwrap().unwrap();
+        second.join().unwrap().unwrap();
+
+        let session = store.get("proposal").unwrap();
+        assert!(session.applied_ids.contains("a"));
+        assert!(session.applied_ids.contains("b"));
     }
 }

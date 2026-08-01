@@ -441,10 +441,15 @@ export function ProjectView({
     total: number;
     preparing: boolean;
   } | null>(null);
+  const [aiConflictBatchFailure, setAiConflictBatchFailure] = useState<{
+    filePath: string;
+    message: string;
+  } | null>(null);
   const [aiConflictOperation, setAiConflictOperation] = useState<AiConflictOperation>(null);
   const [showAiWriting, setShowAiWriting] = useState(false);
   const aiConflictOperationIdRef = useRef("");
   const aiConflictBatchCancelledRef = useRef(false);
+  const aiConflictBatchDecisionRef = useRef<((continueBatch: boolean) => void) | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
@@ -453,6 +458,8 @@ export function ProjectView({
 
   useEffect(() => () => {
     aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
     const operationId = aiConflictOperationIdRef.current;
     if (operationId) void api.cancelAiOperation(operationId).catch(() => {});
   }, []);
@@ -2422,13 +2429,29 @@ export function ProjectView({
     const operationId = aiConflictOperationIdRef.current;
     if (!operationId) return;
     aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
     await api.cancelAiOperation(operationId).catch(() => {});
+  }, []);
+
+  const handleSkipAiConflictBatchFailure = useCallback(() => {
+    setAiConflictBatchFailure(null);
+    aiConflictBatchDecisionRef.current?.(true);
+    aiConflictBatchDecisionRef.current = null;
+  }, []);
+
+  const handleStopAiConflictBatchFailure = useCallback(() => {
+    setAiConflictBatchFailure(null);
+    aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
   }, []);
 
   const handleConflictResolveAllWithAi = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0 || aiResolvingPath || aiConflictOperationIdRef.current) return;
     const batchId = `conflict-batch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
     aiConflictBatchCancelledRef.current = false;
+    setAiConflictBatchFailure(null);
     aiConflictOperationIdRef.current = batchId;
     setAiConflictBatchProgress({current: 1, total: paths.length, preparing: true});
     setAiResolvingPath(paths[0]);
@@ -2442,7 +2465,13 @@ export function ProjectView({
         try {
           previews.set(path, await api.getAiConflictContextPreview(repoPath, path));
         } catch (error) {
-          failures.set(path, localiseAiError(error, t));
+          const message = localiseAiError(error, t);
+          failures.set(path, message);
+          setAiConflictBatchFailure({filePath: path, message});
+          const continueBatch = await new Promise<boolean>(resolve => {
+            aiConflictBatchDecisionRef.current = resolve;
+          });
+          if (!continueBatch) break;
         }
       }
       const preparedPaths = paths.filter(path => previews.has(path));
@@ -2505,7 +2534,13 @@ export function ProjectView({
             aiConflictBatchCancelledRef.current = true;
             break;
           }
-          failures.set(path, localiseAiError(error, t));
+          const message = localiseAiError(error, t);
+          failures.set(path, message);
+          setAiConflictBatchFailure({filePath: path, message});
+          const continueBatch = await new Promise<boolean>(resolve => {
+            aiConflictBatchDecisionRef.current = resolve;
+          });
+          if (!continueBatch) break;
         }
       }
 
@@ -2537,6 +2572,8 @@ export function ProjectView({
         showToast(localiseAiError(error, t), "error");
       }
     } finally {
+      aiConflictBatchDecisionRef.current = null;
+      setAiConflictBatchFailure(null);
       aiConflictOperationIdRef.current = "";
       setAiResolvingPath(null);
       setAiConflictBatchProgress(null);
@@ -2644,6 +2681,30 @@ export function ProjectView({
       setAiConflictOperation(null);
     }
   }, [aiConflictOperation, refreshStatus, showToast, t]);
+
+  const handleBatchUndoAiConflictProposal = useCallback(async (proposalIds: string[]) => {
+    if (aiConflictOperation) return;
+    setAiConflictOperation("undo");
+    try {
+      const result = await api.undoAiConflictBatch(proposalIds);
+      await refreshStatus();
+      const failedIds = new Set(result.failed.map(failure => failure.proposalId));
+      const undoneIds = new Set(proposalIds.filter(id => !failedIds.has(id)));
+      setAiConflictReviewItems(current => current.filter(item => (
+        item.status !== "ready" || !undoneIds.has(item.proposal.proposalId)
+      )));
+      if (result.failed.length > 0) {
+        showToast(
+          tAi("conflict.batchUndoFailed", {count: result.failed.length}) as string,
+          "error"
+        );
+      }
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, refreshStatus, showToast, t, tAi]);
 
   const handleOpenMergeTool = useCallback(async (path: string) => {
     if (!repoPath) return;
@@ -3056,9 +3117,12 @@ export function ProjectView({
                   aiEnabled={aiEnabled}
                   aiConfigured={aiConfigured}
                   aiResolvingPath={aiResolvingPath}
-                  aiConflictOperationId={aiResolvingPath ? aiConflictOperationIdRef.current : null}
-                  aiConflictBatchProgress={aiConflictBatchProgress}
-                />
+                   aiConflictOperationId={aiResolvingPath ? aiConflictOperationIdRef.current : null}
+                   aiConflictBatchProgress={aiConflictBatchProgress}
+                   aiConflictBatchFailure={aiConflictBatchFailure}
+                   onSkipAiConflictBatchFailure={handleSkipAiConflictBatchFailure}
+                   onStopAiConflictBatchFailure={handleStopAiConflictBatchFailure}
+                 />
               </div>
 
               <div
@@ -3150,6 +3214,7 @@ export function ProjectView({
           onRegenerate={handleRegenerateAiConflictProposal}
           onRetry={handleRetryAiConflictFile}
           onUndo={handleUndoAiConflictProposal}
+          onBatchUndo={handleBatchUndoAiConflictProposal}
           onClose={() => setAiConflictReviewItems([])}
         />
       )}

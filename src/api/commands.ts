@@ -106,6 +106,7 @@ export {
     setAiPrivacySettings,
     testAiConnection,
     testAiConnectionDraft,
+    undoAiConflictBatch,
     undoAiConflictProposal,
 } from "../features/ai";
 

@@ -462,6 +462,21 @@ impl GitService {
         })
     }
 
+    pub fn update_structured_output_modes(
+        &self,
+        modes: std::collections::HashMap<String, String>,
+    ) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings.extensions.ai.structured_output_modes = modes;
+        })
+    }
+
+    pub fn remove_structured_output_mode(&self, key: &str) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings.extensions.ai.structured_output_modes.remove(key);
+        })
+    }
+
     pub fn set_ai_effort_capability(
         &self,
         profile_id: &str,

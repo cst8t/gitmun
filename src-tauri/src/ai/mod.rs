@@ -8,6 +8,7 @@ mod provider;
 pub mod types;
 
 use serde::Serialize;
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
@@ -57,6 +58,12 @@ impl AiExtensionState {
             conflict_sessions: ConflictSessionStore::default(),
             operations: AiOperationRegistry::default(),
             openrouter_oauth_active: AtomicBool::new(false),
+        }
+    }
+
+    pub fn load_structured_output_modes(&self, modes: &HashMap<String, String>) {
+        if let Some(runtime) = &self.runtime {
+            runtime.load_structured_output_modes(modes);
         }
     }
 }

@@ -71,6 +71,7 @@ export function AiCommitControls({
     const [menuOpen, setMenuOpen] = useState(false);
     const [composerOpen, setComposerOpen] = useState(false);
     const [busy, setBusy] = useState(false);
+    const [composerBusy, setComposerBusy] = useState(false);
     const [elapsedSeconds, setElapsedSeconds] = useState(0);
     const [progressStage, setProgressStage] = useState("collectingContext");
     const [error, setError] = useState<string | null>(null);
@@ -90,9 +91,11 @@ export function AiCommitControls({
         if (operationId) await cancelAiOperation(operationId).catch(() => {});
     }, []);
 
+    const effectiveBusy = busy || composerBusy;
+
     useEffect(() => {
-        onBusyChange(busy);
-    }, [busy, onBusyChange]);
+        onBusyChange(effectiveBusy);
+    }, [effectiveBusy, onBusyChange]);
 
     useEffect(() => {
         if (!busy) return;
@@ -139,7 +142,7 @@ export function AiCommitControls({
         setComposerOpen(false);
         setError(null);
         if (operationIdRef.current) void cancel();
-    }, [cancel, repoPath, workflow]);
+    }, [cancel, repoPath, stagedCount, workflow]);
 
     useEffect(() => {
         if ((!enabled || !configured || disabled) && operationIdRef.current) {
@@ -164,7 +167,7 @@ export function AiCommitControls({
     };
 
     const quickGenerate = async () => {
-        if (!repoPath || stagedCount === 0 || disabled || operationIdRef.current) return;
+        if (!repoPath || stagedCount === 0 || disabled || operationIdRef.current || composerBusy) return;
         if (!await replacementAllowed()) return;
 
         const startingMessage = latestMessageRef.current;
@@ -321,8 +324,10 @@ export function AiCommitControls({
                     subjectLimit={subjectLimit}
                     workflow={workflow}
                     existingMessage={existingMessage}
+                    otherBusy={effectiveBusy}
                     onAccept={acceptComposerMessage}
                     onClose={() => setComposerOpen(false)}
+                    onBusyChange={setComposerBusy}
                 />
             )}
         </div>

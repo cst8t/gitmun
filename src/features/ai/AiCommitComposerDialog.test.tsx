@@ -75,8 +75,10 @@ describe("AiCommitComposerDialog", () => {
             subjectLimit={72}
             workflow="Normal"
             existingMessage=""
+            otherBusy={false}
             onAccept={vi.fn(async () => true)}
             onClose={vi.fn()}
+            onBusyChange={vi.fn()}
         />);
 
         expect(await screen.findByText(
@@ -94,8 +96,10 @@ describe("AiCommitComposerDialog", () => {
             subjectLimit={72}
             workflow="Normal"
             existingMessage=""
+            otherBusy={false}
             onAccept={vi.fn(async () => true)}
             onClose={vi.fn()}
+            onBusyChange={vi.fn()}
         />);
 
         await screen.findByText("OpenRouter via https://openrouter.ai");
@@ -111,8 +115,10 @@ describe("AiCommitComposerDialog", () => {
             subjectLimit={72}
             workflow="Normal"
             existingMessage=""
+            otherBusy={false}
             onAccept={vi.fn(async () => true)}
             onClose={vi.fn()}
+            onBusyChange={vi.fn()}
         />);
 
         await screen.findByText("OpenRouter via https://openrouter.ai");
@@ -139,8 +145,10 @@ describe("AiCommitComposerDialog", () => {
             subjectLimit={72}
             workflow="Normal"
             existingMessage=""
+            otherBusy={false}
             onAccept={vi.fn(async () => true)}
             onClose={vi.fn()}
+            onBusyChange={vi.fn()}
         />);
 
         await screen.findByText("OpenRouter via https://openrouter.ai");
@@ -151,14 +159,34 @@ describe("AiCommitComposerDialog", () => {
         expect(screen.queryByRole("button", {name: /Candidate 1/})).not.toBeInTheDocument();
     });
 
+    it("disables generate while another AI operation is busy", async () => {
+        render(<AiCommitComposerDialog
+            repoPath="/work/repository"
+            subjectLimit={72}
+            workflow="Normal"
+            existingMessage=""
+            otherBusy={true}
+            onAccept={vi.fn(async () => true)}
+            onClose={vi.fn()}
+            onBusyChange={vi.fn()}
+        />);
+
+        await screen.findByText("OpenRouter via https://openrouter.ai");
+        expect(screen.getByRole("button", {name: "Generate"})).toBeDisabled();
+        fireEvent.click(screen.getByRole("button", {name: "Generate"}));
+        expect(generateAiCommitMessages).not.toHaveBeenCalled();
+    });
+
     it("loads and saves repository composer defaults without replacing the rest of the policy", async () => {
         render(<AiCommitComposerDialog
             repoPath="/work/repository"
             subjectLimit={72}
             workflow="Normal"
             existingMessage=""
+            otherBusy={false}
             onAccept={vi.fn(async () => true)}
             onClose={vi.fn()}
+            onBusyChange={vi.fn()}
         />);
 
         expect(await screen.findByLabelText("Style")).toHaveValue("ConventionalCommits");

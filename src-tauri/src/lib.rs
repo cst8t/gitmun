@@ -1442,6 +1442,9 @@ pub fn run() {
 
                 // Sync avatar service with the loaded settings
                 let settings = state.git_service.get_settings();
+                state
+                    .ai_extension
+                    .load_structured_output_modes(&settings.extensions.ai.structured_output_modes);
                 if let Some(main_window) = app.get_webview_window("main") {
                     let background_colour = window_manager::background_colour_for_theme_mode(
                         &app.handle(),
@@ -1519,6 +1522,7 @@ pub fn run() {
             ai::commands::get_ai_conflict_context_preview,
             ai::commands::apply_ai_conflict_proposal,
             ai::commands::undo_ai_conflict_proposal,
+            ai::commands::undo_ai_conflict_batch,
             commands::settings::get_settings,
             commands::settings::set_backend_mode,
             commands::settings::set_show_result_log,

@@ -66,6 +66,7 @@ function renderDialog(operation: AiConflictOperation = null, overrides: Partial<
         onRegenerate: vi.fn(async () => {}),
         onRetry: vi.fn(async () => {}),
         onUndo: vi.fn(async () => {}),
+        onBatchUndo: vi.fn(async () => {}),
         onClose: vi.fn(),
         ...overrides,
     };
@@ -149,6 +150,42 @@ describe("AiConflictProposalDialog", () => {
         expect(screen.getByRole("button", {name: /src\/payment\.ts.*Resolved/})).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", {name: "Next file"}));
         expect(screen.getByText("Proposed one")).toBeInTheDocument();
+    });
+
+    it("offers bulk undo for every file with applied regions", async () => {
+        const onBatchUndo = vi.fn(async () => {});
+        const onApply = vi.fn(async (_proposalId: string, regionIds: string[]) => ({
+            filePath: proposal.filePath,
+            resolvedRegions: regionIds.length,
+            markedResolved: false,
+        }));
+        const view = renderDialog(null, {
+            items: [
+                {status: "ready", filePath: proposal.filePath, proposal},
+                {status: "ready", filePath: secondProposal.filePath, proposal: secondProposal},
+            ],
+            onApply,
+            onBatchUndo,
+        });
+
+        fireEvent.click(screen.getByRole("tab", {name: "Region 2, selected"}));
+        fireEvent.click(screen.getByRole("checkbox", {name: "Conflict region 2"}));
+        fireEvent.click(screen.getByRole("button", {name: "Apply selected region"}));
+        await waitFor(() => expect(screen.getAllByText("1 region applied")).not.toHaveLength(0));
+        fireEvent.click(screen.getByRole("button", {name: /src\/payment\.ts/}));
+        fireEvent.click(screen.getByRole("button", {name: "Apply and mark resolved"}));
+        await waitFor(() => expect(screen.getByRole("button", {name: "Undo all applied changes"})).toBeInTheDocument());
+
+        fireEvent.click(screen.getByRole("button", {name: "Undo all applied changes"}));
+        await waitFor(() => expect(onBatchUndo).toHaveBeenCalledWith(["proposal-1", "proposal-2"]));
+
+        // Parent keeps only proposals whose undo failed.
+        view.rerender(<AiConflictProposalDialog
+            {...view.props}
+            items={[{status: "ready", filePath: secondProposal.filePath, proposal: secondProposal}]}
+        />);
+        expect(screen.getByText("src/payment.ts")).toBeInTheDocument();
+        expect(screen.queryByText("docs/reports/inspection-report.txt")).not.toBeInTheDocument();
     });
 
     it("keeps a failed first file in its original position and allows retrying it", async () => {

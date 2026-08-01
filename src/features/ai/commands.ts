@@ -182,6 +182,20 @@ export function undoAiConflictProposal(proposalId: string): Promise<AiConflictRe
     return invoke<AiConflictResolutionResult>("undo_ai_conflict_proposal", {proposalId});
 }
 
+export type AiConflictBatchUndoFailure = {
+    proposalId: string;
+    reason: string;
+};
+
+export type AiConflictBatchUndoResult = {
+    undone: number;
+    failed: AiConflictBatchUndoFailure[];
+};
+
+export function undoAiConflictBatch(proposalIds: string[]): Promise<AiConflictBatchUndoResult> {
+    return invoke<AiConflictBatchUndoResult>("undo_ai_conflict_batch", {proposalIds});
+}
+
 export function getAiConflictEligibility(
     repoPath: string,
     filePath: string,

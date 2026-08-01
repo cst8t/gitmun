@@ -133,9 +133,12 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     aiEnabled: false,
     aiConfigured: false,
     aiResolvingPath: null,
-    aiConflictOperationId: null,
-    aiConflictBatchProgress: null,
-    ...overrides,
+     aiConflictOperationId: null,
+     aiConflictBatchProgress: null,
+     aiConflictBatchFailure: null,
+     onSkipAiConflictBatchFailure: vi.fn(),
+     onStopAiConflictBatchFailure: vi.fn(),
+     ...overrides,
   };
 }
 
@@ -242,6 +245,31 @@ describe("StagingView file tree", () => {
     expect(screen.getByRole("button", {name: "AI Resolve All"})).toBeDisabled();
     fireEvent.click(cancelButton);
     expect(onCancelAiConflict).toHaveBeenCalledOnce();
+  });
+
+  it("offers skip and stop choices after a batch file fails", async () => {
+    const onSkipAiConflictBatchFailure = vi.fn();
+    const onStopAiConflictBatchFailure = vi.fn();
+    renderStagingView({
+      conflictedFiles: [{path: "src/report.ts", conflictType: "both_modified"}],
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: "src/report.ts",
+      aiConflictOperationId: "conflict-batch-1",
+      aiConflictBatchProgress: {current: 1, total: 2, preparing: false},
+      aiConflictBatchFailure: {filePath: "src/report.ts", message: "Provider unavailable"},
+      onSkipAiConflictBatchFailure,
+      onStopAiConflictBatchFailure,
+    });
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("AI proposal generation failed");
+    expect(status).toHaveTextContent("src/report.ts failed: Provider unavailable");
+    fireEvent.click(screen.getByRole("button", {name: "Skip failed and continue"}));
+    fireEvent.click(screen.getByRole("button", {name: "Stop"}));
+    expect(onSkipAiConflictBatchFailure).toHaveBeenCalledOnce();
+    expect(onStopAiConflictBatchFailure).toHaveBeenCalledOnce();
   });
 
   it("shows clear progress while waiting for an AI conflict proposal", async () => {

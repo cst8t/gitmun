@@ -76,6 +76,9 @@ type StagingViewProps = {
   aiResolvingPath: string | null;
   aiConflictOperationId: string | null;
   aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
+  aiConflictBatchFailure: {filePath: string; message: string} | null;
+  onSkipAiConflictBatchFailure: () => void;
+  onStopAiConflictBatchFailure: () => void;
 };
 
 type CachedNumstat = {
@@ -184,13 +187,19 @@ function OperationInlineFeedback({
 function AiConflictOperationFeedback({
   operationId,
   batchProgress,
+  batchFailure,
   onCancel,
+  onSkipFailure,
+  onStopFailure,
 }: {
   operationId: string;
   batchProgress: {current: number; total: number; preparing: boolean} | null;
+  batchFailure: {filePath: string; message: string} | null;
   onCancel: () => void;
+  onSkipFailure: () => void;
+  onStopFailure: () => void;
 }) {
-  const { t } = useTranslation("ai");
+  const { t: tAi } = useTranslation("ai");
   const [stage, setStage] = useState("collectingContext");
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -218,21 +227,37 @@ function AiConflictOperationFeedback({
 
   return (
     <OperationInlineFeedback
-      title={batchProgress
-        ? t(batchProgress.preparing ? "conflict.preparingBatch" : "conflict.generatingBatch", batchProgress)
-        : t("conflict.generatingProposal")}
-      message={t("conflict.generationProgress", {
-        stage: t(`progress.${stage}`),
-        count: elapsedSeconds,
-      })}
-      action={(
+      title={batchFailure
+        ? tAi("conflict.batchFailureTitle")
+        : batchProgress
+        ? tAi(batchProgress.preparing ? "conflict.preparingBatch" : "conflict.generatingBatch", batchProgress)
+        : tAi("conflict.generatingProposal")}
+      message={batchFailure
+        ? tAi("conflict.batchFailureMessage", {
+          file: batchFailure.filePath,
+          message: batchFailure.message,
+        })
+        : tAi("conflict.generationProgress", {
+          stage: tAi(`progress.${stage}`),
+          count: elapsedSeconds,
+        })}
+      action={batchFailure ? (
+        <>
+          <button className="staging__operation-cancel" type="button" onClick={onSkipFailure}>
+            {tAi("actions.skipFailedAndContinue")}
+          </button>
+          <button className="staging__operation-cancel" type="button" onClick={onStopFailure}>
+            {tAi("actions.stopBatch")}
+          </button>
+        </>
+      ) : (
         <button
           className="staging__operation-cancel"
           type="button"
-          title={t("conflict.cancelTitle")}
+          title={tAi("conflict.cancelTitle")}
           onClick={onCancel}
         >
-          {t(batchProgress ? "actions.cancelResolveAll" : "actions.cancelResolve")}
+          {tAi(batchProgress ? "actions.cancelResolveAll" : "actions.cancelResolve")}
         </button>
       )}
     />
@@ -401,7 +426,8 @@ export function StagingView({
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
   stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
-  aiConflictOperationId, aiConflictBatchProgress,
+  aiConflictOperationId, aiConflictBatchProgress, aiConflictBatchFailure,
+  onSkipAiConflictBatchFailure, onStopAiConflictBatchFailure,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
@@ -959,10 +985,13 @@ export function StagingView({
       {aiResolvingPath && aiConflictOperationId && (
         <AiConflictOperationFeedback
           key={aiConflictOperationId}
-          operationId={aiConflictOperationId}
-          batchProgress={aiConflictBatchProgress}
-          onCancel={onCancelAiConflict}
-        />
+           operationId={aiConflictOperationId}
+           batchProgress={aiConflictBatchProgress}
+           batchFailure={aiConflictBatchFailure}
+           onCancel={onCancelAiConflict}
+           onSkipFailure={onSkipAiConflictBatchFailure}
+           onStopFailure={onStopAiConflictBatchFailure}
+         />
       )}
       <div className="staging__files">
         <Virtuoso

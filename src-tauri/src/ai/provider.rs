@@ -7,6 +7,7 @@ use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::{Client, RequestBuilder, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use super::configuration::{EffectiveAiConfiguration, validate_endpoint};
@@ -70,6 +71,34 @@ impl AiRuntime {
         })
     }
 
+    pub(crate) fn load_structured_output_modes(&self, modes: &HashMap<String, String>) {
+        let mut cache = self
+            .structured_output_modes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        cache.extend(
+            modes
+                .iter()
+                .filter_map(|(key, mode)| Some((key.clone(), parse_structured_output_mode(mode)?))),
+        );
+    }
+
+    pub(crate) fn forget_structured_output_mode(&self, key: &str) {
+        self.structured_output_modes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .remove(key);
+    }
+
+    pub(crate) fn structured_output_modes(&self) -> HashMap<String, String> {
+        self.structured_output_modes
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .iter()
+            .map(|(key, mode)| (key.clone(), structured_output_mode_name(*mode).to_string()))
+            .collect()
+    }
+
     fn structured_output_mode(
         &self,
         configuration: &EffectiveAiConfiguration,
@@ -94,6 +123,23 @@ impl AiRuntime {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .insert(key, mode);
+    }
+}
+
+fn parse_structured_output_mode(value: &str) -> Option<AiStructuredOutputMode> {
+    match value {
+        "jsonSchema" => Some(AiStructuredOutputMode::JsonSchema),
+        "jsonObject" => Some(AiStructuredOutputMode::JsonObject),
+        "promptOnly" => Some(AiStructuredOutputMode::PromptOnly),
+        _ => None,
+    }
+}
+
+fn structured_output_mode_name(mode: AiStructuredOutputMode) -> &'static str {
+    match mode {
+        AiStructuredOutputMode::JsonSchema => "jsonSchema",
+        AiStructuredOutputMode::JsonObject => "jsonObject",
+        AiStructuredOutputMode::PromptOnly => "promptOnly",
     }
 }
 
@@ -804,7 +850,7 @@ fn endpoint_with_path(
     Ok(endpoint)
 }
 
-fn structured_output_cache_key(
+pub(crate) fn structured_output_cache_key(
     configuration: &EffectiveAiConfiguration,
 ) -> Result<String, AiError> {
     Ok(format!(
@@ -928,7 +974,77 @@ fn rejected_structured_output(
     {
         return false;
     }
-    let body = String::from_utf8_lossy(body).to_ascii_lowercase();
+
+    let body_str = String::from_utf8_lossy(body);
+    let lower = body_str.to_ascii_lowercase();
+
+    // Guard against false positives from deprecation or sunset notices
+    if lower.contains("deprecated")
+        && lower.contains("response_format")
+        && !lower.contains("not")
+        && !lower.contains("invalid")
+        && !lower.contains("unrecogni")
+    {
+        return false;
+    }
+
+    // Structured JSON detection: many providers return typed error objects
+    if let Ok(value) = serde_json::from_slice::<Value>(body) {
+        if let Some(error) = value.get("error") {
+            // OpenAI / OpenAI-compatible: response_format param set → clear signal
+            if let Some(param) = error.get("param").and_then(|v| v.as_str()) {
+                if matches!(
+                    param.to_ascii_lowercase().as_str(),
+                    "response_format" | "output_config"
+                ) {
+                    return true;
+                }
+            }
+            // Check message for combined format + rejection keywords
+            if let Some(msg) = error.get("message").and_then(|v| v.as_str()) {
+                let msg_lower = msg.to_ascii_lowercase();
+                // Deprecation warnings are not active rejections
+                if msg_lower.contains("deprecated") || msg_lower.contains("sunset") {
+                    return false;
+                }
+                let type_lower = error
+                    .get("type")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_ascii_lowercase();
+                if matches!(
+                    type_lower.as_str(),
+                    "invalid_request_error" | "validation_error"
+                ) {
+                    let has_format = msg_lower.contains("response_format")
+                        || msg_lower.contains("json_schema")
+                        || msg_lower.contains("structured_output")
+                        || msg_lower.contains("structured output")
+                        || msg_lower.contains("text.format")
+                        || msg_lower.contains("output_config.format")
+                        || msg_lower.contains("output_config");
+                    let has_rejection = msg_lower.contains("unsupported")
+                        || msg_lower.contains("not supported")
+                        || msg_lower.contains("unknown parameter")
+                        || msg_lower.contains("unrecogni")
+                        || msg_lower.contains("invalid")
+                        || msg_lower.contains("must be")
+                        || msg_lower.contains("not allowed")
+                        || msg_lower.contains("not permitted")
+                        || msg_lower.contains("extra inputs")
+                        || msg_lower.contains("not valid")
+                        || msg_lower.contains("bad value")
+                        || msg_lower.contains("wrong type");
+                    if has_format && has_rejection {
+                        return true;
+                    }
+                }
+                // If we have structured JSON with a message but no match, fall through
+            }
+        }
+    }
+
+    // Heuristic fallback: keyword matching across the full body
     let identifies_format = [
         "response_format",
         "json_schema",
@@ -937,11 +1053,11 @@ fn rejected_structured_output(
         "text.format",
         "output_config.format",
         "output_config",
-        "invalid format",
-        "unsupported format",
+        "format.",
+        "format type",
     ]
     .iter()
-    .any(|field| body.contains(field));
+    .any(|field| lower.contains(field));
     let identifies_rejection = [
         "unsupported",
         "not supported",
@@ -955,9 +1071,12 @@ fn rejected_structured_output(
         "not allowed",
         "not permitted",
         "extra inputs",
+        "not valid",
+        "bad value",
+        "wrong type",
     ]
     .iter()
-    .any(|reason| body.contains(reason));
+    .any(|reason| lower.contains(reason));
     identifies_format && (identifies_rejection || status == StatusCode::UNPROCESSABLE_ENTITY)
 }
 
@@ -1059,6 +1178,7 @@ async fn send_provider_request(
     output_contract: &AiOutputContract,
     structured_output_mode: Option<AiStructuredOutputMode>,
     budget: &mut AiRequestBudget,
+    cancellation: Option<CancellationToken>,
 ) -> Result<ProviderAttempt, AiError> {
     let adapter = adapter_for(configuration)?;
     let endpoint = endpoint_with_path(configuration, &configuration.request_path)?;
@@ -1083,12 +1203,23 @@ async fn send_provider_request(
     } else {
         request
     };
-    let response = authenticate(request, configuration, api_key)?
-        .json(&body)
-        .send()
-        .await
-        .map_err(network_error)?;
-    let (status, headers, bytes) = read_response(response, MAX_RESPONSE_BYTES).await?;
+    let request = authenticate(request, configuration, api_key)?.json(&body);
+    let response = if let Some(cancellation) = &cancellation {
+        tokio::select! {
+            result = request.send() => result.map_err(network_error)?,
+            _ = cancellation.cancelled() => return Err(AiError::new("operationCancelled")),
+        }
+    } else {
+        request.send().await.map_err(network_error)?
+    };
+    let (status, headers, bytes) = if let Some(cancellation) = &cancellation {
+        tokio::select! {
+            result = read_response(response, MAX_RESPONSE_BYTES) => result?,
+            _ = cancellation.cancelled() => return Err(AiError::new("operationCancelled")),
+        }
+    } else {
+        read_response(response, MAX_RESPONSE_BYTES).await?
+    };
     if !status.is_success() {
         if rejected_effort(status, &bytes) {
             return Ok(ProviderAttempt::EffortRejected);
@@ -1103,16 +1234,37 @@ async fn send_provider_request(
             &bytes,
         ));
     }
-    let value: Value =
-        serde_json::from_slice(&bytes).map_err(|_| AiError::new("invalidResponse"))?;
+    let response_bytes = bytes.len();
+    let value: Value = serde_json::from_slice(&bytes).map_err(|_| {
+        AiError::new("invalidResponse").with_provider_response(AiProviderResponseMetadata {
+            usage: AiUsage::default(),
+            request_id: None,
+            generation_id: None,
+            routed_provider: None,
+            routed_model: None,
+            finish_reason: None,
+            response_bytes,
+        })
+    })?;
     let request_id = headers
         .get("x-request-id")
         .or_else(|| headers.get("request-id"))
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
-    let mut result =
-        adapter.parse_response(value, request_id, extension_for(configuration.provider))?;
-    result.response_bytes = bytes.len();
+    let mut result = adapter
+        .parse_response(value, request_id, extension_for(configuration.provider))
+        .map_err(|error| {
+            error.with_provider_response(AiProviderResponseMetadata {
+                usage: AiUsage::default(),
+                request_id: None,
+                generation_id: None,
+                routed_provider: None,
+                routed_model: None,
+                finish_reason: None,
+                response_bytes,
+            })
+        })?;
+    result.response_bytes = response_bytes;
     Ok(ProviderAttempt::Completed(result))
 }
 
@@ -1125,6 +1277,7 @@ pub(crate) async fn run_provider(
     max_tokens: u32,
     task: AiTask,
     budget: &mut AiRequestBudget,
+    cancellation: Option<CancellationToken>,
 ) -> Result<(ProviderResult, AiEffortCapability), AiError> {
     let result = run_provider_with_output(
         runtime,
@@ -1136,6 +1289,7 @@ pub(crate) async fn run_provider(
         task,
         budget,
         &AiOutputContract::Text,
+        cancellation,
     )
     .await?;
     Ok((result.0, result.1))
@@ -1151,6 +1305,7 @@ pub(crate) async fn run_provider_with_output(
     task: AiTask,
     budget: &mut AiRequestBudget,
     output_contract: &AiOutputContract,
+    cancellation: Option<CancellationToken>,
 ) -> Result<
     (
         ProviderResult,
@@ -1198,6 +1353,7 @@ pub(crate) async fn run_provider_with_output(
             output_contract,
             structured_output_mode,
             budget,
+            cancellation.clone(),
         )
         .await?
         {
@@ -2043,6 +2199,7 @@ mod tests {
             AiTask::ConflictResolution,
             &mut first_budget,
             &contract,
+            None,
         )
         .await
         .unwrap();
@@ -2057,6 +2214,7 @@ mod tests {
             AiTask::ConflictResolution,
             &mut second_budget,
             &contract,
+            None,
         )
         .await
         .unwrap();
@@ -2108,6 +2266,7 @@ mod tests {
             128,
             AiTask::CommitMessage,
             &mut budget,
+            None,
         )
         .await
         {
@@ -2162,6 +2321,7 @@ mod tests {
             AiTask::ConflictResolution,
             &mut budget,
             &conflict_contract(),
+            None,
         )
         .await
         .unwrap();
@@ -2198,6 +2358,7 @@ mod tests {
             AiTask::ConflictResolution,
             &mut budget,
             &conflict_contract(),
+            None,
         )
         .await
         .unwrap();
@@ -2220,6 +2381,66 @@ mod tests {
             StatusCode::TOO_MANY_REQUESTS,
             br#"{"error":{"message":"response_format is temporarily unavailable"}}"#,
             Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
+    fn deprecation_notice_does_not_trigger_structured_output_fallback() {
+        assert!(!rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"response_format 'json_schema' is deprecated, use 'json_object' instead"}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+        assert!(!rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            r#"response_format is deprecated"#.as_bytes(),
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
+    fn non_english_error_does_not_trigger_structured_output_fallback() {
+        assert!(!rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":{"message":"Das Format 'json_schema' wird nicht unterstützt"}}"#.as_bytes(),
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+        assert!(!rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":{"message":"格式 json_schema 不受支持"}}"#.as_bytes(),
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
+    fn structured_json_error_param_triggers_fallback() {
+        assert!(rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"Invalid response_format: 'json_schema' is not supported with this model.","type":"invalid_request_error","param":"response_format","code":null}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
+    fn output_config_param_triggers_fallback() {
+        assert!(rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"output_config.format: unsupported value: json_schema","type":"invalid_request_error"}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+    }
+
+    #[test]
+    fn structured_error_type_with_format_and_rejection_keywords_triggers_fallback() {
+        assert!(rejected_structured_output(
+            StatusCode::BAD_REQUEST,
+            br#"{"error":{"message":"response_format is not valid for this model","type":"validation_error","param":null}}"#,
+            Some(AiStructuredOutputMode::JsonSchema),
+        ));
+        assert!(rejected_structured_output(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            br#"{"error":{"message":"invalid value for response_format","type":"invalid_request_error"}}"#,
+            Some(AiStructuredOutputMode::JsonObject),
         ));
     }
 

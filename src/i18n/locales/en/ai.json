@@ -25,7 +25,10 @@
     "retryFile": "Retry file",
     "savePolicy": "Save repository policy",
     "saveCommitDefaults": "Save as repository defaults",
+    "skipFailedAndContinue": "Skip failed and continue",
+    "stopBatch": "Stop",
     "undo": "Undo applied changes",
+    "undoAll": "Undo all applied changes",
     "undoing": "Undoing..."
   },
   "commit": {
@@ -82,6 +85,10 @@
     "batchExcludedDetails": "No prompt will be sent for:\n{{files}}",
     "batchFailed_one": "Generated proposals for {{completed}} of {{total}} files. No proposal was produced for {{file}}: {{message}}",
     "batchFailed_other": "Generated proposals for {{completed}} of {{total}} files. No proposal was produced for {{failed}} files; the first was {{file}}: {{message}}",
+    "batchFailureTitle": "AI proposal generation failed",
+    "batchFailureMessage": "{{file}} failed: {{message}}",
+    "batchUndoFailed_one": "Could not undo 1 file",
+    "batchUndoFailed_other": "Could not undo {{count}} files",
     "batchRequestWarning_one": "Gitmun will send one prompt to {{provider}} via {{authority}} for this file. This may create one paid provider request.",
     "batchRequestWarning_other": "Gitmun will send {{count}} separate prompts to {{provider}} via {{authority}}, one per file. This may create {{count}} paid provider requests.",
     "batchSequential": "Requests are sent sequentially. Cancelling stops the active request and the remaining queue.",

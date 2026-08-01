@@ -349,6 +349,25 @@ mod tests {
             loaded.extensions.ai.profiles[0].effort_capability,
             profile.effort_capability
         );
+        settings
+            .extensions
+            .ai
+            .structured_output_modes
+            .insert("cache-key".to_string(), "jsonObject".to_string());
+        create_from_template(&toml_path, &settings).unwrap();
+        let loaded: Settings =
+            toml::from_str(&std::fs::read_to_string(&toml_path).unwrap()).unwrap();
+        assert_eq!(
+            loaded
+                .extensions
+                .ai
+                .structured_output_modes
+                .get("cache-key"),
+            Some(&"jsonObject".to_string())
+        );
+
+        let legacy: Settings = toml::from_str("[extensions.ai]\nenabled = false\n").unwrap();
+        assert!(legacy.extensions.ai.structured_output_modes.is_empty());
     }
 
     #[test]

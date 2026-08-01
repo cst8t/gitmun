@@ -241,6 +241,17 @@ describe("AiCommitControls", () => {
         expect(screen.getByRole("button", {name: "Generate"})).toBeInTheDocument();
     });
 
+    it("cancels generation when the staged file count drops to zero", async () => {
+        generateAiCommitMessages.mockReturnValueOnce(new Promise(() => {}));
+        const view = renderControls();
+        fireEvent.click(screen.getByRole("button", {name: "Generate"}));
+        await waitFor(() => expect(generateAiCommitMessages).toHaveBeenCalledOnce());
+
+        view.rerender(<AiCommitControls {...view.props} stagedCount={0}/>);
+
+        await waitFor(() => expect(cancelAiOperation).toHaveBeenCalledOnce());
+    });
+
     it("exposes undo after insertion", async () => {
         const onApplyMessage = vi.fn();
         const onUndo = vi.fn();

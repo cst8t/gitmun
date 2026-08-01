@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -292,6 +292,7 @@ pub struct AiExtensionSettings {
     pub global_exclusions: Vec<String>,
     pub consented_destinations: Vec<String>,
     pub repository_policies: BTreeMap<String, AiRepositoryPolicy>,
+    pub structured_output_modes: HashMap<String, String>,
     pub usage_history: Vec<AiUsageRecord>,
 }
 
@@ -384,6 +385,7 @@ impl Default for AiExtensionSettings {
             global_exclusions: Vec::new(),
             consented_destinations: Vec::new(),
             repository_policies: BTreeMap::new(),
+            structured_output_modes: HashMap::new(),
             usage_history: Vec::new(),
         }
     }

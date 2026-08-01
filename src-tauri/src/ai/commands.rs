@@ -8,10 +8,13 @@ use std::sync::{Arc, atomic::Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use tauri::Emitter;
+use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::AppState;
+use crate::ai::provider::structured_output_cache_key;
 use crate::ai::{
     AiApiStyle, AiAuthMode, AiCommitMessageMode, AiConfigurationSource, AiError,
     AiExtensionSettings, AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiProfile,
@@ -358,13 +361,14 @@ fn record_ai_usage(
 
 fn record_conflict_usage(
     state: &AppState,
+    task: &'static str,
     started_at: Instant,
     result: &Result<AiConflictProposalResult, AiError>,
 ) {
     match result {
         Ok(result) => record_ai_usage(
             state,
-            "conflictResolution",
+            task,
             started_at,
             Some(&result.usage),
             result.request_id.as_deref(),
@@ -395,7 +399,7 @@ fn record_conflict_usage(
             let diagnostic = (!diagnostics.is_empty()).then(|| diagnostics.join("; "));
             record_ai_usage(
                 state,
-                "conflictResolution",
+                task,
                 started_at,
                 provider_response.map(|response| &response.usage),
                 provider_response.and_then(|response| response.request_id.as_deref()),
@@ -1345,6 +1349,7 @@ pub async fn test_ai_connection(
         64,
         AiTask::ConnectionTest,
         &mut budget,
+        None,
     )
     .await?;
     if result.output_truncated {
@@ -1390,6 +1395,7 @@ pub async fn test_ai_connection_draft(
         64,
         AiTask::ConnectionTest,
         &mut budget,
+        None,
     )
     .await?;
     if result.output_truncated || result.text.trim().is_empty() {
@@ -1480,7 +1486,15 @@ pub async fn discover_ai_model_details_draft(
         .runtime
         .as_ref()
         .ok_or_else(|| AiError::new("network"))?;
-    discover_openrouter_model_details(runtime, &configuration, &api_key, &request.model_id).await
+    let result =
+        discover_openrouter_model_details(runtime, &configuration, &api_key, &request.model_id)
+            .await;
+    if result.is_ok() {
+        let _ = state
+            .git_service
+            .update_structured_output_modes(runtime.structured_output_modes());
+    }
+    result
 }
 
 #[tauri::command]
@@ -1527,6 +1541,12 @@ pub async fn delete_ai_profile(
         }
     }
     result?;
+    if let Ok(key) = structured_output_cache_key(&configuration) {
+        if let Some(runtime) = &state.ai_extension.runtime {
+            runtime.forget_structured_output_mode(&key);
+            let _ = state.git_service.remove_structured_output_mode(&key);
+        }
+    }
     emit_configuration_updated(&app);
     configuration_view(&state).await
 }
@@ -1594,15 +1614,59 @@ fn is_sensitive_path(path: &str) -> bool {
     let file_name = components.last().copied().unwrap_or_default();
     file_name == ".env"
         || file_name.starts_with(".env.")
-        || matches!(file_name, ".npmrc" | ".pypirc" | ".netrc")
+        || matches!(
+            file_name,
+            ".npmrc"
+                | ".pypirc"
+                | ".netrc"
+                | ".dockercfg"
+                | ".git-credentials"
+                | "git-credentials"
+                | ".htpasswd"
+                | ".k5login"
+                | ".s3cfg"
+                | ".pgpass"
+                | "pg_service.conf"
+                | ".my.cnf"
+                | ".azurerc"
+                | ".boto"
+                | ".token"
+                | ".terraform.lock.hcl"
+                | ".kubeconfig"
+                | "kubeconfig"
+                | "credentials"
+                | "credentials.toml"
+                | "credentials.json"
+                | "secrets.yml"
+                | "secrets.yaml"
+                | "secrets.json"
+        )
         || components
             .iter()
-            .any(|part| matches!(*part, ".ssh" | ".aws" | ".gnupg"))
+            .any(|part| matches!(*part, ".ssh" | ".aws" | ".gnupg" | ".kube" | ".docker"))
         || file_name.starts_with("id_rsa")
         || file_name.starts_with("id_ed25519")
-        || [".pem", ".key", ".p12", ".pfx"]
-            .iter()
-            .any(|suffix| file_name.ends_with(suffix))
+        || file_name.starts_with("connectionstrings.")
+        || [
+            ".pem",
+            ".key",
+            ".p12",
+            ".pfx",
+            ".keytab",
+            ".age",
+            ".pgp",
+            ".gpg",
+            ".jks",
+            ".keystore",
+            ".truststore",
+            ".tfvars",
+            ".tfvars.json",
+            ".tfstate",
+            ".tfstate.backup",
+            ".token",
+        ]
+        .iter()
+        .any(|suffix| file_name.ends_with(suffix))
 }
 
 fn parse_name_status(output: &[u8]) -> Result<Vec<(String, String)>, AiError> {
@@ -2090,6 +2154,7 @@ async fn run_commit_provider(
     system_prompt: &str,
     user_prompt: &str,
     max_tokens: u32,
+    cancellation: Option<CancellationToken>,
 ) -> Result<ProviderResult, AiError> {
     validate_context_size(
         system_prompt.len().saturating_add(user_prompt.len()),
@@ -2104,6 +2169,7 @@ async fn run_commit_provider(
         max_tokens,
         AiTask::CommitMessage,
         budget,
+        cancellation,
     )
     .await?;
     if capability == AiEffortCapability::Unsupported {
@@ -2118,6 +2184,7 @@ async fn summarise_commit_diff(
     budget: &mut AiRequestBudget,
     api_key: &str,
     diff: &str,
+    cancellation: Option<CancellationToken>,
 ) -> Result<(Vec<String>, AiUsage), AiError> {
     let chunks = split_text(diff, commit_summary_diff_bytes(configuration));
     let chunk_count = chunks.len();
@@ -2138,6 +2205,7 @@ async fn summarise_commit_diff(
             COMMIT_SUMMARY_PROMPT,
             &prompt,
             max_tokens,
+            cancellation.clone(),
         )
         .await?;
         if result.output_truncated {
@@ -2159,6 +2227,7 @@ async fn reduce_commit_summaries(
     budget: &mut AiRequestBudget,
     api_key: &str,
     summaries: Vec<String>,
+    cancellation: Option<CancellationToken>,
 ) -> Result<(Vec<String>, AiUsage), AiError> {
     let joined = summaries.join("\n\n");
     let chunks = split_text(&joined, commit_summary_diff_bytes(configuration));
@@ -2182,6 +2251,7 @@ async fn reduce_commit_summaries(
             COMMIT_SUMMARY_REDUCTION_PROMPT,
             &prompt,
             max_tokens,
+            cancellation.clone(),
         )
         .await?;
         if result.output_truncated {
@@ -2221,6 +2291,7 @@ async fn generate_commit_message_from_context(
     context: CommitContext,
     system_prompt: &str,
     budget: &mut AiRequestBudget,
+    cancellation: Option<CancellationToken>,
 ) -> Result<AiCommitMessageResult, AiError> {
     let full_context = render_commit_context(&context);
     let request_context_bytes = commit_request_context_bytes(&configuration);
@@ -2235,15 +2306,27 @@ async fn generate_commit_message_from_context(
     let user_prompt = if full_context.len() <= available_user_context_bytes {
         full_context
     } else {
-        let (mut summaries, summary_usage) =
-            summarise_commit_diff(runtime, &mut configuration, budget, api_key, &context.diff)
-                .await?;
+        let (mut summaries, summary_usage) = summarise_commit_diff(
+            runtime,
+            &mut configuration,
+            budget,
+            api_key,
+            &context.diff,
+            cancellation.clone(),
+        )
+        .await?;
         usage = combined_usage(usage, summary_usage);
         let mut summary_context = render_summary_context(&context, &summaries);
         while summary_context.len() > available_user_context_bytes {
-            let (reduced, reduction_usage) =
-                reduce_commit_summaries(runtime, &mut configuration, budget, api_key, summaries)
-                    .await?;
+            let (reduced, reduction_usage) = reduce_commit_summaries(
+                runtime,
+                &mut configuration,
+                budget,
+                api_key,
+                summaries,
+                cancellation.clone(),
+            )
+            .await?;
             summaries = reduced;
             usage = combined_usage(usage, reduction_usage);
             summary_context = render_summary_context(&context, &summaries);
@@ -2259,6 +2342,7 @@ async fn generate_commit_message_from_context(
         system_prompt,
         &user_prompt,
         max_tokens,
+        cancellation,
     )
     .await?;
     if result.output_truncated {
@@ -2383,6 +2467,7 @@ async fn generate_ai_commit_messages_inner(
     request: GenerateAiCommitMessagesRequest,
     state: &AppState,
     app: &tauri::AppHandle,
+    cancellation: Option<CancellationToken>,
 ) -> Result<AiCommitCandidatesResult, AiError> {
     if !(1..=3).contains(&request.candidate_count) {
         return Err(AiError::new("invalidCandidateCount"));
@@ -2444,6 +2529,7 @@ async fn generate_ai_commit_messages_inner(
                 context.clone(),
                 &system_prompt,
                 &mut budget,
+                cancellation.clone(),
             )
             .await?,
         );
@@ -2473,7 +2559,7 @@ pub async fn generate_ai_commit_messages(
     let cancellation = state.ai_extension.operations.begin(&operation_id)?;
     let result = tokio::select! {
         _ = cancellation.cancelled() => Err(AiError::new("operationCancelled")),
-        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, generate_ai_commit_messages_inner(request, &state, &app)) => {
+        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, generate_ai_commit_messages_inner(request, &state, &app, Some(cancellation.clone()))) => {
             result.map_err(|_| AiError::new("timeout")).and_then(|result| result)
         },
     };
@@ -2655,6 +2741,7 @@ async fn generate_ai_writing_inner(
     request: &GenerateAiWritingRequest,
     state: &AppState,
     app: &tauri::AppHandle,
+    cancellation: Option<CancellationToken>,
 ) -> Result<AiWritingResult, AiError> {
     validate_commit_control(&request.additional_instruction, 1000)?;
     emit_ai_progress(
@@ -2705,6 +2792,7 @@ async fn generate_ai_writing_inner(
         configuration.commit_message_max_tokens,
         AiTask::CommitMessage,
         &mut budget,
+        cancellation,
     )
     .await?;
     if result.output_truncated {
@@ -2762,7 +2850,7 @@ pub async fn generate_ai_writing(
     let cancellation = state.ai_extension.operations.begin(&operation_id)?;
     let result = tokio::select! {
         _ = cancellation.cancelled() => Err(AiError::new("operationCancelled")),
-        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, generate_ai_writing_inner(&request, &state, &app)) => {
+        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, generate_ai_writing_inner(&request, &state, &app, Some(cancellation.clone()))) => {
             result.map_err(|_| AiError::new("timeout")).and_then(|result| result)
         },
     };
@@ -2931,7 +3019,7 @@ fn parse_conflict_regions(text: &str) -> Result<Vec<ConflictRegion>, AiError> {
         let ancestor = base_line.map(|base| text[lines[base].1..lines[separator].0].to_string());
         let theirs = text[lines[separator].1..lines[end_line].0].to_string();
         let original = text[start..end].to_string();
-        let id = format!("{:x}", md5::compute(format!("{start}:{end}:{original}")));
+        let id = format!("{:x}", Sha256::digest(format!("{start}:{end}:{original}")));
         regions.push(ConflictRegion {
             id,
             start,
@@ -3198,10 +3286,10 @@ fn proposal_id(original: &[u8]) -> String {
         .as_nanos();
     format!(
         "{:x}",
-        md5::compute(format!(
+        Sha256::digest(format!(
             "{}:{timestamp}:{:x}",
             std::process::id(),
-            md5::compute(original)
+            Sha256::digest(original)
         ))
     )
 }
@@ -3209,7 +3297,25 @@ fn proposal_id(original: &[u8]) -> String {
 #[tauri::command]
 pub async fn get_ai_conflict_eligibility(
     request: ResolveConflictWithAiRequest,
-) -> AiConflictEligibility {
+    state: tauri::State<'_, AppState>,
+) -> Result<AiConflictEligibility, AiError> {
+    let settings = state.git_service.get_settings();
+    let configuration = match state.ai_extension.environment.resolve(&settings) {
+        Ok(configuration) => configuration,
+        Err(error) => {
+            return Ok(AiConflictEligibility {
+                eligible: false,
+                reason: Some(error.code),
+            });
+        }
+    };
+    let (_, exclusions) = repository_context_options(&state, &request.repo_path, &configuration);
+    if excluded_path(&request.file_path, &exclusions) {
+        return Ok(AiConflictEligibility {
+            eligible: false,
+            reason: Some("sensitivePath"),
+        });
+    }
     let result = tauri::async_runtime::spawn_blocking(move || {
         prepare_conflict(
             &request.repo_path,
@@ -3221,7 +3327,7 @@ pub async fn get_ai_conflict_eligibility(
     .await
     .map_err(|_| AiError::new("fileUnavailable"))
     .and_then(|result| result);
-    match result {
+    Ok(match result {
         Ok(()) => AiConflictEligibility {
             eligible: true,
             reason: None,
@@ -3230,13 +3336,24 @@ pub async fn get_ai_conflict_eligibility(
             eligible: false,
             reason: Some(error.code),
         },
-    }
+    })
 }
 
 async fn resolve_conflict_with_ai_inner(
     request: ResolveConflictWithAiRequest,
     state: &AppState,
     app: &tauri::AppHandle,
+    cancellation: Option<CancellationToken>,
+) -> Result<AiConflictProposalResult, AiError> {
+    resolve_conflict_with_ai_inner_filtered(request, state, app, cancellation, None).await
+}
+
+async fn resolve_conflict_with_ai_inner_filtered(
+    request: ResolveConflictWithAiRequest,
+    state: &AppState,
+    app: &tauri::AppHandle,
+    cancellation: Option<CancellationToken>,
+    regen_ids: Option<HashSet<String>>,
 ) -> Result<AiConflictProposalResult, AiError> {
     emit_ai_progress(
         app,
@@ -3245,6 +3362,10 @@ async fn resolve_conflict_with_ai_inner(
         "collectingContext",
     );
     let (mut configuration, api_key) = configured_settings(state, true).await?;
+    let (_, exclusions) = repository_context_options(state, &request.repo_path, &configuration);
+    if excluded_path(&request.file_path, &exclusions) {
+        return Err(AiError::new("sensitivePath"));
+    }
     apply_repository_prompts(
         state,
         &request.repo_path,
@@ -3266,7 +3387,16 @@ async fn resolve_conflict_with_ai_inner(
     })
     .await
     .map_err(|_| AiError::new("fileUnavailable"))??;
-    let prompt = build_conflict_prompt(&request.file_path, prepared.operation, &prepared.regions);
+    let regions: Vec<_> = if let Some(regen_ids) = &regen_ids {
+        prepared
+            .regions
+            .into_iter()
+            .filter(|region| regen_ids.contains(&region.id))
+            .collect()
+    } else {
+        prepared.regions
+    };
+    let prompt = build_conflict_prompt(&request.file_path, prepared.operation, &regions);
     validate_context_size(
         prompt
             .len()
@@ -3313,20 +3443,23 @@ async fn resolve_conflict_with_ai_inner(
         AiTask::ConflictResolution,
         &mut budget,
         &output_contract,
+        cancellation,
     )
     .await?;
+    let _ = state
+        .git_service
+        .update_structured_output_modes(runtime.structured_output_modes());
     if result.output_truncated {
         return Err(AiError::new("outputTruncated").with_provider_response(result.metadata()));
     }
     let replacements = parse_conflict_replacements(
         &result.text,
-        &prepared.regions,
+        &regions,
         structured_output_mode.unwrap_or(AiStructuredOutputMode::PromptOnly),
     )
     .map_err(|error| error.with_provider_response(result.metadata()))?;
     let proposal_id = proposal_id(&prepared.original_bytes);
-    let proposals = prepared
-        .regions
+    let proposals = regions
         .iter()
         .zip(&replacements)
         .map(|(region, replacement)| AiConflictRegionProposal {
@@ -3339,8 +3472,7 @@ async fn resolve_conflict_with_ai_inner(
             explanation: Some(replacement.explanation.clone()),
         })
         .collect::<Vec<_>>();
-    let session_replacements = prepared
-        .regions
+    let session_replacements = regions
         .iter()
         .zip(replacements)
         .map(|(region, replacement)| crate::ai::ConflictReplacement {
@@ -3387,12 +3519,12 @@ pub async fn resolve_conflict_with_ai(
     let cancellation = state.ai_extension.operations.begin(&operation_id)?;
     let result = tokio::select! {
         _ = cancellation.cancelled() => Err(AiError::new("operationCancelled")),
-        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, resolve_conflict_with_ai_inner(request, &state, &app)) => {
+        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, resolve_conflict_with_ai_inner(request, &state, &app, Some(cancellation.clone()))) => {
             result.map_err(|_| AiError::new("timeout")).and_then(|result| result)
         },
     };
     state.ai_extension.operations.finish(&operation_id);
-    record_conflict_usage(&state, started_at, &result);
+    record_conflict_usage(&state, "conflictResolution", started_at, &result);
     result
 }
 
@@ -3405,59 +3537,64 @@ pub async fn regenerate_ai_conflict_regions(
     if request.region_ids.is_empty() {
         return Err(AiError::new("noConflictRegionsSelected"));
     }
-    let mut session = state
-        .ai_extension
-        .conflict_sessions
-        .get(&request.proposal_id)?;
-    if !session.applied_ids.is_empty() {
-        return Err(AiError::new("fileChanged"));
-    }
-    if request.region_ids.iter().any(|id| {
-        !session
-            .replacements
-            .iter()
-            .any(|replacement| &replacement.id == id)
-    }) {
-        return Err(AiError::new("conflictRegionUnknown"));
-    }
+    let (session_clone, proposal_id) =
+        state
+            .ai_extension
+            .conflict_sessions
+            .mutate(&request.proposal_id, |s| {
+                if !s.applied_ids.is_empty() {
+                    return Err(AiError::new("fileChanged"));
+                }
+                if request.region_ids.iter().any(|id| {
+                    !s.replacements
+                        .iter()
+                        .any(|replacement| &replacement.id == id)
+                }) {
+                    return Err(AiError::new("conflictRegionUnknown"));
+                }
+                Ok((s.clone(), request.proposal_id.clone()))
+            })?;
     if request.operation_id.is_empty() {
         request.operation_id = format!("conflict-{}", operation_nonce());
     }
     let operation_id = request.operation_id.clone();
     let conflict_request = ResolveConflictWithAiRequest {
-        repo_path: session.repository.to_string_lossy().to_string(),
-        file_path: session.file_path.clone(),
+        repo_path: session_clone.repository.to_string_lossy().to_string(),
+        file_path: session_clone.file_path.clone(),
         operation_id: operation_id.clone(),
     };
     let started_at = Instant::now();
     let cancellation = state.ai_extension.operations.begin(&operation_id)?;
+    let region_ids: HashSet<String> = request.region_ids.iter().cloned().collect();
     let result = tokio::select! {
         _ = cancellation.cancelled() => Err(AiError::new("operationCancelled")),
-        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, resolve_conflict_with_ai_inner(conflict_request, &state, &app)) => {
+        result = tokio::time::timeout(AI_OPERATION_TIMEOUT, resolve_conflict_with_ai_inner_filtered(conflict_request, &state, &app, Some(cancellation.clone()), Some(region_ids))) => {
             result.map_err(|_| AiError::new("timeout")).and_then(|result| result)
         },
     };
     state.ai_extension.operations.finish(&operation_id);
-    record_conflict_usage(&state, started_at, &result);
+    record_conflict_usage(&state, "conflictRegeneration", started_at, &result);
     let mut result = result?;
     let generated_session = state
         .ai_extension
         .conflict_sessions
         .get(&result.proposal_id)?;
-    for replacement in &mut session.replacements {
-        if request.region_ids.contains(&replacement.id) {
-            let generated = generated_session
-                .replacements
-                .iter()
-                .find(|generated| generated.id == replacement.id)
-                .ok_or_else(|| AiError::new("conflictRegionUnknown"))?;
-            replacement.replacement = generated.replacement.clone();
-        }
-    }
     state
         .ai_extension
         .conflict_sessions
-        .update(&request.proposal_id, session)?;
+        .mutate(&proposal_id, |s| {
+            for replacement in &mut s.replacements {
+                if request.region_ids.contains(&replacement.id) {
+                    let generated = generated_session
+                        .replacements
+                        .iter()
+                        .find(|generated| generated.id == replacement.id)
+                        .ok_or_else(|| AiError::new("conflictRegionUnknown"))?;
+                    replacement.replacement = generated.replacement.clone();
+                }
+            }
+            Ok(())
+        })?;
     state
         .ai_extension
         .conflict_sessions
@@ -3490,6 +3627,10 @@ pub async fn get_ai_conflict_context_preview(
 ) -> Result<AiContextPreview, AiError> {
     let settings = state.git_service.get_settings();
     let mut configuration = state.ai_extension.environment.resolve(&settings)?;
+    let (_, exclusions) = repository_context_options(&state, &request.repo_path, &configuration);
+    if excluded_path(&request.file_path, &exclusions) {
+        return Err(AiError::new("sensitivePath"));
+    }
     apply_repository_prompts(
         &state,
         &request.repo_path,
@@ -3595,23 +3736,27 @@ pub async fn apply_ai_conflict_proposal(
     request: ApplyAiConflictProposalRequest,
     state: tauri::State<'_, AppState>,
 ) -> Result<AiConflictResolutionResult, AiError> {
-    let mut session = state
+    let session = state
         .ai_extension
         .conflict_sessions
-        .get(&request.proposal_id)?;
-    if request.region_ids.is_empty() {
-        return Err(AiError::new("noConflictRegionsSelected"));
-    }
-    if request.region_ids.iter().any(|id| {
-        !session
-            .replacements
-            .iter()
-            .any(|replacement| &replacement.id == id)
-    }) {
-        return Err(AiError::new("conflictRegionUnknown"));
-    }
-    session.applied_ids.extend(request.region_ids);
-    let proposal_id = request.proposal_id.clone();
+        .mutate(&request.proposal_id, |s| {
+            if request.region_ids.iter().any(|id| {
+                !s.replacements
+                    .iter()
+                    .any(|replacement| &replacement.id == id)
+            }) {
+                return Err(AiError::new("conflictRegionUnknown"));
+            }
+            if request.region_ids.is_empty() {
+                return Err(AiError::new("noConflictRegionsSelected"));
+            }
+            let mut session = s.clone();
+            session
+                .applied_ids
+                .extend(request.region_ids.iter().cloned());
+            Ok(session)
+        })?;
+    let proposal_id = request.proposal_id;
     let result = tauri::async_runtime::spawn_blocking(move || apply_conflict_session(session))
         .await
         .map_err(|_| AiError::new("fileWriteFailed"))??;
@@ -3620,7 +3765,16 @@ pub async fn apply_ai_conflict_proposal(
     state
         .ai_extension
         .conflict_sessions
-        .update(&proposal_id, result.0)?;
+        .mutate(&proposal_id, |s| {
+            s.current_hash = result.0.current_hash;
+            s.resolved_index.clone_from(&result.0.resolved_index);
+            s.applied_ids = s
+                .applied_ids
+                .union(&result.0.applied_ids)
+                .cloned()
+                .collect();
+            Ok(())
+        })?;
     Ok(AiConflictResolutionResult {
         file_path,
         resolved_regions,
@@ -3644,6 +3798,56 @@ pub async fn undo_ai_conflict_proposal(
         resolved_regions: 0,
         marked_resolved: false,
     })
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConflictBatchUndoResult {
+    pub undone: usize,
+    pub failed: Vec<AiConflictBatchUndoFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AiConflictBatchUndoFailure {
+    pub proposal_id: String,
+    pub reason: String,
+}
+
+#[tauri::command]
+pub async fn undo_ai_conflict_batch(
+    proposal_ids: Vec<String>,
+    state: tauri::State<'_, AppState>,
+) -> Result<AiConflictBatchUndoResult, AiError> {
+    let mut undone = 0;
+    let mut failed = Vec::new();
+    for proposal_id in proposal_ids {
+        match state.ai_extension.conflict_sessions.get(&proposal_id) {
+            Ok(session) => {
+                match tauri::async_runtime::spawn_blocking(move || undo_conflict_session(&session))
+                    .await
+                {
+                    Ok(Ok(())) => {
+                        state.ai_extension.conflict_sessions.remove(&proposal_id)?;
+                        undone += 1;
+                    }
+                    Ok(Err(error)) => failed.push(AiConflictBatchUndoFailure {
+                        proposal_id,
+                        reason: error.code.to_string(),
+                    }),
+                    Err(_) => failed.push(AiConflictBatchUndoFailure {
+                        proposal_id,
+                        reason: "fileWriteFailed".to_string(),
+                    }),
+                }
+            }
+            Err(error) => failed.push(AiConflictBatchUndoFailure {
+                proposal_id,
+                reason: error.code.to_string(),
+            }),
+        }
+    }
+    Ok(AiConflictBatchUndoResult { undone, failed })
 }
 
 #[cfg(test)]
@@ -3711,6 +3915,99 @@ mod tests {
             open_router: None,
             api_key: None,
         }
+    }
+
+    #[test]
+    fn commit_command_contract_uses_camel_case_json() {
+        let request: GenerateAiCommitMessagesRequest = serde_json::from_value(json!({
+            "repoPath": "/tmp/repository",
+            "subjectLimit": 72,
+            "operationId": "commit-test",
+            "candidateCount": 2,
+            "commitType": "feat",
+            "issueKey": "AI-19",
+            "existingMessage": "Existing subject"
+        }))
+        .unwrap();
+
+        assert_eq!(request.repo_path, "/tmp/repository");
+        assert_eq!(request.subject_limit, 72);
+        assert_eq!(request.candidate_count, 2);
+        assert_eq!(request.operation_id, "commit-test");
+        assert_eq!(request.issue_key, "AI-19");
+
+        let response = serde_json::to_value(AiCommitMessageResult {
+            message: "feat: add AI coverage".to_string(),
+            usage: AiUsage::default(),
+            request_id: Some("request-1".to_string()),
+            generation_id: None,
+            routed_provider: Some("provider".to_string()),
+            routed_model: Some("model".to_string()),
+        })
+        .unwrap();
+        assert_eq!(response["requestId"], "request-1");
+        assert_eq!(response["routedProvider"], "provider");
+        assert!(response.get("request_id").is_none());
+    }
+
+    #[test]
+    fn writing_command_contract_uses_camel_case_json() {
+        let request: GenerateAiWritingRequest = serde_json::from_value(json!({
+            "repoPath": "/tmp/repository",
+            "task": "BranchSummary",
+            "baseReference": "main",
+            "additionalInstruction": "Keep it concise",
+            "operationId": "writing-test"
+        }))
+        .unwrap();
+
+        assert_eq!(request.repo_path, "/tmp/repository");
+        assert_eq!(request.base_reference, "main");
+        assert_eq!(request.additional_instruction, "Keep it concise");
+        assert_eq!(request.operation_id, "writing-test");
+
+        let response = serde_json::to_value(AiWritingResult {
+            content: "Summary".to_string(),
+            usage: AiUsage::default(),
+            request_id: Some("request-2".to_string()),
+            generation_id: Some("generation-2".to_string()),
+            routed_provider: None,
+            routed_model: Some("model".to_string()),
+        })
+        .unwrap();
+        assert_eq!(response["content"], "Summary");
+        assert_eq!(response["generationId"], "generation-2");
+        assert_eq!(response["routedModel"], "model");
+    }
+
+    #[test]
+    fn conflict_command_contract_uses_camel_case_json() {
+        let request: ResolveConflictWithAiRequest = serde_json::from_value(json!({
+            "repoPath": "/tmp/repository",
+            "filePath": "src/conflicted.ts",
+            "operationId": "conflict-test"
+        }))
+        .unwrap();
+
+        assert_eq!(request.repo_path, "/tmp/repository");
+        assert_eq!(request.file_path, "src/conflicted.ts");
+        assert_eq!(request.operation_id, "conflict-test");
+
+        let response = serde_json::to_value(AiConflictProposalResult {
+            proposal_id: "proposal-1".to_string(),
+            file_path: request.file_path,
+            regions: Vec::new(),
+            usage: AiUsage::default(),
+            request_id: Some("request-3".to_string()),
+            generation_id: None,
+            routed_provider: None,
+            routed_model: Some("model".to_string()),
+        })
+        .unwrap();
+        assert_eq!(response["proposalId"], "proposal-1");
+        assert_eq!(response["filePath"], "src/conflicted.ts");
+        assert_eq!(response["routedModel"], "model");
+        assert!(response.get("proposal_id").is_none());
     }
 
     #[test]
@@ -3866,10 +4163,57 @@ mod tests {
             ".ssh/config",
             "keys/id_ed25519.pub",
             "certs/client.pem",
+            ".dockercfg",
+            ".docker/config.json",
+            ".git-credentials",
+            "git-credentials",
+            ".kube/config",
+            "terraform/prod.tfvars",
+            "secrets/prod.tfvars.json",
+            "terraform/prod.tfstate",
+            "terraform/prod.tfstate.backup",
+            ".terraform.lock.hcl",
+            "credentials",
+            "credentials.toml",
+            "credentials.json",
+            "secrets.yml",
+            "secrets.yaml",
+            "secrets.json",
+            ".kubeconfig",
+            "kubeconfig",
+            "keys/service.keytab",
+            "keys/secret.age",
+            "keys/signing.pgp",
+            "client.gpg",
+            ".htpasswd",
+            ".k5login",
+            "store/app.jks",
+            "store/app.keystore",
+            "store/app.truststore",
+            ".s3cfg",
+            ".pgpass",
+            "pg_service.conf",
+            ".my.cnf",
+            ".azurerc",
+            ".boto",
+            ".token",
+            "api.token",
+            "config/connectionStrings.config",
         ] {
             assert!(is_sensitive_path(path), "{path}");
         }
         assert!(!is_sensitive_path("src/environment.ts"));
+        assert!(!is_sensitive_path("src/credentials.ts"));
+        assert!(!is_sensitive_path(".htpasswd.txt"));
+        assert!(!is_sensitive_path("terraform/modules/main.tf"));
+    }
+
+    #[test]
+    fn excluded_path_matches_user_globs() {
+        let exclusions = vec!["vendor/**".to_string(), "secrets/*".to_string()];
+        assert!(excluded_path("vendor/lib/a.rs", &exclusions));
+        assert!(excluded_path("secrets/token.txt", &exclusions));
+        assert!(!excluded_path("src/main.rs", &exclusions));
     }
 
     #[test]
@@ -4434,6 +4778,7 @@ mod tests {
             context,
             "Custom commit prompt",
             &mut budget,
+            None,
         ))
         .unwrap();
 
@@ -4507,6 +4852,7 @@ mod tests {
             context,
             "Custom commit prompt",
             &mut budget,
+            None,
         ))
         .unwrap();
 

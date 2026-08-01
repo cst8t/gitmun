@@ -21,11 +21,13 @@ type Props = {
     subjectLimit: number;
     workflow: AiCommitWorkflow;
     existingMessage: string;
+    otherBusy: boolean;
     onAccept: (message: string) => Promise<boolean>;
     onClose: () => void;
+    onBusyChange: (busy: boolean) => void;
 };
 
-export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existingMessage, onAccept, onClose}: Props) {
+export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existingMessage, otherBusy, onAccept, onClose, onBusyChange}: Props) {
     const {t} = useTranslation("ai");
     const [candidateCount, setCandidateCount] = useState(1);
     const [mode, setMode] = useState<AiCommitMessageMode>("RepositoryStyle");
@@ -101,10 +103,12 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
     }, [generating]);
 
     const generate = async () => {
+        if (otherBusy) return;
         const operationId = `commit-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         operationIdRef.current = operationId;
         setProgressStage("collectingContext");
         setGenerating(true);
+        onBusyChange(true);
         setError(null);
         try {
             const result = await generateAiCommitMessages({
@@ -127,6 +131,7 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
             setError(localiseAiError(caught, t));
         } finally {
             setGenerating(false);
+            onBusyChange(false);
         }
     };
 
@@ -293,7 +298,7 @@ export function AiCommitComposerDialog({repoPath, subjectLimit, workflow, existi
                     {generating && <button type="button" onClick={cancel}>{t("actions.cancel")}</button>}
                     <button type="button" onClick={saveDefaults} disabled={generating || !repositoryPolicy}>{t("actions.saveCommitDefaults")}</button>
                     <button type="button" onClick={close}>{t("actions.discard")}</button>
-                    <button className={candidates.length === 0 ? "ai-dialog__button--primary" : undefined} type="button" onClick={generate} disabled={generating || consentRequired || !contextPreview}>
+                    <button className={candidates.length === 0 ? "ai-dialog__button--primary" : undefined} type="button" onClick={generate} disabled={generating || otherBusy || consentRequired || !contextPreview}>
                         {generating ? t("actions.generating") : candidates.length ? t("actions.regenerate") : t("actions.generate")}
                     </button>
                     <button className="ai-dialog__button--primary" type="button" onClick={accept} disabled={generating || candidates.length === 0}>{t("actions.accept")}</button>
