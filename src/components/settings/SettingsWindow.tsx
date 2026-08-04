@@ -77,6 +77,10 @@ const AI_PROVIDER_ENDPOINTS: Partial<Record<AiProvider, string>> = {
     Ollama: "http://127.0.0.1:11434/v1",
     LmStudio: "http://127.0.0.1:1234/v1",
 };
+const AI_PROVIDER_AUTH: Partial<Record<AiProvider, { mode: AiAuthMode; header: string }>> = {
+    Claude: { mode: "Header", header: "x-api-key" },
+    AzureOpenAi: { mode: "Header", header: "api-key" },
+};
 const DEFAULT_OPEN_ROUTER_SETTINGS: OpenRouterSettings = {
     privacy: "NoDataCollection",
     allowFallbacks: true,
@@ -676,6 +680,9 @@ export function SettingsWindow() {
             if (!current || isKnownDefault) return AI_PROVIDER_ENDPOINTS[provider] ?? "";
             return current;
         });
+        const auth = AI_PROVIDER_AUTH[provider];
+        setAiAuthMode(auth?.mode ?? "Bearer");
+        setAiAuthHeader(auth?.header ?? "");
         setAiModels([]);
     }, []);
 
