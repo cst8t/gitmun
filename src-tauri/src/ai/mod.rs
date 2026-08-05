@@ -4,8 +4,9 @@ mod conflicts;
 mod credentials;
 mod openrouter_oauth;
 mod operations;
-mod provider;
 pub mod types;
+mod api;
+mod providers;
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -18,11 +19,11 @@ pub use configuration::AiConfigurationSource;
 pub(crate) use configuration::{AiLaunchOverrides, EffectiveAiConfiguration, validate_endpoint};
 pub(crate) use credentials::{AiCredentialStore, KeyringAiCredentialStore};
 pub(crate) use operations::AiOperationRegistry;
-pub(crate) use provider::{
+pub(crate) use api::{
     AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiRequestBudget, AiRuntime,
-    AiStructuredOutputMode, AiTask, ProviderResult, api_key_optional, discover_effort,
-    discover_models, discover_openrouter_model_details, run_provider, run_provider_with_output,
+    AiStructuredOutputMode, AiTask, ProviderResult, api_key_optional,
 };
+pub(crate) use providers::{discover_effort, discover_models, discover_openrouter_model_details, run_provider, run_provider_with_output};
 pub use types::{
     AiApiStyle, AiAuthMode, AiCommitMessageMode, AiEffortCapability, AiExtensionSettings,
     AiProfile, AiProvider, AiReasoningPreference, AiRepositoryPolicy, AiUsageRecord,

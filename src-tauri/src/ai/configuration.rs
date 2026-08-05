@@ -9,6 +9,7 @@ use url::{Host, Url};
 
 use crate::git::types::Settings;
 
+use super::providers::ProviderRegistry;
 use super::AiError;
 use super::types::{
     AiApiStyle, AiAuthMode, AiEffortCapability, AiProfile, AiProvider, AiReasoningPreference,
@@ -448,7 +449,7 @@ impl AiLaunchOverrides {
         }
         let provider_matches_profile =
             stored_profile.is_some_and(|profile| profile.provider == provider);
-        let preset = ProviderPreset::for_provider(provider);
+        let preset = ProviderRegistry::preset(provider);
         let mut sources = BTreeMap::new();
         let mut environment_fields = Vec::new();
 
@@ -713,71 +714,6 @@ impl AiLaunchOverrides {
                 .get(&provider)
                 .map(|(_, value)| value.clone())
         })
-    }
-}
-
-#[derive(Clone, Copy)]
-struct ProviderPreset {
-    endpoint: &'static str,
-    api_style: AiApiStyle,
-    request_path: &'static str,
-    models_path: &'static str,
-    auth_mode: AiAuthMode,
-    auth_header: &'static str,
-    max_tokens_field: &'static str,
-}
-
-impl ProviderPreset {
-    fn for_provider(provider: AiProvider) -> Self {
-        let endpoint = provider.default_endpoint();
-        match provider {
-            AiProvider::Claude => Self {
-                endpoint,
-                api_style: AiApiStyle::ChatCompletions,
-                request_path: "/messages",
-                models_path: "/models",
-                auth_mode: AiAuthMode::Header,
-                auth_header: "x-api-key",
-                max_tokens_field: "max_tokens",
-            },
-            AiProvider::AzureOpenAi => Self {
-                endpoint,
-                api_style: AiApiStyle::ChatCompletions,
-                request_path: "/openai/deployments/{deployment}/chat/completions",
-                models_path: "",
-                auth_mode: AiAuthMode::Header,
-                auth_header: "api-key",
-                max_tokens_field: "max_completion_tokens",
-            },
-            AiProvider::OpenAi => Self {
-                endpoint,
-                api_style: AiApiStyle::ChatCompletions,
-                request_path: "/chat/completions",
-                models_path: "/models",
-                auth_mode: AiAuthMode::Bearer,
-                auth_header: "Authorization",
-                max_tokens_field: "max_completion_tokens",
-            },
-            AiProvider::Mistral
-            | AiProvider::GoogleGemini
-            | AiProvider::OpenRouter
-            | AiProvider::Ollama
-            | AiProvider::LmStudio
-            | AiProvider::OpenAiCompatible
-            | AiProvider::Disabled => Self {
-                endpoint,
-                api_style: AiApiStyle::ChatCompletions,
-                request_path: "/chat/completions",
-                models_path: if provider == AiProvider::OpenRouter {
-                    "/models/user"
-                } else {
-                    "/models"
-                },
-                auth_mode: AiAuthMode::Bearer,
-                auth_header: "Authorization",
-                max_tokens_field: "max_tokens",
-            },
-        }
     }
 }
 

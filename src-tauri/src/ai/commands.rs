@@ -14,7 +14,7 @@ use tokio_util::sync::CancellationToken;
 use url::Url;
 
 use crate::AppState;
-use crate::ai::provider::structured_output_cache_key;
+use crate::ai::api::structured_output_cache_key;
 use crate::ai::{
     AiApiStyle, AiAuthMode, AiCommitMessageMode, AiConfigurationSource, AiError,
     AiExtensionSettings, AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiProfile,

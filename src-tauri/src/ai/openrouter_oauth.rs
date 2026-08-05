@@ -8,7 +8,8 @@ use tauri_plugin_opener::OpenerExt;
 use url::Url;
 
 use super::AiError;
-use super::provider::{AiRuntime, exchange_openrouter_oauth_code};
+use super::api::AiRuntime;
+use super::providers::openrouter::exchange_openrouter_oauth_code;
 
 const OPENROUTER_AUTH_URL: &str = "https://openrouter.ai/auth";
 const CALLBACK_PATH: &str = "/callback";
