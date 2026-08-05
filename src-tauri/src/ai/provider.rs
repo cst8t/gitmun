@@ -1433,13 +1433,15 @@ pub(crate) async fn discover_models(
     let page = query.page.max(1);
     let mut catalogue = Vec::new();
     let mut offset = 0;
-    let maximum_pages = if configuration.provider == AiProvider::OpenRouter {
-        MAX_OPENROUTER_CATALOGUE_PAGES
-    } else {
-        1
+    let mut after_id: Option<String> = None;
+    let maximum_pages = match configuration.provider {
+        AiProvider::OpenRouter | AiProvider::Claude => MAX_OPENROUTER_CATALOGUE_PAGES,
+        _ => 1,
     };
     for _ in 0..maximum_pages {
-        let value = fetch_model_page(runtime, configuration, api_key, &endpoint, offset).await?;
+        let value =
+            fetch_model_page(runtime, configuration, api_key, &endpoint, offset, after_id.as_deref())
+                .await?;
         let values = value
             .get("data")
             .or_else(|| value.get("models"))
@@ -1451,14 +1453,24 @@ pub(crate) async fn discover_models(
                 .iter()
                 .filter_map(|value| normalise_model(configuration.provider, value)),
         );
-        if configuration.provider != AiProvider::OpenRouter
+        if configuration.provider == AiProvider::Claude {
+            let has_more = value.get("has_more").and_then(Value::as_bool).unwrap_or(false);
+            if !has_more {
+                break;
+            }
+            after_id = value.get("last_id").and_then(Value::as_str).map(str::to_string);
+            if after_id.is_none() {
+                break;
+            }
+        } else if configuration.provider != AiProvider::OpenRouter
             || value_count < OPENROUTER_CATALOGUE_PAGE_SIZE
         {
             break;
-        }
-        offset += value_count;
-        if offset >= OPENROUTER_CATALOGUE_PAGE_SIZE * MAX_OPENROUTER_CATALOGUE_PAGES {
-            return Err(AiError::new("modelCatalogueTooLarge"));
+        } else {
+            offset += value_count;
+            if offset >= OPENROUTER_CATALOGUE_PAGE_SIZE * MAX_OPENROUTER_CATALOGUE_PAGES {
+                return Err(AiError::new("modelCatalogueTooLarge"));
+            }
         }
     }
 
@@ -1754,6 +1766,7 @@ async fn fetch_model_page(
     api_key: &str,
     endpoint: &Url,
     offset: usize,
+    after_id: Option<&str>,
 ) -> Result<Value, AiError> {
     let mut last_error = AiError::new("providerUnavailable");
     for _ in 0..MODEL_DISCOVERY_ATTEMPTS {
@@ -1767,6 +1780,11 @@ async fn fetch_model_page(
                 ("offset", offset),
             ]);
             request = OPENROUTER_EXTENSION.add_headers(request);
+        } else if configuration.provider == AiProvider::Claude {
+            if let Some(cursor) = after_id {
+                request = request.query(&[("after_id", cursor)]);
+            }
+            request = CLAUDE_ADAPTER.add_protocol_headers(request);
         }
         let response = match authenticate(request, configuration, api_key)?.send().await {
             Ok(response) => response,
@@ -1791,6 +1809,9 @@ fn normalise_model(provider: AiProvider, value: &Value) -> Option<AiModelInfo> {
     if provider == AiProvider::OpenRouter {
         return OPENROUTER_EXTENSION.normalise_model(value);
     }
+    if provider == AiProvider::Claude {
+        return normalise_claude_model(value);
+    }
     let id = value.get("id")?.as_str()?.to_string();
     Some(AiModelInfo {
         name: value
@@ -1801,6 +1822,40 @@ fn normalise_model(provider: AiProvider, value: &Value) -> Option<AiModelInfo> {
             .to_string(),
         id,
         created: value.get("created").and_then(Value::as_u64),
+        ..AiModelInfo::default()
+    })
+}
+
+fn normalise_claude_model(value: &Value) -> Option<AiModelInfo> {
+    let id = value.get("id")?.as_str()?.to_string();
+    let name = value
+        .get("display_name")
+        .and_then(Value::as_str)
+        .unwrap_or(&id)
+        .to_string();
+    let capabilities = value.get("capabilities");
+    let image_input = capabilities
+        .and_then(|c| c.get("image_input"))
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    Some(AiModelInfo {
+        name,
+        id,
+        created: value.get("created_at").and_then(Value::as_u64),
+        context_length: value.get("max_input_tokens").and_then(Value::as_u64),
+        maximum_completion_tokens: value.get("max_tokens").and_then(Value::as_u64),
+        structured_output: capabilities
+            .and_then(|c| c.get("structured_outputs"))
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        reasoning: capabilities
+            .and_then(|c| c.get("thinking"))
+            .is_some_and(|v| !v.is_null()),
+        input_modalities: if image_input {
+            vec!["text".to_string(), "image".to_string()]
+        } else {
+            vec!["text".to_string()]
+        },
         ..AiModelInfo::default()
     })
 }
