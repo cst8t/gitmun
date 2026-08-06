@@ -3,16 +3,14 @@
 use reqwest::RequestBuilder;
 use serde_json::{Map, Value, json};
 
-use super::super::configuration::EffectiveAiConfiguration;
-use super::super::types::{
-    AiEffortCapability, AiProvider, AiReasoningPreference,
-};
-use super::{
-AiModelInfo, AiOutputContract, AiStructuredOutputMode, AiUsage, OpenAiCompatibleExtension,
-    ProtocolAdapter, ProviderResult, response_text, endpoint_with_path, authenticate, read_response,
-    REQUEST_TIMEOUT, MAX_RESPONSE_BYTES,
-};
 use super::super::AiError;
+use super::super::configuration::EffectiveAiConfiguration;
+use super::super::types::{AiEffortCapability, AiProvider, AiReasoningPreference};
+use super::{
+    AiModelInfo, AiOutputContract, AiStructuredOutputMode, AiUsage, MAX_RESPONSE_BYTES,
+    OpenAiCompatibleExtension, ProtocolAdapter, ProviderResult, REQUEST_TIMEOUT, authenticate,
+    endpoint_with_path, read_response, response_text,
+};
 
 use super::AiRuntime;
 

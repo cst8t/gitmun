@@ -1,12 +1,12 @@
+mod api;
 pub mod commands;
 mod configuration;
 mod conflicts;
 mod credentials;
 mod openrouter_oauth;
 mod operations;
-pub mod types;
-mod api;
 mod providers;
+pub mod types;
 
 use serde::Serialize;
 use std::collections::HashMap;
@@ -15,15 +15,18 @@ use std::sync::atomic::AtomicBool;
 
 pub(crate) use conflicts::{ConflictReplacement, ConflictSession, ConflictSessionStore};
 
-pub use configuration::AiConfigurationSource;
-pub(crate) use configuration::{AiLaunchOverrides, EffectiveAiConfiguration, validate_endpoint};
-pub(crate) use credentials::{AiCredentialStore, KeyringAiCredentialStore};
-pub(crate) use operations::AiOperationRegistry;
 pub(crate) use api::{
     AiModelInfo, AiModelPage, AiModelQuery, AiOutputContract, AiRequestBudget, AiRuntime,
     AiStructuredOutputMode, AiTask, ProviderResult, api_key_optional,
 };
-pub(crate) use providers::{discover_effort, discover_models, discover_openrouter_model_details, run_provider, run_provider_with_output};
+pub use configuration::AiConfigurationSource;
+pub(crate) use configuration::{AiLaunchOverrides, EffectiveAiConfiguration, validate_endpoint};
+pub(crate) use credentials::{AiCredentialStore, KeyringAiCredentialStore};
+pub(crate) use operations::AiOperationRegistry;
+pub(crate) use providers::{
+    discover_effort, discover_models, discover_openrouter_model_details, run_provider,
+    run_provider_with_output,
+};
 pub use types::{
     AiApiStyle, AiAuthMode, AiCommitMessageMode, AiEffortCapability, AiExtensionSettings,
     AiProfile, AiProvider, AiReasoningPreference, AiRepositoryPolicy, AiUsageRecord,

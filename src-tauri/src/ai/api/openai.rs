@@ -2,13 +2,13 @@
 
 use serde_json::{Value, json};
 
+use super::super::AiError;
 use super::super::configuration::EffectiveAiConfiguration;
 use super::super::types::AiApiStyle;
 use super::{
     AiModelInfo, AiOutputContract, AiStructuredOutputMode, AiUsage, OpenAiCompatibleExtension,
     ProtocolAdapter, ProviderResult, response_text, responses_output_text,
 };
-use super::super::AiError;
 
 pub(crate) struct OpenAiAdapter;
 
@@ -354,9 +354,7 @@ mod tests {
             "usage": {"prompt_tokens": 5, "completion_tokens": 2, "cost": 0.0003, "is_byok": true}
         });
 
-        let result = OpenAiAdapter
-            .parse_response(value, None, None)
-            .unwrap();
+        let result = OpenAiAdapter.parse_response(value, None, None).unwrap();
 
         // Without the OpenRouter extension, cost/routing aren't extracted
         assert_eq!(result.text, "done");

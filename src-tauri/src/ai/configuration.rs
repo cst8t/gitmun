@@ -9,8 +9,8 @@ use url::{Host, Url};
 
 use crate::git::types::Settings;
 
-use super::providers::ProviderRegistry;
 use super::AiError;
+use super::providers::ProviderRegistry;
 use super::types::{
     AiApiStyle, AiAuthMode, AiEffortCapability, AiProfile, AiProvider, AiReasoningPreference,
     OpenRouterPrivacy,

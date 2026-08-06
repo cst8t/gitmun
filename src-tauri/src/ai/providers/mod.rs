@@ -5,20 +5,18 @@ use std::cmp::Ordering;
 use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
-use super::api::{
-    self, AiModelInfo, AiModelPage, AiModelQuery, AiModelSort, AiOutputContract, AiRequestBudget,
-    AiRuntime, AiStructuredOutputMode, AiTask, OpenAiCompatibleExtension, ProtocolAdapter,
-    ProviderResult, endpoint_with_path, authenticate, network_error, read_response, response_error,
-    REQUEST_TIMEOUT, MODEL_DISCOVERY_ATTEMPTS, MAX_MODELS_RESPONSE_BYTES,
-};
+use super::AiError;
 pub(crate) use super::api::claude::discover_effort;
 use super::api::claude::{ClaudeAdapter, normalise_claude_model};
 use super::api::openai::{OpenAiAdapter, normalise_openai_compatible_model};
-use super::configuration::EffectiveAiConfiguration;
-use super::types::{
-    AiApiStyle, AiAuthMode, AiEffortCapability, AiProvider,
+use super::api::{
+    self, AiModelInfo, AiModelPage, AiModelQuery, AiModelSort, AiOutputContract, AiRequestBudget,
+    AiRuntime, AiStructuredOutputMode, AiTask, MAX_MODELS_RESPONSE_BYTES, MODEL_DISCOVERY_ATTEMPTS,
+    OpenAiCompatibleExtension, ProtocolAdapter, ProviderResult, REQUEST_TIMEOUT, authenticate,
+    endpoint_with_path, network_error, read_response, response_error,
 };
-use super::AiError;
+use super::configuration::EffectiveAiConfiguration;
+use super::types::{AiApiStyle, AiAuthMode, AiEffortCapability, AiProvider};
 
 use self::openrouter::OpenRouterProvider;
 
@@ -131,13 +129,23 @@ pub(crate) async fn discover_models(
             .and_then(Value::as_array)
             .ok_or_else(|| AiError::new("invalidResponse"))?;
         let value_count = values.len();
-        catalogue.extend(values.iter().filter_map(|value| normalise_model(configuration.provider, value)));
+        catalogue.extend(
+            values
+                .iter()
+                .filter_map(|value| normalise_model(configuration.provider, value)),
+        );
         if configuration.provider == AiProvider::Claude {
-            let has_more = value.get("has_more").and_then(Value::as_bool).unwrap_or(false);
+            let has_more = value
+                .get("has_more")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
             if !has_more {
                 break;
             }
-            after_id = value.get("last_id").and_then(Value::as_str).map(str::to_string);
+            after_id = value
+                .get("last_id")
+                .and_then(Value::as_str)
+                .map(str::to_string);
             if after_id.is_none() {
                 break;
             }
@@ -154,7 +162,8 @@ pub(crate) async fn discover_models(
     }
 
     if configuration.provider == AiProvider::OpenRouter {
-        let zdr_models = OpenRouterProvider::fetch_zdr_models(runtime, configuration, api_key).await?;
+        let zdr_models =
+            OpenRouterProvider::fetch_zdr_models(runtime, configuration, api_key).await?;
         for model in &mut catalogue {
             model.zero_data_retention = Some(zdr_models.contains(&model.id));
         }
@@ -272,7 +281,9 @@ impl ProviderRegistry {
         }
     }
 
-    pub fn require(configuration: &EffectiveAiConfiguration) -> Result<ResolvedProvider<'_>, AiError> {
+    pub fn require(
+        configuration: &EffectiveAiConfiguration,
+    ) -> Result<ResolvedProvider<'_>, AiError> {
         let provider = configuration.provider;
         if provider == AiProvider::Disabled {
             return Err(AiError::new("notConfigured"));
@@ -284,9 +295,9 @@ impl ProviderRegistry {
         } else {
             return Err(AiError::new("notConfigured"));
         };
-        let extension: Option<&dyn OpenAiCompatibleExtension> =
-            (provider == AiProvider::OpenRouter)
-                .then_some(OpenRouterProvider::extension() as &dyn OpenAiCompatibleExtension);
+        let extension: Option<&dyn OpenAiCompatibleExtension> = (provider
+            == AiProvider::OpenRouter)
+            .then_some(OpenRouterProvider::extension() as &dyn OpenAiCompatibleExtension);
         Ok(ResolvedProvider { adapter, extension })
     }
 }
@@ -538,8 +549,8 @@ pub(crate) mod test_helpers {
 
 #[cfg(test)]
 mod fallback_tests {
+    use super::super::api::{AiRequestBudget, AiRuntime, AiStructuredOutputMode, AiTask};
     use super::test_helpers;
-    use super::super::api::{AiRuntime, AiRequestBudget, AiStructuredOutputMode, AiTask};
     use crate::ai::types::{AiAuthMode, AiProvider, AiReasoningPreference};
     use serde_json::{Value, json};
     use std::time::Duration;
@@ -755,8 +766,8 @@ mod fallback_tests {
 
     #[test]
     fn unrelated_client_errors_do_not_trigger_structured_output_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(!rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             br#"{"error":{"message":"model is unavailable"}}"#,
@@ -771,8 +782,8 @@ mod fallback_tests {
 
     #[test]
     fn deprecation_notice_does_not_trigger_structured_output_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(!rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             br#"{"error":{"message":"response_format 'json_schema' is deprecated, use 'json_object' instead"}}"#,
@@ -787,8 +798,8 @@ mod fallback_tests {
 
     #[test]
     fn non_english_error_does_not_trigger_structured_output_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(!rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             r#"{"error":{"message":"Das Format 'json_schema' wird nicht unterstützt"}}"#.as_bytes(),
@@ -803,8 +814,8 @@ mod fallback_tests {
 
     #[test]
     fn structured_json_error_param_triggers_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             br#"{"error":{"message":"Invalid response_format: 'json_schema' is not supported with this model.","type":"invalid_request_error","param":"response_format","code":null}}"#,
@@ -814,8 +825,8 @@ mod fallback_tests {
 
     #[test]
     fn output_config_param_triggers_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             br#"{"error":{"message":"output_config.format: unsupported value: json_schema","type":"invalid_request_error"}}"#,
@@ -825,8 +836,8 @@ mod fallback_tests {
 
     #[test]
     fn structured_error_type_with_format_and_rejection_keywords_triggers_fallback() {
-        use super::super::api::rejected_structured_output;
         use super::super::api::AiStructuredOutputMode;
+        use super::super::api::rejected_structured_output;
         assert!(rejected_structured_output(
             reqwest::StatusCode::BAD_REQUEST,
             br#"{"error":{"message":"response_format is not valid for this model","type":"validation_error","param":null}}"#,

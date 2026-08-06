@@ -14,12 +14,10 @@ use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use url::Url;
 
-use super::configuration::{EffectiveAiConfiguration, validate_endpoint};
-use super::types::{
-    AiAuthMode, AiEffortCapability, AiProvider, AiReasoningPreference,
-};
-use super::{AiError, AiProviderResponseMetadata};
 pub(crate) use super::AiUsage;
+use super::configuration::{EffectiveAiConfiguration, validate_endpoint};
+use super::types::{AiAuthMode, AiEffortCapability, AiProvider, AiReasoningPreference};
+use super::{AiError, AiProviderResponseMetadata};
 
 pub(crate) const CONNECTION_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const REQUEST_TIMEOUT: Duration = Duration::from_secs(120);
@@ -964,8 +962,7 @@ pub(crate) async fn run_provider_with_output(
                 effort_capability = AiEffortCapability::Unsupported;
             }
             ProviderAttempt::StructuredOutputRejected => {
-                let Some(fallback) =
-                    structured_output_mode.and_then(|mode| mode.fallback(adapter))
+                let Some(fallback) = structured_output_mode.and_then(|mode| mode.fallback(adapter))
                 else {
                     return Err(AiError::new("requestRejected"));
                 };

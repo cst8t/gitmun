@@ -6,18 +6,15 @@ use reqwest::{RequestBuilder, StatusCode};
 use serde_json::{Map, Value, json};
 use url::Url;
 
+use super::super::AiError;
 use super::super::api::{
-    AiModelInfo, AiRuntime, AiStructuredOutputMode, OpenAiCompatibleExtension,
-    ProviderResult,
-    first_f64, endpoint_with_path, authenticate, network_error, read_response, response_error,
-    string_array, string_number, REQUEST_TIMEOUT, MODEL_DISCOVERY_ATTEMPTS, MAX_MODELS_RESPONSE_BYTES,
-    MAX_OAUTH_RESPONSE_BYTES,
+    AiModelInfo, AiRuntime, AiStructuredOutputMode, MAX_MODELS_RESPONSE_BYTES,
+    MAX_OAUTH_RESPONSE_BYTES, MODEL_DISCOVERY_ATTEMPTS, OpenAiCompatibleExtension, ProviderResult,
+    REQUEST_TIMEOUT, authenticate, endpoint_with_path, first_f64, network_error, read_response,
+    response_error, string_array, string_number,
 };
 use super::super::configuration::EffectiveAiConfiguration;
-use super::super::types::{
-    OpenRouterPrivacy, OpenRouterRoutingStrategy,
-};
-use super::super::AiError;
+use super::super::types::{OpenRouterPrivacy, OpenRouterRoutingStrategy};
 
 const OPENROUTER_APP_URL: &str = "https://gitmun.org";
 const OPENROUTER_APP_TITLE: &str = "Gitmun";
@@ -62,10 +59,8 @@ impl OpenRouterProvider {
         {
             return Err(AiError::new("modelDiscoveryUnavailable"));
         }
-        let endpoint =
-            endpoint_with_path(configuration, &format!("/models/{model_id}/endpoints"))?;
-        let value =
-            fetch_openrouter_metadata(runtime, configuration, api_key, endpoint).await?;
+        let endpoint = endpoint_with_path(configuration, &format!("/models/{model_id}/endpoints"))?;
+        let value = fetch_openrouter_metadata(runtime, configuration, api_key, endpoint).await?;
         let model = normalise_openrouter_endpoint_details(&value, model_id)?;
         if configuration.model == model_id {
             if let Some(mode) = discovered_structured_output_mode(&model.supported_parameters) {
@@ -280,19 +275,20 @@ pub(crate) async fn exchange_openrouter_oauth_code(
     code: &str,
     code_verifier: &str,
 ) -> Result<String, AiError> {
-    let response = OPENROUTER_EXTENSION.add_headers(
-        runtime
-            .client
-            .post("https://openrouter.ai/api/v1/auth/keys"),
-    )
-    .json(&json!({
-        "code": code,
-        "code_verifier": code_verifier,
-        "code_challenge_method": "S256",
-    }))
-    .send()
-    .await
-    .map_err(network_error)?;
+    let response = OPENROUTER_EXTENSION
+        .add_headers(
+            runtime
+                .client
+                .post("https://openrouter.ai/api/v1/auth/keys"),
+        )
+        .json(&json!({
+            "code": code,
+            "code_verifier": code_verifier,
+            "code_challenge_method": "S256",
+        }))
+        .send()
+        .await
+        .map_err(network_error)?;
     let (status, _, body) = read_response(response, MAX_OAUTH_RESPONSE_BYTES).await?;
     if !status.is_success() {
         return Err(AiError::with_detail(
@@ -516,8 +512,8 @@ fn minimum_price(left: Option<String>, right: Option<String>) -> Option<String> 
 mod tests {
     use super::super::test_helpers;
     use super::*;
-    use crate::ai::api::openai::OpenAiAdapter;
     use crate::ai::api::ProtocolAdapter;
+    use crate::ai::api::openai::OpenAiAdapter;
     use crate::ai::providers::openrouter::OpenRouterProvider;
     use crate::ai::types::OpenRouterPrivacy;
     use reqwest::{Client, header::HeaderMap};
