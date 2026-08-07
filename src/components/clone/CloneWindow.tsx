@@ -61,6 +61,11 @@ export function CloneWindow() {
   const [repoUrlError, setRepoUrlError] = useState<string | null>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const localCopyEnabledRef = useRef(false);
+  // copyBusyRef: true while a copy or clone is in flight.  Prevents
+  // auto-startCopy from launching a second operation while one is active,
+  // and prevents the Escape key / close button from hiding the window
+  // while work is in progress.
+  const copyBusyRef = useRef(false);
 
   // isAutoRef: true when destination was last set by our logic (mount/URL change/browse),
   // false when user manually typed in the field. Controls whether URL changes update the path.
@@ -85,6 +90,7 @@ export function CloneWindow() {
       setStatus(t(inputError, { ns: "git", defaultValue: inputError }));
       return;
     }
+    copyBusyRef.current = true;
     setCloning(true);
     setStatus(t("log.cloning"));
     setProgressLines([]);
@@ -124,6 +130,7 @@ export function CloneWindow() {
         appendResultLog("error", message, "unknown", destinationValue);
       }
     } finally {
+      copyBusyRef.current = false;
       setCloning(false);
     }
   }, [t]);
@@ -155,7 +162,26 @@ export function CloneWindow() {
       });
       if (!confirmed) return;
     }
+    // Require confirmation before overlaying an existing non-empty destination.
+    const needsDropOnTopConfirm = modeValue === "filesOnly" && destinationModeValue === "dropOnTop";
+    if (needsDropOnTopConfirm) {
+      try {
+        const exists = await invoke<boolean>("path_is_nonempty_dir", { path: destinationValue });
+        if (exists) {
+          const confirmed = await ask(t("ask.dropOnTopExisting.message", { path: destinationValue }), {
+            title: t("ask.dropOnTopExisting.title"),
+            kind: "warning",
+            okLabel: t("actions.copy"),
+            cancelLabel: t("actions.cancel"),
+          });
+          if (!confirmed) return;
+        }
+      } catch {
+        // If we cannot check, proceed without confirmation.
+      }
+    }
 
+    copyBusyRef.current = true;
     setCloning(true);
     setStatus(t("log.copying"));
     setProgressLines([]);
@@ -168,6 +194,8 @@ export function CloneWindow() {
       setProgressLines(prev => [...prev.slice(-99), line]);
     };
 
+    let backendSuccess = false;
+    let resultDestinationPath = destinationValue;
     try {
       const result = await localCopyRepo({
         source: sourceValue,
@@ -175,8 +203,18 @@ export function CloneWindow() {
         copyMode: modeValue,
         destinationMode: destinationModeValue,
       }, onProgress);
+      backendSuccess = true;
+      resultDestinationPath = result.destinationPath;
 
-      await emit("repository-selected", { repoPath: result.destinationPath });
+      // Post-success UI operations.  Failures here must not be reported as
+      // copy failures because the filesystem work already completed.
+      try {
+        await emit("repository-selected", { repoPath: result.destinationPath });
+      } catch {
+        setStatus(t("log.copyCompleteCannotOpen", { path: result.destinationPath }));
+        appendResultLog("success", t("log.copyComplete", { path: result.destinationPath }), result.backend, result.destinationPath);
+        return;
+      }
       const completionMessage = t("log.copyComplete", {path: result.destinationPath});
       appendResultLog("success", completionMessage, result.backend, result.destinationPath);
       if (result.warning) {
@@ -188,9 +226,21 @@ export function CloneWindow() {
         appendResultLog("info", warningMessage, result.backend, result.warning.path ?? result.destinationPath, result.warning.detail);
       } else {
         setStatus(completionMessage);
-        await getCurrentWindow().close();
+        try {
+          await getCurrentWindow().close();
+        } catch {
+          // Window close failed but the copy succeeded.
+        }
       }
     } catch (e) {
+      if (backendSuccess) {
+        // Backend succeeded but a post-success UI operation threw.
+        const completionMessage = t("log.copyComplete", { path: resultDestinationPath });
+        setStatus(completionMessage);
+        appendResultLog("success", completionMessage, "git-cli", resultDestinationPath);
+        try { await getCurrentWindow().close(); } catch { /* ignore */ }
+        return;
+      }
       const error: Partial<LocalCopyError> = typeof e === "object" && e !== null ? e : {};
       const errorCode = typeof error.code === "string" ? error.code : "unknown";
       if (errorCode === "cancelled") {
@@ -204,6 +254,7 @@ export function CloneWindow() {
         appendResultLog("error", message, "unknown", error.path ?? destinationValue, error.detail);
       }
     } finally {
+      copyBusyRef.current = false;
       setCloning(false);
     }
   }, [t]);
@@ -236,25 +287,37 @@ export function CloneWindow() {
     }
     setOperationMode("copy");
     const nextSource = options.source ?? "";
-    const nextDestination = options.destination ?? fallbackDestination;
     const nextCopyMode = options.copyMode ?? "filesOnly";
+    // Never use the clone base as a runnable Files Only target.
+    // Prefer <base>/<source-name> when a source name exists; otherwise
+    // require an explicit destination.
+    const derivedDestination = (() => {
+      const sourceName = nextSource ? parseRepoName(nextSource) : null;
+      if (options.destination) return options.destination;
+      if (sourceName) return destinationForRepo(fallbackDestination, sourceName);
+      return "";
+    })();
 
     if (options.source != null) {
       setCopySource(options.source);
     }
-    if (nextDestination) {
-      setDestination(nextDestination);
-      isAutoRef.current = false;
+    if (options.destination ?? nextSource) {
+      setDestination(derivedDestination);
+      isAutoRef.current = options.destination == null;
     }
     if (options.copyMode != null) {
       setCopyMode(options.copyMode);
     }
-    setDestinationMode(options.destinationMode);
+    if (nextCopyMode === "completeRepository") {
+      setDestinationMode("dropOnTop");
+    } else {
+      setDestinationMode(options.destinationMode);
+    }
 
-    if (options.startCopy) {
+    if (options.startCopy && !copyBusyRef.current) {
       void copyWithValues(
         nextSource,
-        nextDestination,
+        derivedDestination || (options.destination ?? fallbackDestination),
         nextCopyMode,
         options.destinationMode,
       );
@@ -428,21 +491,36 @@ export function CloneWindow() {
 
   const handleCopyDestinationBrowse = useCallback(async () => {
     try {
+      // For Complete Repository, behave like the clone picker: select a
+      // parent directory and derive a new child name from the source.
+      const parentHint = copyMode === "completeRepository"
+        ? (destination ? getBaseDir(destination) : destination || undefined)
+        : (destination || undefined);
       const selected = await open({
         directory: true,
         multiple: false,
         title: t("picker.copyDestination"),
-        defaultPath: destination || undefined,
+        defaultPath: parentHint,
       });
       if (typeof selected === "string") {
-        setDestination(selected);
-        isAutoRef.current = false;
+        if (copyMode === "completeRepository") {
+          // Derive a new child directory name from the source.
+          const sourceName = copySource
+            ? parseRepoName(copySource) || "repository"
+            : "repository";
+          const newDest = destinationForRepo(selected, sourceName);
+          setDestination(newDest);
+          isAutoRef.current = true;
+        } else {
+          setDestination(selected);
+          isAutoRef.current = false;
+        }
         setStatus(t("log.destinationSet", { path: selected }));
       }
     } catch (e) {
       setStatus(t("log.browseFailed", { message: String(e) }));
     }
-  }, [destination, t]);
+  }, [copyMode, copySource, destination, t]);
 
   const handleClone = useCallback(async () => {
     if (operationMode === "clone") {
@@ -547,7 +625,7 @@ export function CloneWindow() {
                 <button
                   type="button"
                   className={`clone-window__option${copyMode === "completeRepository" ? " clone-window__option--active" : ""}`}
-                  onClick={() => setCopyMode("completeRepository")}
+                  onClick={() => { setCopyMode("completeRepository"); setDestinationMode("dropOnTop"); }}
                   disabled={cloning}
                 >
                   {t("copyModes.completeRepository")}

@@ -25,6 +25,8 @@ pub struct AppState {
     pub(crate) ai_extension: ai::AiExtensionState,
 }
 
+pub struct LocalCopyOperation(pub Mutex<Option<Arc<AtomicBool>>>);
+
 pub struct CloneCancelFlag(pub Arc<AtomicBool>);
 
 struct FsWatcherState(Mutex<Option<RecommendedWatcher>>);
@@ -1421,6 +1423,7 @@ pub fn run() {
             ai_extension: ai::AiExtensionState::new(),
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(LocalCopyOperation(Mutex::new(None)))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
         .manage(PendingCloneWindowOptions(Mutex::new(None)))
@@ -1627,6 +1630,7 @@ pub fn run() {
             commands::repo::open_repo_location,
             commands::repo::clone_repo,
             commands::repo::local_copy_repo,
+            commands::repo::path_is_nonempty_dir,
             commands::repo::cancel_clone,
             commands::repo::get_default_clone_dir,
             commands::repo::open_external_diff,

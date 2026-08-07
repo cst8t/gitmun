@@ -13,6 +13,10 @@
     "deleteExisting": {
       "message": "Delete existing files in \"{{path}}\" before copying? Git metadata is preserved when the destination is already a repository.",
       "title": "Delete Existing Files"
+    },
+    "dropOnTopExisting": {
+      "message": "The destination \"{{path}}\" already exists. Continuing will overlay the source on top of it. Existing files outside the source will be preserved.",
+      "title": "Overlay Existing Directory"
     }
   },
   "destinationModes": {
@@ -32,8 +36,12 @@
     "dropOnTop": "Keeps existing working-tree files, then overlays the source. An existing usable .git is preserved; otherwise a fresh repository is initialised."
   },
   "errors": {
+    "bareRepository": "The destination at {{path}} has bare Git metadata. Local Copy requires a working repository.",
+    "busy": "Another copy or clone is already in progress.",
     "cancelled": "Local Copy was cancelled.",
+    "destinationChanged": "The destination changed while copying. The operation has been aborted to protect your data.",
     "destinationExists": "Complete repository copies require a new destination folder.",
+    "externalWorktree": "The destination repository has an external core.worktree that is not supported.",
     "featureDisabled": "Local Copy is disabled. Enable it in Experimental settings to use this feature.",
     "filesystemFailure": "Local Copy could not complete a filesystem operation at {{path}}. See the result log for details.",
     "gitFailure": "Git could not prepare the Local Copy source or destination. See the result log for details.",
@@ -66,6 +74,7 @@
     "copyFailed": "Copy failed: {{message}}",
     "copying": "Copying...",
     "copyComplete": "Local Copy completed at {{path}}.",
+    "copyCompleteCannotOpen": "Local Copy completed at {{path}} but could not open the repository. See the result log for details.",
     "loadFailed": "Failed to load settings: {{message}}",
     "repoUrlRequired": "Please enter a repository URL.",
     "sourceRequired": "Please enter a source.",

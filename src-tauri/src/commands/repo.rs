@@ -17,6 +17,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
@@ -119,6 +120,7 @@ mod tests {
             destination.join(".git").exists(),
             None,
             &cancel,
+            &None,
         )?;
         drop(std::fs::remove_dir_all(workspace));
         Ok(())
@@ -862,43 +864,137 @@ pub fn init_repo(repo_path: String) -> Result<OperationResult, String> {
 }
 
 #[tauri::command]
+pub fn path_is_nonempty_dir(path: String) -> bool {
+    let path = PathBuf::from(path.trim());
+    if !path.is_dir() {
+        return false;
+    }
+    path.read_dir()
+        .map(|mut entries| entries.next().is_some())
+        .unwrap_or(false)
+}
+
+#[tauri::command]
 pub async fn local_copy_repo(
     request: LocalCopyRequest,
     on_progress: tauri::ipc::Channel<LocalCopyProgress>,
     cancel_flag: tauri::State<'_, CloneCancelFlag>,
+    operation: tauri::State<'_, crate::LocalCopyOperation>,
     state: tauri::State<'_, AppState>,
 ) -> Result<LocalCopyResult, LocalCopyError> {
     require_local_copy_enabled(state.git_service.get_settings().enable_local_copy)?;
 
     let source = request.source.trim().to_string();
     let destination = PathBuf::from(request.destination.trim());
+
+    // Single-flight guard.  Reset the shared cancel flag after acquire so
+    // a stale cancellation does not poison this operation.
+    let _guard = acquire_single_flight(&operation.0)?;
     cancel_flag.0.store(false, Ordering::Relaxed);
+
+    let result = run_local_copy_operation(
+        &source,
+        &destination,
+        request.copy_mode,
+        request.destination_mode,
+        on_progress,
+        cancel_flag.0.clone(),
+    )
+    .await;
+
+    result
+}
+
+/// RAII guard that releases the single-flight lock on drop.
+struct SingleFlightGuard<'a>(&'a Mutex<Option<Arc<AtomicBool>>>);
+
+impl<'a> Drop for SingleFlightGuard<'a> {
+    fn drop(&mut self) {
+        if let Ok(mut guard) = self.0.lock() {
+            *guard = None;
+        }
+    }
+}
+
+fn acquire_single_flight<'a>(
+    lock: &'a Mutex<Option<Arc<AtomicBool>>>,
+) -> Result<SingleFlightGuard<'a>, LocalCopyError> {
+    let mut guard = lock.lock().map_err(|_| {
+        local_copy_error("filesystemFailure", None, Some("Internal lock poisoned".to_string()))
+    })?;
+    if guard.is_some() {
+        return Err(local_copy_error("busy", None, None));
+    }
+    *guard = Some(Arc::new(AtomicBool::new(false)));
+    Ok(SingleFlightGuard(lock))
+}
+
+/// Helper so the compiler knows we never hold the mutex across awaits.
+async fn run_local_copy_operation(
+    source: &str,
+    destination: &Path,
+    copy_mode: LocalCopyMode,
+    destination_mode: LocalCopyDestinationMode,
+    on_progress: tauri::ipc::Channel<LocalCopyProgress>,
+    shared_cancel: Arc<AtomicBool>,
+) -> Result<LocalCopyResult, LocalCopyError> {
     send_local_copy_phase(&on_progress, LocalCopyProgressPhase::Preparing);
 
-    let warning = match request.copy_mode {
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    // Propagate shared cancel requests to the operation-scoped flag.
+    let cancellation_watch = CancelWatch::new(cancel.clone(), shared_cancel);
+
+    let warning = match copy_mode {
         LocalCopyMode::CompleteRepository => {
-            validate_complete_repository_copy_request(&source, &destination)?;
-            run_complete_repository_copy(&source, &destination, on_progress, cancel_flag.0.clone())
-                .await?
+            validate_complete_repository_copy_request(source, destination)?;
+            run_complete_repository_copy(source, destination, on_progress, cancel.clone()).await?
         }
         LocalCopyMode::FilesOnly => {
-            validate_files_only_copy_request(&source, &destination)?;
+            validate_files_only_copy_request(source, destination)?;
             run_files_only_copy(
-                &source,
-                &destination,
-                request.destination_mode,
+                source,
+                destination,
+                destination_mode,
                 on_progress,
-                cancel_flag.0.clone(),
+                cancel.clone(),
             )
             .await?
         }
     };
+
+    drop(cancellation_watch);
 
     Ok(LocalCopyResult {
         destination_path: destination.to_string_lossy().to_string(),
         backend: "git-cli".to_string(),
         warning,
     })
+}
+
+struct CancelWatch(Option<tokio::task::JoinHandle<()>>);
+
+impl CancelWatch {
+    fn new(cancel: Arc<AtomicBool>, shared_cancel: Arc<AtomicBool>) -> Self {
+        let handle = tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+                if shared_cancel.load(Ordering::Relaxed) {
+                    cancel.store(true, Ordering::Relaxed);
+                    break;
+                }
+            }
+        });
+        Self(Some(handle))
+    }
+}
+
+impl Drop for CancelWatch {
+    fn drop(&mut self) {
+        if let Some(handle) = self.0.take() {
+            handle.abort();
+        }
+    }
 }
 
 fn require_local_copy_enabled(enabled: bool) -> Result<(), LocalCopyError> {
@@ -975,7 +1071,10 @@ fn validate_source_destination_overlap(
     source: &str,
     destination: &Path,
 ) -> Result<(), LocalCopyError> {
-    let source_path = PathBuf::from(source);
+    let source_local = resolve_source_path(source);
+    let Some(source_path) = source_local else {
+        return Ok(());
+    };
     if !source_path.exists() {
         return Ok(());
     }
@@ -985,10 +1084,7 @@ fn validate_source_destination_overlap(
     })?;
     let destination_canonical = canonical_destination_path(destination)?;
 
-    if destination_canonical == source_canonical
-        || destination_canonical.starts_with(&source_canonical)
-        || source_canonical.starts_with(&destination_canonical)
-    {
+    if paths_are_same_or_ancestor(&source_canonical, &destination_canonical) {
         return Err(local_copy_error(
             "overlappingPaths",
             Some(destination),
@@ -997,6 +1093,51 @@ fn validate_source_destination_overlap(
     }
 
     Ok(())
+}
+
+/// Resolve a source string that may be a `file://` URL to a local `PathBuf`.
+/// Returns `None` for remote sources.
+fn resolve_source_path(source: &str) -> Option<PathBuf> {
+    if let Some(local_path) = source.strip_prefix("file://") {
+        #[cfg(windows)]
+        let local_path = local_path.strip_prefix('/').unwrap_or(local_path);
+        return Some(PathBuf::from(local_path));
+    }
+    let path = PathBuf::from(source);
+    if path.exists() {
+        return Some(path);
+    }
+    None
+}
+
+/// Check whether two canonical paths are identical or one is an ancestor of
+/// the other.  Handles case-insensitive filesystems where the canonical form
+/// may not detect collisions on its own.
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn paths_are_same_or_ancestor(a: &Path, b: &Path) -> bool {
+    a == b || b.starts_with(a) || a.starts_with(b)
+}
+
+#[cfg(any(target_os = "windows", target_os = "macos"))]
+fn paths_are_same_or_ancestor(a: &Path, b: &Path) -> bool {
+    fn lower(path: &Path) -> String {
+        path.to_string_lossy().to_lowercase()
+    }
+    let a_lower = lower(a);
+    let b_lower = lower(b);
+    if a_lower == b_lower {
+        return true;
+    }
+    // Only treat b as a descendant of a when b's canonicalised path starts
+    // with a followed by a separator (handles both / and \ on Windows).
+    fn is_boundary(prefix: &str, candidate: &str) -> bool {
+        candidate
+            .as_bytes()
+            .get(prefix.len())
+            .is_some_and(|&b| std::path::is_separator(char::from(b)))
+    }
+    (b_lower.starts_with(&a_lower) && is_boundary(&a_lower, &b_lower))
+        || (a_lower.starts_with(&b_lower) && is_boundary(&b_lower, &a_lower))
 }
 
 fn canonical_destination_path(destination: &Path) -> Result<PathBuf, LocalCopyError> {
@@ -1071,14 +1212,36 @@ async fn run_files_only_copy(
     cancel: Arc<AtomicBool>,
 ) -> Result<Option<LocalCopyWarning>, LocalCopyError> {
     send_local_copy_phase(&on_progress, LocalCopyProgressPhase::Scanning);
-    let local_source = PathBuf::from(source);
-    let source_is_local = local_source.exists();
-    if source_is_local {
-        preflight_working_tree(&local_source, &cancel)?;
-        validate_local_submodules(&local_source, &cancel)?;
-    }
-    let preserve_destination_git = validate_destination_repository(destination)?;
-    preflight_destination(destination, &cancel)?;
+    let local_source = resolve_source_path(source);
+    let source_is_local = local_source.is_some();
+    let local_source = local_source.unwrap_or_else(|| PathBuf::from(source));
+
+    // Perform preflight and validation inside spawn_blocking to avoid
+    // blocking the async runtime during recursive tree scans and Git
+    // subprocess calls.
+    let (preserve_destination_git, destination_identity) = {
+        let destination = destination.to_path_buf();
+        let local_source = if source_is_local {
+            Some(local_source.clone())
+        } else {
+            None
+        };
+        let cancel = cancel.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            if let Some(ref src) = local_source {
+                preflight_working_tree(src, &cancel)?;
+                validate_local_submodules(src, &cancel)?;
+            }
+            let preserve = validate_destination_repository(&destination)?;
+            preflight_destination(&destination, &cancel)?;
+            let identity = record_destination_identity(&destination)?;
+            Ok::<_, LocalCopyError>((preserve, identity))
+        })
+        .await
+        .map_err(|error| {
+            local_copy_error("filesystemFailure", None, Some(error.to_string()))
+        })??
+    };
 
     let workspace = create_copy_workspace(destination)?;
     let staged_source = workspace.join("source");
@@ -1105,8 +1268,18 @@ async fn run_files_only_copy(
         staged_source
     };
 
+    // Move the heavy copy, git init, and commit operations into a blocking
+    // thread so the async runtime stays responsive to cancellation and
+    // other commands.
+    let destination = destination.to_path_buf();
     let staged_result = workspace.join("result");
-    let staged_result_operation = (|| {
+    let workspace_path = workspace;
+    let workspace_path_for_result = workspace_path.clone();
+    let on_progress_clone = on_progress;
+    let cancel_clone = cancel;
+    let identity = destination_identity;
+
+    let staged_result_operation = tauri::async_runtime::spawn_blocking(move || {
         std::fs::create_dir(&staged_result).map_err(|error| {
             local_copy_error(
                 "filesystemFailure",
@@ -1114,38 +1287,44 @@ async fn run_files_only_copy(
                 Some(error.to_string()),
             )
         })?;
-        send_local_copy_phase(&on_progress, LocalCopyProgressPhase::Copying);
+        send_local_copy_phase(&on_progress_clone, LocalCopyProgressPhase::Copying);
         if destination.exists() && destination_mode == LocalCopyDestinationMode::DropOnTop {
-            copy_working_tree(destination, &staged_result, &cancel)?;
+            copy_working_tree_preserving_nested_git(&destination, &staged_result, &cancel_clone)?;
         }
-        copy_working_tree(&copy_source, &staged_result, &cancel)?;
+        copy_working_tree(&copy_source, &staged_result, &cancel_clone)?;
 
         if !preserve_destination_git {
-            send_local_copy_phase(&on_progress, LocalCopyProgressPhase::Initialising);
+            send_local_copy_phase(&on_progress_clone, LocalCopyProgressPhase::Initialising);
             run_git_init(&staged_result)?;
         }
 
-        check_local_copy_cancelled(&cancel)?;
-        send_local_copy_phase(&on_progress, LocalCopyProgressPhase::Finalising);
+        check_local_copy_cancelled(&cancel_clone)?;
+        send_local_copy_phase(&on_progress_clone, LocalCopyProgressPhase::Finalising);
         commit_staged_result(
-            destination,
+            &destination,
             &staged_result,
-            &workspace,
+            &workspace_path,
             preserve_destination_git,
-            Some(&on_progress),
-            &cancel,
+            Some(&on_progress_clone),
+            &cancel_clone,
+            &identity,
         )
-    })();
+    })
+    .await
+    .map_err(|error| {
+        local_copy_error("filesystemFailure", None, Some(error.to_string()))
+    })?;
+
     let warning = match staged_result_operation {
         Ok(warning) => warning,
         Err(error) => {
             if error.code != "rollbackFailure" {
-                drop(std::fs::remove_dir_all(&workspace));
+                drop(std::fs::remove_dir_all(&workspace_path_for_result));
             }
             return Err(error);
         }
     };
-    Ok(warning.or_else(|| cleanup_workspace_warning(&workspace)))
+    Ok(warning.or_else(|| cleanup_workspace_warning(&workspace_path_for_result)))
 }
 
 fn run_git_init(path: &Path) -> Result<(), LocalCopyError> {
@@ -1245,6 +1424,8 @@ fn cleanup_workspace_warning(workspace: &Path) -> Option<LocalCopyWarning> {
     if !workspace.exists() {
         return None;
     }
+    // Normalise directory permissions so read-only files can be removed.
+    let _ = make_tree_writable(workspace);
     std::fs::remove_dir_all(workspace)
         .err()
         .map(|error| LocalCopyWarning {
@@ -1252,6 +1433,108 @@ fn cleanup_workspace_warning(workspace: &Path) -> Option<LocalCopyWarning> {
             path: Some(workspace.to_string_lossy().to_string()),
             detail: Some(error.to_string()),
         })
+}
+
+/// Recursively make every entry in `root` writable so `remove_dir_all` can succeed.
+fn make_tree_writable(root: &Path) -> Result<(), std::io::Error> {
+    if !root.is_dir() {
+        return Ok(());
+    }
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let path = entry.path();
+        let metadata = entry.metadata()?;
+        if metadata.is_dir() {
+            make_tree_writable(&path)?;
+        }
+        let mut permissions = metadata.permissions();
+        if permissions.readonly() {
+            permissions.set_readonly(false);
+            let _ = std::fs::set_permissions(&path, permissions);
+        }
+    }
+    Ok(())
+}
+
+fn record_destination_identity(destination: &Path) -> Result<Option<DestinationIdentity>, LocalCopyError> {
+    if !destination.exists() {
+        return Ok(Some(DestinationIdentity::Absent));
+    }
+    // Record the set of top-level entries at the destination.  If the
+    // destination appears or changes during staging we will detect it
+    // before committing.
+    let entries = std::fs::read_dir(destination).map_err(|error| {
+        local_copy_error("filesystemFailure", Some(destination), Some(error.to_string()))
+    })?;
+    let mut names: Vec<String> = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| {
+            local_copy_error("filesystemFailure", Some(destination), Some(error.to_string()))
+        })?;
+        if !is_git_metadata_name(&entry.file_name()) {
+            names.push(entry.file_name().to_string_lossy().to_string());
+        }
+    }
+    let canonical = canonical_destination_path(destination)?;
+    Ok(Some(DestinationIdentity::Present {
+        canonical_path: canonical,
+        top_level_names: names,
+    }))
+}
+
+fn check_destination_unchanged(destination: &Path, identity: &Option<DestinationIdentity>) -> Result<(), LocalCopyError> {
+    let Some(id) = identity else { return Ok(()); };
+    match id {
+        DestinationIdentity::Absent => {
+            if destination.exists() {
+                return Err(local_copy_error("destinationChanged", Some(destination), None));
+            }
+        }
+        DestinationIdentity::Present { canonical_path, top_level_names } => {
+            if !destination.exists() {
+                return Err(local_copy_error("destinationChanged", Some(destination), None));
+            }
+            // Canonical path should remain the same (detects replacement with symlink etc.)
+            let current_canonical = canonical_destination_path(destination)?;
+            if &current_canonical != canonical_path {
+                return Err(local_copy_error("destinationChanged", Some(destination), None));
+            }
+            // Top-level entries should match exactly (neither added nor removed).
+            // This is required because commit_staged_result moves *all* current
+            // top-level entries to backup and deletes the backup on success.
+            let current_entries = std::fs::read_dir(destination).map_err(|error| {
+                local_copy_error("filesystemFailure", Some(destination), Some(error.to_string()))
+            })?;
+            let current_names: std::collections::HashSet<String> = current_entries
+                .filter_map(|entry| {
+                    let entry = entry.ok()?;
+                    if is_git_metadata_name(&entry.file_name()) {
+                        None
+                    } else {
+                        Some(entry.file_name().to_string_lossy().to_string())
+                    }
+                })
+                .collect();
+            if current_names != top_level_names.iter().cloned().collect::<std::collections::HashSet<String>>() {
+                return Err(local_copy_error("destinationChanged", Some(destination), None));
+            }
+        }
+    }
+    Ok(())
+}
+
+enum DestinationIdentity {
+    Absent,
+    Present {
+        canonical_path: PathBuf,
+        top_level_names: Vec<String>,
+    },
+}
+
+/// Check whether a filename is a Git metadata entry (`.git`, `.GIT`, etc.).
+fn is_git_metadata_name(name: &std::ffi::OsStr) -> bool {
+    name.to_str()
+        .is_some_and(|s| s.eq_ignore_ascii_case(".git"))
 }
 
 fn preflight_destination(destination: &Path, cancel: &AtomicBool) -> Result<(), LocalCopyError> {
@@ -1272,7 +1555,7 @@ fn preflight_working_tree(source: &Path, cancel: &AtomicBool) -> Result<(), Loca
         let entry = entry_result.map_err(|error| {
             local_copy_error("filesystemFailure", Some(source), Some(error.to_string()))
         })?;
-        if entry.file_name() == ".git" {
+        if is_git_metadata_name(&entry.file_name()) {
             continue;
         }
         let path = entry.path();
@@ -1359,7 +1642,7 @@ fn validate_declared_submodule_paths(
     configure_command(&mut command);
     command
         .arg("config")
-        .args(["--file", ".gitmodules", "--get-regexp", "path"])
+        .args(["--file", ".gitmodules", "--null", "--get-regexp", "path"])
         .current_dir(source);
     let output = command
         .output()
@@ -1372,12 +1655,22 @@ fn validate_declared_submodule_paths(
         ));
     }
 
-    for line in String::from_utf8_lossy(&output.stdout).lines() {
+    // git config --null --get-regexp produces NUL-delimited output:
+    // key\nvalue\0key\nvalue\0...
+    for chunk in output.stdout.split(|&b| b == 0) {
+        if chunk.is_empty() {
+            continue;
+        }
         check_local_copy_cancelled(cancel)?;
-        let Some(relative_path) = line.split_whitespace().last() else {
+        // Split on the first newline to separate key from value.
+        let Some(newline_pos) = chunk.iter().position(|&b| b == b'\n') else {
             continue;
         };
-        let submodule = source.join(relative_path);
+        let relative_path = String::from_utf8_lossy(&chunk[newline_pos + 1..]).trim().to_string();
+        if relative_path.is_empty() {
+            continue;
+        }
+        let submodule = source.join(&relative_path);
         let available = submodule.is_dir()
             && std::fs::read_dir(&submodule)
                 .map(|mut entries| entries.next().is_some())
@@ -1395,7 +1688,11 @@ fn validate_declared_submodule_paths(
 }
 
 fn validate_destination_repository(destination: &Path) -> Result<bool, LocalCopyError> {
-    if !destination.exists() || std::fs::symlink_metadata(destination.join(".git")).is_err() {
+    if !destination.exists() {
+        return Ok(false);
+    }
+    let dot_git = destination.join(".git");
+    if std::fs::symlink_metadata(&dot_git).is_err() {
         return Ok(false);
     }
 
@@ -1408,17 +1705,100 @@ fn validate_destination_repository(destination: &Path) -> Result<bool, LocalCopy
     let output = command.output().map_err(|error| {
         local_copy_error(
             "invalidDestination",
-            Some(&destination.join(".git")),
+            Some(&dot_git),
             Some(error.to_string()),
         )
     })?;
     if !output.status.success() {
         return Err(local_copy_error(
             "invalidDestination",
-            Some(&destination.join(".git")),
+            Some(&dot_git),
             Some(String::from_utf8_lossy(&output.stderr).trim().to_string()),
         ));
     }
+    let _git_dir = String::from_utf8_lossy(&output.stdout).trim().to_string();
+
+    // Reject bare repositories.
+    let mut is_bare = crate::git_command();
+    configure_command(&mut is_bare);
+    is_bare
+        .arg("-C")
+        .arg(destination)
+        .args(["rev-parse", "--is-bare-repository"]);
+    let bare_output = is_bare.output().map_err(|error| {
+        local_copy_error("invalidDestination", Some(destination), Some(error.to_string()))
+    })?;
+    if bare_output.status.success()
+        && String::from_utf8_lossy(&bare_output.stdout).trim() == "true"
+    {
+        return Err(local_copy_error(
+            "bareRepository",
+            Some(destination),
+            None,
+        ));
+    }
+
+    // Validate that the working tree's toplevel matches the destination.
+    // This correctly handles linked worktrees (whose .git file points to a
+    // git-dir inside the main repository's worktrees/ directory) while
+    // rejecting bare repos and external core.worktree destinations.
+    let mut toplevel_cmd = crate::git_command();
+    configure_command(&mut toplevel_cmd);
+    toplevel_cmd
+        .arg("-C")
+        .arg(destination)
+        .args(["rev-parse", "--show-toplevel"]);
+    let toplevel_output = toplevel_cmd.output().map_err(|error| {
+        local_copy_error("invalidDestination", Some(destination), Some(error.to_string()))
+    })?;
+    if !toplevel_output.status.success() {
+        return Err(local_copy_error(
+            "invalidDestination",
+            Some(destination),
+            Some(String::from_utf8_lossy(&toplevel_output.stderr).trim().to_string()),
+        ));
+    }
+    let toplevel = String::from_utf8_lossy(&toplevel_output.stdout).trim().to_string();
+    let canonical_toplevel = std::fs::canonicalize(&toplevel).unwrap_or(PathBuf::from(&toplevel));
+    let canonical_destination = destination.canonicalize().unwrap_or(destination.to_path_buf());
+    if canonical_toplevel != canonical_destination {
+        return Err(local_copy_error(
+            "externalWorktree",
+            Some(destination),
+            None,
+        ));
+    }
+
+    // Reject destinations with core.worktree pointing elsewhere
+    // (belt-and-suspenders in case --show-toplevel did not catch it).
+    let mut worktree_cmd = crate::git_command();
+    configure_command(&mut worktree_cmd);
+    worktree_cmd
+        .arg("-C")
+        .arg(destination)
+        .args(["config", "core.worktree"]);
+    if let Ok(worktree_output) = worktree_cmd.output() {
+        if worktree_output.status.success() {
+            let configured = String::from_utf8_lossy(&worktree_output.stdout).trim().to_string();
+            if !configured.is_empty() {
+                let configured_path = if std::path::Path::new(&configured).is_absolute() {
+                    PathBuf::from(&configured)
+                } else {
+                    destination.join(&configured)
+                };
+                let canonical_configured = configured_path.canonicalize().unwrap_or(configured_path);
+                let canonical_destination = destination.canonicalize().unwrap_or(destination.to_path_buf());
+                if canonical_configured != canonical_destination {
+                    return Err(local_copy_error(
+                        "externalWorktree",
+                        Some(destination),
+                        None,
+                    ));
+                }
+            }
+        }
+    }
+
     Ok(true)
 }
 
@@ -1426,6 +1806,24 @@ fn copy_working_tree(
     source: &Path,
     destination: &Path,
     cancel: &AtomicBool,
+) -> Result<(), LocalCopyError> {
+    copy_working_tree_inner(source, destination, cancel, false, 0)
+}
+
+fn copy_working_tree_preserving_nested_git(
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+) -> Result<(), LocalCopyError> {
+    copy_working_tree_inner(source, destination, cancel, true, 0)
+}
+
+fn copy_working_tree_inner(
+    source: &Path,
+    destination: &Path,
+    cancel: &AtomicBool,
+    preserve_nested_git: bool,
+    depth: usize,
 ) -> Result<(), LocalCopyError> {
     check_local_copy_cancelled(cancel)?;
     let entries = std::fs::read_dir(source).map_err(|error| {
@@ -1436,7 +1834,11 @@ fn copy_working_tree(
         let entry = entry_result.map_err(|error| {
             local_copy_error("filesystemFailure", Some(source), Some(error.to_string()))
         })?;
-        if entry.file_name() == ".git" {
+        // At the root (depth 0) always skip the root .git entry (it is handled
+        // separately by commit_staged_result).  At deeper levels, skip .git
+        // entries only when not preserving nested metadata (source copy).
+        let is_git_entry = is_git_metadata_name(&entry.file_name());
+        if is_git_entry && (depth == 0 || !preserve_nested_git) {
             continue;
         }
         let source_path = entry.path();
@@ -1462,7 +1864,7 @@ fn copy_working_tree(
                     Some(error.to_string()),
                 )
             })?;
-            copy_working_tree(&source_path, &destination_path, cancel)?;
+            copy_working_tree_inner(&source_path, &destination_path, cancel, preserve_nested_git, depth + 1)?;
             let permissions = std::fs::metadata(&source_path)
                 .map_err(|error| {
                     local_copy_error(
@@ -1596,8 +1998,11 @@ fn commit_staged_result(
     preserve_destination_git: bool,
     on_progress: Option<&tauri::ipc::Channel<LocalCopyProgress>>,
     cancel: &AtomicBool,
+    destination_identity: &Option<DestinationIdentity>,
 ) -> Result<Option<LocalCopyWarning>, LocalCopyError> {
     check_local_copy_cancelled(cancel)?;
+    check_destination_unchanged(destination, destination_identity)?;
+
     if !destination.exists() {
         std::fs::rename(staged_result, destination).map_err(|error| {
             local_copy_error(
@@ -1630,7 +2035,7 @@ fn commit_staged_result(
                     Some(error.to_string()),
                 )
             })?;
-            if preserve_destination_git && entry.file_name() == ".git" {
+            if preserve_destination_git && is_git_metadata_name(&entry.file_name()) {
                 continue;
             }
             std::fs::rename(entry.path(), backup.join(entry.file_name())).map_err(|error| {
@@ -1657,7 +2062,7 @@ fn commit_staged_result(
                     Some(error.to_string()),
                 )
             })?;
-            if preserve_destination_git && entry.file_name() == ".git" {
+            if preserve_destination_git && is_git_metadata_name(&entry.file_name()) {
                 return Err(local_copy_error(
                     "filesystemFailure",
                     Some(&entry.path()),
@@ -1697,6 +2102,7 @@ fn commit_staged_result(
         return Err(finalisation_error);
     }
 
+    let _ = make_tree_writable(&backup);
     if let Err(error) = std::fs::remove_dir_all(&backup) {
         return Ok(Some(LocalCopyWarning {
             code: "backupCleanupFailed".to_string(),
@@ -1936,6 +2342,7 @@ pub async fn clone_repo(
     request: CloneRequest,
     on_progress: tauri::ipc::Channel<String>,
     cancel_flag: tauri::State<'_, CloneCancelFlag>,
+    operation: tauri::State<'_, crate::LocalCopyOperation>,
 ) -> Result<OperationResult, String> {
     use crate::git::cli::CliGitHandler;
 
@@ -1949,7 +2356,11 @@ pub async fn clone_repo(
     let final_dest_str = final_dest.to_string_lossy().to_string();
     let dest_existed = final_dest.exists();
 
+    // Single-flight: reject if a copy is in progress.  Reset shared cancel
+    // after acquire so a stale cancellation does not poison this clone.
+    let _guard = acquire_single_flight(&operation.0).map_err(|e| e.code)?;
     cancel_flag.0.store(false, Ordering::Relaxed);
+
     run_git_clone_with_progress(
         &repo_url,
         &final_dest_str,
