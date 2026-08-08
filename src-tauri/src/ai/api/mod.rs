@@ -1,5 +1,7 @@
 //! Shared HTTP engine primitives for AI provider requests.
 
+pub(crate) mod aws_sigv4;
+pub(crate) mod bedrock;
 pub(crate) mod claude;
 pub(crate) mod openai;
 
@@ -395,7 +397,8 @@ pub(crate) fn endpoint_with_path(
 ) -> Result<Url, AiError> {
     let mut endpoint = validate_endpoint(&configuration.endpoint)?;
     let path = path.replace("{deployment}", &configuration.azure_deployment);
-    if path.contains('{') || path.contains('}') {
+    let unresolved_path = path.replace("{model}", "");
+    if unresolved_path.contains('{') || unresolved_path.contains('}') {
         return Err(AiError::new("deploymentRequired"));
     }
     let mut segments = endpoint
@@ -403,7 +406,12 @@ pub(crate) fn endpoint_with_path(
         .map_err(|_| AiError::new("endpointInvalid"))?;
     segments.pop_if_empty();
     for segment in path.trim_matches('/').split('/') {
-        if !segment.is_empty() {
+        if segment == "{model}" {
+            if configuration.model.trim().is_empty() {
+                return Err(AiError::new("modelRequired"));
+            }
+            segments.push(&configuration.model);
+        } else if !segment.is_empty() {
             segments.push(segment);
         }
     }
@@ -444,7 +452,14 @@ pub(crate) fn authenticate(
     api_key: &str,
 ) -> Result<RequestBuilder, AiError> {
     let mut request = match configuration.auth_mode {
-        AiAuthMode::Bearer if !api_key.is_empty() => request.bearer_auth(api_key),
+        AiAuthMode::Bearer if !api_key.is_empty() => {
+            if configuration.provider == AiProvider::Bedrock
+                && aws_sigv4::is_iam_credentials_json(api_key)
+            {
+                return Err(AiError::new("apiKeyInvalid"));
+            }
+            request.bearer_auth(api_key)
+        }
         AiAuthMode::Header if !api_key.is_empty() => {
             let name = HeaderName::from_bytes(configuration.auth_header.as_bytes())
                 .map_err(|_| AiError::new("authHeaderInvalid"))?;
@@ -453,6 +468,7 @@ pub(crate) fn authenticate(
             request.header(name, value)
         }
         AiAuthMode::Bearer | AiAuthMode::Header | AiAuthMode::None => request,
+        AiAuthMode::AwsSigV4 => request,
     };
     for (name, value) in &configuration.extra_headers {
         request = request.header(name, value);
@@ -779,14 +795,36 @@ pub(crate) async fn send_provider_request(
     } else {
         request
     };
-    let request = authenticate(request, configuration, api_key)?.json(&body);
+    let body_bytes = serde_json::to_vec(&body).map_err(|_| AiError::new("invalidResponse"))?;
+    let request = async {
+        if configuration.auth_mode == AiAuthMode::AwsSigV4 {
+            let request = configuration
+                .extra_headers
+                .iter()
+                .fold(request, |request, (name, value)| {
+                    request.header(name, value)
+                });
+            let mut request = request
+                .body(body_bytes.clone())
+                .build()
+                .map_err(network_error)?;
+            aws_sigv4::sign_bedrock_request(&mut request, api_key, &body_bytes)?;
+            runtime.client.execute(request).await.map_err(network_error)
+        } else {
+            authenticate(request, configuration, api_key)?
+                .body(body_bytes)
+                .send()
+                .await
+                .map_err(network_error)
+        }
+    };
     let response = if let Some(cancellation) = &cancellation {
         tokio::select! {
-            result = request.send() => result.map_err(network_error)?,
+            result = request => result?,
             _ = cancellation.cancelled() => return Err(AiError::new("operationCancelled")),
         }
     } else {
-        request.send().await.map_err(network_error)?
+        request.await?
     };
     let (status, headers, bytes) = if let Some(cancellation) = &cancellation {
         tokio::select! {

@@ -2,6 +2,7 @@ export type AiProvider =
     | "Disabled"
     | "OpenAi"
     | "Claude"
+    | "Bedrock"
     | "Mistral"
     | "GoogleGemini"
     | "OpenRouter"
@@ -11,7 +12,7 @@ export type AiProvider =
     | "OpenAiCompatible";
 
 export type AiApiStyle = "ChatCompletions" | "Responses";
-export type AiAuthMode = "Bearer" | "Header" | "None";
+export type AiAuthMode = "Bearer" | "Header" | "AwsSigV4" | "None";
 export type AiReasoningPreference = "Automatic" | "ProviderDefault" | "Low" | "Medium" | "High";
 export type AiConfigurationSource = "Environment" | "StoredProfile" | "ProviderDefault";
 export type OpenRouterPrivacy = "NoDataCollection" | "StrictZdr" | "AccountDefault";

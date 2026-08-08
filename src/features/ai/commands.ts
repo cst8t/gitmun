@@ -21,8 +21,10 @@ import type {
     AiWritingTask,
 } from "./types";
 
-export function getAiConfiguration(): Promise<AiConfigurationView> {
-    return invoke<AiConfigurationView>("get_ai_configuration");
+export function getAiConfiguration(profileId?: string): Promise<AiConfigurationView> {
+    return profileId
+        ? invoke<AiConfigurationView>("get_ai_configuration", {profileId})
+        : invoke<AiConfigurationView>("get_ai_configuration");
 }
 
 export function saveAiConfiguration(request: SaveAiConfigurationRequest): Promise<AiConfigurationView> {
@@ -37,8 +39,10 @@ export function setAiApiKey(apiKey: string): Promise<AiConfigurationView> {
     return invoke<AiConfigurationView>("set_ai_api_key", {apiKey});
 }
 
-export function clearAiApiKey(): Promise<AiConfigurationView> {
-    return invoke<AiConfigurationView>("clear_ai_api_key");
+export function clearAiApiKey(profileId?: string): Promise<AiConfigurationView> {
+    return profileId
+        ? invoke<AiConfigurationView>("clear_ai_api_key", {profileId})
+        : invoke<AiConfigurationView>("clear_ai_api_key");
 }
 
 export function connectOpenRouter(callbackMessage: string): Promise<AiConfigurationView> {

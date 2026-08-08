@@ -204,6 +204,12 @@
   white-space: nowrap;
 }
 
+.settings-window__credential-entry .settings-window__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .settings-window__credential-divider {
   display: flex;
   align-items: center;

@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
     discoverAiModelsDraft: vi.fn(),
     emit: vi.fn(async () => {}),
     getAppUpdateChannel: vi.fn(async () => "SystemManaged"),
+    getAiConfiguration: vi.fn(),
     openDialog: vi.fn(),
     openPath: vi.fn(),
     invoke: vi.fn(),
@@ -121,14 +122,7 @@ vi.mock("../../api/commands", () => ({
         effortCapability: {status: "unknown"}, hasApiKey: false, configured: false, insecureTransport: false,
     })),
     connectOpenRouter: mocks.connectOpenRouter,
-    getAiConfiguration: vi.fn(async () => ({
-        provider: "Disabled", endpoint: "", model: "", reasoningPreference: "Automatic",
-        effortCapability: {status: "unknown"}, hasApiKey: false, configured: false, insecureTransport: false,
-        commitContextLimitKib: 24, conflictContextLimitKib: 48,
-        commitMessageMaxTokens: 512, conflictResolutionMaxTokens: 4096,
-        commitMessagePrompt: "Write a concise commit message.",
-        conflictResolutionPrompt: "Resolve the conflict.", includeCommitHistory: true,
-    })),
+    getAiConfiguration: mocks.getAiConfiguration,
     getAppUpdateChannel: mocks.getAppUpdateChannel,
     getConfigFilePath: vi.fn(async () => "/home/conor/.config/gitmun/config.toml"),
     getConfigFolderPath: vi.fn(async () => "/home/conor/.config/gitmun"),
@@ -180,6 +174,15 @@ function openAiSettings() {
 
 describe("SettingsWindow", () => {
     beforeEach(() => {
+        mocks.getAiConfiguration.mockReset();
+        mocks.getAiConfiguration.mockResolvedValue({
+            provider: "Disabled", endpoint: "", model: "", reasoningPreference: "Automatic",
+            effortCapability: {status: "unknown"}, hasApiKey: false, configured: false, insecureTransport: false,
+            commitContextLimitKib: 24, conflictContextLimitKib: 48,
+            commitMessageMaxTokens: 512, conflictResolutionMaxTokens: 4096,
+            commitMessagePrompt: "Write a concise commit message.",
+            conflictResolutionPrompt: "Resolve the conflict.", includeCommitHistory: true,
+        });
         mocks.discoverAiModelDetailsDraft.mockReset();
         mocks.discoverAiModelsDraft.mockReset();
         mocks.discoverAiModelsDraft.mockResolvedValue({models: [], page: 1, pageSize: 100, hasMore: false});
@@ -305,6 +308,137 @@ describe("SettingsWindow", () => {
         fireEvent.change(screen.getByLabelText("Reasoning level"), {target: {value: "High"}});
         expect(screen.getByLabelText("Model")).toHaveValue("selected-model");
         expect(screen.getByLabelText("Reasoning level")).toHaveValue("High");
+    });
+
+    it("defaults new profiles to OpenRouter and provides Bedrock regional endpoints", async () => {
+        render(<SettingsWindow/>);
+        await screen.findByLabelText("Terminal");
+
+        openAiSettings();
+
+        const provider = screen.getByLabelText<HTMLSelectElement>("AI provider");
+        expect(provider).toHaveValue("OpenRouter");
+        expect(screen.getByLabelText("Base URL")).toHaveValue("https://openrouter.ai/api/v1");
+        expect(Array.from(provider.options, option => option.text)).toEqual([
+            "Amazon Bedrock",
+            "Azure OpenAI",
+            "Claude",
+            "Google Gemini",
+            "LM Studio",
+            "Mistral",
+            "Ollama",
+            "OpenAI",
+            "OpenAI-compatible (advanced)",
+            "OpenRouter",
+        ]);
+
+        fireEvent.change(provider, {target: {value: "Bedrock"}});
+        const bedrockEndpoint = screen.getByLabelText<HTMLSelectElement>("Amazon Bedrock runtime endpoint");
+        expect(bedrockEndpoint).toHaveValue("https://bedrock-runtime.eu-west-2.amazonaws.com");
+        expect(screen.queryByLabelText("Base URL")).not.toBeInTheDocument();
+
+        fireEvent.change(bedrockEndpoint, {target: {value: "custom"}});
+        expect(screen.getByLabelText("Custom endpoint")).toHaveValue("");
+    });
+
+    it("updates credential controls when changing or creating an AI profile", async () => {
+        const profileDefaults = {
+            apiStyle: "ChatCompletions",
+            requestPath: "",
+            modelsPath: "",
+            authMode: "Bearer",
+            authHeader: "",
+            maxTokensField: "",
+            azureDeployment: "",
+            azureApiVersion: "2024-10-21",
+            reasoningPreference: "Automatic",
+            effortCapability: {status: "unknown"},
+            openRouter: {
+                privacy: "NoDataCollection",
+                allowFallbacks: true,
+                requireParameters: true,
+                routingStrategy: "Default",
+                maxPromptPrice: "",
+                maxCompletionPrice: "",
+                preferredProviders: [],
+                allowedProviders: [],
+                ignoredProviders: [],
+                preferredMaxLatency: "",
+                preferredMinThroughput: "",
+                diagnostics: false,
+            },
+        };
+        const profiles = [
+            {
+                ...profileDefaults,
+                id: "openai-profile",
+                name: "OpenAI profile",
+                provider: "OpenAi",
+                endpoint: "https://api.openai.com/v1",
+                model: "gpt-5",
+            },
+            {
+                ...profileDefaults,
+                id: "claude-profile",
+                name: "Claude profile",
+                provider: "Claude",
+                endpoint: "https://api.anthropic.com/v1",
+                model: "claude-sonnet-4-5",
+                authMode: "Header",
+                authHeader: "x-api-key",
+                maxTokensField: "max_tokens",
+            },
+        ];
+        const configuredProfile = {
+            enabled: true,
+            selectedProfileId: "openai-profile",
+            profiles,
+            provider: "OpenAi",
+            endpoint: "https://api.openai.com/v1",
+            model: "gpt-5",
+            reasoningPreference: "Automatic",
+            effortCapability: {status: "unknown"},
+            commitContextLimitKib: 24,
+            conflictContextLimitKib: 48,
+            commitMessageMaxTokens: 512,
+            conflictResolutionMaxTokens: 4096,
+            commitMessagePrompt: "Write a concise commit message.",
+            conflictResolutionPrompt: "Resolve the conflict.",
+            includeCommitHistory: true,
+            hasApiKey: true,
+            credentialManagedByEnvironment: false,
+            configured: true,
+            insecureTransport: false,
+            sources: {},
+            environmentFields: [],
+            consentRequired: false,
+        };
+        mocks.getAiConfiguration
+            .mockResolvedValueOnce(configuredProfile)
+            .mockResolvedValueOnce({
+                ...configuredProfile,
+                selectedProfileId: "claude-profile",
+                provider: "Claude",
+                endpoint: "https://api.anthropic.com/v1",
+                model: "claude-sonnet-4-5",
+                hasApiKey: false,
+                configured: false,
+            });
+
+        render(<SettingsWindow/>);
+        await screen.findByLabelText("Terminal");
+
+        openAiSettings();
+        expect(screen.getByRole("button", {name: "Replace key"})).toBeInTheDocument();
+        fireEvent.change(screen.getByLabelText("Profile"), {target: {value: "claude-profile"}});
+
+        expect(screen.getByRole("button", {name: "Store key"})).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Clear API key"})).not.toBeInTheDocument();
+        await waitFor(() => expect(mocks.getAiConfiguration).toHaveBeenLastCalledWith("claude-profile"));
+
+        fireEvent.click(screen.getByRole("button", {name: "New profile"}));
+        expect(screen.getByRole("button", {name: "Store key"})).toBeInTheDocument();
+        expect(screen.queryByRole("button", {name: "Clear API key"})).not.toBeInTheDocument();
     });
 
     it("formats OpenRouter model prices and performance with matching filter units", async () => {

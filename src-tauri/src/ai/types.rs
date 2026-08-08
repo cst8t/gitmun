@@ -19,6 +19,7 @@ pub enum AiProvider {
     Disabled,
     OpenAi,
     Claude,
+    Bedrock,
     Mistral,
     GoogleGemini,
     OpenRouter,
@@ -33,6 +34,7 @@ impl AiProvider {
         match self {
             Self::OpenAi => "https://api.openai.com/v1",
             Self::Claude => "https://api.anthropic.com/v1",
+            Self::Bedrock => "https://bedrock-runtime.eu-west-2.amazonaws.com",
             Self::Mistral => "https://api.mistral.ai/v1",
             Self::GoogleGemini => "https://generativelanguage.googleapis.com/v1beta/openai",
             Self::OpenRouter => "https://openrouter.ai/api/v1",
@@ -43,7 +45,7 @@ impl AiProvider {
     }
 
     pub fn is_openai_compatible(self) -> bool {
-        !matches!(self, Self::Disabled | Self::Claude)
+        !matches!(self, Self::Disabled | Self::Claude | Self::Bedrock)
     }
 
     pub fn api_key_optional(self, endpoint_is_loopback: bool) -> bool {
@@ -72,6 +74,7 @@ pub enum AiAuthMode {
     #[default]
     Bearer,
     Header,
+    AwsSigV4,
     None,
 }
 
@@ -175,7 +178,7 @@ impl Default for AiProfile {
         Self {
             id: "default".to_string(),
             name: String::new(),
-            provider: AiProvider::OpenAi,
+            provider: AiProvider::OpenRouter,
             endpoint: String::new(),
             model: String::new(),
             api_style: AiApiStyle::ChatCompletions,
@@ -464,6 +467,11 @@ mod tests {
             AiProvider::OpenRouter.default_endpoint(),
             "https://openrouter.ai/api/v1"
         );
+        assert_eq!(
+            AiProvider::Bedrock.default_endpoint(),
+            "https://bedrock-runtime.eu-west-2.amazonaws.com"
+        );
+        assert!(!AiProvider::Bedrock.is_openai_compatible());
     }
 
     #[test]
@@ -471,6 +479,7 @@ mod tests {
         let settings = AiExtensionSettings::default();
         assert!(!settings.enabled);
         assert!(settings.profiles.is_empty());
+        assert_eq!(AiProfile::default().provider, AiProvider::OpenRouter);
     }
 
     #[test]

@@ -533,8 +533,19 @@ struct ModelConflictReplacement {
 
 async fn configuration_view(state: &AppState) -> Result<AiConfigurationView, AiError> {
     let settings = state.git_service.get_settings();
+    configuration_view_for_settings(state, settings).await
+}
+
+async fn configuration_view_for_settings(
+    state: &AppState,
+    settings: crate::git::types::Settings,
+) -> Result<AiConfigurationView, AiError> {
     let configuration = state.ai_extension.environment.resolve(&settings)?;
-    let has_api_key = read_api_key(state, &configuration, true).await?.is_some();
+    let has_api_key = if configuration.provider == AiProvider::Disabled {
+        false
+    } else {
+        read_api_key(state, &configuration, true).await?.is_some()
+    };
     let insecure_transport =
         Url::parse(&configuration.endpoint).is_ok_and(|url| url.scheme() == "http");
     let configured = validate_effective_configuration(&configuration, true).is_ok()
@@ -868,7 +879,7 @@ async fn read_api_key(
     if let Some(api_key) = state
         .ai_extension
         .environment
-        .api_key(configuration.provider)
+        .api_key(configuration.provider, configuration.auth_mode)
     {
         return Ok(Some(api_key));
     }
@@ -962,9 +973,23 @@ fn emit_configuration_updated(app: &tauri::AppHandle) {
 
 #[tauri::command]
 pub async fn get_ai_configuration(
+    profile_id: Option<String>,
     state: tauri::State<'_, AppState>,
 ) -> Result<AiConfigurationView, AiError> {
-    configuration_view(&state).await
+    let mut settings = state.git_service.get_settings();
+    if let Some(profile_id) = profile_id {
+        if !settings
+            .extensions
+            .ai
+            .profiles
+            .iter()
+            .any(|profile| profile.id == profile_id)
+        {
+            return Err(AiError::new("profileNotFound"));
+        }
+        settings.extensions.ai.selected_profile_id = profile_id;
+    }
+    configuration_view_for_settings(&state, settings).await
 }
 
 #[tauri::command]
@@ -1101,14 +1126,27 @@ pub async fn set_ai_api_key(
 
 #[tauri::command]
 pub async fn clear_ai_api_key(
+    profile_id: Option<String>,
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<AiConfigurationView, AiError> {
-    let settings = state.git_service.get_settings();
+    let mut settings = state.git_service.get_settings();
+    if let Some(profile_id) = profile_id {
+        if !settings
+            .extensions
+            .ai
+            .profiles
+            .iter()
+            .any(|profile| profile.id == profile_id)
+        {
+            return Err(AiError::new("profileNotFound"));
+        }
+        settings.extensions.ai.selected_profile_id = profile_id;
+    }
     let configuration = state.ai_extension.environment.resolve(&settings)?;
     clear_api_key_for(&state, &configuration).await?;
     emit_configuration_updated(&app);
-    configuration_view(&state).await
+    configuration_view_for_settings(&state, settings).await
 }
 
 #[tauri::command]
@@ -1440,7 +1478,7 @@ async fn draft_configuration(
         state
             .ai_extension
             .environment
-            .api_key(configuration.provider)
+            .api_key(configuration.provider, configuration.auth_mode)
             .unwrap_or_default()
     } else if let Some(api_key) = request
         .api_key

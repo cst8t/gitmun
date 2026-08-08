@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from "react";
+import React, {useState, useEffect, useCallback, useRef} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
@@ -43,7 +43,6 @@ import {
     deleteAiProfile,
     discoverAiModelsDraft,
     discoverAiModelDetailsDraft,
-    setAiApiKey,
     setAiPrivacySettings,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
@@ -68,14 +67,57 @@ const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
 const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
 const DEFAULT_OPENAI_ENDPOINT = "https://api.openai.com/v1";
 const DEFAULT_CLAUDE_ENDPOINT = "https://api.anthropic.com/v1";
+const DEFAULT_BEDROCK_ENDPOINT = "https://bedrock-runtime.eu-west-2.amazonaws.com";
+const BEDROCK_RUNTIME_REGIONS = [
+    "af-south-1",
+    "ap-east-2",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-northeast-3",
+    "ap-south-1",
+    "ap-south-2",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "ap-southeast-3",
+    "ap-southeast-4",
+    "ap-southeast-5",
+    "ap-southeast-6",
+    "ap-southeast-7",
+    "ca-central-1",
+    "ca-west-1",
+    "eu-central-1",
+    "eu-central-2",
+    "eu-north-1",
+    "eu-south-1",
+    "eu-south-2",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "il-central-1",
+    "me-central-1",
+    "me-south-1",
+    "sa-east-1",
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "us-gov-east-1",
+    "us-gov-west-1",
+] as const;
+const BEDROCK_RUNTIME_ENDPOINTS = BEDROCK_RUNTIME_REGIONS.map(
+    region => `https://bedrock-runtime.${region}.amazonaws.com`,
+);
 const AI_PROVIDER_ENDPOINTS: Partial<Record<AiProvider, string>> = {
-    OpenAi: DEFAULT_OPENAI_ENDPOINT,
+    Bedrock: DEFAULT_BEDROCK_ENDPOINT,
+    AzureOpenAi: "",
     Claude: DEFAULT_CLAUDE_ENDPOINT,
-    Mistral: "https://api.mistral.ai/v1",
     GoogleGemini: "https://generativelanguage.googleapis.com/v1beta/openai",
-    OpenRouter: "https://openrouter.ai/api/v1",
-    Ollama: "http://127.0.0.1:11434/v1",
     LmStudio: "http://127.0.0.1:1234/v1",
+    Mistral: "https://api.mistral.ai/v1",
+    Ollama: "http://127.0.0.1:11434/v1",
+    OpenAi: DEFAULT_OPENAI_ENDPOINT,
+    OpenAiCompatible: "",
+    OpenRouter: "https://openrouter.ai/api/v1",
 };
 const AI_PROVIDER_AUTH: Partial<Record<AiProvider, { mode: AiAuthMode; header: string }>> = {
     Claude: { mode: "Header", header: "x-api-key" },
@@ -344,7 +386,7 @@ export function SettingsWindow() {
     const [aiEnabled, setAiEnabled] = useState(false);
     const [aiProfileId, setAiProfileId] = useState("");
     const [aiProfileName, setAiProfileName] = useState("");
-    const [aiProvider, setAiProvider] = useState<AiProvider>("Disabled");
+    const [aiProvider, setAiProvider] = useState<AiProvider>("OpenRouter");
     const [aiEndpoint, setAiEndpoint] = useState("");
     const [aiModel, setAiModel] = useState("");
     const [aiReasoningPreference, setAiReasoningPreference] = useState<AiReasoningPreference>("Automatic");
@@ -357,7 +399,11 @@ export function SettingsWindow() {
     const [aiIncludeCommitHistory, setAiIncludeCommitHistory] = useState(true);
     const [aiGlobalExclusions, setAiGlobalExclusions] = useState("");
     const [aiConfiguration, setAiConfiguration] = useState<AiConfigurationView | null>(null);
+    const aiProfileSelectionRef = useRef("");
     const [aiApiKey, setAiApiKeyState] = useState("");
+    const [aiBedrockAccessKeyId, setAiBedrockAccessKeyId] = useState("");
+    const [aiBedrockSecretAccessKey, setAiBedrockSecretAccessKey] = useState("");
+    const [aiBedrockSessionToken, setAiBedrockSessionToken] = useState("");
     const [aiOpenRouter, setAiOpenRouter] = useState<OpenRouterSettings>(DEFAULT_OPEN_ROUTER_SETTINGS);
     const [aiApiStyle, setAiApiStyle] = useState<AiApiStyle>("ChatCompletions");
     const [aiRequestPath, setAiRequestPath] = useState("");
@@ -392,7 +438,22 @@ export function SettingsWindow() {
         ? aiConfiguration.effortCapability
         : {status: "unknown" as const};
     const aiKeyOptional = aiApiKeyOptional(aiProvider, aiEndpoint);
-    const aiFieldManaged = (field: string) => (aiConfiguration?.environmentFields ?? []).includes(field);
+    const aiCredentialValue = aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4"
+        ? aiBedrockAccessKeyId.trim() && aiBedrockSecretAccessKey.trim()
+            ? JSON.stringify({
+                accessKeyId: aiBedrockAccessKeyId.trim(),
+                secretAccessKey: aiBedrockSecretAccessKey.trim(),
+                sessionToken: aiBedrockSessionToken.trim() || undefined,
+            })
+            : ""
+        : aiApiKey.trim();
+    const aiConfigurationMatchesProfile = aiProfileId !== "" && aiConfiguration?.selectedProfileId === aiProfileId;
+    const aiHasStoredCredential = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.hasApiKey);
+    const aiCredentialManagedByEnvironment = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.credentialManagedByEnvironment);
+    const aiFieldManaged = (field: string) => aiConfigurationMatchesProfile
+        && (aiConfiguration?.environmentFields ?? []).includes(field);
+    const aiUsesCustomBedrockEndpoint = aiProvider === "Bedrock"
+        && !BEDROCK_RUNTIME_ENDPOINTS.includes(aiEndpoint.trim());
     const aiReasoningUnavailable = (level: AiReasoningPreference): boolean => {
         if (currentAiCapability.status === "unsupported") return true;
         if (currentAiCapability.status !== "supported") return false;
@@ -558,7 +619,9 @@ export function SettingsWindow() {
             setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
             setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
             setAiEnabled(Boolean(ai.enabled));
-            setAiProfileId(ai.selectedProfileId ?? "");
+            const selectedProfileId = ai.selectedProfileId ?? "";
+            aiProfileSelectionRef.current = selectedProfileId;
+            setAiProfileId(selectedProfileId);
             const selectedAiProfile = ai.profiles?.find(profile => profile.id === ai.selectedProfileId);
             setAiProfileName(selectedAiProfile?.name ?? "");
             setAiOpenRouter(selectedAiProfile?.openRouter ?? DEFAULT_OPEN_ROUTER_SETTINGS);
@@ -570,8 +633,8 @@ export function SettingsWindow() {
             setAiMaxTokensField(selectedAiProfile?.maxTokensField ?? "");
             setAiAzureDeployment(selectedAiProfile?.azureDeployment ?? "");
             setAiAzureApiVersion(selectedAiProfile?.azureApiVersion || "2024-10-21");
-            setAiProvider(ai.provider);
-            setAiEndpoint(ai.endpoint);
+            setAiProvider(ai.provider === "Disabled" ? "OpenRouter" : ai.provider);
+            setAiEndpoint(ai.provider === "Disabled" ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? "" : ai.endpoint);
             setAiModel(ai.model);
             setAiReasoningPreference(ai.reasoningPreference);
             setAiCommitContextLimitKib(String(ai.commitContextLimitKib));
@@ -662,16 +725,17 @@ export function SettingsWindow() {
             maxTokensField: aiMaxTokensField,
             azureDeployment: aiAzureDeployment,
             azureApiVersion: aiAzureApiVersion,
-            apiKey: aiApiKey.trim() || undefined,
+            apiKey: aiCredentialValue || undefined,
         });
         setAiApiKeyState("");
         setAiConfiguration(saved);
         setAiEnabled(saved.enabled);
+        aiProfileSelectionRef.current = saved.selectedProfileId;
         setAiProfileId(saved.selectedProfileId);
         setAiEndpoint(saved.endpoint);
         setAiModel(saved.model);
         return saved;
-    }, [aiApiKey, aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath]);
 
     const handleAiProviderChange = useCallback((provider: AiProvider) => {
         setAiProvider(provider);
@@ -689,10 +753,13 @@ export function SettingsWindow() {
     const handleAiProfileChange = useCallback((profileId: string) => {
         const profile = aiConfiguration?.profiles.find(candidate => candidate.id === profileId);
         if (!profile) return;
+        aiProfileSelectionRef.current = profile.id;
         setAiProfileId(profile.id);
         setAiProfileName(profile.name);
-        setAiProvider(profile.provider);
-        setAiEndpoint(profile.endpoint || AI_PROVIDER_ENDPOINTS[profile.provider] || "");
+        setAiProvider(profile.provider === "Disabled" ? "OpenRouter" : profile.provider);
+        setAiEndpoint(profile.provider === "Disabled"
+            ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? ""
+            : profile.endpoint || AI_PROVIDER_ENDPOINTS[profile.provider] || "");
         setAiModel(profile.model);
         setAiReasoningPreference(profile.reasoningPreference);
         setAiOpenRouter(profile.openRouter);
@@ -705,14 +772,36 @@ export function SettingsWindow() {
         setAiAzureDeployment(profile.azureDeployment);
         setAiAzureApiVersion(profile.azureApiVersion || "2024-10-21");
         setAiApiKeyState("");
+        setAiBedrockAccessKeyId("");
+        setAiBedrockSecretAccessKey("");
+        setAiBedrockSessionToken("");
         setAiModels([]);
-    }, [aiConfiguration]);
+        setAiConfiguration(current => current && ({
+            ...current,
+            selectedProfileId: profile.id,
+            hasApiKey: false,
+            credentialManagedByEnvironment: false,
+            environmentFields: [],
+        }));
+        void getAiConfiguration(profile.id)
+            .then(configuration => {
+                if (aiProfileSelectionRef.current === profile.id) {
+                    setAiConfiguration(configuration);
+                }
+            })
+            .catch(error => {
+                if (aiProfileSelectionRef.current === profile.id) {
+                    setStatus(localiseAiSettingsError(error, t));
+                }
+            });
+    }, [aiConfiguration, t]);
 
     const handleNewAiProfile = useCallback(() => {
+        aiProfileSelectionRef.current = "";
         setAiProfileId("");
         setAiProfileName("");
-        setAiProvider("OpenAi");
-        setAiEndpoint(DEFAULT_OPENAI_ENDPOINT);
+        setAiProvider("OpenRouter");
+        setAiEndpoint(AI_PROVIDER_ENDPOINTS.OpenRouter ?? "");
         setAiModel("");
         setAiReasoningPreference("Automatic");
         setAiOpenRouter(DEFAULT_OPEN_ROUTER_SETTINGS);
@@ -725,6 +814,9 @@ export function SettingsWindow() {
         setAiAzureDeployment("");
         setAiAzureApiVersion("2024-10-21");
         setAiApiKeyState("");
+        setAiBedrockAccessKeyId("");
+        setAiBedrockSecretAccessKey("");
+        setAiBedrockSessionToken("");
         setAiModels([]);
     }, []);
 
@@ -734,6 +826,7 @@ export function SettingsWindow() {
             const configuration = await deleteAiProfile(aiProfileId);
             setAiConfiguration(configuration);
             setAiEnabled(configuration.enabled);
+            aiProfileSelectionRef.current = configuration.selectedProfileId;
             setAiProfileId(configuration.selectedProfileId);
             const profile = configuration.profiles.find(candidate => candidate.id === configuration.selectedProfileId);
             setAiProfileName(profile?.name ?? "");
@@ -788,7 +881,7 @@ export function SettingsWindow() {
                 maxTokensField: aiMaxTokensField,
                 azureDeployment: aiAzureDeployment,
                 azureApiVersion: aiAzureApiVersion,
-                apiKey: aiApiKey.trim() || undefined,
+                apiKey: aiCredentialValue || undefined,
             }, query);
             setAiModels(page.models);
             setAiModelPage(page.page);
@@ -798,7 +891,7 @@ export function SettingsWindow() {
         } finally {
             setDiscoveringAiModels(false);
         }
-    }, [aiApiKey, aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelAuthor, aiModelHostingProvider, aiModelMaximumCompletionPrice, aiModelMaximumPromptPrice, aiModelMinimumContext, aiModelSearch, aiModelSort, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProgrammingModelsOnly, aiProvider, aiReasoningPreference, aiRequestPath, aiZdrModelsOnly, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelAuthor, aiModelHostingProvider, aiModelMaximumCompletionPrice, aiModelMaximumPromptPrice, aiModelMinimumContext, aiModelSearch, aiModelSort, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProgrammingModelsOnly, aiProvider, aiReasoningPreference, aiRequestPath, aiZdrModelsOnly, t]);
 
     const handleSelectAiModel = useCallback(async (model: AiModelInfo) => {
         setAiModel(model.id);
@@ -822,7 +915,7 @@ export function SettingsWindow() {
                 maxTokensField: aiMaxTokensField,
                 azureDeployment: aiAzureDeployment,
                 azureApiVersion: aiAzureApiVersion,
-                apiKey: aiApiKey.trim() || undefined,
+                apiKey: aiCredentialValue || undefined,
             }, model.id);
             setAiModels(current => current.map(currentModel => currentModel.id === details.id
                 ? {...currentModel, ...details, zeroDataRetention: currentModel.zeroDataRetention}
@@ -832,7 +925,7 @@ export function SettingsWindow() {
         } finally {
             setDiscoveringAiModels(false);
         }
-    }, [aiApiKey, aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiEnabled, aiEndpoint, aiMaxTokensField, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
 
     const handleClearAiUsageHistory = useCallback(async () => {
         try {
@@ -866,14 +959,14 @@ export function SettingsWindow() {
 
     const handleClearAiApiKey = useCallback(async () => {
         try {
-            const configuration = await clearAiApiKey();
+            const configuration = await clearAiApiKey(aiProfileId || undefined);
             setAiConfiguration(configuration);
             setAiApiKeyState("");
             setStatus(t("status.aiKeyCleared"));
         } catch (error) {
             setStatus(localiseAiSettingsError(error, t));
         }
-    }, [t]);
+    }, [aiProfileId, t]);
 
     const handleConnectOpenRouter = useCallback(async () => {
         setConnectingOpenRouter(true);
@@ -882,6 +975,8 @@ export function SettingsWindow() {
             await saveCurrentAiConfiguration();
             const configuration = await connectOpenRouter(t("notes.aiOpenRouterOAuthCallback"));
             setAiConfiguration(configuration);
+            aiProfileSelectionRef.current = configuration.selectedProfileId;
+            setAiProfileId(configuration.selectedProfileId);
             setAiApiKeyState("");
             setStatus(t("status.aiOpenRouterConnected"));
         } catch (error) {
@@ -894,16 +989,17 @@ export function SettingsWindow() {
     }, [saveCurrentAiConfiguration, t]);
 
     const handleStoreAiApiKey = useCallback(async () => {
-        if (!aiApiKey.trim()) return;
+        if (!aiCredentialValue) return;
         try {
-            const configuration = await setAiApiKey(aiApiKey);
-            setAiConfiguration(configuration);
-            setAiApiKeyState("");
+            await saveCurrentAiConfiguration();
+            setAiBedrockAccessKeyId("");
+            setAiBedrockSecretAccessKey("");
+            setAiBedrockSessionToken("");
             setStatus(t("status.aiKeyStored"));
         } catch (error) {
             setStatus(localiseAiSettingsError(error, t));
         }
-    }, [aiApiKey, t]);
+    }, [aiCredentialValue, saveCurrentAiConfiguration, t]);
 
     const handleTestAiConnection = useCallback(async () => {
         setTestingAi(true);
@@ -925,7 +1021,7 @@ export function SettingsWindow() {
                 maxTokensField: aiMaxTokensField,
                 azureDeployment: aiAzureDeployment,
                 azureApiVersion: aiAzureApiVersion,
-                apiKey: aiApiKey.trim() || undefined,
+                apiKey: aiCredentialValue || undefined,
             });
             const tokenCount = (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
             setStatus(t("status.aiConnectionSucceeded", {count: tokenCount}));
@@ -934,7 +1030,7 @@ export function SettingsWindow() {
         } finally {
             setTestingAi(false);
         }
-    }, [aiApiKey, aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
 
     const handleSave = useCallback(async () => {
         setSaving(true);
@@ -1925,31 +2021,79 @@ export function SettingsWindow() {
                                 id="settings-ai-provider"
                                 className="settings-window__select"
                                 value={aiProvider}
-                                onChange={event => handleAiProviderChange(event.target.value as AiProvider)}
+                            onChange={event => handleAiProviderChange(event.target.value as AiProvider)}
                                 disabled={aiFieldManaged("provider")}
                             >
-                                <option value="Disabled">{t("options.aiProviderDisabled")}</option>
-                                <option value="OpenAi">{t("options.aiProviderOpenAi")}</option>
-                                <option value="Claude">{t("options.aiProviderClaude")}</option>
-                                <option value="Mistral">{t("options.aiProviderMistral")}</option>
-                                <option value="GoogleGemini">{t("options.aiProviderGemini")}</option>
-                                <option value="OpenRouter">{t("options.aiProviderOpenRouter")}</option>
+                                <option value="Bedrock">{t("options.aiProviderBedrock")}</option>
                                 <option value="AzureOpenAi">{t("options.aiProviderAzure")}</option>
-                                <option value="Ollama">{t("options.aiProviderOllama")}</option>
+                                <option value="Claude">{t("options.aiProviderClaude")}</option>
+                                <option value="GoogleGemini">{t("options.aiProviderGemini")}</option>
                                 <option value="LmStudio">{t("options.aiProviderLmStudio")}</option>
+                                <option value="Mistral">{t("options.aiProviderMistral")}</option>
+                                <option value="Ollama">{t("options.aiProviderOllama")}</option>
+                                <option value="OpenAi">{t("options.aiProviderOpenAi")}</option>
                                 <option value="OpenAiCompatible">{t("options.aiProviderCompatible")}</option>
+                                <option value="OpenRouter">{t("options.aiProviderOpenRouter")}</option>
                             </select>
                             <div className="settings-window__section-note">{t("notes.aiVisibility")}</div>
                         </div>
 
                         {aiProvider !== "Disabled" && (
                             <>
+                                {aiProvider === "Bedrock" && (
+                                    <>
+                                        <div className="settings-window__row">
+                                            <label className="settings-window__label" htmlFor="settings-ai-bedrock-auth">{t("labels.aiAuthentication")}</label>
+                                            <select
+                                                id="settings-ai-bedrock-auth"
+                                                className="settings-window__select"
+                                                value={aiAuthMode}
+                                                onChange={event => setAiAuthMode(event.target.value as AiAuthMode)}
+                                                disabled={aiFieldManaged("authMode")}
+                                            >
+                                                <option value="Bearer">{t("options.aiAuthBearer")}</option>
+                                                <option value="AwsSigV4">{t("options.aiAuthAwsSigV4")}</option>
+                                            </select>
+                                            <div className="settings-window__section-note">{t("notes.aiBedrockAuthentication")}</div>
+                                        </div>
+                                        <div className="settings-window__row">
+                                            <label className="settings-window__label" htmlFor="settings-ai-bedrock-endpoint">{t("labels.aiBedrockRuntimeEndpoint")}</label>
+                                            <select
+                                                id="settings-ai-bedrock-endpoint"
+                                                className="settings-window__select"
+                                                value={aiUsesCustomBedrockEndpoint ? "custom" : aiEndpoint}
+                                                onChange={event => setAiEndpoint(event.target.value === "custom" ? "" : event.target.value)}
+                                                disabled={aiFieldManaged("endpoint")}
+                                            >
+                                                {BEDROCK_RUNTIME_ENDPOINTS.map(endpoint => (
+                                                    <option key={endpoint} value={endpoint}>{endpoint.replace("https://bedrock-runtime.", "").replace(".amazonaws.com", "")}</option>
+                                                ))}
+                                                <option value="custom">{t("options.aiBedrockRuntimeCustom")}</option>
+                                            </select>
+                                            {aiUsesCustomBedrockEndpoint && (
+                                                <input
+                                                    className="settings-window__input"
+                                                    type="url"
+                                                    aria-label={t("labels.aiCustomEndpoint")}
+                                                    value={aiEndpoint}
+                                                    onChange={event => setAiEndpoint(event.target.value)}
+                                                    readOnly={aiFieldManaged("endpoint")}
+                                                    placeholder={t("placeholders.aiBedrockRuntimeCustom")}
+                                                    spellCheck={false}
+                                                    autoCapitalize="off"
+                                                    autoCorrect="off"
+                                                />
+                                            )}
+                                            <div className="settings-window__section-note">{t("notes.aiBedrockRuntimeEndpoint")}</div>
+                                        </div>
+                                    </>
+                                )}
                                 <div className="settings-window__row">
                                     <label className="settings-window__label" htmlFor="settings-ai-key">
-                                        {aiProvider === "OpenRouter" ? t("labels.aiAuthentication") : t("labels.aiApiKey")}
+                                        {aiProvider === "OpenRouter" || (aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4") ? t("labels.aiAuthentication") : t("labels.aiApiKey")}
                                     </label>
                                     <div className="settings-window__sub-section settings-window__credential-panel">
-                                        {aiProvider === "OpenRouter" && !aiConfiguration?.credentialManagedByEnvironment && (
+                                        {aiProvider === "OpenRouter" && !aiCredentialManagedByEnvironment && (
                                             <>
                                                 <div className="settings-window__credential-sign-in">
                                                     <button
@@ -1960,7 +2104,7 @@ export function SettingsWindow() {
                                                     >
                                                         {connectingOpenRouter
                                                             ? t("actions.connectingOpenRouter")
-                                                            : aiConfiguration?.hasApiKey
+                                                            : aiHasStoredCredential
                                                                 ? t("actions.reconnectOpenRouter")
                                                                 : t("actions.connectOpenRouter")}
                                                     </button>
@@ -1972,38 +2116,46 @@ export function SettingsWindow() {
                                             </>
                                         )}
                                         <div className="settings-window__credential-entry">
-                                            <input
-                                                id="settings-ai-key"
-                                                aria-label={t("labels.aiApiKey")}
-                                                className="settings-window__input"
-                                                type="password"
-                                                value={aiApiKey}
-                                                onChange={event => setAiApiKeyState(event.target.value)}
-                                                readOnly={aiConfiguration?.credentialManagedByEnvironment}
-                                                placeholder={aiConfiguration?.hasApiKey ? t("placeholders.aiKeyConfigured") : t("placeholders.aiKeyRequired")}
-                                                autoComplete="off"
-                                                spellCheck={false}
-                                            />
+                                            {aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4" ? (
+                                                <>
+                                                    <input id="settings-ai-bedrock-access-key" aria-label={t("labels.aiBedrockAccessKeyId")} className="settings-window__input" type="password" value={aiBedrockAccessKeyId} onChange={event => setAiBedrockAccessKeyId(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockAccessKeyId")} autoComplete="off" spellCheck={false}/>
+                                                    <input id="settings-ai-bedrock-secret-key" aria-label={t("labels.aiBedrockSecretAccessKey")} className="settings-window__input" type="password" value={aiBedrockSecretAccessKey} onChange={event => setAiBedrockSecretAccessKey(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockSecretAccessKey")} autoComplete="off" spellCheck={false}/>
+                                                    <input id="settings-ai-bedrock-session-token" aria-label={t("labels.aiBedrockSessionToken")} className="settings-window__input" type="password" value={aiBedrockSessionToken} onChange={event => setAiBedrockSessionToken(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockSessionToken")} autoComplete="off" spellCheck={false}/>
+                                                </>
+                                            ) : (
+                                                <input
+                                                    id="settings-ai-key"
+                                                    aria-label={t("labels.aiApiKey")}
+                                                    className="settings-window__input"
+                                                    type="password"
+                                                    value={aiApiKey}
+                                                    onChange={event => setAiApiKeyState(event.target.value)}
+                                                    readOnly={aiCredentialManagedByEnvironment}
+                                                    placeholder={aiHasStoredCredential ? t("placeholders.aiKeyConfigured") : t("placeholders.aiKeyRequired")}
+                                                    autoComplete="off"
+                                                    spellCheck={false}
+                                                />
+                                            )}
                                             <button
                                                 type="button"
                                                 className="settings-window__btn settings-window__btn--secondary"
                                                 onClick={handleStoreAiApiKey}
-                                                disabled={!aiApiKey.trim() || aiConfiguration?.credentialManagedByEnvironment}
+                                                disabled={!aiCredentialValue || aiCredentialManagedByEnvironment}
                                             >
-                                                {aiConfiguration?.hasApiKey ? t("actions.replaceAiKey") : t("actions.storeAiKey")}
+                                                {aiHasStoredCredential ? t("actions.replaceAiKey") : t("actions.storeAiKey")}
                                             </button>
                                         </div>
                                         <div className="settings-window__credential-footer">
                                             <span className="settings-window__section-note">
-                                                {aiConfiguration?.credentialManagedByEnvironment
+                                                {aiCredentialManagedByEnvironment
                                                     ? t("notes.aiKeyEnvironmentManaged")
                                                     : aiKeyOptional
                                                     ? t("notes.aiKeyOptional")
-                                                    : aiConfiguration?.hasApiKey
+                                                    : aiHasStoredCredential
                                                         ? t("notes.aiKeyConfigured")
                                                         : t("notes.aiKeyMissing")}
                                             </span>
-                                            {aiConfiguration?.hasApiKey && !aiConfiguration.credentialManagedByEnvironment && (
+                                            {aiHasStoredCredential && !aiCredentialManagedByEnvironment && (
                                                 <button
                                                     type="button"
                                                     className="settings-window__btn settings-window__btn--secondary"
@@ -2016,6 +2168,7 @@ export function SettingsWindow() {
                                     </div>
                                 </div>
 
+                                {aiProvider !== "Bedrock" && (
                                 <div className="settings-window__row">
                                     <label className="settings-window__label" htmlFor="settings-ai-endpoint">{t("labels.aiEndpoint")}</label>
                                     <input
@@ -2034,6 +2187,7 @@ export function SettingsWindow() {
                                         <div className="settings-window__warning">{t("notes.aiInsecureEndpoint")}</div>
                                     )}
                                 </div>
+                                )}
 
                                 <div className="settings-window__row">
                                     <label className="settings-window__label" htmlFor="settings-ai-model">{t("labels.aiModel")}</label>
@@ -2301,7 +2455,7 @@ export function SettingsWindow() {
                                     type="button"
                                     className="settings-window__btn settings-window__btn--secondary settings-window__btn--full-width"
                                     onClick={handleTestAiConnection}
-                                    disabled={testingAi || !aiEndpoint.trim() || !aiModel.trim() || (!aiKeyOptional && !aiApiKey.trim() && !aiConfiguration?.hasApiKey)}
+                                    disabled={testingAi || !aiEndpoint.trim() || !aiModel.trim() || (!aiKeyOptional && !aiCredentialValue && !aiHasStoredCredential)}
                                 >
                                     {testingAi ? t("actions.testingAi") : t("actions.testAi")}
                                 </button>

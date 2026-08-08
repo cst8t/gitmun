@@ -6,6 +6,7 @@ use serde_json::Value;
 use tokio_util::sync::CancellationToken;
 
 use super::AiError;
+use super::api::bedrock::BedrockAdapter;
 pub(crate) use super::api::claude::discover_effort;
 use super::api::claude::{ClaudeAdapter, normalise_claude_model};
 use super::api::openai::{OpenAiAdapter, normalise_openai_compatible_model};
@@ -24,6 +25,7 @@ pub(crate) mod openrouter;
 
 const OPENROUTER_CATALOGUE_PAGE_SIZE: usize = 1000;
 const MAX_OPENROUTER_CATALOGUE_PAGES: usize = 16;
+const MAX_BEDROCK_PROFILE_PAGES: usize = 16;
 
 // ---------------------------------------------------------------------------
 // Public facades (re-exported via ai/mod.rs)
@@ -100,6 +102,9 @@ pub(crate) async fn discover_models(
     api_key: &str,
     query: &AiModelQuery,
 ) -> Result<AiModelPage, AiError> {
+    if configuration.provider == AiProvider::Bedrock {
+        return discover_bedrock_models(runtime, configuration, api_key, query).await;
+    }
     if configuration.models_path.is_empty() {
         return Err(AiError::new("modelDiscoveryUnavailable"));
     }
@@ -227,6 +232,7 @@ pub(crate) struct ResolvedProvider<'a> {
 
 static OPEN_AI_ADAPTER: OpenAiAdapter = OpenAiAdapter;
 static CLAUDE_ADAPTER: ClaudeAdapter = ClaudeAdapter;
+static BEDROCK_ADAPTER: BedrockAdapter = BedrockAdapter;
 
 impl ProviderRegistry {
     pub fn preset(provider: AiProvider) -> ProviderPreset {
@@ -240,6 +246,15 @@ impl ProviderRegistry {
                 auth_mode: AiAuthMode::Header,
                 auth_header: "x-api-key",
                 max_tokens_field: "max_tokens",
+            },
+            AiProvider::Bedrock => ProviderPreset {
+                endpoint,
+                api_style: AiApiStyle::ChatCompletions,
+                request_path: "/model/{model}/converse",
+                models_path: "",
+                auth_mode: AiAuthMode::Bearer,
+                auth_header: "Authorization",
+                max_tokens_field: "maxTokens",
             },
             AiProvider::AzureOpenAi => ProviderPreset {
                 endpoint,
@@ -290,6 +305,8 @@ impl ProviderRegistry {
         }
         let adapter: &dyn ProtocolAdapter = if provider == AiProvider::Claude {
             &CLAUDE_ADAPTER
+        } else if provider == AiProvider::Bedrock {
+            &BEDROCK_ADAPTER
         } else if provider.is_openai_compatible() {
             &OPEN_AI_ADAPTER
         } else {
@@ -312,6 +329,9 @@ fn normalise_model(provider: AiProvider, value: &Value) -> Option<AiModelInfo> {
     }
     if provider == AiProvider::Claude {
         return normalise_claude_model(value);
+    }
+    if provider == AiProvider::Bedrock {
+        return normalise_bedrock_model(value);
     }
     normalise_openai_compatible_model(value)
 }
@@ -342,7 +362,20 @@ async fn fetch_model_page(
             }
             request = CLAUDE_ADAPTER.add_protocol_headers(request);
         }
-        let response = match authenticate(request, configuration, api_key)?.send().await {
+        let response = if configuration.auth_mode == AiAuthMode::AwsSigV4 {
+            request = configuration
+                .extra_headers
+                .iter()
+                .fold(request, |request, (name, value)| {
+                    request.header(name, value)
+                });
+            let mut request = request.build().map_err(network_error)?;
+            super::api::aws_sigv4::sign_bedrock_request(&mut request, api_key, b"")?;
+            runtime.client.execute(request).await
+        } else {
+            authenticate(request, configuration, api_key)?.send().await
+        };
+        let response = match response {
             Ok(response) => response,
             Err(error) => {
                 last_error = network_error(error);
@@ -359,6 +392,212 @@ async fn fetch_model_page(
         }
     }
     Err(last_error)
+}
+
+async fn discover_bedrock_models(
+    runtime: &AiRuntime,
+    configuration: &EffectiveAiConfiguration,
+    api_key: &str,
+    query: &AiModelQuery,
+) -> Result<AiModelPage, AiError> {
+    let mut foundation_models = bedrock_control_plane_endpoint(configuration)?;
+    foundation_models.set_path("/foundation-models");
+    foundation_models
+        .query_pairs_mut()
+        .append_pair("byOutputModality", "TEXT");
+    let foundation =
+        fetch_model_page(runtime, configuration, api_key, &foundation_models, 0, None).await?;
+    let mut catalogue = foundation
+        .get("modelSummaries")
+        .and_then(Value::as_array)
+        .ok_or_else(|| AiError::new("invalidResponse"))?
+        .iter()
+        .filter_map(normalise_bedrock_model)
+        .collect::<Vec<_>>();
+
+    let mut next_token: Option<String> = None;
+    for _ in 0..MAX_BEDROCK_PROFILE_PAGES {
+        let mut profiles = bedrock_control_plane_endpoint(configuration)?;
+        profiles.set_path("/inference-profiles");
+        {
+            let mut query = profiles.query_pairs_mut();
+            query
+                .append_pair("typeEquals", "SYSTEM_DEFINED")
+                .append_pair("maxResults", "1000");
+            if let Some(next_token) = &next_token {
+                query.append_pair("nextToken", next_token);
+            }
+        }
+        let profiles =
+            fetch_model_page(runtime, configuration, api_key, &profiles, 0, None).await?;
+        let profile_models = profiles
+            .get("inferenceProfileSummaries")
+            .and_then(Value::as_array)
+            .ok_or_else(|| AiError::new("invalidResponse"))?
+            .iter()
+            .filter_map(normalise_bedrock_inference_profile);
+        catalogue.extend(profile_models);
+        next_token = profiles
+            .get("nextToken")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        if next_token.is_none() {
+            break;
+        }
+    }
+    catalogue.sort_by(|left, right| left.id.cmp(&right.id));
+    catalogue.dedup_by(|left, right| left.id == right.id);
+
+    let mut models = catalogue
+        .into_iter()
+        .filter(|model| model_matches(model, query))
+        .collect::<Vec<_>>();
+    sort_models(&mut models, query.sort);
+    let page_size = query.page_size.clamp(1, 100);
+    let page = query.page.max(1);
+    let start = ((page - 1) * page_size) as usize;
+    let end = (start + page_size as usize).min(models.len());
+    let has_more = end < models.len();
+    let models = if start < models.len() {
+        models.drain(start..end).collect()
+    } else {
+        Vec::new()
+    };
+    Ok(AiModelPage {
+        models,
+        page,
+        page_size,
+        has_more,
+    })
+}
+
+fn bedrock_control_plane_endpoint(
+    configuration: &EffectiveAiConfiguration,
+) -> Result<url::Url, AiError> {
+    let mut endpoint = configuration.endpoint_url()?;
+    let host = endpoint
+        .host_str()
+        .ok_or_else(|| AiError::new("endpointInvalid"))?;
+    let control_host = host
+        .strip_prefix("bedrock-runtime.")
+        .map(|region| format!("bedrock.{region}"))
+        .ok_or_else(|| AiError::new("endpointInvalid"))?;
+    endpoint
+        .set_host(Some(&control_host))
+        .map_err(|_| AiError::new("endpointInvalid"))?;
+    endpoint.set_query(None);
+    Ok(endpoint)
+}
+
+fn normalise_bedrock_model(value: &Value) -> Option<AiModelInfo> {
+    let id = value.get("modelId")?.as_str()?.to_string();
+    let input_modalities = value
+        .get("inputModalities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|value| value.to_ascii_lowercase())
+        .collect();
+    let output_modalities = value
+        .get("outputModalities")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|value| value.to_ascii_lowercase())
+        .collect();
+    Some(AiModelInfo {
+        name: value
+            .get("modelName")
+            .and_then(Value::as_str)
+            .unwrap_or(&id)
+            .to_string(),
+        id,
+        description: value
+            .get("providerName")
+            .and_then(Value::as_str)
+            .map(|provider| format!("Amazon Bedrock - {provider}")),
+        input_modalities,
+        output_modalities,
+        available_providers: vec!["Amazon Bedrock".to_string()],
+        ..AiModelInfo::default()
+    })
+}
+
+fn normalise_bedrock_inference_profile(value: &Value) -> Option<AiModelInfo> {
+    let id = value.get("inferenceProfileId")?.as_str()?.to_string();
+    Some(AiModelInfo {
+        name: value
+            .get("inferenceProfileName")
+            .and_then(Value::as_str)
+            .unwrap_or(&id)
+            .to_string(),
+        id,
+        description: value
+            .get("description")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| Some("Amazon Bedrock inference profile".to_string())),
+        input_modalities: vec!["text".to_string()],
+        output_modalities: vec!["text".to_string()],
+        available_providers: vec!["Amazon Bedrock".to_string()],
+        ..AiModelInfo::default()
+    })
+}
+
+#[cfg(test)]
+mod bedrock_tests {
+    use serde_json::json;
+
+    use super::{
+        bedrock_control_plane_endpoint, normalise_bedrock_inference_profile,
+        normalise_bedrock_model,
+    };
+    use crate::ai::types::{AiAuthMode, AiProvider};
+
+    #[test]
+    fn normalises_foundation_models_and_inference_profiles() {
+        let model = normalise_bedrock_model(&json!({
+            "modelId": "amazon.nova-pro-v1:0",
+            "modelName": "Nova Pro",
+            "providerName": "Amazon",
+            "inputModalities": ["TEXT", "IMAGE"],
+            "outputModalities": ["TEXT"]
+        }))
+        .unwrap();
+        assert_eq!(model.id, "amazon.nova-pro-v1:0");
+        assert_eq!(model.input_modalities, ["text", "image"]);
+
+        let profile = normalise_bedrock_inference_profile(&json!({
+            "inferenceProfileId": "us.anthropic.claude-sonnet-4-6",
+            "inferenceProfileName": "US Claude Sonnet 4.6"
+        }))
+        .unwrap();
+        assert_eq!(profile.id, "us.anthropic.claude-sonnet-4-6");
+        assert_eq!(profile.output_modalities, ["text"]);
+    }
+
+    #[test]
+    fn control_plane_endpoint_and_profile_query_are_derived_from_runtime_host() {
+        let mut configuration = super::test_helpers::configuration(AiProvider::Bedrock);
+        configuration.endpoint = "https://bedrock-runtime.eu-west-2.amazonaws.com".to_string();
+        configuration.auth_mode = AiAuthMode::AwsSigV4;
+
+        let mut profiles = bedrock_control_plane_endpoint(&configuration).unwrap();
+        assert_eq!(profiles.host_str(), Some("bedrock.eu-west-2.amazonaws.com"));
+        profiles.set_path("/inference-profiles");
+        {
+            let mut query = profiles.query_pairs_mut();
+            query
+                .append_pair("typeEquals", "SYSTEM_DEFINED")
+                .append_pair("maxResults", "1000")
+                .append_pair("nextToken", "page-2");
+        }
+        assert!(profiles.as_str().contains("/inference-profiles?"));
+        assert!(profiles.as_str().contains("typeEquals=SYSTEM_DEFINED"));
+        assert!(profiles.as_str().contains("nextToken=page-2"));
+    }
 }
 
 fn model_matches(model: &AiModelInfo, query: &AiModelQuery) -> bool {

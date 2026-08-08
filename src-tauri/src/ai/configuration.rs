@@ -131,6 +131,7 @@ struct EnvironmentValues {
     conflict_prompt: Option<String>,
     include_commit_history: Option<bool>,
     standard_keys: BTreeMap<AiProvider, (String, String)>,
+    bedrock_iam_credentials: Option<String>,
     standard_endpoints: BTreeMap<AiProvider, (String, String)>,
 }
 
@@ -228,6 +229,7 @@ impl AiLaunchOverrides {
         for (provider, variable) in [
             (AiProvider::OpenAi, "OPENAI_API_KEY"),
             (AiProvider::Claude, "ANTHROPIC_API_KEY"),
+            (AiProvider::Bedrock, "AWS_BEARER_TOKEN_BEDROCK"),
             (AiProvider::Mistral, "MISTRAL_API_KEY"),
             (AiProvider::OpenRouter, "OPENROUTER_API_KEY"),
             (AiProvider::AzureOpenAi, "AZURE_OPENAI_API_KEY"),
@@ -252,9 +254,28 @@ impl AiLaunchOverrides {
                 (variable.to_string(), value.trim().to_string()),
             );
         }
+        let access_key_id = environment
+            .get("AWS_ACCESS_KEY_ID")
+            .map(|value| value.trim());
+        let secret_access_key = environment
+            .get("AWS_SECRET_ACCESS_KEY")
+            .map(|value| value.trim());
+        if let (Some(access_key_id), Some(secret_access_key)) = (access_key_id, secret_access_key) {
+            if !access_key_id.is_empty() && !secret_access_key.is_empty() {
+                self.values.bedrock_iam_credentials = Some(
+                    serde_json::json!({
+                        "accessKeyId": access_key_id,
+                        "secretAccessKey": secret_access_key,
+                        "sessionToken": environment.get("AWS_SESSION_TOKEN").map(|value| value.trim()),
+                    })
+                    .to_string(),
+                );
+            }
+        }
         for (provider, variable) in [
             (AiProvider::OpenAi, "OPENAI_BASE_URL"),
             (AiProvider::Claude, "ANTHROPIC_BASE_URL"),
+            (AiProvider::Bedrock, "AWS_BEDROCK_RUNTIME_ENDPOINT"),
             (AiProvider::Mistral, "MISTRAL_BASE_URL"),
             (AiProvider::OpenRouter, "OPENROUTER_BASE_URL"),
             (AiProvider::AzureOpenAi, "AZURE_OPENAI_ENDPOINT"),
@@ -702,12 +723,41 @@ impl AiLaunchOverrides {
             global_exclusions: stored_ai.global_exclusions.clone(),
             sources,
             environment_fields,
-            environment_api_key: self.values.api_key.is_some()
-                || self.values.standard_keys.contains_key(&provider),
+            environment_api_key: self.api_key(provider, auth_mode).is_some(),
         })
     }
 
-    pub fn api_key(&self, provider: AiProvider) -> Option<String> {
+    pub fn api_key(&self, provider: AiProvider, auth_mode: AiAuthMode) -> Option<String> {
+        if provider == AiProvider::Bedrock {
+            return match auth_mode {
+                AiAuthMode::AwsSigV4 => self
+                    .values
+                    .api_key
+                    .clone()
+                    .filter(|value| super::api::aws_sigv4::is_iam_credentials_json(value))
+                    .or_else(|| self.values.bedrock_iam_credentials.clone()),
+                AiAuthMode::Bearer => self
+                    .values
+                    .api_key
+                    .clone()
+                    .filter(|value| !super::api::aws_sigv4::is_iam_credentials_json(value))
+                    .or_else(|| {
+                        self.values
+                            .standard_keys
+                            .get(&provider)
+                            .map(|(_, value)| value.clone())
+                            .filter(|value| !super::api::aws_sigv4::is_iam_credentials_json(value))
+                    }),
+                AiAuthMode::Header | AiAuthMode::None => {
+                    self.values.api_key.clone().or_else(|| {
+                        self.values
+                            .standard_keys
+                            .get(&provider)
+                            .map(|(_, value)| value.clone())
+                    })
+                }
+            };
+        }
         self.values.api_key.clone().or_else(|| {
             self.values
                 .standard_keys
@@ -840,6 +890,7 @@ fn parse_provider(value: &str) -> Option<AiProvider> {
         "disabled" => Some(AiProvider::Disabled),
         "openai" => Some(AiProvider::OpenAi),
         "claude" | "anthropic" => Some(AiProvider::Claude),
+        "bedrock" | "amazonbedrock" => Some(AiProvider::Bedrock),
         "mistral" => Some(AiProvider::Mistral),
         "googlegemini" | "gemini" => Some(AiProvider::GoogleGemini),
         "openrouter" => Some(AiProvider::OpenRouter),
@@ -874,6 +925,7 @@ fn parse_auth_mode(value: &str) -> Option<AiAuthMode> {
     match compact(value).as_str() {
         "bearer" => Some(AiAuthMode::Bearer),
         "header" | "apikey" => Some(AiAuthMode::Header),
+        "awssigv4" | "sigv4" => Some(AiAuthMode::AwsSigV4),
         "none" => Some(AiAuthMode::None),
         _ => None,
     }
@@ -932,7 +984,9 @@ mod tests {
         assert_eq!(effective.endpoint, "https://override.example/v1");
         assert_eq!(effective.model, "override-model");
         assert_eq!(
-            environment.api_key(effective.provider).as_deref(),
+            environment
+                .api_key(effective.provider, effective.auth_mode)
+                .as_deref(),
             Some("explicit-secret")
         );
     }
@@ -948,7 +1002,75 @@ mod tests {
         let effective = environment.resolve(&settings).unwrap();
 
         assert_eq!(effective.provider, AiProvider::Claude);
-        assert_eq!(environment.api_key(effective.provider), None);
+        assert_eq!(
+            environment.api_key(effective.provider, effective.auth_mode),
+            None
+        );
+    }
+
+    #[test]
+    fn bedrock_iam_credentials_are_selected_for_sigv4_authentication() {
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = settings.extensions.ai.ensure_profile();
+        profile.provider = AiProvider::Bedrock;
+        profile.auth_mode = AiAuthMode::AwsSigV4;
+        let environment = overrides(&[
+            ("AWS_ACCESS_KEY_ID", "access-key"),
+            ("AWS_SECRET_ACCESS_KEY", "secret-key"),
+            ("AWS_SESSION_TOKEN", "session-token"),
+        ]);
+
+        let effective = environment.resolve(&settings).unwrap();
+
+        assert!(effective.environment_api_key);
+        assert_eq!(
+            environment
+                .api_key(effective.provider, effective.auth_mode)
+                .as_deref()
+                .and_then(|credentials| serde_json::from_str::<Value>(credentials).ok())
+                .and_then(|credentials| credentials
+                    .get("accessKeyId")
+                    .and_then(Value::as_str)
+                    .map(str::to_string)),
+            Some("access-key".to_string())
+        );
+    }
+
+    #[test]
+    fn bedrock_does_not_cross_wire_bearer_and_iam_environment_credentials() {
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = settings.extensions.ai.ensure_profile();
+        profile.provider = AiProvider::Bedrock;
+        profile.auth_mode = AiAuthMode::Bearer;
+        let environment = overrides(&[
+            (
+                "GITMUN_AI_API_KEY",
+                r#"{"accessKeyId":"access-key","secretAccessKey":"secret-key"}"#,
+            ),
+            ("AWS_BEARER_TOKEN_BEDROCK", "bedrock-bearer"),
+            ("AWS_ACCESS_KEY_ID", "access-key"),
+            ("AWS_SECRET_ACCESS_KEY", "secret-key"),
+        ]);
+
+        let bearer = environment.resolve(&settings).unwrap();
+        assert_eq!(
+            environment
+                .api_key(bearer.provider, AiAuthMode::Bearer)
+                .as_deref(),
+            Some("bedrock-bearer")
+        );
+
+        settings.extensions.ai.ensure_profile().auth_mode = AiAuthMode::AwsSigV4;
+        let sigv4 = environment.resolve(&settings).unwrap();
+        let credentials = environment
+            .api_key(sigv4.provider, AiAuthMode::AwsSigV4)
+            .unwrap();
+        assert!(super::super::api::aws_sigv4::is_iam_credentials_json(
+            &credentials
+        ));
+        assert!(!credentials.contains("bedrock-bearer"));
     }
 
     #[test]
