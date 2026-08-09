@@ -12,6 +12,7 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { createRefreshCoalescer } from "../hooks/useRefreshCoalescer";
 import { Titlebar } from "./Titlebar";
 import { Sidebar } from "./sidebar/Sidebar";
 import { CentrePanel, type CentreTab } from "./centre/CentrePanel";
@@ -745,19 +746,21 @@ export function ProjectView({
     await refreshAll();
   }, [saveGlobalIdentity, refreshAll]);
 
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  const refreshCoalescerRef = useRef(createRefreshCoalescer(() => refreshAllRef.current()));
+
   // Refresh all data when settings change (e.g. avatar provider toggle).
   const isFirstSettingsRevision = useRef(true);
   useEffect(() => {
     if (isFirstSettingsRevision.current) { isFirstSettingsRevision.current = false; return; }
-    refreshAll();
+    refreshCoalescerRef.current.trigger();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsRevision]);
 
   // Watch the .git directory for external changes (other git clients, CLI).
   // Uses a ref so the listener always calls the latest refreshAll without
   // needing to re-subscribe when its dependencies change.
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
   const windowFocusedRef = useRef(windowFocused);
   windowFocusedRef.current = windowFocused;
   const pendingFocusRefreshRef = useRef(false);
@@ -767,7 +770,7 @@ export function ProjectView({
       windowFocusedRef.current = focused;
       if (focused && pendingFocusRefreshRef.current) {
         pendingFocusRefreshRef.current = false;
-        refreshAllRef.current();
+        refreshCoalescerRef.current.trigger();
       }
     };
     const handleFocus = () => setFocused(true);
@@ -808,11 +811,12 @@ export function ProjectView({
         pendingFocusRefreshRef.current = true;
         return;
       }
-      refreshAllRef.current();
+      refreshCoalescerRef.current.trigger();
     }).then(fn => { if (cancelled) fn(); else unlisten = fn; });
 
     return () => {
       cancelled = true;
+      refreshCoalescerRef.current.reset();
       api.unwatchRepo().catch(() => {});
       unlisten?.();
     };

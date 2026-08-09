@@ -820,7 +820,7 @@ impl CliGitHandler {
         args.push("--binary");
         args.push("--");
         args.extend(paths.iter().map(String::as_str));
-        Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])
+        Self::run_git_allow_exit_codes_without_optional_locks(&args, Some(repo_path), &[1])
     }
 
     fn git_diff_for_all(repo_path: &Path, staged: bool) -> GitResult<String> {
@@ -831,7 +831,7 @@ impl CliGitHandler {
         args.push("--full-index");
         args.push("--binary");
         args.push("--");
-        Self::run_git_allow_exit_codes(&args, Some(repo_path), &[1])
+        Self::run_git_allow_exit_codes_without_optional_locks(&args, Some(repo_path), &[1])
     }
 
     fn git_untracked_patch(repo_path: &Path, path: &str) -> GitResult<String> {
@@ -881,8 +881,11 @@ impl CliGitHandler {
     }
 
     fn changed_unstaged_paths(repo_path: &Path) -> GitResult<Vec<String>> {
-        let output =
-            Self::run_git_allow_exit_codes(&["diff", "--name-only", "--"], Some(repo_path), &[1])?;
+        let output = Self::run_git_allow_exit_codes_without_optional_locks(
+            &["diff", "--name-only", "--"],
+            Some(repo_path),
+            &[1],
+        )?;
         Ok(output
             .lines()
             .map(str::trim)
@@ -2367,12 +2370,15 @@ impl GitOperationHandler for CliGitHandler {
         }
 
         let output = if request.staged {
-            Self::run_git(
+            Self::run_git_without_optional_locks(
                 &["diff", "--cached", "--numstat", "--", file_path],
                 Some(&repo_path),
             )?
         } else {
-            Self::run_git(&["diff", "--numstat", "--", file_path], Some(&repo_path))?
+            Self::run_git_without_optional_locks(
+                &["diff-files", "--numstat", "--", file_path],
+                Some(&repo_path),
+            )?
         };
 
         let (additions, deletions) = Self::parse_numstat_totals(&output);
@@ -3156,7 +3162,7 @@ impl GitOperationHandler for CliGitHandler {
         args.push("--");
         args.push(file_path);
 
-        let output = match Self::run_git(&args, Some(&repo_path)) {
+        let output = match Self::run_git_without_optional_locks(&args, Some(&repo_path)) {
             Ok(stdout) => stdout,
             Err(GitError::CommandFailed {
                 command: _, stderr, ..
@@ -3361,7 +3367,8 @@ impl GitOperationHandler for CliGitHandler {
         let file_path = request.file_path.trim();
 
         // Get the full diff for the file
-        let diff_output = Self::run_git(&["diff", "--", file_path], Some(&repo_path))?;
+        let diff_output =
+            Self::run_git_without_optional_locks(&["diff", "--", file_path], Some(&repo_path))?;
 
         if diff_output.is_empty() {
             return Err(GitError::InvalidInput(
@@ -3402,7 +3409,10 @@ impl GitOperationHandler for CliGitHandler {
         let file_path = request.file_path.trim();
 
         // Get the staged diff for the file.
-        let diff_output = Self::run_git(&["diff", "--cached", "--", file_path], Some(&repo_path))?;
+        let diff_output = Self::run_git_without_optional_locks(
+            &["diff", "--cached", "--", file_path],
+            Some(&repo_path),
+        )?;
 
         if diff_output.is_empty() {
             return Err(GitError::InvalidInput(
@@ -5605,8 +5615,11 @@ impl CliGitHandler {
     }
 
     fn get_conflicted_files(repo_path: &Path) -> Vec<String> {
-        Self::run_git(&["diff", "--name-only", "--diff-filter=U"], Some(repo_path))
-            .unwrap_or_default()
+        Self::run_git_without_optional_locks(
+            &["diff", "--name-only", "--diff-filter=U"],
+            Some(repo_path),
+        )
+        .unwrap_or_default()
             .lines()
             .filter(|l| !l.trim().is_empty())
             .map(|l| l.trim().to_string())
@@ -6317,5 +6330,141 @@ UD deleted_by_them.rs
             CliGitHandler::repo_name_from_url("https://example.com/user/repo/"),
             Some("repo".to_string())
         );
+    }
+
+    #[test]
+    fn get_numstat_unstaged_does_not_rewrite_index() {
+        let (repo, index_path, index_before) = repo_with_stale_index_entry();
+        fs::write(repo.path().join("inspection-record.txt"), "modified")
+            .expect("write modified file");
+
+        let handler = CliGitHandler;
+        let request = NumstatRequest {
+            repo_path: repo.path().to_string_lossy().into_owned(),
+            file_path: "inspection-record.txt".to_string(),
+            staged: false,
+        };
+        let result = handler.get_numstat(&request).expect("get_numstat unstaged");
+        assert_eq!(result.file_path, "inspection-record.txt");
+        assert_eq!(result.additions, 1);
+        assert_eq!(result.deletions, 1);
+
+        assert_eq!(
+            fs::read(&index_path).expect("read index after numstat"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    #[test]
+    fn get_numstat_staged_does_not_rewrite_index() {
+        let (repo, index_path, _index_before) = repo_with_stale_index_entry();
+        fs::write(repo.path().join("inspection-record.txt"), "modified")
+            .expect("write modified file");
+        let run_git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .status()
+                .expect("run git");
+            assert!(status.success(), "git {args:?} failed");
+        };
+        run_git(&["add", "inspection-record.txt"]);
+
+        let index_after_stage = fs::read(&index_path).expect("read index after stage");
+        let tracked_file = fs::OpenOptions::new()
+            .write(true)
+            .open(repo.path().join("inspection-record.txt"))
+            .expect("open tracked file");
+        tracked_file
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            )
+            .expect("set tracked file timestamp");
+
+        let handler = CliGitHandler;
+        let request = NumstatRequest {
+            repo_path: repo.path().to_string_lossy().into_owned(),
+            file_path: "inspection-record.txt".to_string(),
+            staged: true,
+        };
+        let result = handler.get_numstat(&request).expect("get_numstat staged");
+        assert_eq!(result.file_path, "inspection-record.txt");
+        assert_eq!(result.additions, 1);
+        assert_eq!(result.deletions, 1);
+
+        assert_eq!(
+            fs::read(&index_path).expect("read index after numstat"),
+            index_after_stage
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    #[test]
+    fn get_diff_unstaged_does_not_rewrite_index() {
+        let (repo, index_path, index_before) = repo_with_stale_index_entry();
+        fs::write(repo.path().join("inspection-record.txt"), "modified")
+            .expect("write modified file");
+
+        let handler = CliGitHandler;
+        let request = DiffRequest {
+            repo_path: repo.path().to_string_lossy().into_owned(),
+            file_path: "inspection-record.txt".to_string(),
+            staged: false,
+        };
+        let diff = handler.get_diff(&request).expect("get_diff unstaged");
+        assert_eq!(diff.file_path, "inspection-record.txt");
+        assert!(!diff.hunks.is_empty(), "expected diff hunks for modified file");
+
+        assert_eq!(
+            fs::read(&index_path).expect("read index after diff"),
+            index_before
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    #[test]
+    fn get_diff_staged_does_not_rewrite_index() {
+        let (repo, index_path, _index_before) = repo_with_stale_index_entry();
+        fs::write(repo.path().join("inspection-record.txt"), "modified")
+            .expect("write modified file");
+        let run_git = |args: &[&str]| {
+            let status = Command::new("git")
+                .args(args)
+                .current_dir(repo.path())
+                .status()
+                .expect("run git");
+            assert!(status.success(), "git {args:?} failed");
+        };
+        run_git(&["add", "inspection-record.txt"]);
+
+        let index_after_stage = fs::read(&index_path).expect("read index after stage");
+        let tracked_file = fs::OpenOptions::new()
+            .write(true)
+            .open(repo.path().join("inspection-record.txt"))
+            .expect("open tracked file");
+        tracked_file
+            .set_times(
+                fs::FileTimes::new()
+                    .set_modified(UNIX_EPOCH + std::time::Duration::from_secs(1)),
+            )
+            .expect("set tracked file timestamp");
+
+        let handler = CliGitHandler;
+        let request = DiffRequest {
+            repo_path: repo.path().to_string_lossy().into_owned(),
+            file_path: "inspection-record.txt".to_string(),
+            staged: true,
+        };
+        let diff = handler.get_diff(&request).expect("get_diff staged");
+        assert_eq!(diff.file_path, "inspection-record.txt");
+        assert!(!diff.hunks.is_empty(), "expected diff hunks for staged file");
+
+        assert_eq!(
+            fs::read(&index_path).expect("read index after diff"),
+            index_after_stage
+        );
+        assert!(!index_path.with_file_name("index.lock").exists());
     }
 }

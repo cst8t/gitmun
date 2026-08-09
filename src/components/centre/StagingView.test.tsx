@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import type { FileStatusItem } from "../../types";
 import "../../i18n";
-import { getAiConflictEligibility } from "../../api/commands";
+import { getAiConflictEligibility, getNumstat } from "../../api/commands";
 import { StagingView } from "./StagingView";
 
 const aiProgressListeners = vi.hoisted(() => new Set<(
@@ -162,6 +162,42 @@ function StatefulStagingView(props: Partial<React.ComponentProps<typeof StagingV
 }
 
 describe("StagingView file tree", () => {
+  afterEach(() => {
+    vi.mocked(getNumstat).mockReset();
+  });
+
+  it("fetches missing numstat entries in successive batches", async () => {
+    const numstat = vi.mocked(getNumstat);
+    numstat.mockResolvedValue({ filePath: "", additions: 2, deletions: 1 });
+    const missingStats = Array.from({ length: 7 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      status: "modified",
+      additions: null,
+      deletions: null,
+    }));
+
+    renderStagingView({ unstagedFiles: missingStats });
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(7));
+  });
+
+  it("does not immediately retry a failed numstat request", async () => {
+    const numstat = vi.mocked(getNumstat);
+    numstat.mockRejectedValue(new Error("numstat failed"));
+    const missingStats = [{
+      path: "src/file.ts",
+      status: "modified",
+      additions: null,
+      deletions: null,
+    }];
+    const view = renderStagingView({ unstagedFiles: missingStats });
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(1));
+    view.rerender(<StagingView {...baseProps({ unstagedFiles: [...missingStats] })} />);
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(1));
+  });
+
   it("hides conflict AI actions when the AI extension is disabled", () => {
     const conflict = {path: "src/report.ts", conflictType: "both_modified"};
 

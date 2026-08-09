@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
@@ -85,6 +85,7 @@ type CachedNumstat = {
   additions: number;
   deletions: number;
   updatedAt: number;
+  failed?: boolean;
 };
 
 type TreeSection = "staged" | "unstaged";
@@ -102,6 +103,7 @@ type StagingListRow =
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
+const NUMSTAT_FAILURE_BACKOFF_MS = 3000;
 const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
 const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
 
@@ -435,6 +437,12 @@ export function StagingView({
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
   const [aiEligibility, setAiEligibility] = useState<Record<string, {eligible: boolean; reason: string | null}>>({});
 
+  const numstatCacheRef = useRef(numstatCache);
+  numstatCacheRef.current = numstatCache;
+  const numstatLoadingRef = useRef(numstatLoading);
+  numstatLoadingRef.current = numstatLoading;
+  const numstatGenerationRef = useRef(0);
+
   useEffect(() => {
     if (!repoPath || !aiConfigured || conflictedFiles.length === 0) {
       setAiEligibility({});
@@ -465,6 +473,9 @@ export function StagingView({
     && conflictedFiles.some(file => aiEligibility[file.path] === undefined);
 
   useEffect(() => {
+    numstatGenerationRef.current += 1;
+    numstatCacheRef.current = {};
+    numstatLoadingRef.current = {};
     setNumstatCache({});
     setNumstatLoading({});
     setExpandedFolders({});
@@ -474,7 +485,7 @@ export function StagingView({
     () => stagedFiles.map((file) => {
       if (file.additions != null || file.deletions != null) return file;
       const cached = numstatCache[cacheKey(file.path, true)];
-      if (!cached) return file;
+      if (!cached || cached.failed) return file;
       return { ...file, additions: cached.additions, deletions: cached.deletions };
     }),
     [stagedFiles, numstatCache],
@@ -484,7 +495,7 @@ export function StagingView({
     () => unstagedFiles.map((file) => {
       if (file.additions != null || file.deletions != null) return file;
       const cached = numstatCache[cacheKey(file.path, false)];
-      if (!cached) return file;
+      if (!cached || cached.failed) return file;
       return { ...file, additions: cached.additions, deletions: cached.deletions };
     }),
     [unstagedFiles, numstatCache],
@@ -502,7 +513,10 @@ export function StagingView({
   useEffect(() => {
     if (!repoPath) return;
 
+    const generation = numstatGenerationRef.current;
     const now = Date.now();
+    const cache = numstatCacheRef.current;
+    const loading = numstatLoadingRef.current;
     const targets = [
       ...stagedFiles.map(file => ({ file, staged: true })),
       ...unstagedFiles.map(file => ({ file, staged: false })),
@@ -510,16 +524,20 @@ export function StagingView({
       .filter(({ file, staged }) => {
         if (file.additions != null || file.deletions != null) return false;
         const key = cacheKey(file.path, staged);
-        if (numstatLoading[key]) return false;
-        const cached = numstatCache[key];
+        if (loading[key]) return false;
+        const cached = cache[key];
         if (!cached) return true;
+        if (cached.failed) return now - cached.updatedAt > NUMSTAT_FAILURE_BACKOFF_MS;
         return now - cached.updatedAt > NUMSTAT_REFRESH_MS;
       })
       .slice(0, NUMSTAT_BATCH_SIZE);
 
     if (targets.length === 0) return;
 
-    let cancelled = false;
+    numstatLoadingRef.current = {
+      ...loading,
+      ...Object.fromEntries(targets.map(({ file, staged }) => [cacheKey(file.path, staged), true])),
+    };
     setNumstatLoading((prev) => {
       const next = { ...prev };
       for (const { file, staged } of targets) {
@@ -533,20 +551,13 @@ export function StagingView({
         const key = cacheKey(file.path, staged);
         try {
           const result = await getNumstat(repoPath, file.path, staged);
-          return { key, additions: result.additions, deletions: result.deletions };
+          return { key, additions: result.additions, deletions: result.deletions, failed: false };
         } catch {
-          return null;
+          return { key, additions: 0, deletions: 0, failed: true };
         }
       }),
     ).then((results) => {
-      if (cancelled) {
-        setNumstatLoading((prev) => {
-          const next = { ...prev };
-          for (const { file, staged } of targets) {
-            delete next[cacheKey(file.path, staged)];
-          }
-          return next;
-        });
+      if (generation !== numstatGenerationRef.current) {
         return;
       }
       const updatedAt = Date.now();
@@ -554,16 +565,19 @@ export function StagingView({
       setNumstatCache((prev) => {
         const next = { ...prev };
         for (const result of results) {
-          if (!result) continue;
           next[result.key] = {
             additions: result.additions,
             deletions: result.deletions,
             updatedAt,
+            failed: result.failed || undefined,
           };
         }
         return next;
       });
 
+      for (const { file, staged } of targets) {
+        delete numstatLoadingRef.current[cacheKey(file.path, staged)];
+      }
       setNumstatLoading((prev) => {
         const next = { ...prev };
         for (const { file, staged } of targets) {
@@ -573,10 +587,7 @@ export function StagingView({
       });
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [repoPath, stagedFiles, unstagedFiles, numstatCache, numstatLoading]);
+  }, [repoPath, stagedFiles, unstagedFiles, numstatCache]);
 
   const selectedUnstagedPaths = useMemo(
     () => allUnstaged.filter(f => selectedUnstaged[f.path]).map(f => f.path),
