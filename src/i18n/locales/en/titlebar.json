@@ -18,6 +18,11 @@
     "stash": "Stash",
     "terminal": "Terminal"
   },
+  "ai": {
+    "configure": "Configure AI...",
+    "heading": "AI",
+    "writingTools": "Writing tools..."
+  },
   "labels": {
     "branch": "Branch",
     "copied": "Copied",

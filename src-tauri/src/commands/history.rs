@@ -307,12 +307,15 @@ fn parse_verification_output(stdout: &str, requested_hashes: &[String]) -> Vec<C
             Some(signer_raw.to_string())
         };
 
-        parsed.insert(hash.clone(), CommitVerification {
-            hash,
-            status,
-            signer,
-            fingerprint,
-        });
+        parsed.insert(
+            hash.clone(),
+            CommitVerification {
+                hash,
+                status,
+                signer,
+                fingerprint,
+            },
+        );
     }
 
     requested_hashes
@@ -441,7 +444,8 @@ mod tests {
             _signers_override: Option<&Path>,
         ) -> Result<VerificationCommandOutput, String> {
             self.verified_hashes.borrow_mut().push(hashes.to_vec());
-            let stdout = self.verification_outputs
+            let stdout = self
+                .verification_outputs
                 .borrow_mut()
                 .pop()
                 .ok_or_else(|| "missing fake verification output".to_string())?;
@@ -484,7 +488,12 @@ mod tests {
         .join("\n");
         let results = parse_verification_output(
             &output,
-            &["a".to_string(), "b".to_string(), "c".to_string(), "d".to_string()],
+            &[
+                "a".to_string(),
+                "b".to_string(),
+                "c".to_string(),
+                "d".to_string(),
+            ],
         );
 
         assert_eq!(results[0].status, SignatureStatus::Verified);

@@ -118,6 +118,9 @@ type CentrePanelProps = {
   onRevertAbort: () => void;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
+  onConflictResolveWithAi: (path: string) => void;
+  onConflictResolveAllWithAi: (paths: string[]) => void;
+  onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
@@ -126,6 +129,14 @@ type CentrePanelProps = {
   isCherryPickActionRunning: boolean;
   isRevertActionRunning: boolean;
   lastCommitMessage: string;
+  aiEnabled: boolean;
+  aiConfigured: boolean;
+  aiResolvingPath: string | null;
+  aiConflictOperationId: string | null;
+  aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
+  aiConflictBatchFailure?: {filePath: string; message: string} | null;
+  onSkipAiConflictBatchFailure?: () => void;
+  onStopAiConflictBatchFailure?: () => void;
 };
 
 function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
@@ -254,6 +265,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onMergeAbort={props.onMergeAbort}
           onCommitMerge={handleCommitMerge}
           isCommitting={props.isCommitting}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && props.rebaseInProgress && (
@@ -264,6 +276,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onRebaseContinue={props.onRebaseContinue}
           onRebaseAbort={props.onRebaseAbort}
           isRunning={props.isRebaseActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && !props.rebaseInProgress && props.cherryPickInProgress && (
@@ -274,6 +287,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onCherryPickContinue={props.onCherryPickContinue}
           onCherryPickAbort={props.onCherryPickAbort}
           isRunning={props.isCherryPickActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       {!props.mergeInProgress && !props.rebaseInProgress && !props.cherryPickInProgress && props.revertInProgress && (
@@ -283,6 +297,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onRevertContinue={props.onRevertContinue}
           onRevertAbort={props.onRevertAbort}
           isRunning={props.isRevertActionRunning}
+          interactionLocked={props.aiResolvingPath !== null}
         />
       )}
       <div className="centre__tabs">
@@ -351,6 +366,7 @@ export function CentrePanel(props: CentrePanelProps) {
           mergeMessage={props.mergeMessage}
           rebaseInProgress={props.rebaseInProgress}
           cherryPickInProgress={props.cherryPickInProgress}
+          revertInProgress={props.revertInProgress}
           selectedFile={props.selectedFile}
           selectedSubmodulePath={props.selectedSubmodulePath}
           selectedStaged={props.selectedStagedFiles}
@@ -382,13 +398,24 @@ export function CentrePanel(props: CentrePanelProps) {
           onCommit={props.onCommit}
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
+          onConflictResolveWithAi={props.onConflictResolveWithAi}
+          onConflictResolveAllWithAi={props.onConflictResolveAllWithAi}
+          onCancelAiConflict={props.onCancelAiConflict}
           onOpenMergeTool={props.onOpenMergeTool}
           stagingOperation={props.stagingOperation}
           inlineOperation={inlineOperationContent}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
           rowStriping={props.rowStriping}
-        />
+          aiEnabled={props.aiEnabled}
+          aiConfigured={props.aiConfigured}
+          aiResolvingPath={props.aiResolvingPath}
+           aiConflictOperationId={props.aiConflictOperationId}
+           aiConflictBatchProgress={props.aiConflictBatchProgress}
+           aiConflictBatchFailure={props.aiConflictBatchFailure ?? null}
+           onSkipAiConflictBatchFailure={props.onSkipAiConflictBatchFailure ?? (() => {})}
+           onStopAiConflictBatchFailure={props.onStopAiConflictBatchFailure ?? (() => {})}
+         />
       </div>
       <div style={{ display: tab === "log" ? "contents" : "none" }}>
         <LogView

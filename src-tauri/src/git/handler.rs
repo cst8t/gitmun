@@ -11,14 +11,14 @@ use super::types::{
     CommitMessageRecovery, CommitPrimaryAction, CommitRequest, CreateBranchRequest,
     CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
     DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff,
-    FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest,
-    MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
+    IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
+    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
+    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
+    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
+    StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -213,6 +213,27 @@ impl GitService {
         Settings::default()
     }
 
+    fn update_settings_persisted(
+        &self,
+        update: impl FnOnce(&mut Settings),
+    ) -> Result<Settings, String> {
+        let path = self
+            .config_path
+            .read()
+            .map_err(|_| "Failed to acquire config path lock".to_string())?
+            .clone()
+            .ok_or_else(|| "Config path is not initialised".to_string())?;
+        let mut settings = self
+            .settings
+            .write()
+            .map_err(|_| "Failed to acquire settings lock".to_string())?;
+        let mut next = settings.clone();
+        update(&mut next);
+        crate::config_file::persist(&path, &next)?;
+        *settings = next.clone();
+        Ok(next)
+    }
+
     pub fn set_backend_mode(&self, mode: BackendMode) -> Settings {
         self.update_settings(|settings| {
             settings.backend_mode = mode;
@@ -252,6 +273,12 @@ impl GitService {
     pub fn set_show_commit_graph_button(&self, show_commit_graph_button: bool) -> Settings {
         self.update_settings(|settings| {
             settings.show_commit_graph_button = show_commit_graph_button;
+        })
+    }
+
+    pub fn set_enable_local_copy(&self, enable_local_copy: bool) -> Settings {
+        self.update_settings(|settings| {
+            settings.enable_local_copy = enable_local_copy;
         })
     }
 
@@ -374,6 +401,190 @@ impl GitService {
         self.update_settings(|settings| {
             crate::set_configured_git_executable_path(path.clone());
             settings.git_executable_path = path;
+        })
+    }
+
+    pub fn set_ai_configuration(
+        &self,
+        provider: super::types::AiProvider,
+        endpoint: String,
+        model: String,
+        reasoning_preference: super::types::AiReasoningPreference,
+        effort_capability: super::types::AiEffortCapability,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            let ai = &mut settings.extensions.ai;
+            ai.enabled = provider != super::types::AiProvider::Disabled;
+            let profile = ai.ensure_profile();
+            profile.provider = provider;
+            profile.endpoint = endpoint;
+            profile.model = model;
+            profile.reasoning_preference = reasoning_preference;
+            profile.effort_capability = effort_capability;
+        })
+    }
+
+    pub fn save_ai_profile(
+        &self,
+        enabled: bool,
+        profile: crate::ai::AiProfile,
+    ) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            let ai = &mut settings.extensions.ai;
+            ai.enabled = enabled;
+            ai.selected_profile_id = profile.id.clone();
+            if let Some(existing) = ai
+                .profiles
+                .iter_mut()
+                .find(|existing| existing.id == profile.id)
+            {
+                *existing = profile;
+            } else {
+                ai.profiles.push(profile);
+            }
+        })
+    }
+
+    pub fn delete_ai_profile(&self, profile_id: &str) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            let ai = &mut settings.extensions.ai;
+            ai.profiles.retain(|profile| profile.id != profile_id);
+            if ai.selected_profile_id == profile_id {
+                ai.selected_profile_id = ai
+                    .profiles
+                    .first()
+                    .map(|profile| profile.id.clone())
+                    .unwrap_or_default();
+            }
+            if ai.profiles.is_empty() {
+                ai.enabled = false;
+            }
+        })
+    }
+
+    pub fn update_structured_output_modes(
+        &self,
+        modes: std::collections::HashMap<String, String>,
+    ) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings.extensions.ai.structured_output_modes = modes;
+        })
+    }
+
+    pub fn remove_structured_output_mode(&self, key: &str) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings.extensions.ai.structured_output_modes.remove(key);
+        })
+    }
+
+    pub fn set_ai_effort_capability(
+        &self,
+        profile_id: &str,
+        capability: super::types::AiEffortCapability,
+    ) -> Settings {
+        self.update_settings(|settings| {
+            if let Some(profile) = settings
+                .extensions
+                .ai
+                .profiles
+                .iter_mut()
+                .find(|profile| profile.id == profile_id)
+            {
+                profile.effort_capability = capability;
+            }
+        })
+    }
+
+    pub fn grant_ai_destination_consent(&self, destination: String) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            let destinations = &mut settings.extensions.ai.consented_destinations;
+            if !destinations.contains(&destination) {
+                destinations.push(destination);
+            }
+        })
+    }
+
+    pub fn set_ai_repository_policy(
+        &self,
+        repository: String,
+        policy: crate::ai::AiRepositoryPolicy,
+    ) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings
+                .extensions
+                .ai
+                .repository_policies
+                .insert(repository, policy);
+        })
+    }
+
+    pub fn set_ai_privacy_settings(
+        &self,
+        include_commit_history: bool,
+        global_exclusions: Vec<String>,
+    ) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| {
+            settings.extensions.ai.include_commit_history = include_commit_history;
+            settings.extensions.ai.global_exclusions = global_exclusions;
+        })
+    }
+
+    pub fn record_ai_usage(&self, record: crate::ai::AiUsageRecord) {
+        drop(self.update_settings_persisted(|settings| {
+            const THIRTY_DAYS_SECONDS: u64 = 30 * 24 * 60 * 60;
+            let oldest = record.timestamp.saturating_sub(THIRTY_DAYS_SECONDS);
+            let history = &mut settings.extensions.ai.usage_history;
+            history.retain(|existing| existing.timestamp >= oldest);
+            history.push(record);
+            if history.len() > 1000 {
+                history.drain(..history.len() - 1000);
+            }
+        }));
+    }
+
+    pub fn clear_ai_usage_history(&self) -> Result<Settings, String> {
+        self.update_settings_persisted(|settings| settings.extensions.ai.usage_history.clear())
+    }
+
+    pub fn set_ai_commit_context_limit_kib(&self, limit_kib: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.commit_context_limit_kib =
+                Settings::normalised_ai_context_limit_kib(limit_kib);
+        })
+    }
+
+    pub fn set_ai_conflict_context_limit_kib(&self, limit_kib: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.conflict_context_limit_kib =
+                Settings::normalised_ai_context_limit_kib(limit_kib);
+        })
+    }
+
+    pub fn set_ai_commit_message_max_tokens(&self, max_tokens: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.commit_message_max_tokens =
+                Settings::normalised_ai_output_tokens(max_tokens);
+        })
+    }
+
+    pub fn set_ai_conflict_resolution_max_tokens(&self, max_tokens: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.conflict_resolution_max_tokens =
+                Settings::normalised_ai_output_tokens(max_tokens);
+        })
+    }
+
+    pub fn set_ai_commit_message_prompt(&self, prompt: String) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.commit_message_prompt =
+                Settings::normalised_ai_commit_message_prompt(prompt);
+        })
+    }
+
+    pub fn set_ai_conflict_resolution_prompt(&self, prompt: String) -> Settings {
+        self.update_settings(|settings| {
+            settings.extensions.ai.conflict_resolution_prompt =
+                Settings::normalised_ai_conflict_resolution_prompt(prompt);
         })
     }
 
@@ -540,5 +751,63 @@ mod tests {
 
         assert!(settings.show_commit_graph_button);
         assert!(service.get_settings().show_commit_graph_button);
+    }
+
+    #[test]
+    fn set_enable_local_copy_updates_settings() {
+        let service = GitService::new();
+
+        let settings = service.set_enable_local_copy(true);
+
+        assert!(settings.enable_local_copy);
+        assert!(service.get_settings().enable_local_copy);
+    }
+
+    #[test]
+    fn ai_context_limit_setters_normalise_values() {
+        let service = GitService::new();
+
+        let settings = service.set_ai_commit_context_limit_kib(1);
+        assert_eq!(settings.extensions.ai.commit_context_limit_kib, 8);
+
+        let settings = service.set_ai_conflict_context_limit_kib(2048);
+        assert_eq!(settings.extensions.ai.conflict_context_limit_kib, 1024);
+    }
+
+    #[test]
+    fn ai_output_token_setters_normalise_values() {
+        let service = GitService::new();
+
+        let settings = service.set_ai_commit_message_max_tokens(0);
+        assert_eq!(settings.extensions.ai.commit_message_max_tokens, 1);
+
+        let settings = service.set_ai_conflict_resolution_max_tokens(100_000);
+        assert_eq!(
+            settings.extensions.ai.conflict_resolution_max_tokens,
+            65_536
+        );
+    }
+
+    #[test]
+    fn empty_ai_prompts_restore_defaults() {
+        let service = GitService::new();
+
+        let settings = service.set_ai_commit_message_prompt("  ".to_string());
+        assert!(
+            settings
+                .extensions
+                .ai
+                .commit_message_prompt
+                .starts_with("Write a concise")
+        );
+
+        let settings = service.set_ai_conflict_resolution_prompt("\n".to_string());
+        assert!(
+            settings
+                .extensions
+                .ai
+                .conflict_resolution_prompt
+                .starts_with("Resolve the supplied")
+        );
     }
 }

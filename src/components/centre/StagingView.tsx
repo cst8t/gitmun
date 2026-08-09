@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
 import { Virtuoso } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
@@ -13,7 +14,7 @@ import type {
   SubmoduleStatus,
   UnversionedItem,
 } from "../../types";
-import { getNumstat } from "../../api/commands";
+import { getAiConflictEligibility, getNumstat, openSettingsWindow } from "../../api/commands";
 import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
@@ -29,6 +30,7 @@ type StagingViewProps = {
   mergeMessage: string | null;
   rebaseInProgress: boolean;
   cherryPickInProgress: boolean;
+  revertInProgress: boolean;
   selectedFile: string | null;
   selectedSubmodulePath: string | null;
   selectedUnstaged: Record<string, boolean>;
@@ -60,18 +62,30 @@ type StagingViewProps = {
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
+  onConflictResolveWithAi: (path: string) => void;
+  onConflictResolveAllWithAi: (paths: string[]) => void;
+  onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   inlineOperation: OperationFeedbackContent | null;
   isCommitting: boolean;
   lastCommitMessage: string;
   rowStriping: RowStriping;
+  aiEnabled: boolean;
+  aiConfigured: boolean;
+  aiResolvingPath: string | null;
+  aiConflictOperationId: string | null;
+  aiConflictBatchProgress: {current: number; total: number; preparing: boolean} | null;
+  aiConflictBatchFailure: {filePath: string; message: string} | null;
+  onSkipAiConflictBatchFailure: () => void;
+  onStopAiConflictBatchFailure: () => void;
 };
 
 type CachedNumstat = {
   additions: number;
   deletions: number;
   updatedAt: number;
+  failed?: boolean;
 };
 
 type TreeSection = "staged" | "unstaged";
@@ -89,6 +103,7 @@ type StagingListRow =
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
+const NUMSTAT_FAILURE_BACKOFF_MS = 3000;
 const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
 const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
 
@@ -151,18 +166,103 @@ function visibleTreeRows(
 }
 
 function shortHash(hash: string | null): string {
-  return hash ? hash.slice(0, 8) : "-";
+  return hash ? hash.slice(0, 7) : "-";
 }
 
-function OperationInlineFeedback({ operation }: { operation: OperationFeedbackContent }) {
+function OperationInlineFeedback({
+  title,
+  message,
+  action,
+}: Pick<OperationFeedbackContent, "title" | "message"> & {action?: React.ReactNode}) {
   return (
-    <div className="staging__operation-inline" aria-live="polite">
+    <div className="staging__operation-inline" role="status" aria-live="polite">
       <div className="staging__operation-spinner" aria-hidden="true" />
       <div className="staging__operation-copy">
-        <div className="staging__operation-title">{operation.title}</div>
-        <div className="staging__operation-message">{operation.message}</div>
+        <div className="staging__operation-title">{title}</div>
+        <div className="staging__operation-message">{message}</div>
       </div>
+      {action}
     </div>
+  );
+}
+
+function AiConflictOperationFeedback({
+  operationId,
+  batchProgress,
+  batchFailure,
+  onCancel,
+  onSkipFailure,
+  onStopFailure,
+}: {
+  operationId: string;
+  batchProgress: {current: number; total: number; preparing: boolean} | null;
+  batchFailure: {filePath: string; message: string} | null;
+  onCancel: () => void;
+  onSkipFailure: () => void;
+  onStopFailure: () => void;
+}) {
+  const { t: tAi } = useTranslation("ai");
+  const [stage, setStage] = useState("collectingContext");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(interval);
+  }, [operationId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: (() => void) | null = null;
+    void listen<{operationId: string; stage: string}>("ai-operation-progress", event => {
+      if (event.payload.operationId === operationId) setStage(event.payload.stage);
+    }).then(remove => {
+      if (cancelled) remove(); else unlisten = remove;
+    }).catch(() => {});
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [operationId]);
+
+  return (
+    <OperationInlineFeedback
+      title={batchFailure
+        ? tAi("conflict.batchFailureTitle")
+        : batchProgress
+        ? tAi(batchProgress.preparing ? "conflict.preparingBatch" : "conflict.generatingBatch", batchProgress)
+        : tAi("conflict.generatingProposal")}
+      message={batchFailure
+        ? tAi("conflict.batchFailureMessage", {
+          file: batchFailure.filePath,
+          message: batchFailure.message,
+        })
+        : tAi("conflict.generationProgress", {
+          stage: tAi(`progress.${stage}`),
+          count: elapsedSeconds,
+        })}
+      action={batchFailure ? (
+        <>
+          <button className="staging__operation-cancel" type="button" onClick={onSkipFailure}>
+            {tAi("actions.skipFailedAndContinue")}
+          </button>
+          <button className="staging__operation-cancel" type="button" onClick={onStopFailure}>
+            {tAi("actions.stopBatch")}
+          </button>
+        </>
+      ) : (
+        <button
+          className="staging__operation-cancel"
+          type="button"
+          title={tAi("conflict.cancelTitle")}
+          onClick={onCancel}
+        >
+          {tAi(batchProgress ? "actions.cancelResolveAll" : "actions.cancelResolve")}
+        </button>
+      )}
+    />
   );
 }
 
@@ -320,21 +420,62 @@ function DirectoryRow({
 
 export function StagingView({
   repoPath,
-  stagedFiles, unstagedFiles, unversionedFiles, unversionedItems, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress,
+  stagedFiles, unstagedFiles, unversionedFiles, unversionedItems, submodules, conflictedFiles, mergeInProgress, mergeMessage, rebaseInProgress, cherryPickInProgress, revertInProgress,
   selectedFile, selectedSubmodulePath, selectedUnstaged, selectedStaged, onSelectedUnstagedChange, onSelectedStagedChange,
   onFileSelect, onSubmoduleSelect, onSubmoduleInit, onSubmoduleUpdate, onSubmoduleSync,
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
-  onConflictAcceptTheirs, onConflictAcceptOurs, onOpenMergeTool,
-  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping,
+  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
+  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
+  aiConflictOperationId, aiConflictBatchProgress, aiConflictBatchFailure,
+  onSkipAiConflictBatchFailure, onStopAiConflictBatchFailure,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
   const [numstatLoading, setNumstatLoading] = useState<Record<string, boolean>>({});
   const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({});
+  const [aiEligibility, setAiEligibility] = useState<Record<string, {eligible: boolean; reason: string | null}>>({});
+
+  const numstatCacheRef = useRef(numstatCache);
+  numstatCacheRef.current = numstatCache;
+  const numstatLoadingRef = useRef(numstatLoading);
+  numstatLoadingRef.current = numstatLoading;
+  const numstatGenerationRef = useRef(0);
 
   useEffect(() => {
+    if (!repoPath || !aiConfigured || conflictedFiles.length === 0) {
+      setAiEligibility({});
+      return;
+    }
+    let cancelled = false;
+    Promise.all(conflictedFiles.map(async file => {
+      try {
+        return [file.path, await getAiConflictEligibility(repoPath, file.path)] as const;
+      } catch {
+        return [file.path, {eligible: false, reason: "unknown"}] as const;
+      }
+    })).then(entries => {
+      if (!cancelled) setAiEligibility(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [aiConfigured, conflictedFiles, repoPath]);
+
+  const eligibleConflictPaths = useMemo(
+    () => conflictedFiles
+      .filter(file => aiEligibility[file.path]?.eligible === true)
+      .map(file => file.path),
+    [aiEligibility, conflictedFiles],
+  );
+  const aiEligibilityPending = aiConfigured
+    && conflictedFiles.some(file => aiEligibility[file.path] === undefined);
+
+  useEffect(() => {
+    numstatGenerationRef.current += 1;
+    numstatCacheRef.current = {};
+    numstatLoadingRef.current = {};
     setNumstatCache({});
     setNumstatLoading({});
     setExpandedFolders({});
@@ -344,7 +485,7 @@ export function StagingView({
     () => stagedFiles.map((file) => {
       if (file.additions != null || file.deletions != null) return file;
       const cached = numstatCache[cacheKey(file.path, true)];
-      if (!cached) return file;
+      if (!cached || cached.failed) return file;
       return { ...file, additions: cached.additions, deletions: cached.deletions };
     }),
     [stagedFiles, numstatCache],
@@ -354,7 +495,7 @@ export function StagingView({
     () => unstagedFiles.map((file) => {
       if (file.additions != null || file.deletions != null) return file;
       const cached = numstatCache[cacheKey(file.path, false)];
-      if (!cached) return file;
+      if (!cached || cached.failed) return file;
       return { ...file, additions: cached.additions, deletions: cached.deletions };
     }),
     [unstagedFiles, numstatCache],
@@ -372,7 +513,10 @@ export function StagingView({
   useEffect(() => {
     if (!repoPath) return;
 
+    const generation = numstatGenerationRef.current;
     const now = Date.now();
+    const cache = numstatCacheRef.current;
+    const loading = numstatLoadingRef.current;
     const targets = [
       ...stagedFiles.map(file => ({ file, staged: true })),
       ...unstagedFiles.map(file => ({ file, staged: false })),
@@ -380,16 +524,20 @@ export function StagingView({
       .filter(({ file, staged }) => {
         if (file.additions != null || file.deletions != null) return false;
         const key = cacheKey(file.path, staged);
-        if (numstatLoading[key]) return false;
-        const cached = numstatCache[key];
+        if (loading[key]) return false;
+        const cached = cache[key];
         if (!cached) return true;
+        if (cached.failed) return now - cached.updatedAt > NUMSTAT_FAILURE_BACKOFF_MS;
         return now - cached.updatedAt > NUMSTAT_REFRESH_MS;
       })
       .slice(0, NUMSTAT_BATCH_SIZE);
 
     if (targets.length === 0) return;
 
-    let cancelled = false;
+    numstatLoadingRef.current = {
+      ...loading,
+      ...Object.fromEntries(targets.map(({ file, staged }) => [cacheKey(file.path, staged), true])),
+    };
     setNumstatLoading((prev) => {
       const next = { ...prev };
       for (const { file, staged } of targets) {
@@ -403,20 +551,13 @@ export function StagingView({
         const key = cacheKey(file.path, staged);
         try {
           const result = await getNumstat(repoPath, file.path, staged);
-          return { key, additions: result.additions, deletions: result.deletions };
+          return { key, additions: result.additions, deletions: result.deletions, failed: false };
         } catch {
-          return null;
+          return { key, additions: 0, deletions: 0, failed: true };
         }
       }),
     ).then((results) => {
-      if (cancelled) {
-        setNumstatLoading((prev) => {
-          const next = { ...prev };
-          for (const { file, staged } of targets) {
-            delete next[cacheKey(file.path, staged)];
-          }
-          return next;
-        });
+      if (generation !== numstatGenerationRef.current) {
         return;
       }
       const updatedAt = Date.now();
@@ -424,16 +565,19 @@ export function StagingView({
       setNumstatCache((prev) => {
         const next = { ...prev };
         for (const result of results) {
-          if (!result) continue;
           next[result.key] = {
             additions: result.additions,
             deletions: result.deletions,
             updatedAt,
+            failed: result.failed || undefined,
           };
         }
         return next;
       });
 
+      for (const { file, staged } of targets) {
+        delete numstatLoadingRef.current[cacheKey(file.path, staged)];
+      }
       setNumstatLoading((prev) => {
         const next = { ...prev };
         for (const { file, staged } of targets) {
@@ -443,10 +587,7 @@ export function StagingView({
       });
     });
 
-    return () => {
-      cancelled = true;
-    };
-  }, [repoPath, stagedFiles, unstagedFiles, numstatCache, numstatLoading]);
+  }, [repoPath, stagedFiles, unstagedFiles, numstatCache]);
 
   const selectedUnstagedPaths = useMemo(
     () => allUnstaged.filter(f => selectedUnstaged[f.path]).map(f => f.path),
@@ -466,7 +607,7 @@ export function StagingView({
     () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders, allUnstaged.length),
     [unstagedTree, expandedFolders, allUnstaged.length],
   );
-  const stagingBusy = stagingOperation != null;
+  const stagingBusy = stagingOperation != null || aiResolvingPath !== null;
   const inlineOperationIsCommit = inlineOperation?.kind === "commit" || inlineOperation?.kind === "commitAndPush";
 
   const toggleUnstaged = (path: string) => {
@@ -557,7 +698,9 @@ export function StagingView({
           depth={row.depth}
           onToggleChecked={() => isStaged ? toggleStaged(f.path) : toggleUnstaged(f.path)}
           onSelect={() => onFileSelect(f.path, isStaged)}
-          onDoubleClick={() => onExternalDiff(f.path, isStaged)}
+          onDoubleClick={() => {
+            if (!aiResolvingPath) onExternalDiff(f.path, isStaged);
+          }}
           onStage={isStaged ? undefined : () => onStageFile(f.path)}
           onUnstage={isStaged ? () => onUnstageFile(f.path) : undefined}
           onDiscard={isStaged ? undefined : () => onDiscardFile(f.path)}
@@ -580,7 +723,7 @@ export function StagingView({
       })));
     }
 
-    if ((mergeInProgress || rebaseInProgress || cherryPickInProgress) && conflictedFiles.length > 0) {
+    if ((mergeInProgress || rebaseInProgress || cherryPickInProgress || revertInProgress) && conflictedFiles.length > 0) {
       rows.push({ type: "section", key: "section:conflicts", section: "conflicts" });
       rows.push(...conflictedFiles.map((file, index) => ({
         type: "conflict" as const,
@@ -618,6 +761,7 @@ export function StagingView({
   }, [
     allUnstaged.length,
     cherryPickInProgress,
+    revertInProgress,
     conflictedFiles,
     mergeInProgress,
     mergedStaged.length,
@@ -647,6 +791,19 @@ export function StagingView({
             <span className="staging__section-label staging__section-label--conflict">
               {t("staging.conflicts")} {"\u00B7"} {t("fileCount", {ns: "common", count: conflictedFiles.length})}
             </span>
+            {aiEnabled && aiConfigured && conflictedFiles.length > 1 && (
+              <div className="staging__section-actions">
+                <button
+                  className="staging__section-action staging__section-action--accent"
+                  type="button"
+                  title={t("staging.generateAllAiTitle")}
+                  onClick={() => onConflictResolveAllWithAi(conflictedFiles.map(file => file.path))}
+                  disabled={aiEligibilityPending || eligibleConflictPaths.length === 0 || aiResolvingPath !== null}
+                >
+                  {t("staging.generateAllAi")}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       );
@@ -714,13 +871,17 @@ export function StagingView({
 
   const renderConflictRow = (file: ConflictFileItem, index: number) => {
     const rowStripe = striped(index);
+    const resolvingWithAi = aiResolvingPath === file.path;
     return (
       <div className="staging__list-row">
         <div className="staging__row-anim">
           <div
-            className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === file.path ? "staging__conflict-row--selected" : ""}`}
+            className={`staging__conflict-row${rowStripe ? ` staging__conflict-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedFile === file.path ? "staging__conflict-row--selected" : ""}${resolvingWithAi ? " staging__conflict-row--ai-resolving" : ""}`}
+            aria-busy={resolvingWithAi || undefined}
             onClick={() => onFileSelect(file.path, false)}
-            onDoubleClick={() => onOpenMergeTool(file.path)}
+            onDoubleClick={() => {
+              if (!aiResolvingPath) onOpenMergeTool(file.path);
+            }}
           >
             <span className="staging__conflict-badge">C</span>
             <span className="staging__conflict-path">{file.path}</span>
@@ -730,6 +891,7 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--open"
                 title={t("staging.openInMergeTool")}
                 onClick={() => onOpenMergeTool(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("actions.open", {ns: "common"})}
               </button>
@@ -737,6 +899,7 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--ours"
                 title={t("staging.acceptOurs")}
                 onClick={() => onConflictAcceptOurs(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.ours")}
               </button>
@@ -744,13 +907,41 @@ export function StagingView({
                 className="staging__conflict-btn staging__conflict-btn--theirs"
                 title={t("staging.acceptTheirs")}
                 onClick={() => onConflictAcceptTheirs(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.theirs")}
               </button>
+              {aiEnabled && (
+                aiConfigured ? (
+                  <button
+                    className="staging__conflict-btn staging__conflict-btn--ai"
+                    title={resolvingWithAi
+                      ? t("staging.aiResolving")
+                      : aiEligibility[file.path]?.reason
+                        ? t(`aiErrors.${aiEligibility[file.path].reason}`)
+                        : t("staging.resolveWithAiTitle")}
+                    onClick={() => onConflictResolveWithAi(file.path)}
+                    disabled={aiResolvingPath !== null || aiEligibility[file.path]?.eligible !== true}
+                  >
+                    {resolvingWithAi
+                      ? t("staging.aiResolving")
+                      : t("staging.aiResolve")}
+                  </button>
+                ) : (
+                  <button
+                    className="staging__conflict-btn staging__conflict-btn--ai"
+                    title={t("staging.configureAiTitle")}
+                    onClick={() => void openSettingsWindow()}
+                  >
+                    {t("staging.configureAi")}
+                  </button>
+                )
+              )}
               <button
                 className="staging__conflict-btn staging__conflict-btn--resolve"
                 title={t("staging.markResolved")}
                 onClick={() => onStageFile(file.path)}
+                disabled={aiResolvingPath !== null}
               >
                 {t("staging.resolve")}
               </button>
@@ -801,7 +992,18 @@ export function StagingView({
 
   return (
     <div className="staging">
-      {inlineOperation && !inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
+      {inlineOperation && !inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
+      {aiResolvingPath && aiConflictOperationId && (
+        <AiConflictOperationFeedback
+          key={aiConflictOperationId}
+           operationId={aiConflictOperationId}
+           batchProgress={aiConflictBatchProgress}
+           batchFailure={aiConflictBatchFailure}
+           onCancel={onCancelAiConflict}
+           onSkipFailure={onSkipAiConflictBatchFailure}
+           onStopFailure={onStopAiConflictBatchFailure}
+         />
+      )}
       <div className="staging__files">
         <Virtuoso
           className="staging__virtual-list"
@@ -812,7 +1014,7 @@ export function StagingView({
         />
       </div>
 
-      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback operation={inlineOperation} />}
+      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
       <CommitBox
         repoPath={repoPath}
         stagedCount={stagedFiles.length}
@@ -827,6 +1029,9 @@ export function StagingView({
         mergeInProgress={mergeInProgress}
         rebaseInProgress={rebaseInProgress}
         cherryPickInProgress={cherryPickInProgress}
+        revertInProgress={revertInProgress}
+        aiEnabled={aiEnabled}
+        aiConfigured={aiConfigured}
       />
     </div>
   );

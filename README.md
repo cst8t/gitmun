@@ -68,14 +68,30 @@ gitmun completions bash
 
 `gitmun <path>` is the shorthand for opening a repository. `clone` accepts an optional repository URL or SSH path, an optional destination, and `--start` to begin cloning after the window opens. Use `--to` to set only the destination. `init` defaults to the current directory when no path is supplied. Use `--help` for the full command reference.
 
+### Experimental Local Copy
+
+Local Copy is disabled by default. Enable **Local Copy** under **Settings > Application > Experimental**, or set `enableLocalCopy = true` in `config.toml`. The command remains available for testing but is omitted from normal help and generated completions:
+
+```bash
+gitmun copy /path/to/source /path/to/destination
+gitmun copy /path/to/source --to /path/to/destination --mode files-only --start
+gitmun copy https://github.com/owner/repo.git /path/to/destination --mode complete-repository --start
+```
+
+`copy` opens the Local Copy tab and accepts optional source and destination values. Use `--mode files-only` or `--mode complete-repository`; `--start` requires both paths and an explicit mode. Files only copies every hidden, ignored, untracked, and tracked file physically present while excluding every `.git` entry. It preserves symbolic links and materialises checked-out submodules. An existing usable destination `.git` is preserved; otherwise Gitmun initialises a fresh repository. `--delete-existing` removes only the destination working tree. Complete repository recursively clones the source and requires a destination that does not exist.
+
 Linux-only helper setup (if needed):
 
 ```bash
 npm run linux:setup
 ```
 
+### Experimental AI extension
+
+Gitmun includes an opt-in AI extension for commit-message previews and conflict-resolution proposals. It is disabled by default and supports hosted, local and OpenAI-compatible providers. See [AI extension configuration](docs/ai-extension.md) for provider profiles, privacy controls and launch-time environment overrides.
+
 ## Notes
 
 - Gitmun uses your system Git authentication setup (SSH agent, credential helpers, HTTPS tokens).
-- Settings are stored in a JSON config file; the path is shown in the Settings window.
+- Settings are stored in a TOML config file; the path is shown in the Settings window.
 - macOS bundles are built in CI but are currently untested because I do not have access to macOS hardware. Any help testing macOS releases is greatly appreciated.

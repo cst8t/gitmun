@@ -59,7 +59,7 @@ pub enum CoordinatorCommand {
         path: String,
     },
     OpenCloneWindow {
-        options: crate::shell::cli::CloneStartupOptions,
+        options: crate::shell::cli::CloneWindowStartupOptions,
     },
     FocusWindow {
         label: String,
@@ -284,41 +284,48 @@ fn handle_connection(mut stream: TcpStream, app: tauri::AppHandle) {
 fn process_command(cmd: CoordinatorCommand, app: &tauri::AppHandle) -> (bool, String) {
     match cmd {
         CoordinatorCommand::OpenRepo { path } => {
-            let _ = app.emit("instance-open-repo", path.clone());
+            drop(app.emit("instance-open-repo", path.clone()));
             (true, path)
         }
         CoordinatorCommand::InitialiseRepo { path } => {
-            let _ = app.emit("instance-initialise-repo", path.clone());
+            drop(app.emit("instance-initialise-repo", path.clone()));
             (true, path)
         }
         CoordinatorCommand::OpenCloneWindow { options } => {
-            if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
-                if let Some(state) = app.try_state::<crate::PendingCloneOptions>() {
+            if matches!(
+                options,
+                crate::shell::cli::CloneWindowStartupOptions::Copy(_)
+            ) && app
+                .try_state::<crate::AppState>()
+                .is_none_or(|state| !state.git_service.get_settings().enable_local_copy)
+            {
+                return (false, "localCopy.featureDisabled".into());
+            }
+            if let Some(clone_window) = app.get_webview_window("clone-repository") {
+                if let Some(state) = app.try_state::<crate::PendingCloneWindowOptions>() {
                     if let Ok(mut guard) = state.0.lock() {
-                        *guard = Some(options.clone());
+                        *guard = Some(options);
                     }
                 }
-                let _ = app.emit("clone-options-updated", options);
-            }
-            if let Some(w) = app.get_webview_window("clone-repository") {
-                let _ = w.show();
-                let _ = w.set_focus();
+                drop(app.emit("clone-window-options-updated", ()));
+                drop(clone_window.show());
+                drop(clone_window.set_focus());
                 (true, "focused".into())
             } else {
                 (false, "clone window not found".into())
             }
         }
         CoordinatorCommand::FocusWindow { label } => {
-            if let Some(w) = app.get_webview_window(&label) {
-                let _ = w.show();
-                let _ = w.set_focus();
+            if let Some(target_window) = app.get_webview_window(&label) {
+                drop(target_window.show());
+                drop(target_window.set_focus());
                 (true, "focused".into())
             } else {
                 (false, "window not found".into())
             }
         }
         CoordinatorCommand::SettingsUpdated => {
-            let _ = app.emit("instance-settings-updated", ());
+            drop(app.emit("instance-settings-updated", ()));
             (true, "ok".into())
         }
         CoordinatorCommand::Ping => (true, "pong".into()),

@@ -43,6 +43,10 @@ function renderTitlebar(
     onReset?: (mode: "mixed" | "hard") => void;
     currentBranch?: string;
     repoDisplayName?: string | null;
+    aiEnabled?: boolean;
+    aiConfigured?: boolean;
+    onAiWriting?: () => void;
+    onSettingsClick?: () => void;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -62,7 +66,7 @@ function renderTitlebar(
       searchInputRef={{ current: null }}
       onSearchChange={vi.fn()}
       onAboutClick={vi.fn()}
-      onSettingsClick={vi.fn()}
+      onSettingsClick={patchHandlers.onSettingsClick ?? vi.fn()}
       onIdentityClick={vi.fn()}
       onCloneClick={vi.fn()}
       onInitRepoClick={vi.fn()}
@@ -80,6 +84,9 @@ function renderTitlebar(
       selectedPatchExportEnabled={patchHandlers.selectedPatchExportEnabled ?? false}
       remoteOp={null}
       identityOpen={false}
+      aiEnabled={patchHandlers.aiEnabled}
+      aiConfigured={patchHandlers.aiConfigured}
+      onAiWriting={patchHandlers.onAiWriting}
     />,
   );
 }
@@ -316,6 +323,49 @@ describe("Titlebar", () => {
     expect(screen.getByText("Reset")).toBeInTheDocument();
     expect(screen.getByText("Unstage all changes...")).toBeInTheDocument();
     expect(screen.getByText("Discard tracked changes...")).toBeInTheDocument();
+  });
+
+  it("opens preview-only AI writing tools from the more menu", () => {
+    const onAiWriting = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), {
+      aiEnabled: true,
+      aiConfigured: true,
+      onAiWriting,
+    });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Writing tools..."));
+
+    expect(onAiWriting).toHaveBeenCalledOnce();
+  });
+
+  it("links the AI writing entry to Settings when AI is unavailable", () => {
+    const onSettingsClick = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), {
+      aiEnabled: true,
+      aiConfigured: false,
+      onAiWriting: vi.fn(),
+      onSettingsClick,
+    });
+
+    fireEvent.click(screen.getByText("More"));
+    fireEvent.click(screen.getByText("Configure AI..."));
+
+    expect(onSettingsClick).toHaveBeenCalledOnce();
+  });
+
+  it("hides AI writing actions when the AI extension is disabled", () => {
+    renderTitlebar([makeBranch()], "Push", "/repo", vi.fn(), {
+      aiEnabled: false,
+      aiConfigured: false,
+      onAiWriting: vi.fn(),
+    });
+
+    fireEvent.click(screen.getByText("More"));
+
+    expect(screen.queryByText("AI")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure AI...")).not.toBeInTheDocument();
+    expect(screen.queryByText("Writing tools...")).not.toBeInTheDocument();
   });
 
   it("calls reset with mixed mode from the more menu", () => {

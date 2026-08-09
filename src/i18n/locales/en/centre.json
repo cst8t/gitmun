@@ -178,6 +178,10 @@
     "title": "Push Rejected"
   },
   "staging": {
+    "aiResolve": "AI Resolve",
+    "aiResolving": "Resolving...",
+    "configureAi": "Configure AI",
+    "configureAiTitle": "Open Settings to configure the AI extension",
     "acceptOurs": "Accept ours (keep current branch version)",
     "acceptTheirs": "Accept theirs (use incoming branch version)",
     "checkedOut": "checked out {{hash}}",
@@ -187,6 +191,8 @@
     "deselectFolderFiles": "Deselect files in {{path}}",
     "expected": "expected {{hash}}",
     "expandFolder": "Expand {{path}}",
+    "generateAllAi": "AI Resolve All",
+    "generateAllAiTitle": "Generate separate AI proposals for all conflict files",
     "markResolved": "Mark as resolved (stage file as-is)",
     "noStagedChanges": "No staged changes - stage files to commit",
     "openInMergeTool": "Open in merge tool",
@@ -200,6 +206,8 @@
     "submodules": "Submodules",
     "syncUrl": "Sync URL",
     "resolve": "Resolve",
+    "resolveWithAiTitle": "Resolve this file's conflict markers with the configured AI provider",
+    "resolvingWithAi": "Resolving...",
     "selectFolderFiles": "Select files in {{path}}",
     "theirs": "Theirs",
     "unstageAll": "Unstage All",
@@ -215,5 +223,32 @@
   "tabs": {
     "changes": "Changes",
     "log": "Log"
+  },
+  "aiErrors": {
+    "authentication": "The AI provider rejected the API key.",
+    "contextTooLarge": "The required staged context exceeds the safe request limit.",
+    "contextTooLargeWithSize": "Staged context is {{actual}} KiB; the configured limit is {{limit}} KiB.",
+    "credentialStoreUnavailable": "The operating system credential store is unavailable.",
+    "fileUnavailable": "The conflicted file could not be read.",
+    "gitFailed": "Git could not prepare the staged changes for AI.",
+    "gitUnavailable": "Git is unavailable.",
+    "invalidResponse": "The AI provider returned an invalid commit message.",
+    "invalidPath": "The conflicted path is invalid.",
+    "invalidRepository": "The repository path is invalid.",
+    "malformedConflict": "The file contains malformed conflict markers.",
+    "network": "The AI provider could not be reached.",
+    "noStagedChanges": "Stage changes before generating a commit message.",
+    "noConflictMarkers": "The file no longer contains conflict markers.",
+    "notConfigured": "Complete and save the AI settings first.",
+    "operationInProgress": "AI commit messages are unavailable during the current Git operation.",
+    "outputTruncated": "The AI provider stopped before completing the message.",
+    "providerUnavailable": "The AI provider is temporarily unavailable.",
+    "reasoningUnsupported": "The endpoint does not support the selected reasoning level.",
+    "requestRejected": "The AI provider rejected the request.",
+    "responseTooLarge": "The AI provider response exceeded the safe size limit.",
+    "sensitivePath": "The staged changes include a sensitive path and were not sent.",
+    "timeout": "The AI provider request timed out.",
+    "unsupportedFile": "AI conflict resolution supports regular UTF-8 text files only.",
+    "unknown": "The AI request failed."
   }
 }

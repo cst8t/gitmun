@@ -408,12 +408,15 @@
   position: absolute;
   top: 8px;
   right: 10px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   background: none;
   border: none;
   color: var(--text-muted);
   cursor: pointer;
-  font-size: var(--font-size-xs);
-  padding: 2px 4px;
+  padding: 0;
   border-radius: var(--radius-md);
 }
 

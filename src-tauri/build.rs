@@ -20,11 +20,11 @@ fn main() {
             std::env::var("GITHUB_SHA")
                 .ok()
                 .filter(|v| !v.trim().is_empty())
-                .map(|sha| sha[..8.min(sha.len())].to_string())
+                .map(|sha| sha[..7.min(sha.len())].to_string())
         })
         .or_else(|| {
             std::process::Command::new("git")
-                .args(["rev-parse", "--short", "HEAD"])
+                .args(["rev-parse", "--short=7", "HEAD"])
                 .output()
                 .ok()
                 .filter(|o| o.status.success())

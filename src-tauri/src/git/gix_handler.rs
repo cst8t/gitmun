@@ -81,9 +81,7 @@ impl GixGitHandler {
                         .map(|rest| rest.starts_with('/'))
                         .unwrap_or(false)
             });
-            if repo_path.join(&candidate).is_dir()
-                && !has_tracked_descendant
-            {
+            if repo_path.join(&candidate).is_dir() && !has_tracked_descendant {
                 return format!("{candidate}/");
             }
         }

@@ -95,10 +95,7 @@ mod platform {
         ApplicationModel::{Package, PackageVersion},
         Services::Store::StoreContext,
         Win32::Foundation::HWND,
-        Win32::UI::{
-            Shell::ShellExecuteW,
-            WindowsAndMessaging::SW_SHOWNORMAL,
-        },
+        Win32::UI::{Shell::ShellExecuteW, WindowsAndMessaging::SW_SHOWNORMAL},
         core::w,
     };
 

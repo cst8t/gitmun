@@ -12,6 +12,7 @@ import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
+import { createRefreshCoalescer } from "../hooks/useRefreshCoalescer";
 import { Titlebar } from "./Titlebar";
 import { Sidebar } from "./sidebar/Sidebar";
 import { CentrePanel, type CentreTab } from "./centre/CentrePanel";
@@ -42,6 +43,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
+  AiError,
   BranchInfo,
   CommitLogScope,
   CommitMarkers,
@@ -72,6 +74,8 @@ import type { ToastType } from "../hooks/useToast";
 import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
 import { getRemoteActionState, splitUpstreamRef } from "../utils/remoteActionState";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
+import {AiConflictProposalDialog, AiWritingDialog} from "../features/ai";
+import type {AiConflictOperation, AiConflictProposalResult, AiConflictReviewItem, AiContextPreview} from "../features/ai";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
 // (lives outside the component so repo switches don't reset it).
@@ -160,6 +164,30 @@ function localisePatchExportError(message: string, t: TFunction<"projectView">):
 function localisePatchImportMessage(message: string, t: TFunction<"projectView">): string {
   const code = PATCH_IMPORT_MESSAGE_CODES.find(code => message.includes(code));
   return code ? t(`patch.import.${code}`) : message;
+}
+
+export function localiseAiError(error: unknown, t: TFunction<"projectView">): string {
+  const aiError = typeof error === "object" && error !== null && "code" in error
+    ? error as AiError
+    : null;
+  if (
+    aiError?.code === "contextTooLarge"
+    && Number.isFinite(aiError.contextSizeKib)
+    && Number.isFinite(aiError.contextLimitKib)
+  ) {
+    return t("aiErrors.contextTooLargeWithSize", {
+      actual: aiError.contextSizeKib,
+      limit: aiError.contextLimitKib,
+    });
+  }
+  return t(`aiErrors.${aiError?.code ?? "unknown"}`);
+}
+
+function isAiOperationCancelled(error: unknown): boolean {
+  return typeof error === "object"
+    && error !== null
+    && "code" in error
+    && error.code === "operationCancelled";
 }
 
 export function buildStashDropPrompt(
@@ -340,6 +368,7 @@ export function ProjectView({
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
   const { t: tGitAdvice } = useTranslation("gitAdvice");
+  const { t: tAi } = useTranslation("ai");
   const emptyStateRecentRepos = !repoPath ? recentRepos.slice(0, 5) : [];
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
@@ -404,11 +433,37 @@ export function ProjectView({
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiConfigured, setAiConfigured] = useState(false);
+  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
+  const [aiConflictReviewItems, setAiConflictReviewItems] = useState<AiConflictReviewItem[]>([]);
+  const [aiConflictBatchProgress, setAiConflictBatchProgress] = useState<{
+    current: number;
+    total: number;
+    preparing: boolean;
+  } | null>(null);
+  const [aiConflictBatchFailure, setAiConflictBatchFailure] = useState<{
+    filePath: string;
+    message: string;
+  } | null>(null);
+  const [aiConflictOperation, setAiConflictOperation] = useState<AiConflictOperation>(null);
+  const [showAiWriting, setShowAiWriting] = useState(false);
+  const aiConflictOperationIdRef = useRef("");
+  const aiConflictBatchCancelledRef = useRef(false);
+  const aiConflictBatchDecisionRef = useRef<((continueBatch: boolean) => void) | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
   const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => () => {
+    aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
+    const operationId = aiConflictOperationIdRef.current;
+    if (operationId) void api.cancelAiOperation(operationId).catch(() => {});
+  }, []);
 
   const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity, refreshIdentity: refreshLocalIdentity } =
     useGitIdentity(repoPath, "Local");
@@ -636,6 +691,34 @@ export function ProjectView({
   }, [settingsRevision]);
 
   useEffect(() => {
+    let cancelled = false;
+    const refreshAiConfiguration = () => {
+      api.getAiConfiguration()
+        .then(configuration => {
+          if (!cancelled) {
+            setAiEnabled(configuration.enabled);
+            setAiConfigured(configuration.configured);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setAiEnabled(false);
+            setAiConfigured(false);
+          }
+        });
+    };
+    refreshAiConfiguration();
+    let unlisten: (() => void) | null = null;
+    listen("ai-configuration-updated", refreshAiConfiguration).then(remove => {
+      if (cancelled) remove(); else unlisten = remove;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [settingsRevision]);
+
+  useEffect(() => {
     // Respect the user's scope choice; fall back to global email when local
     // scope is selected but has no email configured (very common).
     const email = identityScope === "local"
@@ -663,19 +746,21 @@ export function ProjectView({
     await refreshAll();
   }, [saveGlobalIdentity, refreshAll]);
 
+  const refreshAllRef = useRef(refreshAll);
+  refreshAllRef.current = refreshAll;
+  const refreshCoalescerRef = useRef(createRefreshCoalescer(() => refreshAllRef.current()));
+
   // Refresh all data when settings change (e.g. avatar provider toggle).
   const isFirstSettingsRevision = useRef(true);
   useEffect(() => {
     if (isFirstSettingsRevision.current) { isFirstSettingsRevision.current = false; return; }
-    refreshAll();
+    refreshCoalescerRef.current.trigger();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settingsRevision]);
 
   // Watch the .git directory for external changes (other git clients, CLI).
   // Uses a ref so the listener always calls the latest refreshAll without
   // needing to re-subscribe when its dependencies change.
-  const refreshAllRef = useRef(refreshAll);
-  refreshAllRef.current = refreshAll;
   const windowFocusedRef = useRef(windowFocused);
   windowFocusedRef.current = windowFocused;
   const pendingFocusRefreshRef = useRef(false);
@@ -685,7 +770,7 @@ export function ProjectView({
       windowFocusedRef.current = focused;
       if (focused && pendingFocusRefreshRef.current) {
         pendingFocusRefreshRef.current = false;
-        refreshAllRef.current();
+        refreshCoalescerRef.current.trigger();
       }
     };
     const handleFocus = () => setFocused(true);
@@ -726,11 +811,12 @@ export function ProjectView({
         pendingFocusRefreshRef.current = true;
         return;
       }
-      refreshAllRef.current();
+      refreshCoalescerRef.current.trigger();
     }).then(fn => { if (cancelled) fn(); else unlisten = fn; });
 
     return () => {
       cancelled = true;
+      refreshCoalescerRef.current.reset();
       api.unwatchRepo().catch(() => {});
       unlisten?.();
     };
@@ -1580,7 +1666,7 @@ export function ProjectView({
     }
 
     const confirmed = await ask(
-      t("ask.cherryPickCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      t("ask.cherryPickCommit.message", { commit: commitHash.slice(0, 7), branch: currentBranch ?? t("labels.currentBranch") }),
       { title: t("ask.cherryPickCommit.title"), kind: "warning", okLabel: t("actions.cherryPick"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
@@ -2117,7 +2203,7 @@ export function ProjectView({
     }
 
     const confirmed = await ask(
-      t("ask.revertCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      t("ask.revertCommit.message", { commit: commitHash.slice(0, 7), branch: currentBranch ?? t("labels.currentBranch") }),
       { title: t("ask.revertCommit.title"), kind: "warning", okLabel: t("actions.revert"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
@@ -2193,7 +2279,7 @@ export function ProjectView({
       ? t("ask.resetToCommit.softDescription")
       : t("ask.resetToCommit.mixedDescription");
     const confirmed = await ask(
-      t("ask.resetToCommit.message", { mode: modeLabel, commit: commitHash.slice(0, 12), description: modeDesc }),
+      t("ask.resetToCommit.message", { mode: modeLabel, commit: commitHash.slice(0, 7), description: modeDesc }),
       { title: t("ask.resetToCommit.title", { mode: modeLabel }), kind: "warning", okLabel: t("actions.reset"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
@@ -2298,6 +2384,331 @@ export function ProjectView({
       appendResultLog("error", t("log.acceptOursFailed", { message: String(e) }), "unknown");
     }
   }, [repoPath, refreshStatus, showToast, t]);
+
+  const handleConflictResolveWithAi = useCallback(async (path: string) => {
+    if (!repoPath) return;
+    if (aiResolvingPath || aiConflictOperationIdRef.current) return;
+    const operationId = `conflict-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    aiConflictBatchCancelledRef.current = false;
+    aiConflictOperationIdRef.current = operationId;
+    setAiConflictBatchProgress(null);
+    setAiResolvingPath(path);
+    try {
+      const configuration = await api.getAiConfiguration();
+      if (configuration.consentRequired) {
+        const preview = await api.getAiConflictContextPreview(repoPath, path);
+        const confirmed = await ask([
+          tAi("context.destination", {
+            provider: preview.provider,
+            authority: preview.destinationAuthority,
+          }),
+          tAi("context.files", {count: preview.files.length}),
+          tAi("context.size", {
+            size: preview.contextSizeKib,
+            limit: preview.contextLimitKib,
+          }),
+          "",
+          tAi("context.consent", {authority: preview.destinationAuthority}),
+        ].join("\n"), {
+          title: tAi("context.title"),
+          kind: "warning",
+        });
+        if (!confirmed) return;
+        await api.grantAiConsent();
+      }
+      const result = await api.resolveConflictWithAi(repoPath, path, operationId);
+      if (aiConflictBatchCancelledRef.current) return;
+      setAiConflictReviewItems([{status: "ready", filePath: result.filePath, proposal: result}]);
+    } catch (error) {
+      if (isAiOperationCancelled(error)) return;
+      const message = localiseAiError(error, t);
+      showToast(message, "error");
+    } finally {
+      aiConflictOperationIdRef.current = "";
+      setAiResolvingPath(null);
+    }
+  }, [aiResolvingPath, repoPath, showToast, t, tAi]);
+
+  const handleCancelAiConflict = useCallback(async () => {
+    const operationId = aiConflictOperationIdRef.current;
+    if (!operationId) return;
+    aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
+    await api.cancelAiOperation(operationId).catch(() => {});
+  }, []);
+
+  const handleSkipAiConflictBatchFailure = useCallback(() => {
+    setAiConflictBatchFailure(null);
+    aiConflictBatchDecisionRef.current?.(true);
+    aiConflictBatchDecisionRef.current = null;
+  }, []);
+
+  const handleStopAiConflictBatchFailure = useCallback(() => {
+    setAiConflictBatchFailure(null);
+    aiConflictBatchCancelledRef.current = true;
+    aiConflictBatchDecisionRef.current?.(false);
+    aiConflictBatchDecisionRef.current = null;
+  }, []);
+
+  const handleConflictResolveAllWithAi = useCallback(async (paths: string[]) => {
+    if (!repoPath || paths.length === 0 || aiResolvingPath || aiConflictOperationIdRef.current) return;
+    const batchId = `conflict-batch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    aiConflictBatchCancelledRef.current = false;
+    setAiConflictBatchFailure(null);
+    aiConflictOperationIdRef.current = batchId;
+    setAiConflictBatchProgress({current: 1, total: paths.length, preparing: true});
+    setAiResolvingPath(paths[0]);
+
+    try {
+      const configuration = await api.getAiConfiguration();
+      const previews = new Map<string, AiContextPreview>();
+      const failures = new Map<string, string>();
+      for (const path of paths) {
+        if (aiConflictBatchCancelledRef.current) return;
+        try {
+          previews.set(path, await api.getAiConflictContextPreview(repoPath, path));
+        } catch (error) {
+          const message = localiseAiError(error, t);
+          failures.set(path, message);
+          setAiConflictBatchFailure({filePath: path, message});
+          const continueBatch = await new Promise<boolean>(resolve => {
+            aiConflictBatchDecisionRef.current = resolve;
+          });
+          if (!continueBatch) break;
+        }
+      }
+      const preparedPaths = paths.filter(path => previews.has(path));
+      if (preparedPaths.length === 0) {
+        setAiConflictReviewItems(paths.map(path => ({
+          status: "failed",
+          filePath: path,
+          message: failures.get(path) ?? t("aiErrors.unknown"),
+        })));
+        return;
+      }
+      const firstPreview = previews.get(preparedPaths[0])!;
+      const totalContextSizeKib = preparedPaths.reduce(
+        (total, path) => total + (previews.get(path)?.contextSizeKib ?? 0),
+        0,
+      );
+      const warning = [
+        tAi("conflict.batchRequestWarning", {
+          count: preparedPaths.length,
+          provider: firstPreview.provider,
+          authority: firstPreview.destinationAuthority,
+        }),
+        tAi("conflict.batchContext", {
+          count: preparedPaths.length,
+          size: totalContextSizeKib,
+          limit: firstPreview.contextLimitKib,
+        }),
+        failures.size > 0 ? tAi("conflict.batchExcluded", {count: failures.size}) : "",
+        failures.size > 0 ? tAi("conflict.batchExcludedDetails", {
+          files: [...failures].map(([path, message]) => `${path}: ${message}`).join("\n"),
+        }) : "",
+        tAi("conflict.batchSequential"),
+        configuration.consentRequired
+          ? tAi("context.consent", {authority: firstPreview.destinationAuthority})
+          : "",
+      ].filter(Boolean).join("\n\n");
+      const confirmed = await ask(warning, {
+        title: tAi("conflict.batchTitle"),
+        kind: "warning",
+        okLabel: tAi("actions.generate"),
+        cancelLabel: tAi("actions.cancel"),
+      });
+      if (!confirmed || aiConflictBatchCancelledRef.current) return;
+      if (configuration.consentRequired) await api.grantAiConsent();
+
+      setAiConflictReviewItems([]);
+      const proposals = new Map<string, AiConflictProposalResult>();
+      for (const [index, path] of preparedPaths.entries()) {
+        if (aiConflictBatchCancelledRef.current) break;
+        const operationId = `${batchId}-${index + 1}`;
+        aiConflictOperationIdRef.current = operationId;
+        setAiConflictBatchProgress({current: index + 1, total: preparedPaths.length, preparing: false});
+        setAiResolvingPath(path);
+        try {
+          const proposal = await api.resolveConflictWithAi(repoPath, path, operationId);
+          if (aiConflictBatchCancelledRef.current) break;
+          proposals.set(path, proposal);
+        } catch (error) {
+          if (isAiOperationCancelled(error) || aiConflictBatchCancelledRef.current) {
+            aiConflictBatchCancelledRef.current = true;
+            break;
+          }
+          const message = localiseAiError(error, t);
+          failures.set(path, message);
+          setAiConflictBatchFailure({filePath: path, message});
+          const continueBatch = await new Promise<boolean>(resolve => {
+            aiConflictBatchDecisionRef.current = resolve;
+          });
+          if (!continueBatch) break;
+        }
+      }
+
+      const reviewItems = paths.flatMap((path): AiConflictReviewItem[] => {
+        const proposal = proposals.get(path);
+        if (proposal) return [{status: "ready", filePath: path, proposal}];
+        const message = failures.get(path);
+        return message ? [{status: "failed", filePath: path, message}] : [];
+      });
+      if (reviewItems.length > 0) setAiConflictReviewItems(reviewItems);
+      if (aiConflictBatchCancelledRef.current) {
+        showToast(tAi("conflict.batchCancelled", {
+          completed: proposals.size,
+          total: preparedPaths.length,
+        }), "info");
+      } else if (failures.size > 0) {
+        const [firstFailedFile, firstFailure] = failures.entries().next().value!;
+        showToast(tAi("conflict.batchFailed", {
+          count: failures.size,
+          completed: proposals.size,
+          failed: failures.size,
+          total: paths.length,
+          file: firstFailedFile,
+          message: firstFailure,
+        }), "error");
+      }
+    } catch (error) {
+      if (!isAiOperationCancelled(error) && !aiConflictBatchCancelledRef.current) {
+        showToast(localiseAiError(error, t), "error");
+      }
+    } finally {
+      aiConflictBatchDecisionRef.current = null;
+      setAiConflictBatchFailure(null);
+      aiConflictOperationIdRef.current = "";
+      setAiResolvingPath(null);
+      setAiConflictBatchProgress(null);
+    }
+  }, [aiResolvingPath, repoPath, showToast, t, tAi]);
+
+  const handleApplyAiConflictProposal = useCallback(async (proposalId: string, regionIds: string[]) => {
+    if (aiConflictOperation) throw {code: "operationInProgress"} satisfies AiError;
+    setAiConflictOperation("apply");
+    try {
+      const result = await api.applyAiConflictProposal(proposalId, regionIds);
+      showToast(t(result.markedResolved ? "toast.aiConflictFileResolved" : "toast.aiConflictRegionsApplied", {
+        file: getFileName(result.filePath),
+        count: result.resolvedRegions,
+      }), "success");
+      await refreshStatus();
+      return result;
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, refreshStatus, showToast, t]);
+
+  const handleRegenerateAiConflictProposal = useCallback(async (proposalId: string, regionIds?: string[]) => {
+    if (!repoPath || aiConflictOperation) return;
+    const reviewItem = aiConflictReviewItems.find(item => (
+      item.status === "ready" && item.proposal.proposalId === proposalId
+    ));
+    if (!reviewItem || reviewItem.status !== "ready") return;
+    const proposal = reviewItem.proposal;
+    setAiConflictOperation("regenerate");
+    try {
+      if (!regionIds?.length) {
+        const regenerated = await api.resolveConflictWithAi(repoPath, proposal.filePath);
+        setAiConflictReviewItems(current => current.map(item => (
+          item.status === "ready" && item.proposal.proposalId === proposalId
+            ? {status: "ready", filePath: regenerated.filePath, proposal: regenerated}
+            : item
+        )));
+        return;
+      }
+      const refreshed = await api.regenerateAiConflictRegions(proposalId, regionIds);
+      const replacements = new Map(refreshed.regions.map(region => [region.id, region]));
+      setAiConflictReviewItems(current => current.map(item => (
+        item.status === "ready" && item.proposal.proposalId === refreshed.proposalId
+          ? {
+            ...item,
+            proposal: {
+              ...item.proposal,
+              usage: refreshed.usage,
+              requestId: refreshed.requestId,
+              generationId: refreshed.generationId,
+              routedProvider: refreshed.routedProvider,
+              routedModel: refreshed.routedModel,
+              regions: item.proposal.regions.map(region => replacements.get(region.id) ?? region),
+            },
+          }
+          : item
+      )));
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, aiConflictReviewItems, repoPath, showToast, t]);
+
+  const handleRetryAiConflictFile = useCallback(async (filePath: string) => {
+    if (!repoPath || aiConflictOperation) return;
+    setAiConflictOperation("regenerate");
+    try {
+      const proposal = await api.resolveConflictWithAi(repoPath, filePath);
+      setAiConflictReviewItems(current => current.map(item => (
+        item.filePath === filePath
+          ? {status: "ready", filePath: proposal.filePath, proposal}
+          : item
+      )));
+    } catch (error) {
+      const message = localiseAiError(error, t);
+      setAiConflictReviewItems(current => current.map(item => (
+        item.filePath === filePath ? {status: "failed", filePath, message} : item
+      )));
+      showToast(message, "error");
+      throw error;
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, repoPath, showToast, t]);
+
+  const handleUndoAiConflictProposal = useCallback(async (proposalId: string) => {
+    if (aiConflictOperation) return;
+    setAiConflictOperation("undo");
+    try {
+      await api.undoAiConflictProposal(proposalId);
+      await refreshStatus();
+      setAiConflictReviewItems(current => current.filter(item => (
+        item.status !== "ready" || item.proposal.proposalId !== proposalId
+      )));
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+      throw error;
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, refreshStatus, showToast, t]);
+
+  const handleBatchUndoAiConflictProposal = useCallback(async (proposalIds: string[]) => {
+    if (aiConflictOperation) return;
+    setAiConflictOperation("undo");
+    try {
+      const result = await api.undoAiConflictBatch(proposalIds);
+      await refreshStatus();
+      const failedIds = new Set(result.failed.map(failure => failure.proposalId));
+      const undoneIds = new Set(proposalIds.filter(id => !failedIds.has(id)));
+      setAiConflictReviewItems(current => current.filter(item => (
+        item.status !== "ready" || !undoneIds.has(item.proposal.proposalId)
+      )));
+      if (result.failed.length > 0) {
+        showToast(
+          tAi("conflict.batchUndoFailed", {count: result.failed.length}) as string,
+          "error"
+        );
+      }
+    } catch (error) {
+      showToast(localiseAiError(error, t), "error");
+    } finally {
+      setAiConflictOperation(null);
+    }
+  }, [aiConflictOperation, refreshStatus, showToast, t, tAi]);
 
   const handleOpenMergeTool = useCallback(async (path: string) => {
     if (!repoPath) return;
@@ -2519,6 +2930,9 @@ export function ProjectView({
           selectedPatchExportEnabled={selectedPatchFiles.length > 0}
           remoteOp={remoteOp}
           identityOpen={identityOpen}
+          aiEnabled={aiEnabled}
+          aiConfigured={aiConfigured}
+          onAiWriting={() => setShowAiWriting(true)}
         />
 
         <div className="app__body" ref={appBodyRef}>
@@ -2693,6 +3107,9 @@ export function ProjectView({
                   onRevertAbort={handleRevertAbort}
                   onConflictAcceptTheirs={handleConflictAcceptTheirs}
                   onConflictAcceptOurs={handleConflictAcceptOurs}
+                  onConflictResolveWithAi={handleConflictResolveWithAi}
+                  onConflictResolveAllWithAi={handleConflictResolveAllWithAi}
+                  onCancelAiConflict={handleCancelAiConflict}
                   onOpenMergeTool={handleOpenMergeTool}
                   stagingOperation={stagingOperation}
                   operationLock={operationLock}
@@ -2701,7 +3118,15 @@ export function ProjectView({
                   isCherryPickActionRunning={isCherryPickActionRunning}
                   isRevertActionRunning={isRevertActionRunning}
                   lastCommitMessage={lastCommitMessage}
-                />
+                  aiEnabled={aiEnabled}
+                  aiConfigured={aiConfigured}
+                  aiResolvingPath={aiResolvingPath}
+                   aiConflictOperationId={aiResolvingPath ? aiConflictOperationIdRef.current : null}
+                   aiConflictBatchProgress={aiConflictBatchProgress}
+                   aiConflictBatchFailure={aiConflictBatchFailure}
+                   onSkipAiConflictBatchFailure={handleSkipAiConflictBatchFailure}
+                   onStopAiConflictBatchFailure={handleStopAiConflictBatchFailure}
+                 />
               </div>
 
               <div
@@ -2785,6 +3210,21 @@ export function ProjectView({
           )}
         </div>
       </div>
+      {aiEnabled && aiConflictReviewItems.length > 0 && (
+        <AiConflictProposalDialog
+          items={aiConflictReviewItems}
+          operation={aiConflictOperation}
+          onApply={handleApplyAiConflictProposal}
+          onRegenerate={handleRegenerateAiConflictProposal}
+          onRetry={handleRetryAiConflictFile}
+          onUndo={handleUndoAiConflictProposal}
+          onBatchUndo={handleBatchUndoAiConflictProposal}
+          onClose={() => setAiConflictReviewItems([])}
+        />
+      )}
+      {aiEnabled && showAiWriting && repoPath && (
+        <AiWritingDialog repoPath={repoPath} onClose={() => setShowAiWriting(false)} />
+      )}
     </>
   );
 }

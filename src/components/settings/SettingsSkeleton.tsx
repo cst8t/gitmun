@@ -3,14 +3,42 @@ import {useTranslation} from "react-i18next";
 import {AppSkeleton} from "../skeleton/AppSkeleton";
 
 type SettingsSkeletonProps = {
-    tab: "application" | "git";
+    tab: "application" | "git" | "ai";
     isLinux: boolean;
 };
 
 export function SettingsSkeleton({tab, isLinux}: SettingsSkeletonProps) {
-    return tab === "application"
-        ? <ApplicationSettingsSkeleton isLinux={isLinux}/>
-        : <GitSettingsSkeleton/>;
+    if (tab === "application") return <ApplicationSettingsSkeleton isLinux={isLinux}/>;
+    if (tab === "git") return <GitSettingsSkeleton/>;
+    return <AiSettingsSkeleton/>;
+}
+
+function AiSettingsSkeleton() {
+    const {t} = useTranslation("settings");
+    return (
+        <div className="settings-window__column" data-testid="settings-skeleton">
+            <section className="settings-window__section">
+                <div className="settings-window__section-title">{t("labels.aiGroupProvider")}</div>
+                <SkeletonSelectRow label={t("labels.aiProvider")}/>
+                <SkeletonInputRow label={t("labels.aiEndpoint")}/>
+                <SkeletonInputRow label={t("labels.aiModel")}/>
+                <SkeletonInputRow label={t("labels.aiApiKey")}/>
+            </section>
+            <section className="settings-window__section">
+                <div className="settings-window__section-title">{t("labels.aiGroupAdvanced")}</div>
+                <SkeletonSelectRow label={t("labels.aiReasoning")}/>
+                <SkeletonInputRow label={t("labels.aiCommitMessagePrompt")}/>
+                <SkeletonInputRow label={t("labels.aiConflictResolutionPrompt")}/>
+            </section>
+            <section className="settings-window__section">
+                <div className="settings-window__section-title">{t("labels.aiGroupContextLimits")}</div>
+                <SkeletonInputRow label={t("labels.aiCommitContextLimit")} note={t("notes.aiContextLimit")}/>
+                <SkeletonInputRow label={t("labels.aiConflictContextLimit")} note={t("notes.aiContextLimit")}/>
+                <SkeletonInputRow label={t("labels.aiCommitMessageMaxTokens")} note={t("notes.aiOutputTokens")}/>
+                <SkeletonInputRow label={t("labels.aiConflictResolutionMaxTokens")} note={t("notes.aiOutputTokens")}/>
+            </section>
+        </div>
+    );
 }
 
 function ApplicationSettingsSkeleton({isLinux}: {isLinux: boolean}) {

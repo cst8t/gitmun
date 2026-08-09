@@ -243,6 +243,16 @@ pub fn set_show_commit_graph_button(
 }
 
 #[tauri::command]
+pub fn set_enable_local_copy(
+    enable_local_copy: bool,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    let settings = state.git_service.set_enable_local_copy(enable_local_copy);
+    crate::instance_coordinator::broadcast_settings_updated();
+    settings
+}
+
+#[tauri::command]
 pub fn set_persistent_error_toasts(
     persistent_error_toasts: bool,
     state: tauri::State<'_, AppState>,
@@ -260,6 +270,66 @@ pub fn set_error_toast_clear_delay_ms(
     state
         .git_service
         .set_error_toast_clear_delay_ms(error_toast_clear_delay_ms)
+}
+
+#[tauri::command]
+pub fn set_ai_commit_context_limit_kib(
+    ai_commit_context_limit_kib: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_context_limit_kib(ai_commit_context_limit_kib)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_context_limit_kib(
+    ai_conflict_context_limit_kib: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_context_limit_kib(ai_conflict_context_limit_kib)
+}
+
+#[tauri::command]
+pub fn set_ai_commit_message_max_tokens(
+    ai_commit_message_max_tokens: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_message_max_tokens(ai_commit_message_max_tokens)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_resolution_max_tokens(
+    ai_conflict_resolution_max_tokens: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_resolution_max_tokens(ai_conflict_resolution_max_tokens)
+}
+
+#[tauri::command]
+pub fn set_ai_commit_message_prompt(
+    ai_commit_message_prompt: String,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_commit_message_prompt(ai_commit_message_prompt)
+}
+
+#[tauri::command]
+pub fn set_ai_conflict_resolution_prompt(
+    ai_conflict_resolution_prompt: String,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_ai_conflict_resolution_prompt(ai_conflict_resolution_prompt)
 }
 
 #[tauri::command]

@@ -55,7 +55,7 @@ export function CreateTagDialog({ existingTagNames, targetCommit, onConfirm, onC
     onConfirm(tagName.trim(), message.trim() || null);
   };
 
-  const targetLabel = targetCommit ? targetCommit.slice(0, 8) : "HEAD";
+  const targetLabel = targetCommit ? targetCommit.slice(0, 7) : "HEAD";
 
   return (
     <>

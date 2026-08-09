@@ -23,6 +23,9 @@ wrapDiffLines = false
 # Experimental: show the commit graph toolbar button.
 showCommitGraphButton = false
 
+# Experimental: enable Local Copy in the Clone window and CLI.
+enableLocalCopy = false
+
 # Whether error messages stay open until dismissed.
 persistentErrorToasts = false
 
@@ -101,3 +104,44 @@ gitExecutablePath = ""
 
 # Whether Gitmun may fetch missing GPG public keys through your GnuPG keyserver configuration.
 gpgKeyserverVerificationEnabled = false
+
+# Bundled experimental AI extension. New installations start with it disabled.
+[extensions.ai]
+enabled = false
+selectedProfileId = ""
+profiles = []
+
+# Maximum context sent in each AI commit-message request, in KiB.
+# Larger staged diffs use bounded chunks and summaries, up to 1024 KiB total.
+# Values are limited to the range 8-1024.
+commitContextLimitKib = 24
+
+# Maximum conflict context sent for AI conflict resolution, in KiB.
+# Values are limited to the range 8-1024.
+conflictContextLimitKib = 48
+
+# Maximum provider output for AI commit messages, in tokens.
+# Values are limited to the range 1-65536.
+commitMessageMaxTokens = 512
+
+# Maximum provider output for AI conflict resolution, in tokens.
+# Values are limited to the range 1-65536.
+conflictResolutionMaxTokens = 4096
+
+# Instructions used to generate commit messages. Gitmun adds the active subject limit separately.
+commitMessagePrompt = "Write a concise Git commit message in the style of the supplied recent commits. Return only the commit message as plain text. Put the subject first, then an optional blank line and body. Summarise the staged changes accurately. Do not use Markdown headings, lists, fences, emoji, or commentary."
+
+# Instructions used to resolve conflicts. Gitmun keeps the structured response schema fixed.
+conflictResolutionPrompt = "Resolve the supplied Git conflict regions. Preserve intended behaviour and surrounding style. Return only the requested structured JSON with one replacement for every supplied region ID."
+
+# Include recent commit messages when generating commit-message suggestions.
+includeCommitHistory = true
+
+# Repository-relative glob patterns that are never included in AI context.
+globalExclusions = []
+
+# Provider destinations approved after Gitmun shows its first-use privacy notice.
+consentedDestinations = []
+
+# Per-repository AI policies are added here after they are configured in Gitmun.
+repositoryPolicies = {}

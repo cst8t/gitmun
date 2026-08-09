@@ -1,7 +1,7 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
-import { FileIcon } from "../icons";
+import { CloseIcon, FileIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
 import type { CommitDetails, CommitFileItem, FileDiff, RowStriping, SubmoduleStatus } from "../../types";
 import { getCommitDetails } from "../../api/commands";
@@ -96,7 +96,9 @@ function CommitDetailsPopover({ rect, data, onClose, onSelectCommit }: CommitDet
 
   return (
     <div ref={ref} className="commit-details-popover" role="dialog" aria-modal="false">
-      <button className="commit-details-popover__close" onClick={onClose} aria-label={t("commitDetails.close")}>✕</button>
+      <button type="button" className="commit-details-popover__close" onClick={onClose} aria-label={t("commitDetails.close")}>
+        <CloseIcon />
+      </button>
 
       <div className="commit-details-popover__section">
         <span className="commit-details-popover__label">{t("commitDetails.hash")}</span>
@@ -188,7 +190,7 @@ type DiffPanelProps = {
 };
 
 function compactHash(hash: string | null): string {
-  return hash ? hash.slice(0, 12) : "None";
+  return hash ? hash.slice(0, 7) : "None";
 }
 
 export function DiffPanel({
@@ -331,7 +333,7 @@ export function DiffPanel({
         <FileIcon />
         <span className="diff-panel__filename">
           {mode === "log"
-            ? (selectedCommitHash ? t("header.commit", {hash: selectedCommitHash.slice(0, 8)}) : t("header.commitFiles"))
+            ? (selectedCommitHash ? t("header.commit", {hash: selectedCommitHash.slice(0, 7)}) : t("header.commitFiles"))
             : (selectedSubmodule ? t("header.submodule", {path: selectedSubmodule.path}) : (selectedFile ?? t("header.clickFile")))}
         </span>
         {mode === "changes" && hasSelectedFile && currentDiff && (

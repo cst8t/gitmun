@@ -4,11 +4,63 @@
     "cancel": "Cancel",
     "clone": "Clone",
     "cloning": "Cloning...",
-    "close": "Close"
+    "close": "Close",
+    "deleteExisting": "Delete existing files",
+    "copy": "Copy",
+    "copying": "Copying..."
+  },
+  "ask": {
+    "deleteExisting": {
+      "message": "Delete existing files in \"{{path}}\" before copying? Git metadata is preserved when the destination is already a repository.",
+      "title": "Delete Existing Files"
+    },
+    "dropOnTopExisting": {
+      "message": "The destination \"{{path}}\" already exists. Continuing will overlay the source on top of it. Existing files outside the source will be preserved.",
+      "title": "Overlay Existing Directory"
+    }
+  },
+  "destinationModes": {
+    "deleteExisting": "Delete existing files",
+    "dropOnTop": "Drop on top"
+  },
+  "copyModes": {
+    "completeRepository": "Complete repository",
+    "filesOnly": "Files only"
+  },
+  "copyModeDescriptions": {
+    "completeRepository": "Clones the complete repository, including Git history and recursively initialised submodules, into a new destination.",
+    "filesOnly": "Copies every hidden, ignored, untracked, and tracked file that is physically present, but excludes every .git entry. Symbolic links remain links."
+  },
+  "destinationModeDescriptions": {
+    "deleteExisting": "Removes only the destination working tree. An existing usable .git is preserved; otherwise a fresh repository is initialised.",
+    "dropOnTop": "Keeps existing working-tree files, then overlays the source. An existing usable .git is preserved; otherwise a fresh repository is initialised."
+  },
+  "errors": {
+    "bareRepository": "The destination at {{path}} has bare Git metadata. Local Copy requires a working repository.",
+    "busy": "Another copy or clone is already in progress.",
+    "cancelled": "Local Copy was cancelled.",
+    "destinationChanged": "The destination changed while copying. The operation has been aborted to protect your data.",
+    "destinationExists": "Complete repository copies require a new destination folder.",
+    "externalWorktree": "The destination repository has an external core.worktree that is not supported.",
+    "featureDisabled": "Local Copy is disabled. Enable it in Experimental settings to use this feature.",
+    "filesystemFailure": "Local Copy could not complete a filesystem operation at {{path}}. See the result log for details.",
+    "gitFailure": "Git could not prepare the Local Copy source or destination. See the result log for details.",
+    "invalidDestination": "The Local Copy destination is not valid: {{path}}.",
+    "invalidSource": "The Local Copy source is not valid: {{path}}.",
+    "overlappingPaths": "The source and destination must not contain one another.",
+    "rollbackFailure": "Local Copy could not restore the destination completely. Recovery data is retained at {{path}}; do not delete it. See the result log for details.",
+    "submoduleUnavailable": "The submodule at {{path}} is not checked out. Initialise it before copying.",
+    "symlinkFailure": "A symbolic link at {{path}} could not be preserved. The destination was not changed.",
+    "unknown": "Local Copy failed. See the result log for details.",
+    "unsupportedFileType": "The file at {{path}} is a socket, device, FIFO, or another unsupported type. The destination was not changed."
   },
   "labels": {
     "destination": "Destination folder",
+    "destinationMode": "Existing destination",
+    "copyMode": "Copy mode",
+    "operation": "Operation",
     "repositoryUrl": "Repository URL or SSH path",
+    "source": "Source",
     "title": "Clone Repository"
   },
   "log": {
@@ -16,22 +68,50 @@
     "cloneCancelled": "Clone cancelled.",
     "cloneFailed": "Clone failed: {{message}}",
     "cloning": "Cloning...",
+    "destinationRequired": "Please enter a destination folder.",
     "destinationSet": "Destination set to {{path}}",
+    "copyCancelled": "Copy cancelled.",
+    "copyFailed": "Copy failed: {{message}}",
+    "copying": "Copying...",
+    "copyComplete": "Local Copy completed at {{path}}.",
+    "copyCompleteCannotOpen": "Local Copy completed at {{path}} but could not open the repository. See the result log for details.",
     "loadFailed": "Failed to load settings: {{message}}",
     "repoUrlRequired": "Please enter a repository URL.",
+    "sourceRequired": "Please enter a source.",
+    "sourceSet": "Source set to {{path}}",
     "ready": "Ready."
+  },
+  "modes": {
+    "clone": "Clone",
+    "copy": "Local Copy"
   },
   "placeholders": {
     "destinationLinux": "/home/username/GitmunProjects/repo",
     "destinationMac": "/Users/username/GitmunProjects/repo",
     "destinationWindows": "C:\\Users\\username\\GitmunProjects\\repo",
-    "output": "Clone output will appear here...",
+    "output": "Progress output will appear here...",
+    "source": "Repository URL, SSH path, or local folder",
     "url": "https://example.com/user/repo.git or git@example.com:user/repo.git"
   },
   "picker": {
-    "destination": "Select clone destination folder"
+    "destination": "Select clone destination folder",
+    "copyDestination": "Select copy destination folder",
+    "source": "Select copy source folder"
   },
   "progress": {
-    "connecting": "Connecting..."
+    "connecting": "Connecting...",
+    "phases": {
+      "cloning": "Cloning source and submodules...",
+      "copying": "Building the staged working tree...",
+      "finalising": "Installing the completed working tree...",
+      "initialising": "Initialising a fresh destination repository...",
+      "preparing": "Preparing Local Copy...",
+      "rollingBack": "Restoring the original destination...",
+      "scanning": "Checking files, links, and submodules..."
+    }
+  },
+  "warnings": {
+    "backupCleanupFailed": "Local Copy completed, but recovery data could not be removed from {{path}}. You may remove it after checking the destination.",
+    "unknown": "Local Copy completed with a warning. Recovery data may remain at {{path}}; see the result log for details."
   }
 }

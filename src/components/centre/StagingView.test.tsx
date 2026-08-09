@@ -1,12 +1,25 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import React from "react";
 import type { FileStatusItem } from "../../types";
 import "../../i18n";
+import { getAiConflictEligibility, getNumstat } from "../../api/commands";
 import { StagingView } from "./StagingView";
 
+const aiProgressListeners = vi.hoisted(() => new Set<(
+  event: {payload: {operationId: string; stage: string}},
+) => void>());
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(async (_event: string, listener: (event: {payload: {operationId: string; stage: string}}) => void) => {
+    aiProgressListeners.add(listener);
+    return () => aiProgressListeners.delete(listener);
+  }),
+}));
+
 vi.mock("../../api/commands", () => ({
+  getAiConflictEligibility: vi.fn(async () => ({eligible: true, reason: null})),
   getCommitMessageRecovery: vi.fn(() => new Promise(() => {})),
   getNumstat: vi.fn(),
 }));
@@ -76,6 +89,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     mergeMessage: null,
     rebaseInProgress: false,
     cherryPickInProgress: false,
+    revertInProgress: false,
     selectedFile: null,
     selectedSubmodulePath: null,
     selectedUnstaged: {},
@@ -107,13 +121,24 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     onCommit: vi.fn(),
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
+    onConflictResolveWithAi: vi.fn(),
+    onConflictResolveAllWithAi: vi.fn(),
+    onCancelAiConflict: vi.fn(),
     onOpenMergeTool: vi.fn(),
     stagingOperation: null,
     inlineOperation: null,
     isCommitting: false,
     lastCommitMessage: "",
     rowStriping: "Off",
-    ...overrides,
+    aiEnabled: false,
+    aiConfigured: false,
+    aiResolvingPath: null,
+     aiConflictOperationId: null,
+     aiConflictBatchProgress: null,
+     aiConflictBatchFailure: null,
+     onSkipAiConflictBatchFailure: vi.fn(),
+     onStopAiConflictBatchFailure: vi.fn(),
+     ...overrides,
   };
 }
 
@@ -137,6 +162,183 @@ function StatefulStagingView(props: Partial<React.ComponentProps<typeof StagingV
 }
 
 describe("StagingView file tree", () => {
+  afterEach(() => {
+    vi.mocked(getNumstat).mockReset();
+  });
+
+  it("fetches missing numstat entries in successive batches", async () => {
+    const numstat = vi.mocked(getNumstat);
+    numstat.mockResolvedValue({ filePath: "", additions: 2, deletions: 1 });
+    const missingStats = Array.from({ length: 7 }, (_, index) => ({
+      path: `src/file-${index}.ts`,
+      status: "modified",
+      additions: null,
+      deletions: null,
+    }));
+
+    renderStagingView({ unstagedFiles: missingStats });
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(7));
+  });
+
+  it("does not immediately retry a failed numstat request", async () => {
+    const numstat = vi.mocked(getNumstat);
+    numstat.mockRejectedValue(new Error("numstat failed"));
+    const missingStats = [{
+      path: "src/file.ts",
+      status: "modified",
+      additions: null,
+      deletions: null,
+    }];
+    const view = renderStagingView({ unstagedFiles: missingStats });
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(1));
+    view.rerender(<StagingView {...baseProps({ unstagedFiles: [...missingStats] })} />);
+
+    await waitFor(() => expect(numstat).toHaveBeenCalledTimes(1));
+  });
+
+  it("hides conflict AI actions when the AI extension is disabled", () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+
+    renderStagingView({conflictedFiles: [conflict], mergeInProgress: true});
+
+    expect(screen.queryByText("AI Resolve")).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure AI")).not.toBeInTheDocument();
+  });
+
+  it("shows the appropriate conflict AI action when the extension is enabled", async () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+    const unconfigured = renderStagingView({conflictedFiles: [conflict], mergeInProgress: true, aiEnabled: true});
+    expect(within(screen.getByText(conflict.path).closest(".staging__conflict-row")!).getByText("Configure AI")).toBeInTheDocument();
+    unconfigured.unmount();
+
+    renderStagingView({conflictedFiles: [conflict], mergeInProgress: true, aiEnabled: true, aiConfigured: true});
+    await waitFor(() => expect(screen.getByText("AI Resolve")).toBeEnabled());
+  });
+
+  it("keeps an ineligible first conflict in the bulk review request", async () => {
+    const onConflictResolveAllWithAi = vi.fn();
+    const conflicts = [
+      {path: "src/report.ts", conflictType: "both_modified"},
+      {path: "src/summary.ts", conflictType: "both_modified"},
+    ];
+    vi.mocked(getAiConflictEligibility)
+      .mockResolvedValueOnce({eligible: false, reason: "unsupportedFile"})
+      .mockResolvedValueOnce({eligible: true, reason: null});
+    renderStagingView({
+      conflictedFiles: conflicts,
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      onConflictResolveAllWithAi,
+    });
+
+    const generateAll = await screen.findByRole("button", {name: "AI Resolve All"});
+    await waitFor(() => expect(generateAll).toBeEnabled());
+    fireEvent.click(generateAll);
+
+    expect(onConflictResolveAllWithAi).toHaveBeenCalledWith([
+      "src/report.ts",
+      "src/summary.ts",
+    ]);
+  });
+
+  it("identifies progress and cancellation for a multi-file AI batch", async () => {
+    const onCancelAiConflict = vi.fn();
+    const onOpenMergeTool = vi.fn();
+    const conflicts = [
+      {path: "src/report.ts", conflictType: "both_modified"},
+      {path: "src/summary.ts", conflictType: "both_modified"},
+    ];
+    renderStagingView({
+      conflictedFiles: conflicts,
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: conflicts[1].path,
+      aiConflictOperationId: "conflict-batch-2",
+      aiConflictBatchProgress: {current: 2, total: 2, preparing: false},
+      onCancelAiConflict,
+      onOpenMergeTool,
+    });
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Generating AI conflict proposals (2 of 2)");
+    const cancelButton = screen.getByRole("button", {name: "Cancel AI Resolve All"});
+    expect(cancelButton).toBeEnabled();
+
+    const activeRow = screen.getByText(conflicts[1].path).closest<HTMLElement>(".staging__conflict-row")!;
+    expect(within(activeRow).getByRole("button", {name: "Resolving..."})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Open"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Ours"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Theirs"})).toBeDisabled();
+    expect(within(activeRow).getByRole("button", {name: "Resolve"})).toBeDisabled();
+    fireEvent.doubleClick(activeRow);
+    expect(onOpenMergeTool).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", {name: "AI Resolve All"})).toBeDisabled();
+    fireEvent.click(cancelButton);
+    expect(onCancelAiConflict).toHaveBeenCalledOnce();
+  });
+
+  it("offers skip and stop choices after a batch file fails", async () => {
+    const onSkipAiConflictBatchFailure = vi.fn();
+    const onStopAiConflictBatchFailure = vi.fn();
+    renderStagingView({
+      conflictedFiles: [{path: "src/report.ts", conflictType: "both_modified"}],
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: "src/report.ts",
+      aiConflictOperationId: "conflict-batch-1",
+      aiConflictBatchProgress: {current: 1, total: 2, preparing: false},
+      aiConflictBatchFailure: {filePath: "src/report.ts", message: "Provider unavailable"},
+      onSkipAiConflictBatchFailure,
+      onStopAiConflictBatchFailure,
+    });
+
+    const status = await screen.findByRole("status");
+    expect(status).toHaveTextContent("AI proposal generation failed");
+    expect(status).toHaveTextContent("src/report.ts failed: Provider unavailable");
+    fireEvent.click(screen.getByRole("button", {name: "Skip failed and continue"}));
+    fireEvent.click(screen.getByRole("button", {name: "Stop"}));
+    expect(onSkipAiConflictBatchFailure).toHaveBeenCalledOnce();
+    expect(onStopAiConflictBatchFailure).toHaveBeenCalledOnce();
+  });
+
+  it("shows clear progress while waiting for an AI conflict proposal", async () => {
+    const conflict = {path: "src/report.ts", conflictType: "both_modified"};
+    const onCancelAiConflict = vi.fn();
+    renderStagingView({
+      conflictedFiles: [conflict],
+      mergeInProgress: true,
+      aiEnabled: true,
+      aiConfigured: true,
+      aiResolvingPath: conflict.path,
+      aiConflictOperationId: "conflict-operation",
+      onCancelAiConflict,
+    });
+
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("Generating AI conflict proposal");
+    expect(status).toHaveTextContent("Collecting bounded context · 0 seconds");
+    expect(screen.getByText(conflict.path).closest(".staging__conflict-row")).toHaveAttribute("aria-busy", "true");
+    await waitFor(() => expect(aiProgressListeners.size).toBeGreaterThan(0));
+
+    act(() => {
+      for (const listener of aiProgressListeners) {
+        listener({payload: {operationId: "conflict-operation", stage: "contactingProvider"}});
+      }
+    });
+
+    await waitFor(() => expect(status).toHaveTextContent("Waiting for AI provider · 0 seconds"));
+    const cancelButton = screen.getByRole("button", {name: "Cancel AI Resolve"});
+    expect(cancelButton).toBeEnabled();
+    fireEvent.click(cancelButton);
+    expect(onCancelAiConflict).toHaveBeenCalledOnce();
+  });
   it("renders common folders as expanded collapsible rows", () => {
     renderStagingView({
       unstagedFiles: [

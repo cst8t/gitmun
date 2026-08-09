@@ -1,3 +1,4 @@
+pub mod ai;
 mod avatar;
 pub mod commands;
 mod config_file;
@@ -10,7 +11,7 @@ mod window_manager;
 use git::handler::GitService;
 use git::types::AvatarProviderMode;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use shell::cli::{CliOutcome, CloneStartupOptions, ShellStartupAction};
+use shell::cli::{CliOutcome, CloneWindowStartupOptions, ShellStartupAction};
 use shell::{ContextAction, WindowRouting};
 use std::path::{Component, Path, PathBuf};
 #[cfg(windows)]
@@ -21,7 +22,10 @@ use tauri::{Emitter, Manager};
 pub struct AppState {
     pub git_service: GitService,
     pub avatar_service: Arc<avatar::AvatarService>,
+    pub(crate) ai_extension: ai::AiExtensionState,
 }
+
+pub struct LocalCopyOperation(pub Mutex<Option<Arc<AtomicBool>>>);
 
 pub struct CloneCancelFlag(pub Arc<AtomicBool>);
 
@@ -29,7 +33,7 @@ struct FsWatcherState(Mutex<Option<RecommendedWatcher>>);
 
 struct StartupState(Mutex<Option<ShellStartupAction>>);
 
-pub(crate) struct PendingCloneOptions(Mutex<Option<CloneStartupOptions>>);
+pub(crate) struct PendingCloneWindowOptions(Mutex<Option<CloneWindowStartupOptions>>);
 
 #[cfg(windows)]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -146,16 +150,12 @@ fn forward_reuse_window_action(action: &ShellStartupAction) -> bool {
         ContextAction::OpenRepo => instance_coordinator::CoordinatorCommand::OpenRepo {
             path: action.path.clone(),
         },
-        ContextAction::CloneRepo => instance_coordinator::CoordinatorCommand::OpenCloneWindow {
-            options: CloneStartupOptions {
-                repo_url: action.repo_url.clone(),
-                destination: action
-                    .destination
-                    .clone()
-                    .or_else(|| Some(action.path.clone())),
-                start_clone: action.start_clone,
-            },
-        },
+        ContextAction::CloneRepo | ContextAction::LocalCopyRepo => {
+            let Some(options) = action.window_options.clone() else {
+                return false;
+            };
+            instance_coordinator::CoordinatorCommand::OpenCloneWindow { options }
+        }
         ContextAction::InitialiseRepo => instance_coordinator::CoordinatorCommand::InitialiseRepo {
             path: action.path.clone(),
         },
@@ -1316,9 +1316,9 @@ fn get_startup_action(state: tauri::State<'_, StartupState>) -> Option<ShellStar
 }
 
 #[tauri::command]
-fn take_pending_clone_options(
-    state: tauri::State<'_, PendingCloneOptions>,
-) -> Option<CloneStartupOptions> {
+fn take_pending_clone_window_options(
+    state: tauri::State<'_, PendingCloneWindowOptions>,
+) -> Option<CloneWindowStartupOptions> {
     state.0.lock().ok().and_then(|mut g| g.take())
 }
 
@@ -1329,28 +1329,26 @@ fn open_repo_in_new_window(path: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn open_clone_window(
-    repo_url: Option<String>,
-    destination: Option<String>,
-    start_clone: Option<bool>,
+    options: CloneWindowStartupOptions,
     app: tauri::AppHandle,
     state: tauri::State<'_, AppState>,
-    pending: tauri::State<'_, PendingCloneOptions>,
+    pending: tauri::State<'_, PendingCloneWindowOptions>,
 ) -> Result<(), String> {
-    let options = CloneStartupOptions {
-        repo_url,
-        destination,
-        start_clone: start_clone.unwrap_or(false),
-    };
+    if matches!(options, CloneWindowStartupOptions::Copy(_))
+        && !state.git_service.get_settings().enable_local_copy
+    {
+        return Err("localCopy.featureDisabled".to_string());
+    }
 
     if let Some(existing) = app.get_webview_window("clone-repository") {
-        if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
+        {
             let mut guard = pending
                 .0
                 .lock()
                 .map_err(|_| "Internal clone options state error".to_string())?;
             *guard = Some(options.clone());
-            let _ = app.emit("clone-options-updated", options);
         }
+        drop(app.emit("clone-window-options-updated", ()));
         let _ = existing.show();
         let _ = existing.set_focus();
         return Ok(());
@@ -1369,7 +1367,7 @@ async fn open_clone_window(
         }
     }
 
-    if options.repo_url.is_some() || options.destination.is_some() || options.start_clone {
+    {
         let mut guard = pending
             .0
             .lock()
@@ -1383,7 +1381,7 @@ async fn open_clone_window(
         "Clone Repository".to_string(),
         "clone.html".to_string(),
         520.0,
-        460.0,
+        560.0,
         false,
         false,
         state,
@@ -1422,11 +1420,13 @@ pub fn run() {
                 AvatarProviderMode::default(),
                 true,
             )),
+            ai_extension: ai::AiExtensionState::new(),
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(LocalCopyOperation(Mutex::new(None)))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
-        .manage(PendingCloneOptions(Mutex::new(None)))
+        .manage(PendingCloneWindowOptions(Mutex::new(None)))
         .setup(move |app| {
             register_msix_application_restart();
 
@@ -1445,6 +1445,9 @@ pub fn run() {
 
                 // Sync avatar service with the loaded settings
                 let settings = state.git_service.get_settings();
+                state
+                    .ai_extension
+                    .load_structured_output_modes(&settings.extensions.ai.structured_output_modes);
                 if let Some(main_window) = app.get_webview_window("main") {
                     let background_colour = window_manager::background_colour_for_theme_mode(
                         &app.handle(),
@@ -1493,6 +1496,36 @@ pub fn run() {
 
     builder
         .invoke_handler(tauri::generate_handler![
+            ai::commands::get_ai_configuration,
+            ai::commands::save_ai_configuration,
+            ai::commands::set_ai_api_key,
+            ai::commands::clear_ai_api_key,
+            ai::commands::connect_openrouter,
+            ai::commands::grant_ai_consent,
+            ai::commands::set_ai_repository_policy,
+            ai::commands::get_ai_repository_policy,
+            ai::commands::set_ai_privacy_settings,
+            ai::commands::test_ai_connection,
+            ai::commands::test_ai_connection_draft,
+            ai::commands::discover_ai_models,
+            ai::commands::discover_ai_models_draft,
+            ai::commands::discover_ai_model_details_draft,
+            ai::commands::delete_ai_profile,
+            ai::commands::generate_ai_commit_message,
+            ai::commands::generate_ai_commit_messages,
+            ai::commands::cancel_ai_operation,
+            ai::commands::get_ai_usage_history,
+            ai::commands::clear_ai_usage_history,
+            ai::commands::get_ai_commit_context_preview,
+            ai::commands::get_ai_writing_context_preview,
+            ai::commands::generate_ai_writing,
+            ai::commands::get_ai_conflict_eligibility,
+            ai::commands::resolve_conflict_with_ai,
+            ai::commands::regenerate_ai_conflict_regions,
+            ai::commands::get_ai_conflict_context_preview,
+            ai::commands::apply_ai_conflict_proposal,
+            ai::commands::undo_ai_conflict_proposal,
+            ai::commands::undo_ai_conflict_batch,
             commands::settings::get_settings,
             commands::settings::set_backend_mode,
             commands::settings::set_show_result_log,
@@ -1502,8 +1535,15 @@ pub fn run() {
             commands::settings::set_wrap_diff_lines,
             commands::settings::set_row_striping,
             commands::settings::set_show_commit_graph_button,
+            commands::settings::set_enable_local_copy,
             commands::settings::set_persistent_error_toasts,
             commands::settings::set_error_toast_clear_delay_ms,
+            commands::settings::set_ai_commit_context_limit_kib,
+            commands::settings::set_ai_conflict_context_limit_kib,
+            commands::settings::set_ai_commit_message_max_tokens,
+            commands::settings::set_ai_conflict_resolution_max_tokens,
+            commands::settings::set_ai_commit_message_prompt,
+            commands::settings::set_ai_conflict_resolution_prompt,
             commands::settings::set_panel_layout,
             commands::settings::set_confirm_revert,
             commands::settings::get_config_file_path,
@@ -1589,6 +1629,8 @@ pub fn run() {
             commands::repo::get_repo_open_locations,
             commands::repo::open_repo_location,
             commands::repo::clone_repo,
+            commands::repo::local_copy_repo,
+            commands::repo::path_is_nonempty_dir,
             commands::repo::cancel_clone,
             commands::repo::get_default_clone_dir,
             commands::repo::open_external_diff,
@@ -1657,7 +1699,7 @@ pub fn run() {
             get_startup_action,
             open_clone_window,
             open_repo_in_new_window,
-            take_pending_clone_options,
+            take_pending_clone_window_options,
         ])
         .run(tauri::generate_context!())
         .expect("failed to run tauri application");

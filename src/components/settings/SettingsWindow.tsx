@@ -1,4 +1,4 @@
-import React, {useState, useEffect, useCallback} from "react";
+import React, {useState, useEffect, useCallback, useRef} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {emit} from "@tauri-apps/api/event";
 import {getCurrentWindow} from "@tauri-apps/api/window";
@@ -6,8 +6,13 @@ import {open as openDialog} from "@tauri-apps/plugin-dialog";
 import {openPath} from "@tauri-apps/plugin-opener";
 import {platform} from "@tauri-apps/plugin-os";
 import {useTranslation} from "react-i18next";
+import type {TFunction} from "i18next";
 import type {
     AvatarProviderMode,
+    AiConfigurationView,
+    AiError,
+    AiProvider,
+    AiReasoningPreference,
     AppUpdateChannel,
     BackendMode,
     CommitDateMode,
@@ -21,17 +26,28 @@ import type {
     ThemeMode,
     UiTextScale
 } from "../../types";
+import type {AiApiStyle, AiAuthMode, AiModelInfo, AiModelSort, AiUsageRecord, OpenRouterSettings} from "../../features/ai";
 import {
     getAppUpdateChannel,
+    clearAiApiKey,
+    clearAiUsageHistory,
+    connectOpenRouter,
+    getAiConfiguration,
     getConfigFilePath,
     getConfigFolderPath,
     getGlobalDiffToolPath,
     getGlobalGpgProgramPath,
     getLinuxTerminalOptions,
     openResultLogWindow,
+    saveAiConfiguration,
+    deleteAiProfile,
+    discoverAiModelsDraft,
+    discoverAiModelDetailsDraft,
+    setAiPrivacySettings,
     setGlobalDiffToolWithPath,
     setGlobalGpgProgram as saveGlobalGpgProgram,
     setUpdateEndpoint,
+    testAiConnectionDraft,
 } from "../../api/commands";
 import {CloseIcon, FileIcon, FolderIcon} from "../icons";
 import {SettingsSkeleton} from "./SettingsSkeleton";
@@ -49,6 +65,87 @@ const RIGHT_PANE_RATIO_KEY = "gitmun.rightPaneRatio";
 const DEFAULT_UPDATE_ENDPOINT = "https://github.com/cst8t/gitmun/releases/latest/download/latest.json";
 const DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH = 72;
 const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
+const DEFAULT_OPENAI_ENDPOINT = "https://api.openai.com/v1";
+const DEFAULT_CLAUDE_ENDPOINT = "https://api.anthropic.com/v1";
+const DEFAULT_BEDROCK_ENDPOINT = "https://bedrock-runtime.eu-west-2.amazonaws.com";
+const BEDROCK_RUNTIME_REGIONS = [
+    "af-south-1",
+    "ap-east-2",
+    "ap-northeast-1",
+    "ap-northeast-2",
+    "ap-northeast-3",
+    "ap-south-1",
+    "ap-south-2",
+    "ap-southeast-1",
+    "ap-southeast-2",
+    "ap-southeast-3",
+    "ap-southeast-4",
+    "ap-southeast-5",
+    "ap-southeast-6",
+    "ap-southeast-7",
+    "ca-central-1",
+    "ca-west-1",
+    "eu-central-1",
+    "eu-central-2",
+    "eu-north-1",
+    "eu-south-1",
+    "eu-south-2",
+    "eu-west-1",
+    "eu-west-2",
+    "eu-west-3",
+    "il-central-1",
+    "me-central-1",
+    "me-south-1",
+    "sa-east-1",
+    "us-east-1",
+    "us-east-2",
+    "us-west-1",
+    "us-west-2",
+    "us-gov-east-1",
+    "us-gov-west-1",
+] as const;
+const BEDROCK_RUNTIME_ENDPOINTS = BEDROCK_RUNTIME_REGIONS.map(
+    region => `https://bedrock-runtime.${region}.amazonaws.com`,
+);
+const AI_PROVIDER_ENDPOINTS: Partial<Record<AiProvider, string>> = {
+    Bedrock: DEFAULT_BEDROCK_ENDPOINT,
+    AzureOpenAi: "",
+    Claude: DEFAULT_CLAUDE_ENDPOINT,
+    GoogleGemini: "https://generativelanguage.googleapis.com/v1beta/openai",
+    LmStudio: "http://127.0.0.1:1234/v1",
+    Mistral: "https://api.mistral.ai/v1",
+    Ollama: "http://127.0.0.1:11434/v1",
+    OpenAi: DEFAULT_OPENAI_ENDPOINT,
+    OpenAiCompatible: "",
+    OpenRouter: "https://openrouter.ai/api/v1",
+};
+const AI_PROVIDER_AUTH: Partial<Record<AiProvider, { mode: AiAuthMode; header: string }>> = {
+    Claude: { mode: "Header", header: "x-api-key" },
+    AzureOpenAi: { mode: "Header", header: "api-key" },
+};
+const DEFAULT_OPEN_ROUTER_SETTINGS: OpenRouterSettings = {
+    privacy: "NoDataCollection",
+    allowFallbacks: true,
+    requireParameters: true,
+    routingStrategy: "Default",
+    maxPromptPrice: "",
+    maxCompletionPrice: "",
+    preferredProviders: [],
+    allowedProviders: [],
+    ignoredProviders: [],
+    preferredMaxLatency: "",
+    preferredMinThroughput: "",
+    diagnostics: false,
+};
+const DEFAULT_AI_COMMIT_CONTEXT_LIMIT_KIB = 24;
+const DEFAULT_AI_CONFLICT_CONTEXT_LIMIT_KIB = 48;
+const MIN_AI_CONTEXT_LIMIT_KIB = 8;
+const MAX_AI_CONTEXT_LIMIT_KIB = 1024;
+const AI_CONTEXT_LIMIT_WARNING_KIB = 256;
+const DEFAULT_AI_COMMIT_MESSAGE_MAX_TOKENS = 512;
+const DEFAULT_AI_CONFLICT_RESOLUTION_MAX_TOKENS = 4096;
+const MIN_AI_OUTPUT_TOKENS = 1;
+const MAX_AI_OUTPUT_TOKENS = 65_536;
 const MIN_ERROR_TOAST_CLEAR_DELAY_MS = 1000;
 const DEFAULT_LINUX_TERMINAL_OPTIONS: LinuxTerminalOption[] = [
     {id: "auto", label: "Terminal"},
@@ -78,7 +175,7 @@ function safePlatform(): string {
     }
 }
 
-type SettingsTab = "application" | "git";
+type SettingsTab = "application" | "git" | "ai";
 type GitBooleanConfig = "" | "true" | "false";
 type PullRebaseMode = "" | "false" | "true" | "merges" | "interactive";
 type PullFastForwardMode = "" | "true" | "false" | "only";
@@ -135,6 +232,80 @@ function normaliseChoice<T extends string>(value: string | null, allowed: readon
     return allowed.includes(value as T) ? value as T : allowed[0];
 }
 
+function aiErrorCode(error: unknown): string {
+    if (typeof error === "object" && error !== null && "code" in error) {
+        return String((error as AiError).code);
+    }
+    return "unknown";
+}
+
+function localiseAiSettingsError(error: unknown, translate: TFunction<"settings">): string {
+    const code = aiErrorCode(error);
+    const detail = typeof error === "object" && error !== null && "detail" in error
+        ? String((error as AiError).detail ?? "")
+        : "";
+    if (code === "invalidEnvironment" && /^[A-Z][A-Z0-9_]+$/.test(detail)) {
+        return translate("aiErrors.invalidEnvironmentVariable", {variable: detail});
+    }
+    return translate(`aiErrors.${code}`, {defaultValue: translate("aiErrors.unknown")});
+}
+
+function aiApiKeyOptional(provider: AiProvider, endpoint: string): boolean {
+    if (!["Ollama", "LmStudio", "OpenAiCompatible"].includes(provider)) return false;
+    try {
+        const hostname = new URL(endpoint.trim()).hostname.replace(/^\[|\]$/g, "");
+        return hostname === "localhost" || hostname === "::1" || /^127(?:\.\d{1,3}){3}$/.test(hostname);
+    } catch {
+        return false;
+    }
+}
+
+function normaliseAiContextLimit(value: string, fallback: number): number {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(MAX_AI_CONTEXT_LIMIT_KIB, Math.max(MIN_AI_CONTEXT_LIMIT_KIB, parsed));
+}
+
+function normaliseAiOutputTokens(value: string, fallback: number): number {
+    const parsed = Number.parseInt(value, 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(MAX_AI_OUTPUT_TOKENS, Math.max(MIN_AI_OUTPUT_TOKENS, parsed));
+}
+
+function formatAiPricePerMillionTokens(value: string | null, translate: TFunction<"settings">): string {
+    if (!value) return translate("notes.aiModelUnknown");
+    const price = Number(value);
+    if (!Number.isFinite(price) || price < 0) return translate("notes.aiModelUnknown");
+    const pricePerMillion = price * 1_000_000;
+    const fractionDigits = pricePerMillion !== 0 && pricePerMillion < 0.01 ? 4 : 2;
+    return translate("notes.aiModelPricePerMillion", {price: pricePerMillion.toFixed(fractionDigits)});
+}
+
+function formatAiMetric(value: number | null, maximumFractionDigits: number): string | null {
+    if (value == null || !Number.isFinite(value) || value < 0) return null;
+    return value.toLocaleString(undefined, {maximumFractionDigits});
+}
+
+function formatAiUptime(value: number | null): string | null {
+    if (value == null || value > 100) return null;
+    return formatAiMetric(value, 2);
+}
+
+function positiveNumberOrNull(value: string): number | null {
+    const parsed = Number(value);
+    return value.trim() !== "" && Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function nonNegativeNumberOrNull(value: string): number | null {
+    const parsed = Number(value);
+    return value.trim() !== "" && Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+}
+
+function pricePerMillionToPerTokenOrNull(value: string): number | null {
+    const pricePerMillion = nonNegativeNumberOrNull(value);
+    return pricePerMillion == null ? null : pricePerMillion / 1_000_000;
+}
+
 export function SettingsWindow() {
     const {t} = useTranslation("settings");
     const [loadState, setLoadState] = useState<SettingsLoadState>({status: "loading"});
@@ -152,6 +323,7 @@ export function SettingsWindow() {
     const [wrapDiffLines, setWrapDiffLines] = useState(false);
     const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
     const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
+    const [enableLocalCopy, setEnableLocalCopy] = useState(false);
     const [persistentErrorToasts, setPersistentErrorToasts] = useState(false);
     const [errorToastClearDelayMs, setErrorToastClearDelayMs] = useState(String(DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
     const [openResultLogOnLaunch, setOpenResultLogOnLaunch] = useState(false);
@@ -211,9 +383,82 @@ export function SettingsWindow() {
     const [globalGpgProgramEdited, setGlobalGpgProgramEdited] = useState(false);
     const [gpgKeyserverVerificationEnabled, setGpgKeyserverVerificationEnabledState] = useState(false);
     const [loadedGpgKeyserverVerificationEnabled, setLoadedGpgKeyserverVerificationEnabled] = useState(false);
+    const [aiEnabled, setAiEnabled] = useState(false);
+    const [aiProfileId, setAiProfileId] = useState("");
+    const [aiProfileName, setAiProfileName] = useState("");
+    const [aiProvider, setAiProvider] = useState<AiProvider>("OpenRouter");
+    const [aiEndpoint, setAiEndpoint] = useState("");
+    const [aiModel, setAiModel] = useState("");
+    const [aiReasoningPreference, setAiReasoningPreference] = useState<AiReasoningPreference>("Automatic");
+    const [aiCommitContextLimitKib, setAiCommitContextLimitKib] = useState(String(DEFAULT_AI_COMMIT_CONTEXT_LIMIT_KIB));
+    const [aiConflictContextLimitKib, setAiConflictContextLimitKib] = useState(String(DEFAULT_AI_CONFLICT_CONTEXT_LIMIT_KIB));
+    const [aiCommitMessageMaxTokens, setAiCommitMessageMaxTokens] = useState(String(DEFAULT_AI_COMMIT_MESSAGE_MAX_TOKENS));
+    const [aiConflictResolutionMaxTokens, setAiConflictResolutionMaxTokens] = useState(String(DEFAULT_AI_CONFLICT_RESOLUTION_MAX_TOKENS));
+    const [aiCommitMessagePrompt, setAiCommitMessagePrompt] = useState("");
+    const [aiConflictResolutionPrompt, setAiConflictResolutionPrompt] = useState("");
+    const [aiIncludeCommitHistory, setAiIncludeCommitHistory] = useState(true);
+    const [aiGlobalExclusions, setAiGlobalExclusions] = useState("");
+    const [aiConfiguration, setAiConfiguration] = useState<AiConfigurationView | null>(null);
+    const aiProfileSelectionRef = useRef("");
+    const [aiApiKey, setAiApiKeyState] = useState("");
+    const [aiBedrockAccessKeyId, setAiBedrockAccessKeyId] = useState("");
+    const [aiBedrockSecretAccessKey, setAiBedrockSecretAccessKey] = useState("");
+    const [aiBedrockSessionToken, setAiBedrockSessionToken] = useState("");
+    const [aiOpenRouter, setAiOpenRouter] = useState<OpenRouterSettings>(DEFAULT_OPEN_ROUTER_SETTINGS);
+    const [aiApiStyle, setAiApiStyle] = useState<AiApiStyle>("ChatCompletions");
+    const [aiRequestPath, setAiRequestPath] = useState("");
+    const [aiModelsPath, setAiModelsPath] = useState("");
+    const [aiAuthMode, setAiAuthMode] = useState<AiAuthMode>("Bearer");
+    const [aiAuthHeader, setAiAuthHeader] = useState("");
+    const [aiMaxTokensField, setAiMaxTokensField] = useState("");
+    const [aiAzureDeployment, setAiAzureDeployment] = useState("");
+    const [aiAzureApiVersion, setAiAzureApiVersion] = useState("2024-10-21");
+    const [aiModelSearch, setAiModelSearch] = useState("");
+    const [aiModelSort, setAiModelSort] = useState<AiModelSort>("Popularity");
+    const [aiProgrammingModelsOnly, setAiProgrammingModelsOnly] = useState(false);
+    const [aiZdrModelsOnly, setAiZdrModelsOnly] = useState(false);
+    const [aiModelAuthor, setAiModelAuthor] = useState("");
+    const [aiModelHostingProvider, setAiModelHostingProvider] = useState("");
+    const [aiModelMinimumContext, setAiModelMinimumContext] = useState("");
+    const [aiModelMaximumPromptPrice, setAiModelMaximumPromptPrice] = useState("");
+    const [aiModelMaximumCompletionPrice, setAiModelMaximumCompletionPrice] = useState("");
+    const [aiModelPage, setAiModelPage] = useState(1);
+    const [aiModelsHaveMore, setAiModelsHaveMore] = useState(false);
+    const [aiModels, setAiModels] = useState<AiModelInfo[]>([]);
+    const [discoveringAiModels, setDiscoveringAiModels] = useState(false);
+    const [connectingOpenRouter, setConnectingOpenRouter] = useState(false);
+    const [aiUsageHistory, setAiUsageHistory] = useState<AiUsageRecord[]>([]);
+    const [testingAi, setTestingAi] = useState(false);
     const [status, setStatus] = useState(() => t("status.ready"));
     const [saving, setSaving] = useState(false);
     const suggestedTools = allowedDiffTools.filter((tool) => tool !== "Other");
+    const currentAiCapability = aiConfiguration?.provider === aiProvider
+        && aiConfiguration.endpoint === aiEndpoint.trim()
+        && aiConfiguration.model === aiModel.trim()
+        ? aiConfiguration.effortCapability
+        : {status: "unknown" as const};
+    const aiKeyOptional = aiApiKeyOptional(aiProvider, aiEndpoint);
+    const aiCredentialValue = aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4"
+        ? aiBedrockAccessKeyId.trim() && aiBedrockSecretAccessKey.trim()
+            ? JSON.stringify({
+                accessKeyId: aiBedrockAccessKeyId.trim(),
+                secretAccessKey: aiBedrockSecretAccessKey.trim(),
+                sessionToken: aiBedrockSessionToken.trim() || undefined,
+            })
+            : ""
+        : aiApiKey.trim();
+    const aiConfigurationMatchesProfile = aiProfileId !== "" && aiConfiguration?.selectedProfileId === aiProfileId;
+    const aiHasStoredCredential = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.hasApiKey);
+    const aiCredentialManagedByEnvironment = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.credentialManagedByEnvironment);
+    const aiFieldManaged = (field: string) => aiConfigurationMatchesProfile
+        && (aiConfiguration?.environmentFields ?? []).includes(field);
+    const aiUsesCustomBedrockEndpoint = aiProvider === "Bedrock"
+        && !BEDROCK_RUNTIME_ENDPOINTS.includes(aiEndpoint.trim());
+    const aiReasoningUnavailable = (level: AiReasoningPreference): boolean => {
+        if (currentAiCapability.status === "unsupported") return true;
+        if (currentAiCapability.status !== "supported") return false;
+        return !currentAiCapability.levels.includes(level);
+    };
     const labelDiffTool = useCallback((tool: ExternalDiffTool): string => {
         switch (tool) {
             case "Other":
@@ -341,6 +586,7 @@ export function SettingsWindow() {
             setGlobalGpgProgram(gpgProgram ?? "");
 
             const settings = await invoke<Settings>("get_settings");
+            const ai = await getAiConfiguration();
             const activeGitPath = await invoke<string>("get_active_git_executable_path");
             setGitExecutableConfiguredPath(settings.gitExecutablePath ?? "");
             setGitExecutablePath(settings.gitExecutablePath || activeGitPath);
@@ -353,6 +599,7 @@ export function SettingsWindow() {
             setWrapDiffLines(settings.wrapDiffLines ?? false);
             setRowStriping(settings.rowStriping ?? "Off");
             setShowCommitGraphButton(settings.showCommitGraphButton ?? false);
+            setEnableLocalCopy(settings.enableLocalCopy ?? false);
             setPersistentErrorToasts(settings.persistentErrorToasts ?? false);
             setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
             setOpenResultLogOnLaunch(settings.showResultLog);
@@ -371,6 +618,36 @@ export function SettingsWindow() {
             setRepoOpenBehaviour(settings.repoOpenBehaviour ?? "Ask");
             setGpgKeyserverVerificationEnabledState(settings.gpgKeyserverVerificationEnabled ?? false);
             setLoadedGpgKeyserverVerificationEnabled(settings.gpgKeyserverVerificationEnabled ?? false);
+            setAiEnabled(Boolean(ai.enabled));
+            const selectedProfileId = ai.selectedProfileId ?? "";
+            aiProfileSelectionRef.current = selectedProfileId;
+            setAiProfileId(selectedProfileId);
+            const selectedAiProfile = ai.profiles?.find(profile => profile.id === ai.selectedProfileId);
+            setAiProfileName(selectedAiProfile?.name ?? "");
+            setAiOpenRouter(selectedAiProfile?.openRouter ?? DEFAULT_OPEN_ROUTER_SETTINGS);
+            setAiApiStyle(selectedAiProfile?.apiStyle ?? "ChatCompletions");
+            setAiRequestPath(selectedAiProfile?.requestPath ?? "");
+            setAiModelsPath(selectedAiProfile?.modelsPath ?? "");
+            setAiAuthMode(selectedAiProfile?.authMode ?? "Bearer");
+            setAiAuthHeader(selectedAiProfile?.authHeader ?? "");
+            setAiMaxTokensField(selectedAiProfile?.maxTokensField ?? "");
+            setAiAzureDeployment(selectedAiProfile?.azureDeployment ?? "");
+            setAiAzureApiVersion(selectedAiProfile?.azureApiVersion || "2024-10-21");
+            setAiProvider(ai.provider === "Disabled" ? "OpenRouter" : ai.provider);
+            setAiEndpoint(ai.provider === "Disabled" ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? "" : ai.endpoint);
+            setAiModel(ai.model);
+            setAiReasoningPreference(ai.reasoningPreference);
+            setAiCommitContextLimitKib(String(ai.commitContextLimitKib));
+            setAiConflictContextLimitKib(String(ai.conflictContextLimitKib));
+            setAiCommitMessageMaxTokens(String(ai.commitMessageMaxTokens));
+            setAiConflictResolutionMaxTokens(String(ai.conflictResolutionMaxTokens));
+            setAiCommitMessagePrompt(ai.commitMessagePrompt);
+            setAiConflictResolutionPrompt(ai.conflictResolutionPrompt);
+            setAiIncludeCommitHistory(ai.includeCommitHistory);
+            setAiGlobalExclusions(settings.extensions.ai.globalExclusions.join("\n"));
+            setAiUsageHistory(settings.extensions.ai.usageHistory ?? []);
+            setAiConfiguration(ai);
+            setAiApiKeyState("");
             await applyThemeMode(settings.themeMode);
             applyUiTextScale(settings.uiTextScale);
 
@@ -430,6 +707,331 @@ export function SettingsWindow() {
         return () => window.removeEventListener("keydown", handler);
     }, []);
 
+    const saveCurrentAiConfiguration = useCallback(async (): Promise<AiConfigurationView> => {
+        let saved = await saveAiConfiguration({
+            enabled: aiEnabled,
+            profileId: aiProfileId || undefined,
+            profileName: aiProfileName,
+            provider: aiProvider,
+            endpoint: aiEndpoint,
+            model: aiModel,
+            reasoningPreference: aiReasoningPreference,
+            openRouter: aiOpenRouter,
+            apiStyle: aiApiStyle,
+            requestPath: aiRequestPath,
+            modelsPath: aiModelsPath,
+            authMode: aiAuthMode,
+            authHeader: aiAuthHeader,
+            maxTokensField: aiMaxTokensField,
+            azureDeployment: aiAzureDeployment,
+            azureApiVersion: aiAzureApiVersion,
+            apiKey: aiCredentialValue || undefined,
+        });
+        setAiApiKeyState("");
+        setAiConfiguration(saved);
+        setAiEnabled(saved.enabled);
+        aiProfileSelectionRef.current = saved.selectedProfileId;
+        setAiProfileId(saved.selectedProfileId);
+        setAiEndpoint(saved.endpoint);
+        setAiModel(saved.model);
+        return saved;
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath]);
+
+    const handleAiProviderChange = useCallback((provider: AiProvider) => {
+        setAiProvider(provider);
+        setAiEndpoint(current => {
+            const isKnownDefault = Object.values(AI_PROVIDER_ENDPOINTS).includes(current);
+            if (!current || isKnownDefault) return AI_PROVIDER_ENDPOINTS[provider] ?? "";
+            return current;
+        });
+        const auth = AI_PROVIDER_AUTH[provider];
+        setAiAuthMode(auth?.mode ?? "Bearer");
+        setAiAuthHeader(auth?.header ?? "");
+        setAiModels([]);
+    }, []);
+
+    const handleAiProfileChange = useCallback((profileId: string) => {
+        const profile = aiConfiguration?.profiles.find(candidate => candidate.id === profileId);
+        if (!profile) return;
+        aiProfileSelectionRef.current = profile.id;
+        setAiProfileId(profile.id);
+        setAiProfileName(profile.name);
+        setAiProvider(profile.provider === "Disabled" ? "OpenRouter" : profile.provider);
+        setAiEndpoint(profile.provider === "Disabled"
+            ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? ""
+            : profile.endpoint || AI_PROVIDER_ENDPOINTS[profile.provider] || "");
+        setAiModel(profile.model);
+        setAiReasoningPreference(profile.reasoningPreference);
+        setAiOpenRouter(profile.openRouter);
+        setAiApiStyle(profile.apiStyle);
+        setAiRequestPath(profile.requestPath);
+        setAiModelsPath(profile.modelsPath);
+        setAiAuthMode(profile.authMode);
+        setAiAuthHeader(profile.authHeader);
+        setAiMaxTokensField(profile.maxTokensField);
+        setAiAzureDeployment(profile.azureDeployment);
+        setAiAzureApiVersion(profile.azureApiVersion || "2024-10-21");
+        setAiApiKeyState("");
+        setAiBedrockAccessKeyId("");
+        setAiBedrockSecretAccessKey("");
+        setAiBedrockSessionToken("");
+        setAiModels([]);
+        setAiConfiguration(current => current && ({
+            ...current,
+            selectedProfileId: profile.id,
+            hasApiKey: false,
+            credentialManagedByEnvironment: false,
+            environmentFields: [],
+        }));
+        void getAiConfiguration(profile.id)
+            .then(configuration => {
+                if (aiProfileSelectionRef.current === profile.id) {
+                    setAiConfiguration(configuration);
+                }
+            })
+            .catch(error => {
+                if (aiProfileSelectionRef.current === profile.id) {
+                    setStatus(localiseAiSettingsError(error, t));
+                }
+            });
+    }, [aiConfiguration, t]);
+
+    const handleNewAiProfile = useCallback(() => {
+        aiProfileSelectionRef.current = "";
+        setAiProfileId("");
+        setAiProfileName("");
+        setAiProvider("OpenRouter");
+        setAiEndpoint(AI_PROVIDER_ENDPOINTS.OpenRouter ?? "");
+        setAiModel("");
+        setAiReasoningPreference("Automatic");
+        setAiOpenRouter(DEFAULT_OPEN_ROUTER_SETTINGS);
+        setAiApiStyle("ChatCompletions");
+        setAiRequestPath("");
+        setAiModelsPath("");
+        setAiAuthMode("Bearer");
+        setAiAuthHeader("");
+        setAiMaxTokensField("");
+        setAiAzureDeployment("");
+        setAiAzureApiVersion("2024-10-21");
+        setAiApiKeyState("");
+        setAiBedrockAccessKeyId("");
+        setAiBedrockSecretAccessKey("");
+        setAiBedrockSessionToken("");
+        setAiModels([]);
+    }, []);
+
+    const handleDeleteAiProfile = useCallback(async () => {
+        if (!aiProfileId) return;
+        try {
+            const configuration = await deleteAiProfile(aiProfileId);
+            setAiConfiguration(configuration);
+            setAiEnabled(configuration.enabled);
+            aiProfileSelectionRef.current = configuration.selectedProfileId;
+            setAiProfileId(configuration.selectedProfileId);
+            const profile = configuration.profiles.find(candidate => candidate.id === configuration.selectedProfileId);
+            setAiProfileName(profile?.name ?? "");
+            setAiProvider(configuration.provider);
+            setAiEndpoint(configuration.endpoint);
+            setAiModel(configuration.model);
+            setAiReasoningPreference(configuration.reasoningPreference);
+            setAiOpenRouter(profile?.openRouter ?? DEFAULT_OPEN_ROUTER_SETTINGS);
+            setAiApiStyle(profile?.apiStyle ?? "ChatCompletions");
+            setAiRequestPath(profile?.requestPath ?? "");
+            setAiModelsPath(profile?.modelsPath ?? "");
+            setAiAuthMode(profile?.authMode ?? "Bearer");
+            setAiAuthHeader(profile?.authHeader ?? "");
+            setAiMaxTokensField(profile?.maxTokensField ?? "");
+            setAiAzureDeployment(profile?.azureDeployment ?? "");
+            setAiAzureApiVersion(profile?.azureApiVersion || "2024-10-21");
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        }
+    }, [aiProfileId, t]);
+
+    const handleDiscoverAiModels = useCallback(async (requestedPage = 1) => {
+        setDiscoveringAiModels(true);
+        try {
+            const query = {
+                search: aiModelSearch,
+                page: requestedPage,
+                pageSize: 100,
+                programmingOnly: aiProgrammingModelsOnly,
+                author: aiModelAuthor,
+                hostingProvider: aiModelHostingProvider,
+                minimumContextLength: positiveNumberOrNull(aiModelMinimumContext),
+                maximumPromptPrice: pricePerMillionToPerTokenOrNull(aiModelMaximumPromptPrice),
+                maximumCompletionPrice: pricePerMillionToPerTokenOrNull(aiModelMaximumCompletionPrice),
+                zdrOnly: aiZdrModelsOnly,
+                sort: aiModelSort,
+            };
+            const page = await discoverAiModelsDraft({
+                enabled: aiEnabled,
+                profileId: aiProfileId || undefined,
+                profileName: aiProfileName,
+                provider: aiProvider,
+                endpoint: aiEndpoint,
+                model: aiModel,
+                reasoningPreference: aiReasoningPreference,
+                openRouter: aiOpenRouter,
+                apiStyle: aiApiStyle,
+                requestPath: aiRequestPath,
+                modelsPath: aiModelsPath,
+                authMode: aiAuthMode,
+                authHeader: aiAuthHeader,
+                maxTokensField: aiMaxTokensField,
+                azureDeployment: aiAzureDeployment,
+                azureApiVersion: aiAzureApiVersion,
+                apiKey: aiCredentialValue || undefined,
+            }, query);
+            setAiModels(page.models);
+            setAiModelPage(page.page);
+            setAiModelsHaveMore(page.hasMore);
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        } finally {
+            setDiscoveringAiModels(false);
+        }
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelAuthor, aiModelHostingProvider, aiModelMaximumCompletionPrice, aiModelMaximumPromptPrice, aiModelMinimumContext, aiModelSearch, aiModelSort, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProgrammingModelsOnly, aiProvider, aiReasoningPreference, aiRequestPath, aiZdrModelsOnly, t]);
+
+    const handleSelectAiModel = useCallback(async (model: AiModelInfo) => {
+        setAiModel(model.id);
+        if (aiProvider !== "OpenRouter") return;
+        setDiscoveringAiModels(true);
+        try {
+            const details = await discoverAiModelDetailsDraft({
+                enabled: aiEnabled,
+                profileId: aiProfileId || undefined,
+                profileName: aiProfileName,
+                provider: aiProvider,
+                endpoint: aiEndpoint,
+                model: model.id,
+                reasoningPreference: aiReasoningPreference,
+                openRouter: aiOpenRouter,
+                apiStyle: aiApiStyle,
+                requestPath: aiRequestPath,
+                modelsPath: aiModelsPath,
+                authMode: aiAuthMode,
+                authHeader: aiAuthHeader,
+                maxTokensField: aiMaxTokensField,
+                azureDeployment: aiAzureDeployment,
+                azureApiVersion: aiAzureApiVersion,
+                apiKey: aiCredentialValue || undefined,
+            }, model.id);
+            setAiModels(current => current.map(currentModel => currentModel.id === details.id
+                ? {...currentModel, ...details, zeroDataRetention: currentModel.zeroDataRetention}
+                : currentModel));
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        } finally {
+            setDiscoveringAiModels(false);
+        }
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+
+    const handleClearAiUsageHistory = useCallback(async () => {
+        try {
+            await clearAiUsageHistory();
+            setAiUsageHistory([]);
+            setStatus(t("status.aiUsageHistoryCleared"));
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        }
+    }, [t]);
+
+    const handleCopyAiDiagnostics = useCallback(async () => {
+        if (!aiConfiguration) return;
+        try {
+            const endpointAuthority = new URL(aiConfiguration.endpoint).host;
+            await navigator.clipboard.writeText(JSON.stringify({
+                enabled: aiConfiguration.enabled,
+                provider: aiConfiguration.provider,
+                endpointAuthority,
+                model: aiConfiguration.model,
+                configured: aiConfiguration.configured,
+                environmentFields: aiConfiguration.environmentFields,
+                sources: aiConfiguration.sources,
+                usageHistory: aiUsageHistory,
+            }, null, 2));
+            setStatus(t("status.aiDiagnosticsCopied"));
+        } catch {
+            setStatus(t("status.aiDiagnosticsCopyFailed"));
+        }
+    }, [aiConfiguration, aiUsageHistory, t]);
+
+    const handleClearAiApiKey = useCallback(async () => {
+        try {
+            const configuration = await clearAiApiKey(aiProfileId || undefined);
+            setAiConfiguration(configuration);
+            setAiApiKeyState("");
+            setStatus(t("status.aiKeyCleared"));
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        }
+    }, [aiProfileId, t]);
+
+    const handleConnectOpenRouter = useCallback(async () => {
+        setConnectingOpenRouter(true);
+        setStatus(t("status.aiOpenRouterConnecting"));
+        try {
+            await saveCurrentAiConfiguration();
+            const configuration = await connectOpenRouter(t("notes.aiOpenRouterOAuthCallback"));
+            setAiConfiguration(configuration);
+            aiProfileSelectionRef.current = configuration.selectedProfileId;
+            setAiProfileId(configuration.selectedProfileId);
+            setAiApiKeyState("");
+            setStatus(t("status.aiOpenRouterConnected"));
+        } catch (error) {
+            setStatus(t("status.aiOpenRouterConnectionFailed", {
+                message: localiseAiSettingsError(error, t),
+            }));
+        } finally {
+            setConnectingOpenRouter(false);
+        }
+    }, [saveCurrentAiConfiguration, t]);
+
+    const handleStoreAiApiKey = useCallback(async () => {
+        if (!aiCredentialValue) return;
+        try {
+            await saveCurrentAiConfiguration();
+            setAiBedrockAccessKeyId("");
+            setAiBedrockSecretAccessKey("");
+            setAiBedrockSessionToken("");
+            setStatus(t("status.aiKeyStored"));
+        } catch (error) {
+            setStatus(localiseAiSettingsError(error, t));
+        }
+    }, [aiCredentialValue, saveCurrentAiConfiguration, t]);
+
+    const handleTestAiConnection = useCallback(async () => {
+        setTestingAi(true);
+        try {
+            const result = await testAiConnectionDraft({
+                enabled: aiEnabled,
+                profileId: aiProfileId || undefined,
+                profileName: aiProfileName,
+                provider: aiProvider,
+                endpoint: aiEndpoint,
+                model: aiModel,
+                reasoningPreference: aiReasoningPreference,
+                openRouter: aiOpenRouter,
+                apiStyle: aiApiStyle,
+                requestPath: aiRequestPath,
+                modelsPath: aiModelsPath,
+                authMode: aiAuthMode,
+                authHeader: aiAuthHeader,
+                maxTokensField: aiMaxTokensField,
+                azureDeployment: aiAzureDeployment,
+                azureApiVersion: aiAzureApiVersion,
+                apiKey: aiCredentialValue || undefined,
+            });
+            const tokenCount = (result.usage.inputTokens ?? 0) + (result.usage.outputTokens ?? 0);
+            setStatus(t("status.aiConnectionSucceeded", {count: tokenCount}));
+        } catch (error) {
+            setStatus(t("status.aiConnectionFailed", {message: localiseAiSettingsError(error, t)}));
+        } finally {
+            setTestingAi(false);
+        }
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+
     const handleSave = useCallback(async () => {
         setSaving(true);
         try {
@@ -446,6 +1048,7 @@ export function SettingsWindow() {
             await invoke<Settings>("set_wrap_diff_lines", {wrapDiffLines});
             await invoke<Settings>("set_row_striping", {rowStriping});
             await invoke<Settings>("set_show_commit_graph_button", {showCommitGraphButton});
+            await invoke<Settings>("set_enable_local_copy", {enableLocalCopy});
             await invoke<Settings>("set_persistent_error_toasts", {persistentErrorToasts});
             const parsedErrorToastClearDelayMs = Number.parseInt(errorToastClearDelayMs, 10);
             const savedErrorToastClearDelayMs = Number.isFinite(parsedErrorToastClearDelayMs)
@@ -536,10 +1139,65 @@ export function SettingsWindow() {
                 await invoke("set_linux_terminal_custom_command", {linuxTerminalCustomCommand});
             }
             await invoke("set_repo_open_behaviour", {repoOpenBehaviour});
+            const savedAiCommitContextLimitKib = normaliseAiContextLimit(
+                aiCommitContextLimitKib,
+                DEFAULT_AI_COMMIT_CONTEXT_LIMIT_KIB,
+            );
+            const savedAiConflictContextLimitKib = normaliseAiContextLimit(
+                aiConflictContextLimitKib,
+                DEFAULT_AI_CONFLICT_CONTEXT_LIMIT_KIB,
+            );
+            if (!aiFieldManaged("commitContextLimitKib")) {
+                await invoke<Settings>("set_ai_commit_context_limit_kib", {
+                    aiCommitContextLimitKib: savedAiCommitContextLimitKib,
+                });
+            }
+            if (!aiFieldManaged("conflictContextLimitKib")) {
+                await invoke<Settings>("set_ai_conflict_context_limit_kib", {
+                    aiConflictContextLimitKib: savedAiConflictContextLimitKib,
+                });
+            }
+            const savedAiCommitMessageMaxTokens = normaliseAiOutputTokens(
+                aiCommitMessageMaxTokens,
+                DEFAULT_AI_COMMIT_MESSAGE_MAX_TOKENS,
+            );
+            const savedAiConflictResolutionMaxTokens = normaliseAiOutputTokens(
+                aiConflictResolutionMaxTokens,
+                DEFAULT_AI_CONFLICT_RESOLUTION_MAX_TOKENS,
+            );
+            if (!aiFieldManaged("commitMessageMaxTokens")) {
+                await invoke<Settings>("set_ai_commit_message_max_tokens", {
+                    aiCommitMessageMaxTokens: savedAiCommitMessageMaxTokens,
+                });
+            }
+            if (!aiFieldManaged("conflictResolutionMaxTokens")) {
+                await invoke<Settings>("set_ai_conflict_resolution_max_tokens", {
+                    aiConflictResolutionMaxTokens: savedAiConflictResolutionMaxTokens,
+                });
+            }
+            if (!aiFieldManaged("commitMessagePrompt")) {
+                await invoke<Settings>("set_ai_commit_message_prompt", {aiCommitMessagePrompt});
+            }
+            if (!aiFieldManaged("conflictResolutionPrompt")) {
+                await invoke<Settings>("set_ai_conflict_resolution_prompt", {aiConflictResolutionPrompt});
+            }
+            await setAiPrivacySettings(
+                aiIncludeCommitHistory,
+                aiGlobalExclusions.split("\n").map(value => value.trim()).filter(Boolean),
+            );
+            const savedAi = await saveCurrentAiConfiguration();
             const settings = await invoke<Settings>("get_settings");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
             setErrorToastClearDelayMs(String(settings.errorToastClearDelayMs ?? DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS));
             setUiTextScale(normaliseUiTextScale(settings.uiTextScale));
+            setAiCommitContextLimitKib(String(savedAi.commitContextLimitKib));
+            setAiConflictContextLimitKib(String(savedAi.conflictContextLimitKib));
+            setAiCommitMessageMaxTokens(String(savedAi.commitMessageMaxTokens));
+            setAiConflictResolutionMaxTokens(String(savedAi.conflictResolutionMaxTokens));
+            setAiCommitMessagePrompt(savedAi.commitMessagePrompt);
+            setAiConflictResolutionPrompt(savedAi.conflictResolutionPrompt);
+            setAiIncludeCommitHistory(savedAi.includeCommitHistory);
+            setAiGlobalExclusions(settings.extensions.ai.globalExclusions.join("\n"));
 
             localStorage.setItem(BACKEND_MODE_KEY, settings.backendMode);
             localStorage.setItem(SHOW_RESULT_LOG_KEY, String(openResultLogOnLaunch));
@@ -624,7 +1282,10 @@ export function SettingsWindow() {
                     : t("status.noGitConfigChanges"),
             }));
         } catch (e) {
-            setStatus(t("status.saveFailed", {message: String(e)}));
+            const message = typeof e === "object" && e !== null && "code" in e
+                ? t(`aiErrors.${aiErrorCode(e)}`)
+                : String(e);
+            setStatus(t("status.saveFailed", {message}));
         } finally {
             setSaving(false);
         }
@@ -635,6 +1296,8 @@ export function SettingsWindow() {
         openResultLogOnLaunch,
         wrapDiffLines,
         rowStriping,
+        showCommitGraphButton,
+        enableLocalCopy,
         showCommitGraphButton,
         persistentErrorToasts,
         errorToastClearDelayMs,
@@ -681,6 +1344,15 @@ export function SettingsWindow() {
         linuxTerminalEmulator,
         linuxTerminalCustomCommand,
         repoOpenBehaviour,
+        aiCommitContextLimitKib,
+        aiConflictContextLimitKib,
+        aiCommitMessageMaxTokens,
+        aiConflictResolutionMaxTokens,
+        aiCommitMessagePrompt,
+        aiConflictResolutionPrompt,
+        aiIncludeCommitHistory,
+        aiGlobalExclusions,
+        aiConfiguration,
         gpgKeyserverVerificationEnabled,
         externalDiffToolPath,
         globalGpgProgram,
@@ -688,6 +1360,7 @@ export function SettingsWindow() {
         globalGpgProgramEdited,
         loadedGpgKeyserverVerificationEnabled,
         refreshGitExecutable,
+        saveCurrentAiConfiguration,
         saveGlobalGpgProgram,
         t,
     ]);
@@ -819,6 +1492,17 @@ export function SettingsWindow() {
         getCurrentWindow().close();
     }, []);
 
+    const activeAiModelFilterCount = [
+        aiProgrammingModelsOnly,
+        aiZdrModelsOnly,
+        aiModelSort !== "Popularity",
+        aiModelAuthor.trim() !== "",
+        aiModelHostingProvider.trim() !== "",
+        aiModelMinimumContext.trim() !== "",
+        aiModelMaximumPromptPrice.trim() !== "",
+        aiModelMaximumCompletionPrice.trim() !== "",
+    ].filter(Boolean).length;
+
     return (
         <div className="settings-window">
             {!useNativeWindowBar && (
@@ -845,6 +1529,14 @@ export function SettingsWindow() {
                     >
                         {t("labels.git")}
                     </button>
+                    {aiEnabled && (
+                        <button
+                            className={`settings-window__tab ${tab === "ai" ? "settings-window__tab--active" : ""}`}
+                            onClick={() => setTab("ai")}
+                        >
+                            {t("labels.ai")}
+                        </button>
+                    )}
                 </div>
 
                 {loadState.status === "loading" && (
@@ -1187,6 +1879,43 @@ export function SettingsWindow() {
                                 {t("notes.commitGraphExperimental")}
                             </div>
                         </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.localCopy")}</label>
+                            <label className="settings-window__switch-row">
+              <span className="settings-window__switch">
+                <input
+                    type="checkbox"
+                    checked={enableLocalCopy}
+                    onChange={event => setEnableLocalCopy(event.target.checked)}
+                />
+                <span className="settings-window__switch-track"/>
+              </span>
+                                <span className="settings-window__switch-label">{t("switches.enableLocalCopy")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {t("notes.localCopyExperimental")}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__switch-row">
+                                <span className="settings-window__switch">
+                                    <input
+                                        id="settings-ai-enabled"
+                                        type="checkbox"
+                                        checked={aiEnabled}
+                                        onChange={event => setAiEnabled(event.target.checked)}
+                                        disabled={aiFieldManaged("enabled")}
+                                    />
+                                    <span className="settings-window__switch-track"/>
+                                </span>
+                                <span className="settings-window__switch-label">{t("labels.aiEnabled")}</span>
+                            </label>
+                            <div className="settings-window__section-note">
+                                {aiFieldManaged("enabled") ? t("notes.aiEnvironmentManaged") : t("notes.aiExperimental")}
+                            </div>
+                        </div>
                     </section>
 
                     <section className="settings-window__section">
@@ -1247,6 +1976,675 @@ export function SettingsWindow() {
                                 {t("labels.buildVersion")}<code>{buildVersion}</code>
                             </div>
                         )}
+                    </section>
+                </div>
+                )}
+
+                {loadState.status === "loaded" && aiEnabled && tab === "ai" && (
+                <div className="settings-window__column">
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.aiGroupProvider")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label" htmlFor="settings-ai-profile">{t("labels.aiProfile")}</label>
+                            <select
+                                id="settings-ai-profile"
+                                className="settings-window__select"
+                                value={aiProfileId}
+                                onChange={event => handleAiProfileChange(event.target.value)}
+                            >
+                                {!aiProfileId && <option value="">{t("options.aiProfileNew")}</option>}
+                                {aiConfiguration?.profiles?.map(profile => (
+                                    <option key={profile.id} value={profile.id}>{profile.name || profile.id}</option>
+                                ))}
+                            </select>
+                            <div className="settings-window__inline-controls">
+                                <button type="button" className="settings-window__btn settings-window__btn--secondary" onClick={handleNewAiProfile}>
+                                    {t("actions.newAiProfile")}
+                                </button>
+                                {aiProfileId && (
+                                    <button type="button" className="settings-window__btn settings-window__btn--secondary" onClick={handleDeleteAiProfile}>
+                                        {t("actions.deleteAiProfile")}
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label" htmlFor="settings-ai-profile-name">{t("labels.aiProfileName")}</label>
+                            <input id="settings-ai-profile-name" className="settings-window__input" value={aiProfileName} onChange={event => setAiProfileName(event.target.value)}/>
+                        </div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label" htmlFor="settings-ai-provider">{t("labels.aiProvider")}</label>
+                            <select
+                                id="settings-ai-provider"
+                                className="settings-window__select"
+                                value={aiProvider}
+                            onChange={event => handleAiProviderChange(event.target.value as AiProvider)}
+                                disabled={aiFieldManaged("provider")}
+                            >
+                                <option value="Bedrock">{t("options.aiProviderBedrock")}</option>
+                                <option value="AzureOpenAi">{t("options.aiProviderAzure")}</option>
+                                <option value="Claude">{t("options.aiProviderClaude")}</option>
+                                <option value="GoogleGemini">{t("options.aiProviderGemini")}</option>
+                                <option value="LmStudio">{t("options.aiProviderLmStudio")}</option>
+                                <option value="Mistral">{t("options.aiProviderMistral")}</option>
+                                <option value="Ollama">{t("options.aiProviderOllama")}</option>
+                                <option value="OpenAi">{t("options.aiProviderOpenAi")}</option>
+                                <option value="OpenAiCompatible">{t("options.aiProviderCompatible")}</option>
+                                <option value="OpenRouter">{t("options.aiProviderOpenRouter")}</option>
+                            </select>
+                            <div className="settings-window__section-note">{t("notes.aiVisibility")}</div>
+                        </div>
+
+                        {aiProvider !== "Disabled" && (
+                            <>
+                                {aiProvider === "Bedrock" && (
+                                    <>
+                                        <div className="settings-window__row">
+                                            <label className="settings-window__label" htmlFor="settings-ai-bedrock-auth">{t("labels.aiAuthentication")}</label>
+                                            <select
+                                                id="settings-ai-bedrock-auth"
+                                                className="settings-window__select"
+                                                value={aiAuthMode}
+                                                onChange={event => setAiAuthMode(event.target.value as AiAuthMode)}
+                                                disabled={aiFieldManaged("authMode")}
+                                            >
+                                                <option value="Bearer">{t("options.aiAuthBearer")}</option>
+                                                <option value="AwsSigV4">{t("options.aiAuthAwsSigV4")}</option>
+                                            </select>
+                                            <div className="settings-window__section-note">{t("notes.aiBedrockAuthentication")}</div>
+                                        </div>
+                                        <div className="settings-window__row">
+                                            <label className="settings-window__label" htmlFor="settings-ai-bedrock-endpoint">{t("labels.aiBedrockRuntimeEndpoint")}</label>
+                                            <select
+                                                id="settings-ai-bedrock-endpoint"
+                                                className="settings-window__select"
+                                                value={aiUsesCustomBedrockEndpoint ? "custom" : aiEndpoint}
+                                                onChange={event => setAiEndpoint(event.target.value === "custom" ? "" : event.target.value)}
+                                                disabled={aiFieldManaged("endpoint")}
+                                            >
+                                                {BEDROCK_RUNTIME_ENDPOINTS.map(endpoint => (
+                                                    <option key={endpoint} value={endpoint}>{endpoint.replace("https://bedrock-runtime.", "").replace(".amazonaws.com", "")}</option>
+                                                ))}
+                                                <option value="custom">{t("options.aiBedrockRuntimeCustom")}</option>
+                                            </select>
+                                            {aiUsesCustomBedrockEndpoint && (
+                                                <input
+                                                    className="settings-window__input"
+                                                    type="url"
+                                                    aria-label={t("labels.aiCustomEndpoint")}
+                                                    value={aiEndpoint}
+                                                    onChange={event => setAiEndpoint(event.target.value)}
+                                                    readOnly={aiFieldManaged("endpoint")}
+                                                    placeholder={t("placeholders.aiBedrockRuntimeCustom")}
+                                                    spellCheck={false}
+                                                    autoCapitalize="off"
+                                                    autoCorrect="off"
+                                                />
+                                            )}
+                                            <div className="settings-window__section-note">{t("notes.aiBedrockRuntimeEndpoint")}</div>
+                                        </div>
+                                    </>
+                                )}
+                                <div className="settings-window__row">
+                                    <label className="settings-window__label" htmlFor="settings-ai-key">
+                                        {aiProvider === "OpenRouter" || (aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4") ? t("labels.aiAuthentication") : t("labels.aiApiKey")}
+                                    </label>
+                                    <div className="settings-window__sub-section settings-window__credential-panel">
+                                        {aiProvider === "OpenRouter" && !aiCredentialManagedByEnvironment && (
+                                            <>
+                                                <div className="settings-window__credential-sign-in">
+                                                    <button
+                                                        type="button"
+                                                        className="settings-window__btn settings-window__btn--secondary"
+                                                        onClick={handleConnectOpenRouter}
+                                                        disabled={connectingOpenRouter || saving}
+                                                    >
+                                                        {connectingOpenRouter
+                                                            ? t("actions.connectingOpenRouter")
+                                                            : aiHasStoredCredential
+                                                                ? t("actions.reconnectOpenRouter")
+                                                                : t("actions.connectOpenRouter")}
+                                                    </button>
+                                                    <span className="settings-window__section-note">{t("notes.aiOpenRouterOAuth")}</span>
+                                                </div>
+                                                <div className="settings-window__credential-divider">
+                                                    <span>{t("labels.aiOrApiKey")}</span>
+                                                </div>
+                                            </>
+                                        )}
+                                        <div className="settings-window__credential-entry">
+                                            {aiProvider === "Bedrock" && aiAuthMode === "AwsSigV4" ? (
+                                                <>
+                                                    <input id="settings-ai-bedrock-access-key" aria-label={t("labels.aiBedrockAccessKeyId")} className="settings-window__input" type="password" value={aiBedrockAccessKeyId} onChange={event => setAiBedrockAccessKeyId(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockAccessKeyId")} autoComplete="off" spellCheck={false}/>
+                                                    <input id="settings-ai-bedrock-secret-key" aria-label={t("labels.aiBedrockSecretAccessKey")} className="settings-window__input" type="password" value={aiBedrockSecretAccessKey} onChange={event => setAiBedrockSecretAccessKey(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockSecretAccessKey")} autoComplete="off" spellCheck={false}/>
+                                                    <input id="settings-ai-bedrock-session-token" aria-label={t("labels.aiBedrockSessionToken")} className="settings-window__input" type="password" value={aiBedrockSessionToken} onChange={event => setAiBedrockSessionToken(event.target.value)} readOnly={aiCredentialManagedByEnvironment} placeholder={t("labels.aiBedrockSessionToken")} autoComplete="off" spellCheck={false}/>
+                                                </>
+                                            ) : (
+                                                <input
+                                                    id="settings-ai-key"
+                                                    aria-label={t("labels.aiApiKey")}
+                                                    className="settings-window__input"
+                                                    type="password"
+                                                    value={aiApiKey}
+                                                    onChange={event => setAiApiKeyState(event.target.value)}
+                                                    readOnly={aiCredentialManagedByEnvironment}
+                                                    placeholder={aiHasStoredCredential ? t("placeholders.aiKeyConfigured") : t("placeholders.aiKeyRequired")}
+                                                    autoComplete="off"
+                                                    spellCheck={false}
+                                                />
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="settings-window__btn settings-window__btn--secondary"
+                                                onClick={handleStoreAiApiKey}
+                                                disabled={!aiCredentialValue || aiCredentialManagedByEnvironment}
+                                            >
+                                                {aiHasStoredCredential ? t("actions.replaceAiKey") : t("actions.storeAiKey")}
+                                            </button>
+                                        </div>
+                                        <div className="settings-window__credential-footer">
+                                            <span className="settings-window__section-note">
+                                                {aiCredentialManagedByEnvironment
+                                                    ? t("notes.aiKeyEnvironmentManaged")
+                                                    : aiKeyOptional
+                                                    ? t("notes.aiKeyOptional")
+                                                    : aiHasStoredCredential
+                                                        ? t("notes.aiKeyConfigured")
+                                                        : t("notes.aiKeyMissing")}
+                                            </span>
+                                            {aiHasStoredCredential && !aiCredentialManagedByEnvironment && (
+                                                <button
+                                                    type="button"
+                                                    className="settings-window__btn settings-window__btn--secondary"
+                                                    onClick={handleClearAiApiKey}
+                                                >
+                                                    {t("actions.clearAiKey")}
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {aiProvider !== "Bedrock" && (
+                                <div className="settings-window__row">
+                                    <label className="settings-window__label" htmlFor="settings-ai-endpoint">{t("labels.aiEndpoint")}</label>
+                                    <input
+                                        id="settings-ai-endpoint"
+                                        className="settings-window__input"
+                                        type="url"
+                                        value={aiEndpoint}
+                                        onChange={event => setAiEndpoint(event.target.value)}
+                                        readOnly={aiFieldManaged("endpoint")}
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                    />
+                                    <div className="settings-window__section-note">{t("notes.aiEndpoint")}</div>
+                                    {aiEndpoint.trim().startsWith("http://") && (
+                                        <div className="settings-window__warning">{t("notes.aiInsecureEndpoint")}</div>
+                                    )}
+                                </div>
+                                )}
+
+                                <div className="settings-window__row">
+                                    <label className="settings-window__label" htmlFor="settings-ai-model">{t("labels.aiModel")}</label>
+                                    <input
+                                        id="settings-ai-model"
+                                        className="settings-window__input"
+                                        type="text"
+                                        value={aiModel}
+                                        onChange={event => setAiModel(event.target.value)}
+                                        readOnly={aiFieldManaged("model")}
+                                        placeholder={t("placeholders.aiModel")}
+                                        spellCheck={false}
+                                        autoCapitalize="off"
+                                        autoCorrect="off"
+                                    />
+                                    <div className="settings-window__section-note">{t("notes.aiModel")}</div>
+                                </div>
+
+                                {aiProvider !== "AzureOpenAi" && (
+                                    <div className="settings-window__row">
+                                        <label className="settings-window__label" htmlFor="settings-ai-model-search">{t("labels.aiModelDiscovery")}</label>
+                                        {aiProvider === "OpenRouter" && (
+                                            <details className="settings-window__model-filter-panel">
+                                                <summary>
+                                                    {t("labels.aiModelFilters")}
+                                                    {activeAiModelFilterCount > 0 && (
+                                                        <span>{t("notes.aiModelFiltersActive", {count: activeAiModelFilterCount})}</span>
+                                                    )}
+                                                </summary>
+                                                <div className="settings-window__inline-controls">
+                                                    <button type="button" className="settings-window__filter-toggle" aria-pressed={aiProgrammingModelsOnly} onClick={() => setAiProgrammingModelsOnly(current => !current)}>{t("labels.aiProgrammingModels")}</button>
+                                                    <button type="button" className="settings-window__filter-toggle" aria-pressed={aiZdrModelsOnly} onClick={() => setAiZdrModelsOnly(current => !current)}>{t("labels.aiZdrModels")}</button>
+                                                </div>
+                                                <label className="settings-window__model-sort">
+                                                    <span>{t("labels.aiModelSort")}</span>
+                                                    <select className="settings-window__select" value={aiModelSort} onChange={event => setAiModelSort(event.target.value as AiModelSort)}>
+                                                        <option value="Popularity">{t("options.aiModelSortPopularity")}</option>
+                                                        <option value="PromptPrice">{t("options.aiModelSortPromptPrice")}</option>
+                                                        <option value="CompletionPrice">{t("options.aiModelSortCompletionPrice")}</option>
+                                                        <option value="Context">{t("options.aiModelSortContext")}</option>
+                                                        <option value="Latency">{t("options.aiModelSortLatency")}</option>
+                                                        <option value="Throughput">{t("options.aiModelSortThroughput")}</option>
+                                                        <option value="CodingScore">{t("options.aiModelSortCoding")}</option>
+                                                        <option value="Newest">{t("options.aiModelSortNewest")}</option>
+                                                    </select>
+                                                </label>
+                                                <div className="settings-window__model-filters">
+                                                    <input aria-label={t("labels.aiModelAuthor")} placeholder={t("placeholders.aiModelAuthor")} value={aiModelAuthor} onChange={event => setAiModelAuthor(event.target.value)}/>
+                                                    <input aria-label={t("labels.aiModelHostingProvider")} placeholder={t("placeholders.aiModelHostingProvider")} value={aiModelHostingProvider} onChange={event => setAiModelHostingProvider(event.target.value)}/>
+                                                    <input aria-label={t("labels.aiModelMinimumContext")} placeholder={t("placeholders.aiModelMinimumContext")} inputMode="numeric" value={aiModelMinimumContext} onChange={event => setAiModelMinimumContext(event.target.value)}/>
+                                                    <input aria-label={t("labels.aiModelMaximumPromptPrice")} placeholder={t("placeholders.aiModelMaximumPromptPrice")} inputMode="decimal" value={aiModelMaximumPromptPrice} onChange={event => setAiModelMaximumPromptPrice(event.target.value)}/>
+                                                    <input aria-label={t("labels.aiModelMaximumCompletionPrice")} placeholder={t("placeholders.aiModelMaximumCompletionPrice")} inputMode="decimal" value={aiModelMaximumCompletionPrice} onChange={event => setAiModelMaximumCompletionPrice(event.target.value)}/>
+                                                </div>
+                                            </details>
+                                        )}
+                                        <div className="settings-window__model-search-row">
+                                            <input
+                                                id="settings-ai-model-search"
+                                                className="settings-window__input"
+                                                value={aiModelSearch}
+                                                onChange={event => setAiModelSearch(event.target.value)}
+                                                placeholder={t("placeholders.aiModelSearch")}
+                                            />
+                                            <button type="button" className="settings-window__btn settings-window__btn--secondary" onClick={() => handleDiscoverAiModels(1)} disabled={discoveringAiModels}>
+                                                {discoveringAiModels ? t("actions.discoveringAiModels") : t("actions.discoverAiModels")}
+                                            </button>
+                                        </div>
+                                        {aiModels.length > 0 && (
+                                            <div className="settings-window__model-results" role="listbox" aria-label={t("labels.aiModelsAvailable")}>
+                                                {aiModels.map(model => (
+                                                    <button type="button" key={model.id} role="option" aria-selected={aiModel === model.id} onClick={() => handleSelectAiModel(model)}>
+                                                        <strong>{model.name}</strong>
+                                                        <code>{model.id}</code>
+                                                        <span>
+                                                            {model.contextLength ? t("notes.aiModelContext", {count: model.contextLength.toLocaleString()}) : ""}
+                                                            {model.reasoning ? ` · ${t("notes.aiModelReasoning")}` : ""}
+                                                            {model.structuredOutput ? ` · ${t("notes.aiModelStructuredOutput")}` : ""}
+                                                        </span>
+                                                        {(model.promptPrice || model.completionPrice) && (
+                                                            <span>{t("notes.aiModelPrices", {
+                                                                prompt: formatAiPricePerMillionTokens(model.promptPrice, t),
+                                                                completion: formatAiPricePerMillionTokens(model.completionPrice, t),
+                                                            })}</span>
+                                                        )}
+                                                        {(model.availableProviders.length > 0 || model.quantisations.length > 0) && (
+                                                            <span>{t("notes.aiModelEndpoints", {
+                                                                providers: model.availableProviders.join(", ") || t("notes.aiModelUnknown"),
+                                                                quantisations: model.quantisations.join(", ") || t("notes.aiModelUnknown"),
+                                                            })}</span>
+                                                        )}
+                                                        {(model.latency != null || model.throughput != null || model.uptime != null) && (
+                                                            <span>{t("notes.aiModelPerformance", {
+                                                                latency: formatAiMetric(model.latency, 2) ?? t("notes.aiModelUnknown"),
+                                                                throughput: formatAiMetric(model.throughput, 1) ?? t("notes.aiModelUnknown"),
+                                                                uptime: formatAiUptime(model.uptime) ?? t("notes.aiModelUnknown"),
+                                                            })}</span>
+                                                        )}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                        {(aiModelPage > 1 || aiModelsHaveMore) && (
+                                            <div className="settings-window__inline-controls">
+                                                <button type="button" className="settings-window__btn settings-window__btn--secondary" disabled={discoveringAiModels || aiModelPage <= 1} onClick={() => handleDiscoverAiModels(aiModelPage - 1)}>{t("actions.previousAiModels")}</button>
+                                                <span>{t("notes.aiModelPage", {count: aiModelPage})}</span>
+                                                <button type="button" className="settings-window__btn settings-window__btn--secondary" disabled={discoveringAiModels || !aiModelsHaveMore} onClick={() => handleDiscoverAiModels(aiModelPage + 1)}>{t("actions.nextAiModels")}</button>
+                                            </div>
+                                        )}
+                                        <div className="settings-window__section-note">{t("notes.aiManualModelFallback")}</div>
+                                    </div>
+                                )}
+
+                            </>
+                        )}
+                    </section>
+
+                    {aiProvider === "OpenRouter" && (
+                        <section className="settings-window__section">
+                            <div className="settings-window__section-title">{t("labels.aiGroupOpenRouter")}</div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-privacy">{t("labels.aiOpenRouterPrivacy")}</label>
+                                <select id="settings-ai-openrouter-privacy" className="settings-window__select" value={aiOpenRouter.privacy} onChange={event => setAiOpenRouter(current => ({...current, privacy: event.target.value as OpenRouterSettings["privacy"]}))}>
+                                    <option value="NoDataCollection">{t("options.aiOpenRouterNoCollection")}</option>
+                                    <option value="StrictZdr">{t("options.aiOpenRouterStrictZdr")}</option>
+                                    <option value="AccountDefault">{t("options.aiOpenRouterAccountDefault")}</option>
+                                </select>
+                            </div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__switch-row">
+                                    <span className="settings-window__switch">
+                                        <input type="checkbox" checked={aiOpenRouter.allowFallbacks} onChange={event => setAiOpenRouter(current => ({...current, allowFallbacks: event.target.checked}))}/>
+                                        <span className="settings-window__switch-track"/>
+                                    </span>
+                                    <span className="settings-window__switch-label">{t("labels.aiOpenRouterFallbacks")}</span>
+                                </label>
+                                <label className="settings-window__switch-row">
+                                    <span className="settings-window__switch">
+                                        <input type="checkbox" checked={aiOpenRouter.requireParameters} onChange={event => setAiOpenRouter(current => ({...current, requireParameters: event.target.checked}))}/>
+                                        <span className="settings-window__switch-track"/>
+                                    </span>
+                                    <span className="settings-window__switch-label">{t("labels.aiOpenRouterRequireParameters")}</span>
+                                </label>
+                                <label className="settings-window__switch-row">
+                                    <span className="settings-window__switch">
+                                        <input type="checkbox" checked={aiOpenRouter.diagnostics} onChange={event => setAiOpenRouter(current => ({...current, diagnostics: event.target.checked}))}/>
+                                        <span className="settings-window__switch-track"/>
+                                    </span>
+                                    <span className="settings-window__switch-label">{t("labels.aiOpenRouterDiagnostics")}</span>
+                                </label>
+                            </div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-routing">{t("labels.aiOpenRouterRouting")}</label>
+                                <select id="settings-ai-openrouter-routing" className="settings-window__select" value={aiOpenRouter.routingStrategy} onChange={event => setAiOpenRouter(current => ({...current, routingStrategy: event.target.value as OpenRouterSettings["routingStrategy"]}))}>
+                                    <option value="Default">{t("options.aiOpenRouterRoutingDefault")}</option>
+                                    <option value="Price">{t("options.aiOpenRouterRoutingPrice")}</option>
+                                    <option value="Latency">{t("options.aiOpenRouterRoutingLatency")}</option>
+                                    <option value="Throughput">{t("options.aiOpenRouterRoutingThroughput")}</option>
+                                </select>
+                            </div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-prompt-price">{t("labels.aiOpenRouterMaxPromptPrice")}</label>
+                                <input id="settings-ai-openrouter-prompt-price" className="settings-window__input" inputMode="decimal" value={aiOpenRouter.maxPromptPrice} onChange={event => setAiOpenRouter(current => ({...current, maxPromptPrice: event.target.value}))}/>
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-completion-price">{t("labels.aiOpenRouterMaxCompletionPrice")}</label>
+                                <input id="settings-ai-openrouter-completion-price" className="settings-window__input" inputMode="decimal" value={aiOpenRouter.maxCompletionPrice} onChange={event => setAiOpenRouter(current => ({...current, maxCompletionPrice: event.target.value}))}/>
+                                <div className="settings-window__section-note">{t("notes.aiOpenRouterPriceUnits")}</div>
+                            </div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-preferred">{t("labels.aiOpenRouterPreferredProviders")}</label>
+                                <input id="settings-ai-openrouter-preferred" className="settings-window__input" value={aiOpenRouter.preferredProviders.join(", ")} onChange={event => setAiOpenRouter(current => ({...current, preferredProviders: event.target.value.split(",").map(value => value.trim()).filter(Boolean)}))}/>
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-allowed">{t("labels.aiOpenRouterAllowedProviders")}</label>
+                                <input id="settings-ai-openrouter-allowed" className="settings-window__input" value={aiOpenRouter.allowedProviders.join(", ")} onChange={event => setAiOpenRouter(current => ({...current, allowedProviders: event.target.value.split(",").map(value => value.trim()).filter(Boolean)}))}/>
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-ignored">{t("labels.aiOpenRouterIgnoredProviders")}</label>
+                                <input id="settings-ai-openrouter-ignored" className="settings-window__input" value={aiOpenRouter.ignoredProviders.join(", ")} onChange={event => setAiOpenRouter(current => ({...current, ignoredProviders: event.target.value.split(",").map(value => value.trim()).filter(Boolean)}))}/>
+                            </div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-latency">{t("labels.aiOpenRouterLatency")}</label>
+                                <input id="settings-ai-openrouter-latency" className="settings-window__input" inputMode="decimal" value={aiOpenRouter.preferredMaxLatency} onChange={event => setAiOpenRouter(current => ({...current, preferredMaxLatency: event.target.value}))}/>
+                                <label className="settings-window__label" htmlFor="settings-ai-openrouter-throughput">{t("labels.aiOpenRouterThroughput")}</label>
+                                <input id="settings-ai-openrouter-throughput" className="settings-window__input" inputMode="decimal" value={aiOpenRouter.preferredMinThroughput} onChange={event => setAiOpenRouter(current => ({...current, preferredMinThroughput: event.target.value}))}/>
+                            </div>
+                        </section>
+                    )}
+
+                    {aiProvider === "AzureOpenAi" && (
+                        <section className="settings-window__section">
+                            <div className="settings-window__section-title">{t("labels.aiGroupAzure")}</div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-azure-deployment">{t("labels.aiAzureDeployment")}</label>
+                                <input id="settings-ai-azure-deployment" className="settings-window__input" value={aiAzureDeployment} onChange={event => setAiAzureDeployment(event.target.value)} readOnly={aiFieldManaged("azureDeployment")}/>
+                                <label className="settings-window__label" htmlFor="settings-ai-azure-version">{t("labels.aiAzureApiVersion")}</label>
+                                <input id="settings-ai-azure-version" className="settings-window__input" value={aiAzureApiVersion} onChange={event => setAiAzureApiVersion(event.target.value)} readOnly={aiFieldManaged("azureApiVersion")}/>
+                            </div>
+                        </section>
+                    )}
+
+                    {aiProvider === "OpenAiCompatible" && (
+                        <section className="settings-window__section">
+                            <div className="settings-window__section-title">{t("labels.aiGroupCompatible")}</div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-api-style">{t("labels.aiApiStyle")}</label>
+                                <select id="settings-ai-api-style" className="settings-window__select" value={aiApiStyle} onChange={event => setAiApiStyle(event.target.value as AiApiStyle)}>
+                                    <option value="ChatCompletions">{t("options.aiApiStyleChat")}</option>
+                                    <option value="Responses">{t("options.aiApiStyleResponses")}</option>
+                                </select>
+                                <label className="settings-window__label" htmlFor="settings-ai-request-path">{t("labels.aiRequestPath")}</label>
+                                <input id="settings-ai-request-path" className="settings-window__input" value={aiRequestPath} onChange={event => setAiRequestPath(event.target.value)} placeholder="/chat/completions"/>
+                                <label className="settings-window__label" htmlFor="settings-ai-models-path">{t("labels.aiModelsPath")}</label>
+                                <input id="settings-ai-models-path" className="settings-window__input" value={aiModelsPath} onChange={event => setAiModelsPath(event.target.value)} placeholder="/models"/>
+                                <label className="settings-window__label" htmlFor="settings-ai-auth-mode">{t("labels.aiAuthMode")}</label>
+                                <select id="settings-ai-auth-mode" className="settings-window__select" value={aiAuthMode} onChange={event => setAiAuthMode(event.target.value as AiAuthMode)}>
+                                    <option value="Bearer">{t("options.aiAuthBearer")}</option>
+                                    <option value="Header">{t("options.aiAuthHeader")}</option>
+                                    <option value="None">{t("options.aiAuthNone")}</option>
+                                </select>
+                                {aiAuthMode === "Header" && (
+                                    <>
+                                        <label className="settings-window__label" htmlFor="settings-ai-auth-header">{t("labels.aiAuthHeader")}</label>
+                                        <input id="settings-ai-auth-header" className="settings-window__input" value={aiAuthHeader} onChange={event => setAiAuthHeader(event.target.value)}/>
+                                    </>
+                                )}
+                                <label className="settings-window__label" htmlFor="settings-ai-max-tokens-field">{t("labels.aiMaxTokensField")}</label>
+                                <input id="settings-ai-max-tokens-field" className="settings-window__input" value={aiMaxTokensField} onChange={event => setAiMaxTokensField(event.target.value)} placeholder="max_tokens"/>
+                            </div>
+                        </section>
+                    )}
+
+                    {aiProvider !== "Disabled" && (
+                        <section className="settings-window__section">
+                            <div className="settings-window__section-title">{t("labels.aiGroupAdvanced")}</div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-reasoning">{t("labels.aiReasoning")}</label>
+                                <select
+                                    id="settings-ai-reasoning"
+                                    className="settings-window__select"
+                                    value={aiReasoningPreference}
+                                    onChange={event => setAiReasoningPreference(event.target.value as AiReasoningPreference)}
+                                >
+                                    <option value="Automatic">{t("options.aiReasoningAutomatic")}</option>
+                                    <option value="ProviderDefault">{t("options.aiReasoningProviderDefault")}</option>
+                                    <option value="Low" disabled={aiReasoningUnavailable("Low")}>{t("options.aiReasoningLow")}</option>
+                                    <option value="Medium" disabled={aiReasoningUnavailable("Medium")}>{t("options.aiReasoningMedium")}</option>
+                                    <option value="High" disabled={aiReasoningUnavailable("High")}>{t("options.aiReasoningHigh")}</option>
+                                </select>
+                                <div className="settings-window__section-note">{t("notes.aiReasoning")}</div>
+                                {currentAiCapability.status === "unsupported" && (
+                                    <div className="settings-window__warning">{t("notes.aiReasoningUnsupported")}</div>
+                                )}
+                                {currentAiCapability.status === "accepted" && (
+                                    <div className="settings-window__section-note">{t("notes.aiReasoningAccepted")}</div>
+                                )}
+                                {currentAiCapability.status === "supported" && (
+                                    <div className="settings-window__section-note">
+                                        {t("notes.aiReasoningSupported", {
+                                            levels: currentAiCapability.levels
+                                                .map(level => t(`options.aiReasoning${level}`))
+                                                .join(", "),
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label">{t("labels.aiConnection")}</label>
+                                <button
+                                    type="button"
+                                    className="settings-window__btn settings-window__btn--secondary settings-window__btn--full-width"
+                                    onClick={handleTestAiConnection}
+                                    disabled={testingAi || !aiEndpoint.trim() || !aiModel.trim() || (!aiKeyOptional && !aiCredentialValue && !aiHasStoredCredential)}
+                                >
+                                    {testingAi ? t("actions.testingAi") : t("actions.testAi")}
+                                </button>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-commit-prompt">
+                                    {t("labels.aiCommitMessagePrompt")}
+                                </label>
+                                <textarea
+                                    id="settings-ai-commit-prompt"
+                                    className="settings-window__input settings-window__textarea"
+                                    rows={5}
+                                    value={aiCommitMessagePrompt}
+                                    onChange={event => setAiCommitMessagePrompt(event.target.value)}
+                                    disabled={aiFieldManaged("commitMessagePrompt")}
+                                />
+                                <div className="settings-window__section-note">{t("notes.aiCommitMessagePrompt")}</div>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-conflict-prompt">
+                                    {t("labels.aiConflictResolutionPrompt")}
+                                </label>
+                                <textarea
+                                    id="settings-ai-conflict-prompt"
+                                    className="settings-window__input settings-window__textarea"
+                                    rows={5}
+                                    value={aiConflictResolutionPrompt}
+                                    onChange={event => setAiConflictResolutionPrompt(event.target.value)}
+                                    disabled={aiFieldManaged("conflictResolutionPrompt")}
+                                />
+                                <div className="settings-window__section-note">{t("notes.aiConflictResolutionPrompt")}</div>
+                            </div>
+                        </section>
+                    )}
+
+                    {aiProvider !== "Disabled" && (
+                        <section className="settings-window__section">
+                            <div className="settings-window__section-title">{t("labels.aiGroupContextLimits")}</div>
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-commit-context-limit">
+                                    {t("labels.aiCommitContextLimit")}
+                                </label>
+                                <input
+                                    id="settings-ai-commit-context-limit"
+                                    className="settings-window__input"
+                                    type="number"
+                                    min={MIN_AI_CONTEXT_LIMIT_KIB}
+                                    max={MAX_AI_CONTEXT_LIMIT_KIB}
+                                    step={8}
+                                    value={aiCommitContextLimitKib}
+                                    disabled={aiFieldManaged("commitContextLimitKib")}
+                                    onChange={event => setAiCommitContextLimitKib(event.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => setAiCommitContextLimitKib(String(normaliseAiContextLimit(
+                                        aiCommitContextLimitKib,
+                                        DEFAULT_AI_COMMIT_CONTEXT_LIMIT_KIB,
+                                    )))}
+                                />
+                                <div className="settings-window__section-note">
+                                    {t("notes.aiContextLimit")} {t("notes.aiCommitContextLimit")}
+                                </div>
+                                {Number(aiCommitContextLimitKib) > AI_CONTEXT_LIMIT_WARNING_KIB && (
+                                    <div className="settings-window__warning">{t("notes.aiContextLimitWarning")}</div>
+                                )}
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-conflict-context-limit">
+                                    {t("labels.aiConflictContextLimit")}
+                                </label>
+                                <input
+                                    id="settings-ai-conflict-context-limit"
+                                    className="settings-window__input"
+                                    type="number"
+                                    min={MIN_AI_CONTEXT_LIMIT_KIB}
+                                    max={MAX_AI_CONTEXT_LIMIT_KIB}
+                                    step={8}
+                                    value={aiConflictContextLimitKib}
+                                    disabled={aiFieldManaged("conflictContextLimitKib")}
+                                    onChange={event => setAiConflictContextLimitKib(event.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => setAiConflictContextLimitKib(String(normaliseAiContextLimit(
+                                        aiConflictContextLimitKib,
+                                        DEFAULT_AI_CONFLICT_CONTEXT_LIMIT_KIB,
+                                    )))}
+                                />
+                                <div className="settings-window__section-note">{t("notes.aiContextLimit")}</div>
+                                {Number(aiConflictContextLimitKib) > AI_CONTEXT_LIMIT_WARNING_KIB && (
+                                    <div className="settings-window__warning">{t("notes.aiContextLimitWarning")}</div>
+                                )}
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-commit-max-tokens">
+                                    {t("labels.aiCommitMessageMaxTokens")}
+                                </label>
+                                <input
+                                    id="settings-ai-commit-max-tokens"
+                                    className="settings-window__input"
+                                    type="number"
+                                    min={MIN_AI_OUTPUT_TOKENS}
+                                    max={MAX_AI_OUTPUT_TOKENS}
+                                    step={1}
+                                    value={aiCommitMessageMaxTokens}
+                                    disabled={aiFieldManaged("commitMessageMaxTokens")}
+                                    onChange={event => setAiCommitMessageMaxTokens(event.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => setAiCommitMessageMaxTokens(String(normaliseAiOutputTokens(
+                                        aiCommitMessageMaxTokens,
+                                        DEFAULT_AI_COMMIT_MESSAGE_MAX_TOKENS,
+                                    )))}
+                                />
+                                <div className="settings-window__section-note">{t("notes.aiOutputTokens")}</div>
+                            </div>
+
+                            <div className="settings-window__row">
+                                <label className="settings-window__label" htmlFor="settings-ai-conflict-max-tokens">
+                                    {t("labels.aiConflictResolutionMaxTokens")}
+                                </label>
+                                <input
+                                    id="settings-ai-conflict-max-tokens"
+                                    className="settings-window__input"
+                                    type="number"
+                                    min={MIN_AI_OUTPUT_TOKENS}
+                                    max={MAX_AI_OUTPUT_TOKENS}
+                                    step={1}
+                                    value={aiConflictResolutionMaxTokens}
+                                    disabled={aiFieldManaged("conflictResolutionMaxTokens")}
+                                    onChange={event => setAiConflictResolutionMaxTokens(event.target.value.replace(/\D/g, ""))}
+                                    onBlur={() => setAiConflictResolutionMaxTokens(String(normaliseAiOutputTokens(
+                                        aiConflictResolutionMaxTokens,
+                                        DEFAULT_AI_CONFLICT_RESOLUTION_MAX_TOKENS,
+                                    )))}
+                                />
+                                <div className="settings-window__section-note">{t("notes.aiOutputTokens")}</div>
+                            </div>
+                        </section>
+                    )}
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.aiGroupPrivacy")}</div>
+                        <div className="settings-window__note">{t("notes.aiPrivacy")}</div>
+                        <label className="settings-window__switch-row">
+                            <span className="settings-window__switch">
+                                <input id="settings-ai-include-history" type="checkbox" checked={aiIncludeCommitHistory} onChange={event => setAiIncludeCommitHistory(event.target.checked)} disabled={aiFieldManaged("includeCommitHistory")}/>
+                                <span className="settings-window__switch-track"/>
+                            </span>
+                            <span className="settings-window__switch-label">{t("labels.aiIncludeCommitHistory")}</span>
+                        </label>
+                        <div className="settings-window__row">
+                            <label className="settings-window__label" htmlFor="settings-ai-global-exclusions">{t("labels.aiGlobalExclusions")}</label>
+                            <textarea id="settings-ai-global-exclusions" className="settings-window__input settings-window__textarea" rows={4} value={aiGlobalExclusions} onChange={event => setAiGlobalExclusions(event.target.value)} placeholder={t("placeholders.aiGlobalExclusions")}/>
+                            <div className="settings-window__section-note">{t("notes.aiGlobalExclusions")}</div>
+                        </div>
+                    </section>
+
+                    <section className="settings-window__section">
+                        <div className="settings-window__section-title">{t("labels.aiGroupUsage")}</div>
+                        {aiUsageHistory.length === 0 ? (
+                            <div className="settings-window__note">{t("notes.aiUsageEmpty")}</div>
+                        ) : (
+                            <div className="settings-window__model-results">
+                                {aiUsageHistory.slice().reverse().map((record, index) => (
+                                    <div className="settings-window__usage-record" key={`${record.timestamp}-${record.requestId ?? index}`}>
+                                        <strong>{record.task} · {record.provider} · {record.model}</strong>
+                                        <span>{new Date(record.timestamp * 1000).toLocaleString()} · {record.durationMs} ms · {record.status}</span>
+                                        <span>{t("notes.aiUsageTokens", {
+                                            input: record.inputTokens ?? 0,
+                                            output: record.outputTokens ?? 0,
+                                            cost: record.cost == null ? t("notes.aiUsageCostUnavailable") : `$${record.cost.toFixed(6)}`,
+                                        })}</span>
+                                        {(record.routedProvider || record.routedModel || record.requestId) && (
+                                            <span>{t("notes.aiUsageRoute", {
+                                                provider: record.routedProvider ?? record.provider,
+                                                model: record.routedModel ?? record.model,
+                                                requestId: record.requestId ?? t("notes.aiModelUnknown"),
+                                            })}</span>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <div className="settings-window__inline-controls">
+                            <button type="button" className="settings-window__btn settings-window__btn--secondary" onClick={handleCopyAiDiagnostics} disabled={!aiConfiguration}>
+                                {t("actions.copyAiDiagnostics")}
+                            </button>
+                            <button type="button" className="settings-window__btn settings-window__btn--secondary" onClick={handleClearAiUsageHistory} disabled={aiUsageHistory.length === 0}>
+                                {t("actions.clearAiUsageHistory")}
+                            </button>
+                        </div>
                     </section>
                 </div>
                 )}
