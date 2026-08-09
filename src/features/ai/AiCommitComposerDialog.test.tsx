@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import {fireEvent, render, screen} from "@testing-library/react";
+import {fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
 import "../../i18n";
 import {AiCommitComposerDialog} from "./AiCommitComposerDialog";
@@ -189,7 +189,9 @@ describe("AiCommitComposerDialog", () => {
             onBusyChange={vi.fn()}
         />);
 
-        expect(await screen.findByLabelText("Style")).toHaveValue("ConventionalCommits");
+        await waitFor(() => {
+            expect(screen.getByLabelText("Style")).toHaveValue("ConventionalCommits");
+        });
         expect(screen.getByLabelText("Type")).toHaveValue("docs");
         expect(screen.getByLabelText("Scope")).toHaveValue("ai");
         expect(screen.getByLabelText("Language")).toHaveValue("British English");
