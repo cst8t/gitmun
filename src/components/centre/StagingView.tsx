@@ -166,7 +166,7 @@ function visibleTreeRows(
 }
 
 function shortHash(hash: string | null): string {
-  return hash ? hash.slice(0, 8) : "-";
+  return hash ? hash.slice(0, 7) : "-";
 }
 
 function OperationInlineFeedback({

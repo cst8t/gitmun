@@ -2054,7 +2054,7 @@ fn writing_context(
     let commits = if include_commit_history {
         String::from_utf8(git_output(
             repo_path,
-            &["log", "--format=%h %s", &commit_range],
+            &["log", "--abbrev=7", "--format=%h %s", &commit_range],
             MAX_GIT_METADATA_OUTPUT_BYTES,
         )?)
         .map_err(|_| AiError::new("gitFailed"))?

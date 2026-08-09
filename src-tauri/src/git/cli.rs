@@ -2919,6 +2919,7 @@ impl GitOperationHandler for CliGitHandler {
 
         let mut args = vec![
             "log",
+            "--abbrev=7",
             "-n",
             limit.as_str(),
             skip.as_str(),
@@ -3671,8 +3672,10 @@ impl GitOperationHandler for CliGitHandler {
 
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-        let output = match Self::run_git(&["stash", "list", "--format=%gd|%h|%s"], Some(&repo_path))
-        {
+        let output = match Self::run_git(
+            &["stash", "list", "--abbrev=7", "--format=%gd|%h|%s"],
+            Some(&repo_path),
+        ) {
             Ok(o) => o,
             Err(GitError::CommandFailed { stderr, .. }) if stderr.is_empty() => {
                 return Ok(Vec::new());
@@ -5649,7 +5652,7 @@ impl CliGitHandler {
         }
 
         // Fallback: resolve MERGE_HEAD to a short hash
-        Self::run_git(&["rev-parse", "--short", "MERGE_HEAD"], Some(repo_path))
+        Self::run_git(&["rev-parse", "--short=7", "MERGE_HEAD"], Some(repo_path))
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
@@ -5673,7 +5676,7 @@ impl CliGitHandler {
                     .filter(|value| !value.is_empty())
             })?;
 
-        Self::run_git(&["rev-parse", "--short", onto.as_str()], Some(repo_path))
+        Self::run_git(&["rev-parse", "--short=7", onto.as_str()], Some(repo_path))
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -5690,7 +5693,7 @@ impl CliGitHandler {
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())?;
 
-        Self::run_git(&["rev-parse", "--short", head.as_str()], Some(repo_path))
+        Self::run_git(&["rev-parse", "--short=7", head.as_str()], Some(repo_path))
             .ok()
             .map(|value| value.trim().to_string())
             .filter(|value| !value.is_empty())
@@ -5707,7 +5710,7 @@ impl CliGitHandler {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())?;
 
-        Self::run_git(&["rev-parse", "--short", head.as_str()], Some(repo_path))
+        Self::run_git(&["rev-parse", "--short=7", head.as_str()], Some(repo_path))
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
@@ -5722,7 +5725,7 @@ impl CliGitHandler {
         }
 
         let detached_head =
-            Self::run_git(&["rev-parse", "--short", "HEAD"], Some(repo_path)).ok()?;
+            Self::run_git(&["rev-parse", "--short=7", "HEAD"], Some(repo_path)).ok()?;
         let trimmed_detached_head = detached_head.trim();
         if trimmed_detached_head.is_empty() {
             None

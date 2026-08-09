@@ -1666,7 +1666,7 @@ export function ProjectView({
     }
 
     const confirmed = await ask(
-      t("ask.cherryPickCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      t("ask.cherryPickCommit.message", { commit: commitHash.slice(0, 7), branch: currentBranch ?? t("labels.currentBranch") }),
       { title: t("ask.cherryPickCommit.title"), kind: "warning", okLabel: t("actions.cherryPick"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
@@ -2203,7 +2203,7 @@ export function ProjectView({
     }
 
     const confirmed = await ask(
-      t("ask.revertCommit.message", { commit: commitHash.slice(0, 12), branch: currentBranch ?? t("labels.currentBranch") }),
+      t("ask.revertCommit.message", { commit: commitHash.slice(0, 7), branch: currentBranch ?? t("labels.currentBranch") }),
       { title: t("ask.revertCommit.title"), kind: "warning", okLabel: t("actions.revert"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;
@@ -2279,7 +2279,7 @@ export function ProjectView({
       ? t("ask.resetToCommit.softDescription")
       : t("ask.resetToCommit.mixedDescription");
     const confirmed = await ask(
-      t("ask.resetToCommit.message", { mode: modeLabel, commit: commitHash.slice(0, 12), description: modeDesc }),
+      t("ask.resetToCommit.message", { mode: modeLabel, commit: commitHash.slice(0, 7), description: modeDesc }),
       { title: t("ask.resetToCommit.title", { mode: modeLabel }), kind: "warning", okLabel: t("actions.reset"), cancelLabel: t("actions.cancel") },
     );
     if (!confirmed) return;

@@ -190,7 +190,7 @@ type DiffPanelProps = {
 };
 
 function compactHash(hash: string | null): string {
-  return hash ? hash.slice(0, 12) : "None";
+  return hash ? hash.slice(0, 7) : "None";
 }
 
 export function DiffPanel({
@@ -333,7 +333,7 @@ export function DiffPanel({
         <FileIcon />
         <span className="diff-panel__filename">
           {mode === "log"
-            ? (selectedCommitHash ? t("header.commit", {hash: selectedCommitHash.slice(0, 8)}) : t("header.commitFiles"))
+            ? (selectedCommitHash ? t("header.commit", {hash: selectedCommitHash.slice(0, 7)}) : t("header.commitFiles"))
             : (selectedSubmodule ? t("header.submodule", {path: selectedSubmodule.path}) : (selectedFile ?? t("header.clickFile")))}
         </span>
         {mode === "changes" && hasSelectedFile && currentDiff && (
