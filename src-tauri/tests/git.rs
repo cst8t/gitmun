@@ -1340,6 +1340,27 @@ fn commit_creates_entry_in_log() {
 }
 
 #[test]
+fn commit_does_not_sign_when_gpgsign_is_unset() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--unset", "commit.gpgsign"]);
+    write_file(dir.path(), "unsigned.txt", "data");
+    git(dir.path(), &["add", "unsigned.txt"]);
+
+    handler()
+        .commit_changes(&CommitRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            message: "commit without signing".to_string(),
+            amend: None,
+        })
+        .expect("commit_changes should not sign when commit.gpgsign is unset");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["log", "-1", "--format=%s"]),
+        "commit without signing"
+    );
+}
+
+#[test]
 fn commit_preserves_description_and_trailer_like_lines() {
     let dir = init_repo();
     write_file(dir.path(), "body.txt", "data");

@@ -2494,16 +2494,13 @@ impl GitOperationHandler for CliGitHandler {
             &[1],
         )
         .ok()
-        .map(|value| value.trim().to_ascii_lowercase());
-        let has_signing_key =
-            Self::run_git(&["config", "--get", "user.signingkey"], Some(&repo_path))
-                .map(|value| !value.trim().is_empty())
-                .unwrap_or(false);
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
         let should_sign = match commit_gpgsign.as_deref() {
             Some("false") | Some("0") | Some("no") | Some("off") => false,
             Some("true") | Some("1") | Some("yes") | Some("on") => true,
             Some(_) => true,
-            None => has_signing_key,
+            None => false,
         };
         if should_sign {
             #[cfg(windows)]
