@@ -5,6 +5,7 @@ description = "A cross-platform Git client"
 authors = ["cst8t"]
 license = "GPL-3.0-only"
 edition = "2024"
+rust-version = "1.94.1"
 
 [lib]
 name = "gitmun_lib"

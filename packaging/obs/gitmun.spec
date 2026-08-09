@@ -9,16 +9,30 @@ Source1:        vendor.tar.xz
 Source2:        package-lock.json
 Source3:        ATTRIBUTIONS.html
 Source4:        commit-hash.txt
-BuildRequires:  cargo
+%if 0%{?suse_version}
+BuildRequires:  cargo1.94 >= 1.94.1
+BuildRequires:  rust1.94 >= 1.94.1
+%else
+BuildRequires:  cargo >= 1.94.1
+BuildRequires:  rust >= 1.94.1
+%endif
 BuildRequires:  desktop-file-utils
 BuildRequires:  hicolor-icon-theme
 BuildRequires:  local-npm-registry
+%if 0%{?fedora} >= 44
+BuildRequires:  nodejs22
+BuildRequires:  nodejs22-npm
+%else
 BuildRequires:  nodejs >= 20
+%if 0%{?fedora}
+BuildRequires:  nodejs-npm
+%else
 BuildRequires:  npm
+%endif
+%endif
 BuildRequires:  patchelf
 BuildRequires:  protobuf-c
 BuildRequires:  python3
-BuildRequires:  rust >= 1.85
 BuildRequires:  pkgconfig(ayatana-appindicator3-0.1)
 BuildRequires:  pkgconfig(gtk+-3.0)
 BuildRequires:  pkgconfig(librsvg-2.0)
