@@ -58,6 +58,7 @@ pub trait GitOperationHandler: Send + Sync {
     fn get_branches(&self, request: &RepoRequest) -> GitResult<Vec<BranchInfo>>;
     fn create_branch(&self, request: &CreateBranchRequest) -> GitResult<OperationResult>;
     fn unstage_file(&self, request: &FileRequest) -> GitResult<OperationResult>;
+    fn unstage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult>;
     fn unstage_all(&self, request: &RepoRequest) -> GitResult<OperationResult>;
     fn stage_all(&self, request: &RepoRequest) -> GitResult<OperationResult>;
     fn stage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult>;
@@ -652,6 +653,7 @@ impl GitService {
         fn stage_files(request: StageFilesRequest) -> GitResult<OperationResult>;
         fn create_branch(request: CreateBranchRequest) -> GitResult<OperationResult>;
         fn unstage_file(request: FileRequest) -> GitResult<OperationResult>;
+        fn unstage_files(request: StageFilesRequest) -> GitResult<OperationResult>;
         fn unstage_all(request: RepoRequest) -> GitResult<OperationResult>;
         fn stage_all(request: RepoRequest) -> GitResult<OperationResult>;
         fn stage_hunk(request: HunkStageRequest) -> GitResult<OperationResult>;

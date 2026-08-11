@@ -3347,6 +3347,72 @@ impl GitOperationHandler for CliGitHandler {
         })
     }
 
+    fn unstage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let files: Vec<&str> = request
+            .files
+            .iter()
+            .filter(|file| !file.is_empty())
+            .map(String::as_str)
+            .collect();
+
+        if files.is_empty() {
+            return Err(GitError::InvalidInput(
+                "No files selected for unstaging".to_string(),
+            ));
+        }
+
+        let mut pathspecs = Vec::new();
+        for file in &files {
+            if file.contains('\0') {
+                return Err(GitError::InvalidInput(
+                    "File paths cannot contain NUL characters".to_string(),
+                ));
+            }
+            pathspecs.extend_from_slice(file.as_bytes());
+            pathspecs.push(0);
+        }
+
+        if Self::has_head_commit(&repo_path)? {
+            Self::run_git_with_stdin(
+                &[
+                    "--literal-pathspecs",
+                    "restore",
+                    "--staged",
+                    "--pathspec-from-file=-",
+                    "--pathspec-file-nul",
+                ],
+                &repo_path,
+                &pathspecs,
+            )?;
+        } else {
+            Self::run_git_with_stdin(
+                &[
+                    "--literal-pathspecs",
+                    "rm",
+                    "--cached",
+                    "-f",
+                    "--pathspec-from-file=-",
+                    "--pathspec-file-nul",
+                ],
+                &repo_path,
+                &pathspecs,
+            )?;
+        }
+
+        Ok(OperationResult {
+            message: format!(
+                "Unstaged {} file(s) in {}",
+                files.len(),
+                repo_path.display()
+            ),
+            output: None,
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+        })
+    }
+
     fn stage_all(&self, request: &RepoRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         Self::run_git(&["add", "-A"], Some(&repo_path))?;

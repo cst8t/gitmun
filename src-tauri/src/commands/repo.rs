@@ -2601,6 +2601,19 @@ pub async fn unstage_file(
 }
 
 #[tauri::command]
+pub async fn unstage_files(
+    request: StageFilesRequest,
+    app: tauri::AppHandle,
+) -> Result<OperationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.unstage_files(request)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
 pub async fn unstage_all(
     request: RepoRequest,
     app: tauri::AppHandle,

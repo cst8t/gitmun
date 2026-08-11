@@ -919,9 +919,9 @@ export function ProjectView({
   const handleUnstageFiles = useCallback(async (paths: string[]) => {
     if (!repoPath || paths.length === 0) return;
     await runStagingOperation("unstage", paths.length, async () => {
-      const results = await Promise.all(paths.map(path => api.unstageFile(repoPath, path)));
+      const result = await api.unstageFiles(repoPath, paths);
       showToast(t("toast.unstagedFiles", { count: paths.length, file: getFileName(paths[0]) }), "info");
-      const backendUsed = results[0]?.backendUsed ?? "unknown";
+      const backendUsed = result.backendUsed ?? "unknown";
       appendResultLog("info", t("log.unstagedFiles", { count: paths.length, path: paths[0] }), backendUsed);
       await refreshStatus();
     }).catch(e => {

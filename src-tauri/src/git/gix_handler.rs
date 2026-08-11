@@ -1282,6 +1282,13 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
+    fn unstage_files(&self, request: &StageFilesRequest) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback
+            .unstage_files(request)
+            .map(Self::with_cli_fallback_backend)
+    }
+
     fn unstage_all(&self, request: &RepoRequest) -> GitResult<OperationResult> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback

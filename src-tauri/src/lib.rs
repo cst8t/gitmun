@@ -1650,6 +1650,7 @@ pub fn run() {
             commands::repo::get_commit_message_recovery,
             commands::repo::get_diff,
             commands::repo::unstage_file,
+            commands::repo::unstage_files,
             commands::repo::unstage_all,
             commands::repo::stage_all,
             commands::repo::stage_hunk,

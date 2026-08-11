@@ -982,6 +982,119 @@ fn unstage_file_in_initial_commit_keeps_worktree_file() {
 }
 
 #[test]
+fn unstage_files_preserves_unselected_staged_files() {
+    let dir = init_repo();
+    write_file(dir.path(), "first.txt", "first");
+    write_file(dir.path(), "second.txt", "second");
+    write_file(dir.path(), "retained.txt", "retained");
+    git(dir.path(), &["add", "."]);
+
+    handler()
+        .unstage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: vec!["first.txt".to_string(), "second.txt".to_string()],
+        })
+        .expect("unstage_files");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        "retained.txt"
+    );
+    assert!(dir.path().join("first.txt").exists());
+    assert!(dir.path().join("second.txt").exists());
+}
+
+#[test]
+fn unstage_files_treats_pathspec_metacharacters_as_literal_paths() {
+    let dir = init_repo();
+    write_file(dir.path(), "record[1].txt", "literal");
+    write_file(dir.path(), "record1.txt", "matched by glob");
+    git(dir.path(), &["add", "-A"]);
+
+    handler()
+        .unstage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: vec!["record[1].txt".to_string()],
+        })
+        .expect("unstage_files");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        "record1.txt"
+    );
+    assert!(dir.path().join("record[1].txt").exists());
+}
+
+#[cfg(not(windows))]
+#[test]
+fn unstage_files_preserves_whitespace_in_paths() {
+    let dir = init_repo();
+    write_file(dir.path(), " document.txt ", "whitespace");
+    write_file(dir.path(), "document.txt", "without whitespace");
+    git(dir.path(), &["add", "-A"]);
+
+    handler()
+        .unstage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: vec![" document.txt ".to_string()],
+        })
+        .expect("unstage_files");
+
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--name-only", "-z"])
+        .current_dir(dir.path())
+        .output()
+        .expect("list staged files");
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"document.txt\0");
+}
+
+#[test]
+fn unstage_files_in_initial_commit_keeps_worktree_files() {
+    let dir = init_unborn_repo();
+    write_file(dir.path(), "PLAN.md", "plan");
+    write_file(dir.path(), "notes.txt", "notes");
+    write_file(dir.path(), "retained.txt", "retained");
+    git(dir.path(), &["add", "."]);
+
+    handler()
+        .unstage_files(&StageFilesRequest {
+            repo_path: dir.path().to_str().unwrap().to_string(),
+            files: vec!["PLAN.md".to_string(), "notes.txt".to_string()],
+        })
+        .expect("unstage_files");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        "retained.txt"
+    );
+    assert_eq!(read_file(dir.path(), "PLAN.md"), "plan");
+    assert_eq!(read_file(dir.path(), "notes.txt"), "notes");
+}
+
+#[test]
+fn unstage_files_rejects_empty_paths() {
+    let dir = init_repo();
+    let result = handler().unstage_files(&StageFilesRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        files: vec!["".to_string()],
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
+fn unstage_files_rejects_nul_paths() {
+    let dir = init_repo();
+    let result = handler().unstage_files(&StageFilesRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        files: vec!["file\0name.txt".to_string()],
+    });
+
+    assert!(result.is_err());
+}
+
+#[test]
 fn unstage_all_in_initial_commit_keeps_worktree_files() {
     let dir = init_unborn_repo();
     fs::create_dir_all(dir.path().join("notes")).expect("create notes dir");

@@ -245,6 +245,10 @@ export function unstageFile(repoPath: string, filePath: string): Promise<Operati
     return invoke<OperationResult>("unstage_file", {request: {repoPath, filePath}});
 }
 
+export function unstageFiles(repoPath: string, files: string[]): Promise<OperationResult> {
+    return invoke<OperationResult>("unstage_files", {request: {repoPath, files}});
+}
+
 export function unstageAll(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("unstage_all", {request: {repoPath}});
 }
