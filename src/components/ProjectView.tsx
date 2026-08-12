@@ -478,8 +478,7 @@ export function ProjectView({
   }, [identityScope]);
   const activeIdentity = identityScope === "local" ? localIdentity : globalIdentity;
   const displayName = activeIdentity?.name || (identityScope === "local" ? globalIdentity?.name : null);
-  const initials = (displayName ?? "?")
-    .split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+  const identityName = displayName ?? "?";
   const [identityAvatar, setIdentityAvatar] = useState<string | null>(null);
   const handleCommitGraphVisibilityChange = useCallback((visible: boolean) => {
     setShowCommitGraph(visible);
@@ -2900,7 +2899,7 @@ export function ProjectView({
           repoDisplayName={repoDisplayName}
           currentBranch={currentBranch}
           branches={branches}
-          identityInitials={initials}
+          identityName={identityName}
           identityAvatarUrl={identityAvatar}
           onAboutClick={onAboutClick}
           onSettingsClick={onSettingsClick}

@@ -29,17 +29,7 @@ import {
   commitGraphViewportWidth,
   commitGraphWidth,
 } from "./CommitGraphGutter";
-
-function getInitials(name: string): string {
-  return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-}
-
-function hashColour(name: string): string {
-  let h = 0;
-  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  const colours = ["#6ee7b7", "#93c5fd", "#fca5a5", "#c4b5fd", "#fcd34d", "#f0abfc"];
-  return colours[Math.abs(h) % colours.length];
-}
+import { generatedAvatarColourIndex, generatedAvatarInitials } from "../../utils/generatedAvatar";
 
 function relativeTime(dateStr: string, t: (key: string, options?: Record<string, unknown>) => string): string {
   try {
@@ -435,8 +425,8 @@ const CommitRow = React.memo(function CommitRow({
   onBadgeClick,
 }: CommitRowProps) {
   const { t } = useTranslation("centre");
-  const colour = hashColour(c.author);
-  const initials = getInitials(c.author);
+  const avatarColourIndex = generatedAvatarColourIndex(c.author);
+  const initials = generatedAvatarInitials(c.author);
   const handleClick = useCallback((e: React.MouseEvent) => onSelectCommit(c.hash, index, e), [onSelectCommit, c.hash, index]);
   const stripingClass = striped ? ` log-view__row--striped-${striped.toLowerCase()}` : "";
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
@@ -468,7 +458,7 @@ const CommitRow = React.memo(function CommitRow({
         />
       )}
       {/* Initials are the base layer; the image fades in on top - no layout shift. */}
-      <div className="log-view__avatar" style={{ background: `${colour}18`, color: colour }}>
+      <div className={`log-view__avatar generated-avatar--colour-${avatarColourIndex}`}>
         {initials}
         {avatarUrl && (
           <img

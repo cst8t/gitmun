@@ -61,3 +61,32 @@ textarea::placeholder {
   background: var(--selection-bg);
   color: var(--text-primary);
 }
+.generated-avatar--colour-0 {
+  color: var(--generated-avatar-colour-0);
+  background: var(--generated-avatar-bg-0);
+}
+
+.generated-avatar--colour-1 {
+  color: var(--generated-avatar-colour-1);
+  background: var(--generated-avatar-bg-1);
+}
+
+.generated-avatar--colour-2 {
+  color: var(--generated-avatar-colour-2);
+  background: var(--generated-avatar-bg-2);
+}
+
+.generated-avatar--colour-3 {
+  color: var(--generated-avatar-colour-3);
+  background: var(--generated-avatar-bg-3);
+}
+
+.generated-avatar--colour-4 {
+  color: var(--generated-avatar-colour-4);
+  background: var(--generated-avatar-bg-4);
+}
+
+.generated-avatar--colour-5 {
+  color: var(--generated-avatar-colour-5);
+  background: var(--generated-avatar-bg-5);
+}

@@ -426,6 +426,25 @@ describe("LogView commit selection", () => {
     expect(screen.queryByRole("region", { name: "Scroll commit graph horizontally" })).toBeNull();
   });
 
+  it("assigns stable theme-aware colours to generated avatars", () => {
+    renderLog({
+      commits: [
+        commit(1, { author: "Same Author" }),
+        commit(2, { author: "Same Author" }),
+        commit(3, { author: "Different Author" }),
+      ],
+    });
+
+    const firstAvatar = rowFor("Subject 1").querySelector(".log-view__avatar");
+    const secondAvatar = rowFor("Subject 2").querySelector(".log-view__avatar");
+    const thirdAvatar = rowFor("Subject 3").querySelector(".log-view__avatar");
+
+    expect(firstAvatar).toHaveClass("generated-avatar--colour-1");
+    expect(secondAvatar).toHaveClass("generated-avatar--colour-1");
+    expect(thirdAvatar).toHaveClass("generated-avatar--colour-2");
+    expect(firstAvatar).not.toHaveAttribute("style");
+  });
+
   it("keeps over-limit graph lanes distinct inside a fixed viewport", () => {
     renderLog({ commits: wideCommitGraphHistory() });
 

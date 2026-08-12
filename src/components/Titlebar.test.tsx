@@ -59,7 +59,7 @@ function renderTitlebar(
       repoDisplayName={patchHandlers.repoDisplayName ?? null}
       currentBranch={repoPath ? patchHandlers.currentBranch ?? "feature/demo" : null}
       branches={branches}
-      identityInitials="GM"
+      identityName="Gitmun Maintainer"
       identityAvatarUrl={null}
       recentRepos={[]}
       searchQuery=""
@@ -108,6 +108,12 @@ describe("Titlebar", () => {
       { kind: "terminal", label: "Terminal App", fallbackLabel: "Terminal", iconDataUrl: null },
       { kind: "gitBash", label: "Git Bash", fallbackLabel: "Git Bash", iconDataUrl: null },
     ]);
+  });
+
+  it("uses the shared generated avatar colour for the current identity", () => {
+    renderTitlebar([makeBranch()]);
+
+    expect(screen.getByText("GM")).toHaveClass("generated-avatar--colour-2");
   });
 
   it("shows Publish when the current branch has no upstream", () => {

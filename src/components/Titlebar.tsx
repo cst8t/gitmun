@@ -10,6 +10,7 @@ import type { ResetMode } from "../api/commands";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { BranchInfo, RepoOpenLocation, RepoOpenLocationKind } from "../types";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
+import { generatedAvatarColourIndex, generatedAvatarInitials } from "../utils/generatedAvatar";
 import "./Titlebar.css";
 
 type TitlebarProps = {
@@ -20,7 +21,7 @@ type TitlebarProps = {
   repoDisplayName: string | null;
   currentBranch: string | null;
   branches: BranchInfo[];
-  identityInitials: string;
+  identityName: string;
   identityAvatarUrl: string | null;
   recentRepos: string[];
   searchQuery: string;
@@ -55,7 +56,7 @@ type TitlebarProps = {
 export function Titlebar({
   platform, native, repoPath, currentBranch, branches,
   repoDisplayName,
-  identityInitials, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
+  identityName, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
   onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled,
@@ -77,6 +78,8 @@ export function Titlebar({
   const behind = currentBranchInfo?.behind ?? 0;
   const searchDisabled = !repoPath;
   const searchShortcutLabel = platform === "macos" ? "\u2318F" : "Ctrl+F";
+  const identityInitials = generatedAvatarInitials(identityName);
+  const identityColourIndex = generatedAvatarColourIndex(identityName);
 
   const repoName = repoPath ? displayNameForRepoPath(repoPath, repoDisplayName) : "";
 
@@ -273,7 +276,7 @@ export function Titlebar({
 
       {/* Identity avatar */}
       <div
-        className={`titlebar__avatar ${identityOpen ? "titlebar__avatar--active" : ""}`}
+        className={`titlebar__avatar generated-avatar--colour-${identityColourIndex} ${identityOpen ? "titlebar__avatar--active" : ""}`}
         onClick={onIdentityClick}
       >
         {identityAvatarUrl
