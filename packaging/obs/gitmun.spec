@@ -9,13 +9,8 @@ Source1:        vendor.tar.xz
 Source2:        package-lock.json
 Source3:        ATTRIBUTIONS.html
 Source4:        commit-hash.txt
-%if 0%{?suse_version}
-BuildRequires:  cargo1.94 >= 1.94.1
-BuildRequires:  rust1.94 >= 1.94.1
-%else
 BuildRequires:  cargo >= 1.94.1
 BuildRequires:  rust >= 1.94.1
-%endif
 BuildRequires:  desktop-file-utils
 BuildRequires:  hicolor-icon-theme
 BuildRequires:  local-npm-registry
