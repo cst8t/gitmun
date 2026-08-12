@@ -36,6 +36,14 @@
   --red: #f87171;
   --red-dim: rgba(248, 113, 113, 0.06);
   --yellow: #fbbf24;
+  --commit-graph-lane-0: var(--accent);
+  --commit-graph-lane-1: var(--green);
+  --commit-graph-lane-2: var(--yellow);
+  --commit-graph-lane-3: var(--red);
+  --commit-graph-lane-4: #c4b5fd;
+  --commit-graph-lane-5: #6ee7b7;
+  --commit-graph-lane-6: #f0abfc;
+  --commit-graph-lane-7: #93c5fd;
   --diff-add-bg: rgba(52, 211, 153, 0.1);
   --diff-add-text: var(--green);
   --diff-add-border: rgba(52, 211, 153, 0.25);
@@ -123,6 +131,10 @@
   --red: #c2410c;
   --red-dim: rgba(194, 65, 12, 0.08);
   --yellow: #9a6700;
+  --commit-graph-lane-4: #7c3aed;
+  --commit-graph-lane-5: #047857;
+  --commit-graph-lane-6: #be185d;
+  --commit-graph-lane-7: #0369a1;
   --diff-add-bg: rgba(22, 128, 58, 0.1);
   --diff-add-text: var(--green);
   --diff-add-border: rgba(22, 128, 58, 0.22);

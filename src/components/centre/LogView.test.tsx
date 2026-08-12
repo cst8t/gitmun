@@ -239,6 +239,51 @@ function commit(index: number, overrides: Partial<CommitHistoryItem> = {}): Comm
   };
 }
 
+function graphHash(label: string): string {
+  return label.padEnd(40, "0");
+}
+
+function wideCommitGraphHistory(): CommitHistoryItem[] {
+  const trunkCommits = Array.from({ length: 12 }, (_, index) => {
+    const trunkNumber = index + 1;
+    const trunkLabel = `trunk-${String(trunkNumber).padStart(2, "0")}`;
+    const parentLabel = trunkNumber === 1
+      ? "root"
+      : `trunk-${String(trunkNumber - 1).padStart(2, "0")}`;
+    return commit(1, {
+      hash: graphHash(trunkLabel),
+      shortHash: trunkLabel,
+      message: `Trunk commit ${trunkNumber}`,
+      parentHashes: [graphHash(parentLabel)],
+    });
+  });
+  const mergeCommits: CommitHistoryItem[] = [];
+  let firstParentLabel = "trunk-12";
+  for (let mergeNumber = 1; mergeNumber <= 12; mergeNumber += 1) {
+    const mergeLabel = `merge-${String(mergeNumber).padStart(2, "0")}`;
+    mergeCommits.push(commit(1, {
+      hash: graphHash(mergeLabel),
+      shortHash: mergeLabel,
+      message: `Consecutive merge ${mergeNumber}`,
+      parentHashes: [
+        graphHash(firstParentLabel),
+        graphHash(`trunk-${String(mergeNumber).padStart(2, "0")}`),
+      ],
+    }));
+    firstParentLabel = mergeLabel;
+  }
+
+  return [
+    ...mergeCommits.reverse(),
+    ...trunkCommits.reverse(),
+    commit(1, {
+      hash: graphHash("root"),
+      shortHash: "root",
+      message: "Root commit",
+    }),
+  ];
+}
+
 function rowFor(subject: string): HTMLElement {
   const row = screen.getByText(subject).closest(".log-view__row");
   if (!row) throw new Error(`Missing row for ${subject}`);
@@ -378,6 +423,40 @@ describe("LogView commit selection", () => {
     });
 
     expect(rowFor("Subject 1").querySelector(".log-view__graph-node")).not.toBeNull();
+    expect(screen.queryByRole("region", { name: "Scroll commit graph horizontally" })).toBeNull();
+  });
+
+  it("keeps over-limit graph lanes distinct inside a fixed viewport", () => {
+    renderLog({ commits: wideCommitGraphHistory() });
+
+    const mergeRow = rowFor("Consecutive merge 3");
+    const shiftedLane = mergeRow.querySelector(
+      ".log-view__graph-connectors path[d='M 113 50 C 113 72 125 78 125 100']",
+    );
+    const graphViewport = mergeRow.querySelector<HTMLElement>(".log-view__graph");
+    const graphScroll = screen.getByRole("region", { name: "Scroll commit graph horizontally" });
+    const graphScrollContent = graphScroll.querySelector<HTMLElement>(".log-view__graph-scroll-content");
+
+    expect(shiftedLane).not.toBeNull();
+    expect(graphViewport).toHaveStyle({ width: "120px" });
+    expect(graphScroll).toHaveStyle({ width: "120px" });
+    expect(graphScrollContent).toHaveStyle({ width: "144px" });
+  });
+
+  it("scrolls every graph row through one shared viewport", () => {
+    const onSelectCommit = vi.fn();
+    renderLog({ commits: wideCommitGraphHistory(), onSelectCommit });
+
+    const graphScroll = screen.getByRole("region", { name: "Scroll commit graph horizontally" });
+    fireEvent.scroll(graphScroll, { target: { scrollLeft: 24 } });
+    fireEvent.keyDown(graphScroll, { key: "ArrowDown" });
+
+    const visibleGraphs = Array.from(document.querySelectorAll(".log-view__graph-connectors"));
+    expect(visibleGraphs.length).toBeGreaterThan(1);
+    for (const graph of visibleGraphs) {
+      expect(graph).toHaveAttribute("viewBox", "24 0 120 100");
+    }
+    expect(onSelectCommit).not.toHaveBeenCalled();
   });
 
   it("does not draw a premature bottom vertical for a merge side parent", () => {
@@ -412,7 +491,10 @@ describe("LogView commit selection", () => {
     const stops = Array.from(gradient?.querySelectorAll("stop") ?? []);
 
     expect(gradient).not.toBeNull();
-    expect(stops.map(stop => stop.getAttribute("stop-color"))).toEqual(["var(--accent)", "var(--green)"]);
+    expect(stops.map(stop => stop.getAttribute("stop-color"))).toEqual([
+      "var(--commit-graph-lane-0)",
+      "var(--commit-graph-lane-1)",
+    ]);
   });
 
   it("keeps an active parent lane continuous through a branch join", () => {

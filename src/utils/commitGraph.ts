@@ -36,10 +36,9 @@ export type CommitGraphRow = {
 
 export type CommitGraph = {
   rows: Record<string, CommitGraphRow>;
-  visibleLaneCount: number;
+  laneCount: number;
 };
 
-const DEFAULT_MAX_VISIBLE_LANES = 10;
 const ROW_TOP = 0;
 const ROW_CENTRE = 50;
 const ROW_BOTTOM = 100;
@@ -106,10 +105,7 @@ function compactLanes(lanes: ActiveLane[]): ActiveLane[] {
   return lanes.filter(hash => hash !== null);
 }
 
-export function buildCommitGraph(
-  commits: CommitHistoryItem[],
-  maxVisibleLanes = DEFAULT_MAX_VISIBLE_LANES,
-): CommitGraph {
+export function buildCommitGraph(commits: CommitHistoryItem[]): CommitGraph {
   const rows: Record<string, CommitGraphRow> = {};
   let activeLanes: ActiveLane[] = [];
   let widestLane = 0;
@@ -246,6 +242,6 @@ export function buildCommitGraph(
 
   return {
     rows,
-    visibleLaneCount: Math.max(1, Math.min(maxVisibleLanes, widestLane + 1)),
+    laneCount: Math.max(1, widestLane + 1),
   };
 }

@@ -138,7 +138,7 @@ describe("commit graph", () => {
       commit("a"),
     ]);
 
-    expect(graph.visibleLaneCount).toBe(1);
+    expect(graph.laneCount).toBe(1);
     expect(graph.rows.c.nodeLane).toBe(0);
     expect(graph.rows.b.nodeLane).toBe(0);
     expect(graph.rows.a.nodeLane).toBe(0);
@@ -160,7 +160,7 @@ describe("commit graph", () => {
       commit("root"),
     ]);
 
-    expect(graph.visibleLaneCount).toBe(2);
+    expect(graph.laneCount).toBe(2);
     expect(graph.rows.m.nodeLane).toBe(0);
     expect(curves(graph.rows.m.segments)).toContainEqual({
       kind: "curve",
@@ -436,15 +436,41 @@ describe("commit graph", () => {
     });
   });
 
-  it("caps visible lane count", () => {
-    const graph = buildCommitGraph([
-      commit("wide", ["a", "b", "c", "d"]),
-    ], 3);
+  it("reports every lane in a wide graph", () => {
+    const trunkCommits = Array.from({ length: 12 }, (_, index) => {
+      const trunkNumber = index + 1;
+      const trunkHash = `trunk-${String(trunkNumber).padStart(2, "0")}`;
+      const parentHash = trunkNumber === 1
+        ? "root"
+        : `trunk-${String(trunkNumber - 1).padStart(2, "0")}`;
+      return commit(trunkHash, [parentHash]);
+    });
+    const mergeCommits: CommitHistoryItem[] = [];
+    let firstParent = "trunk-12";
+    for (let mergeNumber = 1; mergeNumber <= 12; mergeNumber += 1) {
+      const mergeHash = `merge-${String(mergeNumber).padStart(2, "0")}`;
+      mergeCommits.push(commit(mergeHash, [
+        firstParent,
+        `trunk-${String(mergeNumber).padStart(2, "0")}`,
+      ]));
+      firstParent = mergeHash;
+    }
 
-    expect(graph.visibleLaneCount).toBe(3);
-    expect(graph.rows.wide.laneCount).toBe(4);
-    expect(graph.rows.wide.heightUnits).toBe(3);
-    expect(curves(graph.rows.wide.segments).map(segment => segment.toLane)).toEqual([1, 2, 3]);
-    expect(curves(graph.rows.wide.segments).map(segment => segment.toUnit)).toEqual([300, 300, 300]);
+    const graph = buildCommitGraph([
+      ...mergeCommits.reverse(),
+      ...trunkCommits.reverse(),
+      commit("root"),
+    ]);
+
+    expect(graph.laneCount).toBe(12);
+    expect(curves(graph.rows["merge-03"].segments)).toContainEqual({
+      kind: "curve",
+      fromLane: 9,
+      toLane: 10,
+      fromUnit: 50,
+      toUnit: 100,
+      hash: "trunk-12",
+      colourLane: 9,
+    });
   });
 });

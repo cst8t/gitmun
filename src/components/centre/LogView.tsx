@@ -24,7 +24,11 @@ import {
 import { buildCommitGraph, type CommitGraphRow } from "../../utils/commitGraph";
 import { ContextMenu } from "../shared/ContextMenu";
 import { CloseIcon } from "../icons";
-import { CommitGraphGutter } from "./CommitGraphGutter";
+import {
+  CommitGraphGutter,
+  commitGraphViewportWidth,
+  commitGraphWidth,
+} from "./CommitGraphGutter";
 
 function getInitials(name: string): string {
   return name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
@@ -266,6 +270,7 @@ type CommitRowProps = {
   index: number;
   graphRow: CommitGraphRow | undefined;
   graphLaneCount: number;
+  graphScrollLeft: number;
   effectiveSigStatus: SignatureStatus;
   signer: string | null | undefined;
   fingerprint: string | null | undefined;
@@ -411,6 +416,7 @@ const CommitRow = React.memo(function CommitRow({
   index,
   graphRow,
   graphLaneCount,
+  graphScrollLeft,
   effectiveSigStatus,
   signer,
   fingerprint,
@@ -456,6 +462,7 @@ const CommitRow = React.memo(function CommitRow({
         <CommitGraphGutter
           row={graphRow}
           laneCount={graphLaneCount}
+          scrollLeft={graphScrollLeft}
           commit={c}
           highlightedHashes={highlightedGraphHashes}
         />
@@ -650,8 +657,10 @@ export function LogView({
   const [hoveredCommitHash, setHoveredCommitHash] = useState<string | null>(null);
   const [verificationEntries, setVerificationEntries] = useState<Record<string, VerificationEntry>>({});
   const [sigPopover, setSigPopover] = useState<SigPopoverData | null>(null);
+  const [graphScrollLeft, setGraphScrollLeft] = useState(0);
 
   const logViewRef = useRef<HTMLDivElement>(null);
+  const graphScrollRef = useRef<HTMLDivElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
   const prevRepoRef = useRef<string | null>(repoPath);
   const prevLogScopeRef = useRef<CommitLogScope>(logScope);
@@ -671,6 +680,11 @@ export function LogView({
   const commitHashes = useMemo(() => new Set(commits.map(c => c.hash)), [commits]);
   const commitByHash = useMemo(() => new Map(commits.map(commit => [commit.hash, commit])), [commits]);
   const commitGraph = useMemo(() => showCommitGraph ? buildCommitGraph(commits) : null, [showCommitGraph, commits]);
+  const graphLaneCount = commitGraph?.laneCount ?? 0;
+  const graphContentWidth = commitGraphWidth(graphLaneCount);
+  const graphViewportWidth = commitGraphViewportWidth(graphLaneCount);
+  const graphMaxScrollLeft = Math.max(0, graphContentWidth - graphViewportWidth);
+  const graphOverflows = graphMaxScrollLeft > 0;
   const graphFocusHash = showCommitGraph
     ? hoveredCommitHash ?? (selectedCommitHashes.size === 1 ? Array.from(selectedCommitHashes)[0] : null)
     : null;
@@ -678,6 +692,20 @@ export function LogView({
     () => showCommitGraph ? getLoadedAncestorHashes(commits, graphFocusHash) : null,
     [commits, graphFocusHash, showCommitGraph],
   );
+  useEffect(() => {
+    setGraphScrollLeft(0);
+  }, [logScope, repoPath, showCommitGraph]);
+  useEffect(() => {
+    setGraphScrollLeft(current => Math.min(current, graphMaxScrollLeft));
+  }, [graphMaxScrollLeft]);
+  useEffect(() => {
+    if (graphScrollRef.current && graphScrollRef.current.scrollLeft !== graphScrollLeft) {
+      graphScrollRef.current.scrollLeft = graphScrollLeft;
+    }
+  }, [graphOverflows, graphScrollLeft]);
+  const handleGraphScroll = useCallback((event: React.UIEvent<HTMLDivElement>) => {
+    setGraphScrollLeft(event.currentTarget.scrollLeft);
+  }, []);
   const selectedCommits = useMemo(
     () => commits.filter(c => selectedCommitHashes.has(c.hash)),
     [commits, selectedCommitHashes],
@@ -1280,7 +1308,8 @@ export function LogView({
               commit={c}
               index={index}
               graphRow={commitGraph?.rows[c.hash]}
-              graphLaneCount={commitGraph?.visibleLaneCount ?? 0}
+              graphLaneCount={graphLaneCount}
+              graphScrollLeft={graphScrollLeft}
               effectiveSigStatus={effectiveSigStatus}
               signer={resolved?.signer}
               fingerprint={resolved?.fingerprint}
@@ -1321,6 +1350,22 @@ export function LogView({
           Footer,
         }}
       />
+      {graphOverflows && (
+        <div className="log-view__graph-scroll-row">
+          <div
+            ref={graphScrollRef}
+            className="log-view__graph-scroll"
+            style={{ width: graphViewportWidth }}
+            tabIndex={0}
+            role="region"
+            aria-label={t("log.graphScroll")}
+            onScroll={handleGraphScroll}
+            onKeyDown={event => event.stopPropagation()}
+          >
+            <div className="log-view__graph-scroll-content" style={{ width: graphContentWidth }} />
+          </div>
+        </div>
+      )}
       {sigPopover && <SignaturePopover data={sigPopover} repoPath={repoPath} onClose={handleCloseSigPopover} />}
       {commitMenu && commitMenuCommits.length > 0 && (
         <ContextMenu

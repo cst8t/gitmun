@@ -5,27 +5,32 @@ import type { CommitGraphRow, CommitGraphSegment } from "../../utils/commitGraph
 const GRAPH_LANE_WIDTH = 12;
 const GRAPH_NODE_RADIUS = 4;
 const GRAPH_UNIT_HEIGHT = 100;
+const GRAPH_VIEWPORT_LANES = 10;
 
 function graphLaneColour(lane: number): string {
   const colours = [
-    "var(--accent)",
-    "var(--green)",
-    "var(--yellow)",
-    "var(--red)",
-    "#c4b5fd",
-    "#6ee7b7",
-    "#f0abfc",
-    "#93c5fd",
+    "var(--commit-graph-lane-0)",
+    "var(--commit-graph-lane-1)",
+    "var(--commit-graph-lane-2)",
+    "var(--commit-graph-lane-3)",
+    "var(--commit-graph-lane-4)",
+    "var(--commit-graph-lane-5)",
+    "var(--commit-graph-lane-6)",
+    "var(--commit-graph-lane-7)",
   ];
   return colours[lane % colours.length];
 }
 
-function graphWidth(laneCount: number): number {
+export function commitGraphWidth(laneCount: number): number {
   return Math.max(14, laneCount * GRAPH_LANE_WIDTH);
 }
 
-function graphX(lane: number, laneCount: number): number {
-  return 5 + Math.min(lane, laneCount - 1) * GRAPH_LANE_WIDTH;
+export function commitGraphViewportWidth(laneCount: number): number {
+  return commitGraphWidth(Math.min(laneCount, GRAPH_VIEWPORT_LANES));
+}
+
+function graphX(lane: number): number {
+  return 5 + lane * GRAPH_LANE_WIDTH;
 }
 
 function graphPieceClass(baseClass: string, active: boolean | null): string {
@@ -42,10 +47,9 @@ function graphCurvePath(
   toLane: number,
   fromUnit: number,
   toUnit: number,
-  laneCount: number,
 ): string {
-  const fromX = graphX(fromLane, laneCount);
-  const toX = graphX(toLane, laneCount);
+  const fromX = graphX(fromLane);
+  const toX = graphX(toLane);
   const verticalDistance = toUnit - fromUnit;
   const controlY1 = fromUnit + verticalDistance * 0.44;
   const controlY2 = fromUnit + verticalDistance * 0.56;
@@ -57,8 +61,8 @@ function graphCurvePath(
   ].join(" ");
 }
 
-function graphVerticalPath(lane: number, fromUnit: number, toUnit: number, laneCount: number): string {
-  const x = graphX(lane, laneCount);
+function graphVerticalPath(lane: number, fromUnit: number, toUnit: number): string {
+  const x = graphX(lane);
   return `M ${formatGraphNumber(x)} ${formatGraphNumber(fromUnit)} L ${formatGraphNumber(x)} ${formatGraphNumber(toUnit)}`;
 }
 
@@ -99,16 +103,18 @@ function graphGradientId(commitHash: string, segment: CommitGraphSegment, index:
 export function CommitGraphGutter({
   row,
   laneCount,
+  scrollLeft,
   commit,
   highlightedHashes,
 }: {
   row: CommitGraphRow | undefined;
   laneCount: number;
+  scrollLeft: number;
   commit: CommitHistoryItem;
   highlightedHashes: Set<string> | null;
 }) {
   const { t } = useTranslation("centre");
-  const width = graphWidth(laneCount);
+  const width = commitGraphViewportWidth(laneCount);
   if (!row) {
     return <div className="log-view__graph" style={{ width }} aria-hidden="true" />;
   }
@@ -139,16 +145,16 @@ export function CommitGraphGutter({
       title={graphTitleText}
       aria-label={graphTitleText}
     >
-      <svg className="log-view__graph-connectors" width={width} height="100%" viewBox={`0 0 ${width} ${viewBoxHeight}`} preserveAspectRatio="none">
+      <svg className="log-view__graph-connectors" width={width} height="100%" viewBox={`${scrollLeft} 0 ${width} ${viewBoxHeight}`} preserveAspectRatio="none">
         <defs>
           {curves.map((segment, index) => (
             <linearGradient
               key={graphGradientId(commit.hash, segment, index)}
               id={graphGradientId(commit.hash, segment, index)}
               gradientUnits="userSpaceOnUse"
-              x1={graphX(segment.fromLane, laneCount)}
+              x1={graphX(segment.fromLane)}
               y1={segment.fromUnit}
-              x2={graphX(segment.toLane, laneCount)}
+              x2={graphX(segment.toLane)}
               y2={segment.toUnit}
             >
               <stop offset="0%" stopColor={graphLaneColour(segment.fromLane)} />
@@ -159,7 +165,7 @@ export function CommitGraphGutter({
         {curves.map((segment, index) => (
           <path
             key={segmentKey(segment, index)}
-            d={graphCurvePath(segment.fromLane, segment.toLane, segment.fromUnit, segment.toUnit, laneCount)}
+            d={graphCurvePath(segment.fromLane, segment.toLane, segment.fromUnit, segment.toUnit)}
             stroke={curveStroke(segment, index)}
             className={graphPieceClass("log-view__graph-connector log-view__graph-connector--curve", isActiveHash(segment.hash))}
             vectorEffect="non-scaling-stroke"
@@ -169,7 +175,7 @@ export function CommitGraphGutter({
         {verticals.map((segment, index) => (
           <path
             key={segmentKey(segment, index)}
-            d={graphVerticalPath(segment.lane, segment.fromUnit, segment.toUnit, laneCount)}
+            d={graphVerticalPath(segment.lane, segment.fromUnit, segment.toUnit)}
             stroke={graphLaneColour(segment.colourLane)}
             className={graphPieceClass("log-view__graph-connector log-view__graph-connector--vertical", isActiveHash(segment.hash))}
             vectorEffect="non-scaling-stroke"
@@ -182,7 +188,7 @@ export function CommitGraphGutter({
           key={segmentKey(segment, index)}
           className={graphPieceClass("log-view__graph-node", hasHighlight ? highlightedHashes.has(segment.hash) : null)}
           style={{
-            left: graphX(segment.lane, laneCount) - GRAPH_NODE_RADIUS,
+            left: graphX(segment.lane) - scrollLeft - GRAPH_NODE_RADIUS,
             top: `calc(${(segment.unit / viewBoxHeight) * 100}% - ${GRAPH_NODE_RADIUS}px)`,
             width: GRAPH_NODE_RADIUS * 2,
             height: GRAPH_NODE_RADIUS * 2,

@@ -112,6 +112,7 @@
     "graphLaneHint": "Lane colours show topology, not permanent branches.",
     "graphMergedParents": "Merged parents: {{hashes}}",
     "graphRefs": "Refs: {{refs}}",
+    "graphScroll": "Scroll commit graph horizontally",
     "hideCommitGraph": "Hide commit graph",
     "historyAllRefs": "Showing one combined timeline from all local branches, remote branches, tags, and the current checkout. Branch-only commits may appear further down the list.",
     "historyDetached": "This checkout is detached. Current checkout history only follows the pinned HEAD commit.",
