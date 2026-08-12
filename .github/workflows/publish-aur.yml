@@ -70,16 +70,15 @@ jobs:
           grep -qx "pkgname=gitmun-bin" aur-files/PKGBUILD
           grep -qx "pkgname = gitmun-bin" aur-files/.SRCINFO
 
-          obs_prefix="https://download.opensuse.org/repositories/home:/cst8t:/gitmun/"
           github_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${RELEASE_TAG}/"
 
           validate_source_url() {
             local metadata_file="$1"
-            if grep -Fq "${obs_prefix}" "${metadata_file}" || grep -Fq "${github_prefix}" "${metadata_file}"; then
+            if grep -Fq "${github_prefix}" "${metadata_file}"; then
               return
             fi
 
-            echo "${metadata_file} source_x86_64 does not point to an approved OBS or GitHub release URL." >&2
+            echo "${metadata_file} source_x86_64 does not point to the GitHub release URL." >&2
             exit 1
           }
 

@@ -121,6 +121,14 @@ jobs:
           OBS_DEB_ARCH: x86_64
         run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
+      - name: Download Ubuntu deb package from OBS
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          DEB_NAME="gitmun_${BUNDLE_VERSION}-1_amd64.deb"
+          DEB_URL="https://download.opensuse.org/repositories/home:/cst8t:/gitmun/xUbuntu_26.04/amd64/${DEB_NAME}"
+          mkdir -p src-tauri/target/release/bundle/deb
+          curl -fsSL -o "src-tauri/target/release/bundle/deb/${DEB_NAME}" "${DEB_URL}"
+
       - name: Build Tauri Linux bundles and updater metadata
         if: ${{ github.event_name != 'release' }}
         uses: tauri-apps/tauri-action@v0.6.2
@@ -144,7 +152,6 @@ jobs:
           REPO_SLUG: ${{ github.repository }}
           SERVER_URL: ${{ github.server_url }}
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
-          OBS_PROJECT: ${{ github.event_name == 'release' && 'home:cst8t:gitmun' || '' }}
         run: bash ./scripts/generate-aur-package.sh
 
       - name: Validate generated AUR metadata
@@ -154,25 +161,14 @@ jobs:
             exit 1
           fi
 
-          if [[ "${{ github.event_name }}" == "release" ]]; then
-            if ! grep -q "download.opensuse.org/repositories/home:/cst8t:/gitmun/" packaging/aur/PKGBUILD; then
-              echo "PKGBUILD source_x86_64 does not point to OBS download URL." >&2
-              exit 1
-            fi
-            if ! grep -q "download.opensuse.org/repositories/home:/cst8t:/gitmun/" packaging/aur/.SRCINFO; then
-              echo ".SRCINFO source_x86_64 does not point to OBS download URL." >&2
-              exit 1
-            fi
-          else
-            expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}"
-            if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
-              echo "PKGBUILD source URL does not match expected repository release path." >&2
-              exit 1
-            fi
-            if ! grep -q "$expected_prefix" packaging/aur/.SRCINFO; then
-              echo ".SRCINFO source URL does not match expected repository release path." >&2
-              exit 1
-            fi
+          expected_prefix="${{ github.server_url }}/${{ github.repository }}/releases/download/${{ env.RELEASE_TAG }}"
+          if ! grep -q "$expected_prefix" packaging/aur/PKGBUILD; then
+            echo "PKGBUILD source URL does not match expected repository release path." >&2
+            exit 1
+          fi
+          if ! grep -q "$expected_prefix" packaging/aur/.SRCINFO; then
+            echo ".SRCINFO source URL does not match expected repository release path." >&2
+            exit 1
           fi
 
       - name: Package AUR files
@@ -200,7 +196,7 @@ jobs:
             src-tauri/target/release/bundle/aur/*.zip
             public/ATTRIBUTIONS.html
 
-      - name: Attach AUR bundle to release
+      - name: Attach Linux bundles to release
         if: ${{ github.event_name == 'release' }}
         env:
           TOKEN: ${{ github.token }}
@@ -234,6 +230,7 @@ jobs:
 
           shopt -s nullglob
           FILES=(
+            src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/aur/*.zip
             public/ATTRIBUTIONS.html
           )
