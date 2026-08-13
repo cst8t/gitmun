@@ -482,12 +482,14 @@ pub(crate) fn effort_for(
 ) -> Option<&'static str> {
     let effort = match configuration.reasoning_preference {
         AiReasoningPreference::ProviderDefault => None,
+        AiReasoningPreference::Off => Some("none"),
         AiReasoningPreference::Low => Some("low"),
         AiReasoningPreference::Medium => Some("medium"),
         AiReasoningPreference::High => Some("high"),
-        AiReasoningPreference::Automatic => Some(match task {
-            AiTask::ConflictResolution => "medium",
-            AiTask::ConnectionTest | AiTask::CommitMessage => "low",
+        AiReasoningPreference::Automatic => Some(match (configuration.provider, task) {
+            (AiProvider::OpenRouter, AiTask::ConnectionTest | AiTask::CommitMessage) => "none",
+            (_, AiTask::ConflictResolution) => "medium",
+            (_, AiTask::ConnectionTest | AiTask::CommitMessage) => "low",
         }),
     };
     if configuration.reasoning_preference != AiReasoningPreference::Automatic {
@@ -543,10 +545,24 @@ pub(crate) fn network_error(error: reqwest::Error) -> AiError {
 }
 
 pub(crate) fn rejected_effort(status: StatusCode, body: &[u8]) -> bool {
-    status == StatusCode::BAD_REQUEST
-        && String::from_utf8_lossy(body)
-            .to_ascii_lowercase()
-            .contains("effort")
+    if status != StatusCode::BAD_REQUEST {
+        return false;
+    }
+    let lower = String::from_utf8_lossy(body).to_ascii_lowercase();
+    let identifies_reasoning = lower.contains("effort") || lower.contains("reasoning");
+    let identifies_rejection = [
+        "unsupported",
+        "not supported",
+        "unknown parameter",
+        "unrecognized",
+        "unrecognised",
+        "invalid",
+        "not allowed",
+        "not permitted",
+    ]
+    .iter()
+    .any(|keyword| lower.contains(keyword));
+    identifies_reasoning && identifies_rejection
 }
 
 pub(crate) fn rejected_structured_output(
@@ -990,6 +1006,11 @@ pub(crate) async fn run_provider_with_output(
             ProviderAttempt::EffortRejected => {
                 if effort.is_none() {
                     return Err(AiError::new("requestRejected"));
+                }
+                if configuration.reasoning_preference == AiReasoningPreference::Automatic
+                    && effort == Some("none")
+                {
+                    return Err(AiError::new("reasoningUnsupported"));
                 }
                 if configuration.reasoning_preference != AiReasoningPreference::Automatic
                     && !matches!(task, AiTask::ConnectionTest)

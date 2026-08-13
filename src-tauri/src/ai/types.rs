@@ -82,6 +82,7 @@ pub enum AiAuthMode {
 pub enum AiReasoningPreference {
     #[default]
     Automatic,
+    Off,
     ProviderDefault,
     Low,
     Medium,
@@ -488,6 +489,23 @@ mod tests {
         assert_eq!(settings.privacy, OpenRouterPrivacy::NoDataCollection);
         assert!(settings.allow_fallbacks);
         assert!(settings.require_parameters);
+    }
+
+    #[test]
+    fn reasoning_off_round_trips_in_profiles() {
+        let profile = AiProfile {
+            reasoning_preference: AiReasoningPreference::Off,
+            ..AiProfile::default()
+        };
+
+        let value = serde_json::to_value(&profile).unwrap();
+        let restored: AiProfile = serde_json::from_value(value.clone()).unwrap();
+
+        assert_eq!(
+            value.get("reasoningPreference"),
+            Some(&serde_json::json!("Off"))
+        );
+        assert_eq!(restored.reasoning_preference, AiReasoningPreference::Off);
     }
 
     #[test]

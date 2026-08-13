@@ -13,7 +13,7 @@ export type AiProvider =
 
 export type AiApiStyle = "ChatCompletions" | "Responses";
 export type AiAuthMode = "Bearer" | "Header" | "AwsSigV4" | "None";
-export type AiReasoningPreference = "Automatic" | "ProviderDefault" | "Low" | "Medium" | "High";
+export type AiReasoningPreference = "Automatic" | "Off" | "ProviderDefault" | "Low" | "Medium" | "High";
 export type AiConfigurationSource = "Environment" | "StoredProfile" | "ProviderDefault";
 export type OpenRouterPrivacy = "NoDataCollection" | "StrictZdr" | "AccountDefault";
 export type OpenRouterRoutingStrategy = "Default" | "Price" | "Latency" | "Throughput";

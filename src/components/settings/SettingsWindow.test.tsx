@@ -305,9 +305,9 @@ describe("SettingsWindow", () => {
         expect(apiKey.compareDocumentPosition(endpoint) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
         expect(endpoint).toHaveValue("");
         fireEvent.change(screen.getByLabelText("Model"), {target: {value: "selected-model"}});
-        fireEvent.change(screen.getByLabelText("Reasoning level"), {target: {value: "High"}});
+        fireEvent.change(screen.getByLabelText("Reasoning level"), {target: {value: "Off"}});
         expect(screen.getByLabelText("Model")).toHaveValue("selected-model");
-        expect(screen.getByLabelText("Reasoning level")).toHaveValue("High");
+        expect(screen.getByLabelText("Reasoning level")).toHaveValue("Off");
     });
 
     it("defaults new profiles to OpenRouter and provides Bedrock regional endpoints", async () => {

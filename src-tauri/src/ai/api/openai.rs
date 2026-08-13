@@ -273,6 +273,40 @@ mod tests {
             claude_body.pointer("/output_config/effort"),
             Some(&json!("medium"))
         );
+
+        let claude_without_reasoning = ClaudeAdapter.request_body(
+            &claude,
+            "system",
+            "user",
+            128,
+            Some("none"),
+            &AiOutputContract::Text,
+            None,
+            None,
+        );
+        assert!(claude_without_reasoning.get("output_config").is_none());
+    }
+
+    #[test]
+    fn openai_response_ignores_separate_reasoning_content() {
+        let result = OpenAiAdapter
+            .parse_response(
+                json!({
+                    "choices": [{
+                        "message": {
+                            "content": "fix(ai): hide provider reasoning",
+                            "reasoning": "Internal analysis",
+                            "reasoning_details": [{"text": "Internal analysis"}]
+                        },
+                        "finish_reason": "stop"
+                    }]
+                }),
+                None,
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(result.text, "fix(ai): hide provider reasoning");
     }
 
     #[test]

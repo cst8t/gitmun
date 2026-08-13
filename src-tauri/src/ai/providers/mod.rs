@@ -788,11 +788,69 @@ pub(crate) mod test_helpers {
 
 #[cfg(test)]
 mod fallback_tests {
-    use super::super::api::{AiRequestBudget, AiRuntime, AiStructuredOutputMode, AiTask};
+    use super::super::api::{
+        AiRequestBudget, AiRuntime, AiStructuredOutputMode, AiTask, effort_for,
+    };
     use super::test_helpers;
     use crate::ai::types::{AiAuthMode, AiProvider, AiReasoningPreference};
     use serde_json::{Value, json};
     use std::time::Duration;
+
+    #[test]
+    fn automatic_openrouter_reasoning_is_task_aware() {
+        let configuration = test_helpers::configuration(AiProvider::OpenRouter);
+
+        assert_eq!(
+            effort_for(&configuration, AiTask::CommitMessage),
+            Some("none")
+        );
+        assert_eq!(
+            effort_for(&configuration, AiTask::ConnectionTest),
+            Some("none")
+        );
+        assert_eq!(
+            effort_for(&configuration, AiTask::ConflictResolution),
+            Some("medium")
+        );
+    }
+
+    #[tokio::test]
+    async fn rejected_automatic_openrouter_disablement_does_not_retry() {
+        let rejection = r#"{"error":{"message":"reasoning effort is not supported"}}"#;
+        let (endpoint, requests) =
+            test_helpers::mock_provider(vec![("400 Bad Request", rejection.to_string())]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut configuration = test_helpers::configuration(AiProvider::OpenRouter);
+        configuration.endpoint = endpoint;
+        configuration.auth_mode = AiAuthMode::None;
+        let mut budget = AiRequestBudget::new();
+
+        let error = match super::run_provider(
+            &runtime,
+            &configuration,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::CommitMessage,
+            &mut budget,
+            None,
+        )
+        .await
+        {
+            Ok(_) => panic!("rejected disablement must fail"),
+            Err(error) => error,
+        };
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        let body: Value =
+            serde_json::from_str(requests[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+
+        assert_eq!(error.code, "reasoningUnsupported");
+        assert_eq!(budget.requests, 1);
+        assert_eq!(requests.len(), 1);
+        assert_eq!(body.pointer("/reasoning/effort"), Some(&json!("none")));
+        assert!(body.get("reasoning_effort").is_none());
+    }
 
     #[tokio::test]
     async fn structured_output_falls_back_once_and_caches_the_supported_mode() {

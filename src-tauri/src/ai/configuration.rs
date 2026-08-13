@@ -905,11 +905,24 @@ fn parse_provider(value: &str) -> Option<AiProvider> {
 fn parse_reasoning(value: &str) -> Option<AiReasoningPreference> {
     match compact(value).as_str() {
         "automatic" | "auto" => Some(AiReasoningPreference::Automatic),
+        "off" | "none" | "disabled" => Some(AiReasoningPreference::Off),
         "providerdefault" | "default" => Some(AiReasoningPreference::ProviderDefault),
         "low" => Some(AiReasoningPreference::Low),
         "medium" => Some(AiReasoningPreference::Medium),
         "high" => Some(AiReasoningPreference::High),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod reasoning_tests {
+    use super::{AiReasoningPreference, parse_reasoning};
+
+    #[test]
+    fn reasoning_off_accepts_documented_environment_aliases() {
+        for value in ["off", "none", "disabled"] {
+            assert_eq!(parse_reasoning(value), Some(AiReasoningPreference::Off));
+        }
     }
 }
 

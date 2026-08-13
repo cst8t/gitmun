@@ -125,6 +125,19 @@ impl OpenAiCompatibleExtension for OpenRouterExtension {
         configuration: &EffectiveAiConfiguration,
         body: &mut Map<String, Value>,
     ) {
+        if let Some(effort) = body
+            .remove("reasoning_effort")
+            .and_then(|value| value.as_str().map(str::to_string))
+        {
+            body.insert(
+                "reasoning".to_string(),
+                if effort == "none" {
+                    json!({"effort": effort})
+                } else {
+                    json!({"effort": effort, "exclude": true})
+                },
+            );
+        }
         let settings = &configuration.open_router;
         let mut provider = Map::new();
         provider.insert(
@@ -549,6 +562,46 @@ mod tests {
             body.pointer("/provider/max_price/prompt"),
             Some(&json!(2.5))
         );
+    }
+
+    #[test]
+    fn openrouter_extension_uses_unified_hidden_reasoning_controls() {
+        let configuration =
+            test_helpers::configuration(super::super::super::types::AiProvider::OpenRouter);
+        let body = OpenAiAdapter.request_body(
+            &configuration,
+            "system",
+            "user",
+            100,
+            Some("medium"),
+            &crate::ai::api::AiOutputContract::Text,
+            None,
+            Some(&OpenRouterExtension),
+        );
+
+        assert_eq!(body.pointer("/reasoning/effort"), Some(&json!("medium")));
+        assert_eq!(body.pointer("/reasoning/exclude"), Some(&json!(true)));
+        assert!(body.get("reasoning_effort").is_none());
+    }
+
+    #[test]
+    fn openrouter_extension_disables_reasoning_without_an_exclusion_flag() {
+        let configuration =
+            test_helpers::configuration(super::super::super::types::AiProvider::OpenRouter);
+        let body = OpenAiAdapter.request_body(
+            &configuration,
+            "system",
+            "user",
+            100,
+            Some("none"),
+            &crate::ai::api::AiOutputContract::Text,
+            None,
+            Some(&OpenRouterExtension),
+        );
+
+        assert_eq!(body.pointer("/reasoning/effort"), Some(&json!("none")));
+        assert!(body.pointer("/reasoning/exclude").is_none());
+        assert!(body.get("reasoning_effort").is_none());
     }
 
     #[test]

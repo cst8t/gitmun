@@ -455,6 +455,7 @@ export function SettingsWindow() {
     const aiUsesCustomBedrockEndpoint = aiProvider === "Bedrock"
         && !BEDROCK_RUNTIME_ENDPOINTS.includes(aiEndpoint.trim());
     const aiReasoningUnavailable = (level: AiReasoningPreference): boolean => {
+        if (level === "Off") return false;
         if (currentAiCapability.status === "unsupported") return true;
         if (currentAiCapability.status !== "supported") return false;
         return !currentAiCapability.levels.includes(level);
@@ -2426,6 +2427,7 @@ export function SettingsWindow() {
                                     onChange={event => setAiReasoningPreference(event.target.value as AiReasoningPreference)}
                                 >
                                     <option value="Automatic">{t("options.aiReasoningAutomatic")}</option>
+                                    <option value="Off">{t("options.aiReasoningOff")}</option>
                                     <option value="ProviderDefault">{t("options.aiReasoningProviderDefault")}</option>
                                     <option value="Low" disabled={aiReasoningUnavailable("Low")}>{t("options.aiReasoningLow")}</option>
                                     <option value="Medium" disabled={aiReasoningUnavailable("Medium")}>{t("options.aiReasoningMedium")}</option>

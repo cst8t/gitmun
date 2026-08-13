@@ -35,7 +35,7 @@ impl ProtocolAdapter for ClaudeAdapter {
             "max_tokens": max_tokens
         });
         let mut output_config = Map::new();
-        if let Some(effort) = effort {
+        if let Some(effort) = effort.filter(|effort| *effort != "none") {
             output_config.insert("effort".to_string(), json!(effort));
         }
         if let (
