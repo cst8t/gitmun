@@ -359,6 +359,22 @@ mod tests {
             AiTask::CommitMessage.request_timeout(),
             Duration::from_secs(120)
         );
+        assert_eq!(AiTask::Writing.request_timeout(), Duration::from_secs(120));
+    }
+
+    #[test]
+    fn writing_task_shares_effort_behaviour_with_commit_messages() {
+        let openrouter_config = test_helpers::configuration(AiProvider::OpenRouter);
+        assert_eq!(
+            crate::ai::api::effort_for(&openrouter_config, AiTask::Writing),
+            crate::ai::api::effort_for(&openrouter_config, AiTask::CommitMessage)
+        );
+
+        let openai_config = test_helpers::configuration(AiProvider::OpenAi);
+        assert_eq!(
+            crate::ai::api::effort_for(&openai_config, AiTask::Writing),
+            crate::ai::api::effort_for(&openai_config, AiTask::CommitMessage)
+        );
     }
 
     #[test]

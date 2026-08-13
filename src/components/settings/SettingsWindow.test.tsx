@@ -15,6 +15,15 @@ const mocks = vi.hoisted(() => ({
     getAiConfiguration: vi.fn(),
     openDialog: vi.fn(),
     openPath: vi.fn(),
+    saveAiConfiguration: vi.fn(async (request) => ({
+        ...request, effortCapability: {status: "unknown"}, hasApiKey: false,
+        configured: false, insecureTransport: false,
+        commitContextLimitKib: 24, conflictContextLimitKib: 48,
+        commitMessageMaxTokens: 512, conflictResolutionMaxTokens: 4096,
+        commitMessagePrompt: "Write a concise commit message.",
+        conflictResolutionPrompt: "Resolve the conflict.", includeCommitHistory: true,
+        commitMessageModel: request.commitMessageModel ?? "",
+    })),
     invoke: vi.fn(),
 }));
 
@@ -136,14 +145,7 @@ vi.mock("../../api/commands", () => ({
     discoverAiModelDetailsDraft: mocks.discoverAiModelDetailsDraft,
     discoverAiModelsDraft: mocks.discoverAiModelsDraft,
     openResultLogWindow: vi.fn(async () => {}),
-    saveAiConfiguration: vi.fn(async (request) => ({
-        ...request, effortCapability: {status: "unknown"}, hasApiKey: false,
-        configured: false, insecureTransport: false,
-        commitContextLimitKib: 24, conflictContextLimitKib: 48,
-        commitMessageMaxTokens: 512, conflictResolutionMaxTokens: 4096,
-        commitMessagePrompt: "Write a concise commit message.",
-        conflictResolutionPrompt: "Resolve the conflict.", includeCommitHistory: true,
-    })),
+    saveAiConfiguration: mocks.saveAiConfiguration,
     setAiApiKey: vi.fn(async () => ({
         provider: "Disabled", endpoint: "", model: "", reasoningPreference: "Automatic",
         effortCapability: {status: "unknown"}, hasApiKey: true, configured: false, insecureTransport: false,
@@ -605,6 +607,247 @@ describe("SettingsWindow", () => {
                 aiConflictResolutionPrompt: "Preserve both intended changes.",
             });
         });
+    });
+
+    it("toggles the commit message model override and saves the updated configuration", async () => {
+        render(<SettingsWindow/>);
+        await screen.findByLabelText("Terminal");
+
+        openAiSettings();
+
+        const splitToggle = screen.getByLabelText<HTMLInputElement>("Use a different model for commit messages");
+        expect(splitToggle).not.toBeChecked();
+        expect(screen.queryByLabelText("Commit message model")).not.toBeInTheDocument();
+
+        fireEvent.click(splitToggle);
+        expect(splitToggle).toBeChecked();
+
+        const commitModelInput = screen.getByLabelText("Commit message model");
+        expect(commitModelInput).toBeInTheDocument();
+        expect(commitModelInput).toHaveValue("");
+
+        fireEvent.change(screen.getByLabelText("Model"), {target: {value: "main-model"}});
+        fireEvent.change(commitModelInput, {target: {value: "override-model"}});
+
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.saveAiConfiguration).toHaveBeenCalledWith(
+                expect.objectContaining({
+                    model: "main-model",
+                    commitMessageModel: "override-model",
+                }),
+            );
+        });
+
+        fireEvent.click(splitToggle);
+        expect(splitToggle).not.toBeChecked();
+        expect(screen.queryByLabelText("Commit message model")).not.toBeInTheDocument();
+
+        fireEvent.click(screen.getByText("Save"));
+
+        await waitFor(() => {
+            expect(mocks.saveAiConfiguration).toHaveBeenLastCalledWith(
+                expect.objectContaining({
+                    model: "main-model",
+                    commitMessageModel: "",
+                }),
+            );
+        });
+    });
+
+    it("shows the catalogue target selector only when the split model is active and writes to the selected target", async () => {
+        mocks.discoverAiModelsDraft.mockResolvedValue({
+            models: [
+                {
+                    id: "acme/sprinter-v1",
+                    canonicalSlug: "acme/sprinter-v1",
+                    name: "Acme Sprinter V1",
+                    description: null,
+                    contextLength: 128000,
+                    maximumCompletionTokens: null,
+                    inputModalities: ["text"],
+                    outputModalities: ["text"],
+                    supportedParameters: [],
+                    promptPrice: null,
+                    completionPrice: null,
+                    requestPrice: null,
+                    cacheReadPrice: null,
+                    cacheWritePrice: null,
+                    reasoning: false,
+                    structuredOutput: true,
+                    availableProviders: [],
+                    quantisations: [],
+                    latency: null,
+                    throughput: null,
+                    uptime: null,
+                    codingScore: null,
+                    zeroDataRetention: null,
+                    created: null,
+                },
+                {
+                    id: "acme/thinker-v2",
+                    canonicalSlug: "acme/thinker-v2",
+                    name: "Acme Thinker V2",
+                    description: null,
+                    contextLength: 256000,
+                    maximumCompletionTokens: null,
+                    inputModalities: ["text"],
+                    outputModalities: ["text"],
+                    supportedParameters: [],
+                    promptPrice: null,
+                    completionPrice: null,
+                    requestPrice: null,
+                    cacheReadPrice: null,
+                    cacheWritePrice: null,
+                    reasoning: true,
+                    structuredOutput: true,
+                    availableProviders: [],
+                    quantisations: [],
+                    latency: null,
+                    throughput: null,
+                    uptime: null,
+                    codingScore: null,
+                    zeroDataRetention: null,
+                    created: null,
+                },
+            ],
+            page: 1,
+            pageSize: 100,
+            hasMore: false,
+        });
+        mocks.discoverAiModelDetailsDraft.mockImplementation(async (_, id) => ({
+            id,
+            canonicalSlug: id,
+            name: id,
+            description: null,
+            contextLength: 200000,
+            maximumCompletionTokens: null,
+            inputModalities: ["text"],
+            outputModalities: ["text"],
+            supportedParameters: [],
+            promptPrice: null,
+            completionPrice: null,
+            requestPrice: null,
+            cacheReadPrice: null,
+            cacheWritePrice: null,
+            reasoning: false,
+            structuredOutput: true,
+            availableProviders: [],
+            quantisations: [],
+            latency: null,
+            throughput: null,
+            uptime: null,
+            codingScore: null,
+            zeroDataRetention: null,
+            created: null,
+        }));
+
+        render(<SettingsWindow/>);
+        await screen.findByLabelText("Terminal");
+
+        openAiSettings();
+
+        expect(screen.queryByLabelText("Apply to")).not.toBeInTheDocument();
+
+        const splitToggle = screen.getByLabelText<HTMLInputElement>("Use a different model for commit messages");
+        fireEvent.click(splitToggle);
+
+        const targetSelect = screen.getByLabelText<HTMLSelectElement>("Apply to");
+        expect(targetSelect).toBeInTheDocument();
+        expect(targetSelect).toHaveValue("model");
+
+        fireEvent.click(screen.getByRole("button", {name: "Discover models"}));
+        expect(await screen.findByText("Acme Sprinter V1")).toBeInTheDocument();
+
+        // Target commitMessageModel
+        fireEvent.change(targetSelect, {target: {value: "commitMessageModel"}});
+        fireEvent.click(screen.getByText("Acme Sprinter V1"));
+
+        await waitFor(() => {
+            expect(screen.getByLabelText("Commit message model")).toHaveValue("acme/sprinter-v1");
+            expect(screen.getByLabelText("Model")).toHaveValue("");
+        });
+
+        // Target model
+        fireEvent.change(targetSelect, {target: {value: "model"}});
+        fireEvent.click(screen.getByText("Acme Thinker V2"));
+
+        await waitFor(() => {
+            expect(screen.getByLabelText("Model")).toHaveValue("acme/thinker-v2");
+            expect(screen.getByLabelText("Commit message model")).toHaveValue("acme/sprinter-v1");
+        });
+    });
+
+    it("marks environment-managed commit message model read-only and respects loaded value", async () => {
+        mocks.getAiConfiguration.mockResolvedValueOnce({
+            provider: "OpenRouter",
+            endpoint: "https://openrouter.ai/api/v1",
+            model: "main-model",
+            commitMessageModel: "env-commit-model",
+            reasoningPreference: "Automatic",
+            effortCapability: {status: "unknown"},
+            hasApiKey: false,
+            configured: true,
+            insecureTransport: false,
+            commitContextLimitKib: 24,
+            conflictContextLimitKib: 48,
+            commitMessageMaxTokens: 512,
+            conflictResolutionMaxTokens: 4096,
+            commitMessagePrompt: "Write a concise commit message.",
+            conflictResolutionPrompt: "Resolve the conflict.",
+            includeCommitHistory: true,
+            sources: {commitMessageModel: "Environment"},
+            environmentFields: ["commitMessageModel"],
+            selectedProfileId: "default",
+            profiles: [
+                {
+                    id: "default",
+                    name: "Default profile",
+                    provider: "OpenRouter",
+                    endpoint: "https://openrouter.ai/api/v1",
+                    model: "main-model",
+                    commitMessageModel: "env-commit-model",
+                    reasoningPreference: "Automatic",
+                    effortCapability: {status: "unknown"},
+                    openRouter: {
+                        privacy: "NoDataCollection",
+                        allowFallbacks: true,
+                        requireParameters: true,
+                        routingStrategy: "Default",
+                        maxPromptPrice: "",
+                        maxCompletionPrice: "",
+                        preferredProviders: [],
+                        allowedProviders: [],
+                        ignoredProviders: [],
+                        preferredMaxLatency: "",
+                        preferredMinThroughput: "",
+                        diagnostics: false,
+                    },
+                    apiStyle: "ChatCompletions",
+                    requestPath: "",
+                    modelsPath: "",
+                    authMode: "Bearer",
+                    authHeader: "",
+                    maxTokensField: "",
+                    azureDeployment: "",
+                    azureApiVersion: "2024-10-21",
+                },
+            ],
+        });
+
+        render(<SettingsWindow/>);
+        await screen.findByLabelText("Terminal");
+
+        openAiSettings();
+
+        const splitToggle = await screen.findByLabelText<HTMLInputElement>("Use a different model for commit messages");
+        expect(splitToggle).toBeChecked();
+        expect(splitToggle).toBeDisabled();
+
+        const commitModelInput = screen.getByLabelText<HTMLInputElement>("Commit message model");
+        expect(commitModelInput).toHaveValue("env-commit-model");
+        expect(commitModelInput).toHaveAttribute("readonly");
     });
 
     it("loads the commit graph button setting off by default and saves changes", async () => {

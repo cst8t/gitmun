@@ -48,6 +48,8 @@ pub struct SaveAiConfigurationRequest {
     pub provider: AiProvider,
     pub endpoint: String,
     pub model: String,
+    #[serde(default)]
+    pub commit_message_model: Option<String>,
     pub reasoning_preference: AiReasoningPreference,
     #[serde(default)]
     pub api_style: Option<AiApiStyle>,
@@ -80,6 +82,7 @@ pub struct AiConfigurationView {
     pub provider: AiProvider,
     pub endpoint: String,
     pub model: String,
+    pub commit_message_model: String,
     pub reasoning_preference: AiReasoningPreference,
     pub effort_capability: AiEffortCapability,
     pub commit_context_limit_kib: u32,
@@ -317,6 +320,14 @@ fn emit_ai_progress(
     ));
 }
 
+fn usage_task_from_identifier(task: &str) -> AiTask {
+    match task {
+        "commitMessage" => AiTask::CommitMessage,
+        "conflictResolution" | "conflictRegeneration" => AiTask::ConflictResolution,
+        _ => AiTask::Writing,
+    }
+}
+
 fn record_ai_usage(
     state: &AppState,
     task: &str,
@@ -330,9 +341,10 @@ fn record_ai_usage(
     status: &str,
 ) {
     let settings = state.git_service.get_settings();
-    let Ok(configuration) = state.ai_extension.environment.resolve(&settings) else {
+    let Ok(mut configuration) = state.ai_extension.environment.resolve(&settings) else {
         return;
     };
+    configuration.apply_task_model(usage_task_from_identifier(task));
     let usage = usage.cloned().unwrap_or_default();
     state.git_service.record_ai_usage(crate::ai::AiUsageRecord {
         timestamp: SystemTime::now()
@@ -560,6 +572,7 @@ async fn configuration_view_for_settings(
         provider: configuration.provider,
         endpoint: configuration.endpoint,
         model: configuration.model,
+        commit_message_model: configuration.commit_message_model,
         reasoning_preference: configuration.reasoning_preference,
         effort_capability: configuration.effort_capability,
         commit_context_limit_kib: configuration.commit_context_limit_kib,
@@ -704,7 +717,7 @@ async fn apply_repository_prompts(
                 }
             }
         }
-        AiTask::ConnectionTest => {}
+        AiTask::ConnectionTest | AiTask::Writing => {}
     }
     Ok(())
 }
@@ -827,6 +840,9 @@ fn profile_from_request(
     profile.provider = request.provider;
     profile.endpoint = request.endpoint.trim().to_string();
     profile.model = request.model.trim().to_string();
+    if let Some(value) = &request.commit_message_model {
+        profile.commit_message_model = value.trim().to_string();
+    }
     profile.reasoning_preference = request.reasoning_preference;
     if destination_changed {
         profile.effort_capability = AiEffortCapability::Unknown;
@@ -1031,7 +1047,12 @@ pub async fn save_ai_configuration(
         .any(|field| {
             matches!(
                 field.as_str(),
-                "enabled" | "provider" | "endpoint" | "model" | "reasoningPreference"
+                "enabled"
+                    | "provider"
+                    | "endpoint"
+                    | "model"
+                    | "commitMessageModel"
+                    | "reasoningPreference"
             )
         })
     {
@@ -1350,9 +1371,11 @@ pub fn set_ai_privacy_settings(
 async fn configured_settings(
     state: &AppState,
     require_model: bool,
+    task: AiTask,
 ) -> Result<(EffectiveAiConfiguration, String), AiError> {
     let settings = state.git_service.get_settings();
-    let configuration = state.ai_extension.environment.resolve(&settings)?;
+    let mut configuration = state.ai_extension.environment.resolve(&settings)?;
+    configuration.apply_task_model(task);
     validate_effective_configuration(&configuration, require_model)?;
     let key = if api_key_optional(&configuration) {
         String::new()
@@ -1369,7 +1392,8 @@ pub async fn test_ai_connection(
     state: tauri::State<'_, AppState>,
     app: tauri::AppHandle,
 ) -> Result<AiConnectionTestResult, AiError> {
-    let (configuration, api_key) = configured_settings(&state, true).await?;
+    let (configuration, api_key) =
+        configured_settings(&state, true, AiTask::ConnectionTest).await?;
     let runtime = state
         .ai_extension
         .runtime
@@ -1540,7 +1564,8 @@ pub async fn discover_ai_models(
     query: AiModelQuery,
     state: tauri::State<'_, AppState>,
 ) -> Result<AiModelPage, AiError> {
-    let (configuration, api_key) = configured_settings(&state, false).await?;
+    let (configuration, api_key) =
+        configured_settings(&state, false, AiTask::ConnectionTest).await?;
     let runtime = state
         .ai_extension
         .runtime
@@ -2516,7 +2541,8 @@ async fn generate_ai_commit_messages_inner(
         "commitMessage",
         "collectingContext",
     );
-    let (mut configuration, api_key) = configured_settings(state, true).await?;
+    let (mut configuration, api_key) =
+        configured_settings(state, true, AiTask::CommitMessage).await?;
     apply_repository_prompts(
         state,
         &request.repo_path,
@@ -2788,7 +2814,7 @@ async fn generate_ai_writing_inner(
         request.task.identifier(),
         "collectingContext",
     );
-    let (configuration, api_key) = configured_settings(state, true).await?;
+    let (configuration, api_key) = configured_settings(state, true, AiTask::Writing).await?;
     require_consent(state, &configuration)?;
     let (context, _) = prepare_writing_context(
         state,
@@ -2828,7 +2854,7 @@ async fn generate_ai_writing_inner(
         &system_prompt,
         &context.content,
         configuration.commit_message_max_tokens,
-        AiTask::CommitMessage,
+        AiTask::Writing,
         &mut budget,
         cancellation,
     )
@@ -3399,7 +3425,8 @@ async fn resolve_conflict_with_ai_inner_filtered(
         "conflictResolution",
         "collectingContext",
     );
-    let (mut configuration, api_key) = configured_settings(state, true).await?;
+    let (mut configuration, api_key) =
+        configured_settings(state, true, AiTask::ConflictResolution).await?;
     let (_, exclusions) = repository_context_options(state, &request.repo_path, &configuration);
     if excluded_path(&request.file_path, &exclusions) {
         return Err(AiError::new("sensitivePath"));
@@ -3903,6 +3930,7 @@ mod tests {
             provider,
             endpoint,
             model: "test-model".to_string(),
+            commit_message_model: String::new(),
             api_style: AiApiStyle::ChatCompletions,
             request_path: if provider == AiProvider::Claude {
                 "/messages".to_string()
@@ -3941,6 +3969,7 @@ mod tests {
             provider: AiProvider::OpenAi,
             endpoint: "https://api.openai.com/v1".to_string(),
             model: "test-model".to_string(),
+            commit_message_model: None,
             reasoning_preference: AiReasoningPreference::Automatic,
             api_style: None,
             request_path: None,
@@ -3952,6 +3981,31 @@ mod tests {
             azure_api_version: None,
             open_router: None,
             api_key: None,
+        }
+    }
+
+    #[test]
+    fn usage_history_records_commit_message_override_model() {
+        let mut configuration =
+            provider_configuration(AiProvider::OpenAi, "https://api.openai.com/v1".to_string());
+        configuration.model = "main-model".to_string();
+        configuration.commit_message_model = "commit-model".to_string();
+
+        for (task, expected_model) in [
+            ("commitMessage", "commit-model"),
+            ("conflictResolution", "main-model"),
+            ("conflictRegeneration", "main-model"),
+            ("stagedReview", "main-model"),
+            ("branchSummary", "main-model"),
+            ("pullRequestDescription", "main-model"),
+            ("releaseNotes", "main-model"),
+        ] {
+            let mut resolved = configuration.clone();
+            resolved.apply_task_model(usage_task_from_identifier(task));
+            assert_eq!(
+                resolved.model, expected_model,
+                "usage task {task} should record {expected_model}"
+            );
         }
     }
 

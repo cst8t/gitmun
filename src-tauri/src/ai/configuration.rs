@@ -10,6 +10,7 @@ use url::{Host, Url};
 use crate::git::types::Settings;
 
 use super::AiError;
+use super::api::AiTask;
 use super::providers::ProviderRegistry;
 use super::types::{
     AiApiStyle, AiAuthMode, AiEffortCapability, AiProfile, AiProvider, AiReasoningPreference,
@@ -32,6 +33,7 @@ pub(crate) struct EffectiveAiConfiguration {
     pub provider: AiProvider,
     pub endpoint: String,
     pub model: String,
+    pub commit_message_model: String,
     pub api_style: AiApiStyle,
     pub request_path: String,
     pub models_path: String,
@@ -99,6 +101,15 @@ impl EffectiveAiConfiguration {
             self.destination_authority()?
         ))
     }
+
+    pub(crate) fn apply_task_model(&mut self, task: AiTask) {
+        if matches!(task, AiTask::CommitMessage) {
+            let override_model = self.commit_message_model.trim();
+            if !override_model.is_empty() {
+                self.model = override_model.to_string();
+            }
+        }
+    }
 }
 
 #[derive(Default)]
@@ -107,6 +118,7 @@ struct EnvironmentValues {
     provider: Option<AiProvider>,
     endpoint: Option<String>,
     model: Option<String>,
+    commit_model: Option<String>,
     api_key: Option<String>,
     reasoning: Option<AiReasoningPreference>,
     api_style: Option<AiApiStyle>,
@@ -163,6 +175,7 @@ impl AiLaunchOverrides {
         self.values.provider = self.parse_value(environment, "GITMUN_AI_PROVIDER", parse_provider);
         self.values.endpoint = self.string_value(environment, "GITMUN_AI_ENDPOINT");
         self.values.model = self.string_value(environment, "GITMUN_AI_MODEL");
+        self.values.commit_model = self.string_value(environment, "GITMUN_AI_COMMIT_MODEL");
         self.values.api_key = self.secret_value(environment, "GITMUN_AI_API_KEY");
         self.values.reasoning =
             self.parse_value(environment, "GITMUN_AI_REASONING", parse_reasoning);
@@ -523,6 +536,18 @@ impl AiLaunchOverrides {
             &mut sources,
             &mut environment_fields,
         );
+        let stored_commit_model = provider_matches_profile
+            .then(|| stored_profile.map(|profile| profile.commit_message_model.trim().to_string()))
+            .flatten()
+            .filter(|model| !model.is_empty());
+        let commit_message_model = choose_string(
+            "commitMessageModel",
+            self.values.commit_model.clone(),
+            stored_commit_model,
+            "",
+            &mut sources,
+            &mut environment_fields,
+        );
         let fallback_profile = AiProfile::default();
         let profile = stored_profile.unwrap_or(&fallback_profile);
         let api_style = choose_profile_value(
@@ -655,6 +680,7 @@ impl AiLaunchOverrides {
             provider,
             endpoint,
             model,
+            commit_message_model,
             api_style,
             request_path,
             models_path,
@@ -1104,5 +1130,141 @@ mod tests {
                 .code,
             "insecureRemoteEndpoint"
         );
+    }
+
+    #[test]
+    fn commit_message_model_resolves_from_stored_profile() {
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = settings.extensions.ai.ensure_profile();
+        profile.provider = AiProvider::OpenRouter;
+        profile.model = "acme/thinker-v2".to_string();
+        profile.commit_message_model = "acme/sprinter-v1".to_string();
+
+        let environment = overrides(&[]);
+        let effective = environment.resolve(&settings).unwrap();
+
+        assert_eq!(effective.model, "acme/thinker-v2");
+        assert_eq!(effective.commit_message_model, "acme/sprinter-v1");
+        assert_eq!(
+            effective.sources.get("commitMessageModel"),
+            Some(&AiConfigurationSource::StoredProfile)
+        );
+        assert!(
+            !effective
+                .environment_fields
+                .contains(&"commitMessageModel".to_string())
+        );
+    }
+
+    #[test]
+    fn gitmun_ai_commit_model_environment_override_takes_precedence() {
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = settings.extensions.ai.ensure_profile();
+        profile.provider = AiProvider::OpenRouter;
+        profile.model = "stored-main".to_string();
+        profile.commit_message_model = "stored-commit".to_string();
+
+        let environment = overrides(&[("GITMUN_AI_COMMIT_MODEL", "env-commit")]);
+        let effective = environment.resolve(&settings).unwrap();
+
+        assert_eq!(effective.model, "stored-main");
+        assert_eq!(effective.commit_message_model, "env-commit");
+        assert_eq!(
+            effective.sources.get("commitMessageModel"),
+            Some(&AiConfigurationSource::Environment)
+        );
+        assert!(
+            effective
+                .environment_fields
+                .contains(&"commitMessageModel".to_string())
+        );
+    }
+
+    #[test]
+    fn stored_commit_model_is_ignored_when_provider_changes() {
+        let mut settings = Settings::default();
+        settings.extensions.ai.enabled = true;
+        let profile = settings.extensions.ai.ensure_profile();
+        profile.provider = AiProvider::OpenRouter;
+        profile.commit_message_model = "openrouter-commit-model".to_string();
+
+        let environment = overrides(&[("GITMUN_AI_PROVIDER", "openai")]);
+        let effective = environment.resolve(&settings).unwrap();
+
+        assert_eq!(effective.provider, AiProvider::OpenAi);
+        assert_eq!(effective.commit_message_model, "");
+    }
+
+    fn configuration_with_commit_override(commit_message_model: &str) -> EffectiveAiConfiguration {
+        EffectiveAiConfiguration {
+            enabled: true,
+            profile_id: "test".to_string(),
+            provider: AiProvider::OpenRouter,
+            endpoint: "https://openrouter.ai/api/v1".to_string(),
+            model: "acme/thinker-v2".to_string(),
+            commit_message_model: commit_message_model.to_string(),
+            api_style: AiApiStyle::ChatCompletions,
+            request_path: "/chat/completions".to_string(),
+            models_path: "/models".to_string(),
+            auth_mode: AiAuthMode::Bearer,
+            auth_header: "Authorization".to_string(),
+            max_tokens_field: "max_tokens".to_string(),
+            extra_headers: Default::default(),
+            azure_deployment: String::new(),
+            azure_api_version: String::new(),
+            reasoning_preference: AiReasoningPreference::Automatic,
+            effort_capability: AiEffortCapability::Unknown,
+            open_router: Default::default(),
+            commit_context_limit_kib: 24,
+            conflict_context_limit_kib: 48,
+            commit_message_max_tokens: 512,
+            conflict_resolution_max_tokens: 4096,
+            commit_message_prompt: String::new(),
+            conflict_resolution_prompt: String::new(),
+            include_commit_history: true,
+            global_exclusions: Vec::new(),
+            sources: Default::default(),
+            environment_fields: Vec::new(),
+            environment_api_key: false,
+        }
+    }
+
+    #[test]
+    fn apply_task_model_routes_commit_messages_when_override_is_set() {
+        let configuration = configuration_with_commit_override("acme/sprinter-v1");
+
+        let mut commit_config = configuration.clone();
+        commit_config.apply_task_model(AiTask::CommitMessage);
+        assert_eq!(commit_config.model, "acme/sprinter-v1");
+
+        for other_task in [
+            AiTask::ConflictResolution,
+            AiTask::Writing,
+            AiTask::ConnectionTest,
+        ] {
+            let mut other_config = configuration.clone();
+            other_config.apply_task_model(other_task);
+            assert_eq!(other_config.model, "acme/thinker-v2");
+        }
+    }
+
+    #[test]
+    fn apply_task_model_leaves_model_untouched_when_override_is_empty_or_whitespace() {
+        for empty_override in ["", "   "] {
+            let configuration = configuration_with_commit_override(empty_override);
+
+            for task in [
+                AiTask::CommitMessage,
+                AiTask::ConflictResolution,
+                AiTask::Writing,
+                AiTask::ConnectionTest,
+            ] {
+                let mut task_config = configuration.clone();
+                task_config.apply_task_model(task);
+                assert_eq!(task_config.model, "acme/thinker-v2");
+            }
+        }
     }
 }

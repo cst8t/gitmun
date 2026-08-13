@@ -697,6 +697,7 @@ pub(crate) mod test_helpers {
             provider,
             endpoint: provider.default_endpoint().to_string(),
             model: "test-model".to_string(),
+            commit_message_model: String::new(),
             api_style: AiApiStyle::ChatCompletions,
             request_path: "/chat/completions".to_string(),
             models_path: "/models".to_string(),
@@ -1145,5 +1146,71 @@ mod fallback_tests {
             br#"{"error":{"message":"invalid value for response_format","type":"invalid_request_error"}}"#,
             Some(AiStructuredOutputMode::JsonObject),
         ));
+    }
+
+    #[tokio::test]
+    async fn task_model_routing_sends_override_for_commit_and_main_for_conflict() {
+        let completed = json!({
+            "choices": [{"message": {"content": "{\"regions\":[]}"}, "finish_reason": "stop"}]
+        })
+        .to_string();
+        let (endpoint, requests) =
+            test_helpers::mock_provider(vec![("200 OK", completed.clone()), ("200 OK", completed)]);
+        let runtime = AiRuntime::new().unwrap();
+        let mut base_config = test_helpers::configuration(AiProvider::OpenAiCompatible);
+        base_config.endpoint = endpoint;
+        base_config.auth_mode = AiAuthMode::None;
+        base_config.model = "main-model".to_string();
+        base_config.commit_message_model = "commit-override-model".to_string();
+        base_config.reasoning_preference = AiReasoningPreference::ProviderDefault;
+
+        let mut commit_config = base_config.clone();
+        commit_config.apply_task_model(AiTask::CommitMessage);
+        let mut commit_budget = AiRequestBudget::new();
+        super::run_provider(
+            &runtime,
+            &commit_config,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::CommitMessage,
+            &mut commit_budget,
+            None,
+        )
+        .await
+        .unwrap();
+
+        let mut conflict_config = base_config.clone();
+        conflict_config.apply_task_model(AiTask::ConflictResolution);
+        let mut conflict_budget = AiRequestBudget::new();
+        super::run_provider_with_output(
+            &runtime,
+            &conflict_config,
+            "",
+            "system",
+            "user",
+            128,
+            AiTask::ConflictResolution,
+            &mut conflict_budget,
+            &test_helpers::conflict_contract(),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let requests = requests.recv_timeout(Duration::from_secs(2)).unwrap();
+        assert_eq!(requests.len(), 2);
+
+        let commit_body: Value =
+            serde_json::from_str(requests[0].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(
+            commit_body.get("model"),
+            Some(&json!("commit-override-model"))
+        );
+
+        let conflict_body: Value =
+            serde_json::from_str(requests[1].split("\r\n\r\n").nth(1).unwrap()).unwrap();
+        assert_eq!(conflict_body.get("model"), Some(&json!("main-model")));
     }
 }

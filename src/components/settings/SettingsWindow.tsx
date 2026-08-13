@@ -389,6 +389,9 @@ export function SettingsWindow() {
     const [aiProvider, setAiProvider] = useState<AiProvider>("OpenRouter");
     const [aiEndpoint, setAiEndpoint] = useState("");
     const [aiModel, setAiModel] = useState("");
+    const [aiCommitMessageModel, setAiCommitMessageModel] = useState("");
+    const [aiSplitCommitModel, setAiSplitCommitModel] = useState(false);
+    const [aiModelCatalogueTarget, setAiModelCatalogueTarget] = useState<"model" | "commitMessageModel">("model");
     const [aiReasoningPreference, setAiReasoningPreference] = useState<AiReasoningPreference>("Automatic");
     const [aiCommitContextLimitKib, setAiCommitContextLimitKib] = useState(String(DEFAULT_AI_COMMIT_CONTEXT_LIMIT_KIB));
     const [aiConflictContextLimitKib, setAiConflictContextLimitKib] = useState(String(DEFAULT_AI_CONFLICT_CONTEXT_LIMIT_KIB));
@@ -450,8 +453,9 @@ export function SettingsWindow() {
     const aiConfigurationMatchesProfile = aiProfileId !== "" && aiConfiguration?.selectedProfileId === aiProfileId;
     const aiHasStoredCredential = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.hasApiKey);
     const aiCredentialManagedByEnvironment = aiConfigurationMatchesProfile && Boolean(aiConfiguration?.credentialManagedByEnvironment);
-    const aiFieldManaged = (field: string) => aiConfigurationMatchesProfile
-        && (aiConfiguration?.environmentFields ?? []).includes(field);
+    const aiFieldManaged = useCallback((field: string) => aiConfigurationMatchesProfile
+        && (aiConfiguration?.environmentFields ?? []).includes(field),
+    [aiConfiguration, aiConfigurationMatchesProfile]);
     const aiUsesCustomBedrockEndpoint = aiProvider === "Bedrock"
         && !BEDROCK_RUNTIME_ENDPOINTS.includes(aiEndpoint.trim());
     const aiReasoningUnavailable = (level: AiReasoningPreference): boolean => {
@@ -637,6 +641,10 @@ export function SettingsWindow() {
             setAiProvider(ai.provider === "Disabled" ? "OpenRouter" : ai.provider);
             setAiEndpoint(ai.provider === "Disabled" ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? "" : ai.endpoint);
             setAiModel(ai.model);
+            const loadedCommitModel = ai.commitMessageModel ?? "";
+            setAiCommitMessageModel(loadedCommitModel);
+            setAiSplitCommitModel(Boolean(loadedCommitModel.trim()));
+            setAiModelCatalogueTarget("model");
             setAiReasoningPreference(ai.reasoningPreference);
             setAiCommitContextLimitKib(String(ai.commitContextLimitKib));
             setAiConflictContextLimitKib(String(ai.conflictContextLimitKib));
@@ -716,6 +724,7 @@ export function SettingsWindow() {
             provider: aiProvider,
             endpoint: aiEndpoint,
             model: aiModel,
+            commitMessageModel: aiSplitCommitModel ? aiCommitMessageModel.trim() : "",
             reasoningPreference: aiReasoningPreference,
             openRouter: aiOpenRouter,
             apiStyle: aiApiStyle,
@@ -735,8 +744,10 @@ export function SettingsWindow() {
         setAiProfileId(saved.selectedProfileId);
         setAiEndpoint(saved.endpoint);
         setAiModel(saved.model);
+        setAiCommitMessageModel(saved.commitMessageModel ?? "");
+        setAiSplitCommitModel(Boolean(saved.commitMessageModel?.trim()));
         return saved;
-    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCommitMessageModel, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, aiSplitCommitModel]);
 
     const handleAiProviderChange = useCallback((provider: AiProvider) => {
         setAiProvider(provider);
@@ -762,6 +773,9 @@ export function SettingsWindow() {
             ? AI_PROVIDER_ENDPOINTS.OpenRouter ?? ""
             : profile.endpoint || AI_PROVIDER_ENDPOINTS[profile.provider] || "");
         setAiModel(profile.model);
+        setAiCommitMessageModel(profile.commitMessageModel ?? "");
+        setAiSplitCommitModel(Boolean(profile.commitMessageModel?.trim()));
+        setAiModelCatalogueTarget("model");
         setAiReasoningPreference(profile.reasoningPreference);
         setAiOpenRouter(profile.openRouter);
         setAiApiStyle(profile.apiStyle);
@@ -804,6 +818,9 @@ export function SettingsWindow() {
         setAiProvider("OpenRouter");
         setAiEndpoint(AI_PROVIDER_ENDPOINTS.OpenRouter ?? "");
         setAiModel("");
+        setAiCommitMessageModel("");
+        setAiSplitCommitModel(false);
+        setAiModelCatalogueTarget("model");
         setAiReasoningPreference("Automatic");
         setAiOpenRouter(DEFAULT_OPEN_ROUTER_SETTINGS);
         setAiApiStyle("ChatCompletions");
@@ -834,6 +851,10 @@ export function SettingsWindow() {
             setAiProvider(configuration.provider);
             setAiEndpoint(configuration.endpoint);
             setAiModel(configuration.model);
+            const commitModel = configuration.commitMessageModel ?? "";
+            setAiCommitMessageModel(commitModel);
+            setAiSplitCommitModel(Boolean(commitModel.trim()));
+            setAiModelCatalogueTarget("model");
             setAiReasoningPreference(configuration.reasoningPreference);
             setAiOpenRouter(profile?.openRouter ?? DEFAULT_OPEN_ROUTER_SETTINGS);
             setAiApiStyle(profile?.apiStyle ?? "ChatCompletions");
@@ -872,6 +893,7 @@ export function SettingsWindow() {
                 provider: aiProvider,
                 endpoint: aiEndpoint,
                 model: aiModel,
+                commitMessageModel: aiSplitCommitModel ? aiCommitMessageModel.trim() : "",
                 reasoningPreference: aiReasoningPreference,
                 openRouter: aiOpenRouter,
                 apiStyle: aiApiStyle,
@@ -892,10 +914,18 @@ export function SettingsWindow() {
         } finally {
             setDiscoveringAiModels(false);
         }
-    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelAuthor, aiModelHostingProvider, aiModelMaximumCompletionPrice, aiModelMaximumPromptPrice, aiModelMinimumContext, aiModelSearch, aiModelSort, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProgrammingModelsOnly, aiProvider, aiReasoningPreference, aiRequestPath, aiZdrModelsOnly, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCommitMessageModel, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelAuthor, aiModelHostingProvider, aiModelMaximumCompletionPrice, aiModelMaximumPromptPrice, aiModelMinimumContext, aiModelSearch, aiModelSort, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProgrammingModelsOnly, aiProvider, aiReasoningPreference, aiRequestPath, aiSplitCommitModel, aiZdrModelsOnly, t]);
 
     const handleSelectAiModel = useCallback(async (model: AiModelInfo) => {
-        setAiModel(model.id);
+        if (aiSplitCommitModel && aiModelCatalogueTarget === "commitMessageModel") {
+            if (!aiFieldManaged("commitMessageModel")) {
+                setAiCommitMessageModel(model.id);
+            }
+        } else {
+            if (!aiFieldManaged("model")) {
+                setAiModel(model.id);
+            }
+        }
         if (aiProvider !== "OpenRouter") return;
         setDiscoveringAiModels(true);
         try {
@@ -906,6 +936,7 @@ export function SettingsWindow() {
                 provider: aiProvider,
                 endpoint: aiEndpoint,
                 model: model.id,
+                commitMessageModel: aiSplitCommitModel ? aiCommitMessageModel.trim() : "",
                 reasoningPreference: aiReasoningPreference,
                 openRouter: aiOpenRouter,
                 apiStyle: aiApiStyle,
@@ -926,7 +957,7 @@ export function SettingsWindow() {
         } finally {
             setDiscoveringAiModels(false);
         }
-    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCommitMessageModel, aiCredentialValue, aiEnabled, aiEndpoint, aiFieldManaged, aiMaxTokensField, aiModelCatalogueTarget, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, aiSplitCommitModel, t]);
 
     const handleClearAiUsageHistory = useCallback(async () => {
         try {
@@ -947,6 +978,7 @@ export function SettingsWindow() {
                 provider: aiConfiguration.provider,
                 endpointAuthority,
                 model: aiConfiguration.model,
+                commitMessageModel: aiConfiguration.commitMessageModel,
                 configured: aiConfiguration.configured,
                 environmentFields: aiConfiguration.environmentFields,
                 sources: aiConfiguration.sources,
@@ -1012,6 +1044,7 @@ export function SettingsWindow() {
                 provider: aiProvider,
                 endpoint: aiEndpoint,
                 model: aiModel,
+                commitMessageModel: aiSplitCommitModel ? aiCommitMessageModel.trim() : "",
                 reasoningPreference: aiReasoningPreference,
                 openRouter: aiOpenRouter,
                 apiStyle: aiApiStyle,
@@ -1031,7 +1064,7 @@ export function SettingsWindow() {
         } finally {
             setTestingAi(false);
         }
-    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, t]);
+    }, [aiApiStyle, aiAuthHeader, aiAuthMode, aiAzureApiVersion, aiAzureDeployment, aiCommitMessageModel, aiCredentialValue, aiEnabled, aiEndpoint, aiMaxTokensField, aiModel, aiModelsPath, aiOpenRouter, aiProfileId, aiProfileName, aiProvider, aiReasoningPreference, aiRequestPath, aiSplitCommitModel, t]);
 
     const handleSave = useCallback(async () => {
         setSaving(true);
@@ -2210,6 +2243,20 @@ export function SettingsWindow() {
                                 {aiProvider !== "AzureOpenAi" && (
                                     <div className="settings-window__row">
                                         <label className="settings-window__label" htmlFor="settings-ai-model-search">{t("labels.aiModelDiscovery")}</label>
+                                        {aiSplitCommitModel && (
+                                            <div className="settings-window__inline-controls">
+                                                <label className="settings-window__label" htmlFor="settings-ai-model-target">{t("labels.aiModelCatalogueTarget")}</label>
+                                                <select
+                                                    id="settings-ai-model-target"
+                                                    className="settings-window__select"
+                                                    value={aiModelCatalogueTarget}
+                                                    onChange={event => setAiModelCatalogueTarget(event.target.value as "model" | "commitMessageModel")}
+                                                >
+                                                    <option value="model">{t("options.aiModelTargetDefault")}</option>
+                                                    <option value="commitMessageModel">{t("options.aiModelTargetCommitMessage")}</option>
+                                                </select>
+                                            </div>
+                                        )}
                                         {aiProvider === "OpenRouter" && (
                                             <details className="settings-window__model-filter-panel">
                                                 <summary>
@@ -2259,7 +2306,7 @@ export function SettingsWindow() {
                                         {aiModels.length > 0 && (
                                             <div className="settings-window__model-results" role="listbox" aria-label={t("labels.aiModelsAvailable")}>
                                                 {aiModels.map(model => (
-                                                    <button type="button" key={model.id} role="option" aria-selected={aiModel === model.id} onClick={() => handleSelectAiModel(model)}>
+                                                    <button type="button" key={model.id} role="option" aria-selected={(aiSplitCommitModel && aiModelCatalogueTarget === "commitMessageModel" ? aiCommitMessageModel : aiModel) === model.id} onClick={() => handleSelectAiModel(model)}>
                                                         <strong>{model.name}</strong>
                                                         <code>{model.id}</code>
                                                         <span>
@@ -2298,6 +2345,42 @@ export function SettingsWindow() {
                                             </div>
                                         )}
                                         <div className="settings-window__section-note">{t("notes.aiManualModelFallback")}</div>
+                                    </div>
+                                )}
+
+                                <div className="settings-window__row">
+                                    <label className="settings-window__switch-row">
+                                        <span className="settings-window__switch">
+                                            <input
+                                                id="settings-ai-split-commit-model"
+                                                type="checkbox"
+                                                checked={aiSplitCommitModel}
+                                                onChange={event => setAiSplitCommitModel(event.target.checked)}
+                                                disabled={aiFieldManaged("commitMessageModel")}
+                                            />
+                                            <span className="settings-window__switch-track"/>
+                                        </span>
+                                        <span className="settings-window__switch-label">{t("labels.aiSplitCommitModel")}</span>
+                                    </label>
+                                    <div className="settings-window__section-note">{t("notes.aiSplitCommitModel")}</div>
+                                </div>
+
+                                {aiSplitCommitModel && (
+                                    <div className="settings-window__row">
+                                        <label className="settings-window__label" htmlFor="settings-ai-commit-model">{t("labels.aiCommitMessageModel")}</label>
+                                        <input
+                                            id="settings-ai-commit-model"
+                                            className="settings-window__input"
+                                            type="text"
+                                            value={aiCommitMessageModel}
+                                            onChange={event => setAiCommitMessageModel(event.target.value)}
+                                            readOnly={aiFieldManaged("commitMessageModel")}
+                                            placeholder={t("placeholders.aiCommitMessageModel")}
+                                            spellCheck={false}
+                                            autoCapitalize="off"
+                                            autoCorrect="off"
+                                        />
+                                        <div className="settings-window__section-note">{t("notes.aiCommitMessageModel")}</div>
                                     </div>
                                 )}
 

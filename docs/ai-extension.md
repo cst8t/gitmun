@@ -6,7 +6,9 @@ Gitmun ships AI support as a bundled, experimental extension. It is disabled by 
 
 The provider list contains OpenAI, Anthropic Claude, Mistral, Google Gemini, OpenRouter, Azure OpenAI, Ollama, LM Studio and an advanced OpenAI-compatible option. Mistral and Gemini use their OpenAI-compatible APIs through Gitmun's shared transport. OpenRouter uses the same transport with additional privacy, routing, catalogue, pricing and usage handling.
 
-Profiles keep the provider, canonical endpoint, protocol, model and provider-specific settings together. Credentials are stored separately in the operating-system credential store and are scoped to the profile, provider and endpoint authority. Changing a destination does not reuse the previous destination's credential. Environment-provided secrets are never returned to the UI, written to the configuration file or copied to the credential store.
+Profiles keep the provider, canonical endpoint, protocol, main model, optional commit-message model override and provider-specific settings together. Credentials are stored separately in the operating-system credential store and are scoped to the profile, provider and endpoint authority. Changing a destination does not reuse the previous destination's credential. Environment-provided secrets are never returned to the UI, written to the configuration file or copied to the credential store.
+
+When configured, commit message generation (including composer candidates and regeneration) uses the commit-message model override; conflict resolution, AI writing features (staged review, branch summary, pull request description, release notes) and connection tests always use the main model. The connection test and reasoning effort capabilities are probed against the main model only; an override model that rejects reasoning controls surfaces `reasoningUnsupported` at generation time.
 
 Remote providers must use HTTPS. Plain HTTP is accepted only for loopback addresses such as `127.0.0.1`, `localhost` and `::1`. URLs containing credentials are rejected, redirects are not followed and responses are size-limited. Generation requests are not retried after transport failures or ordinary provider errors, but Gitmun can make bounded follow-up requests when automatic reasoning effort or structured output is rejected as unsupported. Large commit contexts can also require separate summarisation requests, so one user action can make more than one provider request.
 
@@ -21,6 +23,7 @@ GITMUN_AI_ENABLED
 GITMUN_AI_PROVIDER
 GITMUN_AI_ENDPOINT
 GITMUN_AI_MODEL
+GITMUN_AI_COMMIT_MODEL
 GITMUN_AI_API_KEY
 GITMUN_AI_REASONING
 GITMUN_AI_API_STYLE
@@ -66,4 +69,4 @@ OpenRouter requests use its unified reasoning control and exclude reasoning trac
 
 OpenRouter profiles can authenticate through [OpenRouter OAuth PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth). Gitmun opens the system browser, receives the one-use authorisation code on an arbitrary loopback port, exchanges it using an S256 verifier and stores only the resulting profile-scoped API key in the operating system credential store. The verifier and returned key never enter the frontend. Clearing the credential in Gitmun does not revoke the user-controlled key in OpenRouter; revoke it from the OpenRouter account when remote invalidation is required. OAuth is available only for the official `https://openrouter.ai` service and is disabled when the credential is supplied by the launch environment.
 
-Local usage history records provider, profile, model, task, duration, token counts, returned cost, request identifiers and status. When a new record is added, entries older than 30 days are removed and the history is capped at 1,000 records. It never stores prompts or repository content and can be cleared in Settings.
+Local usage history records provider, profile, the model that actually served the request, task, duration, token counts, returned cost, request identifiers and status. When a new record is added, entries older than 30 days are removed and the history is capped at 1,000 records. It never stores prompts or repository content and can be cleared in Settings.

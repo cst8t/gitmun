@@ -45,6 +45,7 @@ export type AiProfile = {
     provider: AiProvider;
     endpoint: string;
     model: string;
+    commitMessageModel: string;
     apiStyle: AiApiStyle;
     requestPath: string;
     modelsPath: string;
@@ -116,6 +117,7 @@ export type AiConfigurationView = {
     provider: AiProvider;
     endpoint: string;
     model: string;
+    commitMessageModel: string;
     reasoningPreference: AiReasoningPreference;
     effortCapability: AiEffortCapability;
     commitContextLimitKib: number;
@@ -141,6 +143,7 @@ export type SaveAiConfigurationRequest = {
     provider: AiProvider;
     endpoint: string;
     model: string;
+    commitMessageModel?: string;
     reasoningPreference: AiReasoningPreference;
     apiStyle?: AiApiStyle;
     requestPath?: string;

@@ -32,18 +32,19 @@ pub(crate) const MODEL_DISCOVERY_ATTEMPTS: usize = 3;
 pub(crate) const MAX_AI_OPERATION_REQUESTS: usize = 64;
 pub(crate) const MAX_AI_OPERATION_OUTBOUND_BYTES: usize = 2 * 1024 * 1024;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(crate) enum AiTask {
     ConnectionTest,
     CommitMessage,
     ConflictResolution,
+    Writing,
 }
 
 impl AiTask {
     pub(crate) fn request_timeout(self) -> Duration {
         match self {
             Self::ConnectionTest => CONNECTION_TEST_TIMEOUT,
-            Self::CommitMessage => REQUEST_TIMEOUT,
+            Self::CommitMessage | Self::Writing => REQUEST_TIMEOUT,
             Self::ConflictResolution => CONFLICT_RESOLUTION_REQUEST_TIMEOUT,
         }
     }
@@ -487,9 +488,12 @@ pub(crate) fn effort_for(
         AiReasoningPreference::Medium => Some("medium"),
         AiReasoningPreference::High => Some("high"),
         AiReasoningPreference::Automatic => Some(match (configuration.provider, task) {
-            (AiProvider::OpenRouter, AiTask::ConnectionTest | AiTask::CommitMessage) => "none",
+            (
+                AiProvider::OpenRouter,
+                AiTask::ConnectionTest | AiTask::CommitMessage | AiTask::Writing,
+            ) => "none",
             (_, AiTask::ConflictResolution) => "medium",
-            (_, AiTask::ConnectionTest | AiTask::CommitMessage) => "low",
+            (_, AiTask::ConnectionTest | AiTask::CommitMessage | AiTask::Writing) => "low",
         }),
     };
     if configuration.reasoning_preference != AiReasoningPreference::Automatic {

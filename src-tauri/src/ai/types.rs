@@ -160,6 +160,7 @@ pub struct AiProfile {
     pub provider: AiProvider,
     pub endpoint: String,
     pub model: String,
+    pub commit_message_model: String,
     pub api_style: AiApiStyle,
     pub request_path: String,
     pub models_path: String,
@@ -182,6 +183,7 @@ impl Default for AiProfile {
             provider: AiProvider::OpenRouter,
             endpoint: String::new(),
             model: String::new(),
+            commit_message_model: String::new(),
             api_style: AiApiStyle::ChatCompletions,
             request_path: String::new(),
             models_path: String::new(),
@@ -555,5 +557,34 @@ mod tests {
             custom.conflict_resolution_prompt,
             "Resolve conflicts using the repository conventions."
         );
+    }
+
+    #[test]
+    fn commit_message_model_round_trips_in_profiles() {
+        let profile = AiProfile {
+            model: "thinker-v3".to_string(),
+            commit_message_model: "sprinter-v2".to_string(),
+            ..AiProfile::default()
+        };
+
+        let value = serde_json::to_value(&profile).unwrap();
+        let restored: AiProfile = serde_json::from_value(value.clone()).unwrap();
+
+        assert_eq!(
+            value.get("commitMessageModel"),
+            Some(&serde_json::json!("sprinter-v2"))
+        );
+        assert_eq!(restored.commit_message_model, "sprinter-v2");
+    }
+
+    #[test]
+    fn commit_message_model_defaults_to_empty_when_omitted() {
+        let profile: AiProfile = serde_json::from_value(serde_json::json!({
+            "model": "gpt-test"
+        }))
+        .unwrap();
+
+        assert_eq!(profile.model, "gpt-test");
+        assert_eq!(profile.commit_message_model, "");
     }
 }
