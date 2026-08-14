@@ -47,9 +47,11 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
     const [error, setError] = useState<string | null>(null);
     const [policy, setPolicy] = useState<AiRepositoryPolicy>(DEFAULT_REPOSITORY_POLICY);
     const [policySaved, setPolicySaved] = useState(false);
+    const [copied, setCopied] = useState(false);
     const [environmentFields, setEnvironmentFields] = useState<string[]>([]);
     const operationIdRef = useRef("");
     const closeButtonRef = useRef<HTMLButtonElement>(null);
+    const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     useEffect(() => {
         closeButtonRef.current?.focus();
@@ -92,16 +94,32 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
         return () => window.clearInterval(interval);
     }, [busy]);
 
+    useEffect(() => {
+        return () => {
+            if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        };
+    }, []);
+
+    const clearCopiedFeedback = () => {
+        if (copiedTimerRef.current) {
+            clearTimeout(copiedTimerRef.current);
+            copiedTimerRef.current = null;
+        }
+        setCopied(false);
+    };
+
     const clearPreparedContext = () => {
         setPreview(null);
         setResult(null);
         setError(null);
+        clearCopiedFeedback();
     };
 
     const loadPreview = async () => {
         setBusy(true);
         setError(null);
         setResult(null);
+        clearCopiedFeedback();
         try {
             const [configuration, context] = await Promise.all([
                 getAiConfiguration(),
@@ -123,6 +141,7 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
         setProgressStage("collectingContext");
         setBusy(true);
         setError(null);
+        clearCopiedFeedback();
         try {
             setResult(await generateAiWriting({
                 repoPath,
@@ -161,7 +180,14 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
     };
 
     const copy = () => {
-        if (result) void navigator.clipboard?.writeText(result.content).catch(() => {});
+        if (!result) return;
+        void navigator.clipboard?.writeText(result.content).catch(() => {});
+        setCopied(true);
+        if (copiedTimerRef.current) clearTimeout(copiedTimerRef.current);
+        copiedTimerRef.current = setTimeout(() => {
+            setCopied(false);
+            copiedTimerRef.current = null;
+        }, 1200);
     };
 
     const savePolicy = async () => {
@@ -271,7 +297,7 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
                                 size: preview.contextSizeKib,
                                 limit: preview.contextLimitKib,
                             })}</p>
-                            <details>
+                            <details className="ai-context-preview__files">
                                 <summary>{t("context.files", {count: preview.files.length})}</summary>
                                 <ul>{preview.files.map(file => <li key={file}>{file}</li>)}</ul>
                             </details>
@@ -306,7 +332,7 @@ export function AiWritingDialog({repoPath, initialTask = "StagedReview", onClose
                     <button className={!result ? "ai-dialog__button--primary" : undefined} type="button" onClick={generate} disabled={busy || !preview || consentRequired}>
                         {busy ? t("actions.generating") : result ? t("actions.regenerate") : t("actions.generate")}
                     </button>
-                    <button className={result ? "ai-dialog__button--primary" : undefined} type="button" onClick={copy} disabled={!result}>{t("actions.copy")}</button>
+                    <button className={result ? "ai-dialog__button--primary" : undefined} type="button" onClick={copy} disabled={!result}>{copied ? t("actions.copied") : t("actions.copy")}</button>
                 </footer>
             </section>
         </div>

@@ -300,11 +300,19 @@
   max-height: 180px;
   overflow: auto;
   margin: 0;
-  padding-left: 20px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
   color: var(--text-secondary);
+  background: var(--bg);
   font-family: var(--font-mono);
   font-size: var(--font-size-xs);
   line-height: 1.5;
+  list-style-position: inside;
+}
+
+.ai-context-preview__files li + li {
+  margin-top: 2px;
 }
 
 .ai-commit-controls {

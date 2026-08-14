@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import {fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {act, fireEvent, render, screen, waitFor} from "@testing-library/react";
 import {afterEach, beforeEach, describe, expect, it, vi} from "vitest";
 import "../../i18n";
 import {AiWritingDialog} from "./AiWritingDialog";
@@ -34,7 +34,14 @@ vi.mock("@tauri-apps/api/event", () => ({
 }));
 
 describe("AiWritingDialog", () => {
+    const writeText = vi.fn(async () => undefined);
+
     beforeEach(() => {
+        writeText.mockClear();
+        Object.defineProperty(navigator, "clipboard", {
+            configurable: true,
+            value: {writeText},
+        });
         getAiConfiguration.mockResolvedValue({consentRequired: false});
         getAiWritingContextPreview.mockResolvedValue({
             provider: "OpenAi",
@@ -55,10 +62,12 @@ describe("AiWritingDialog", () => {
         });
         setAiRepositoryPolicy.mockReset();
         setAiRepositoryPolicy.mockResolvedValue(undefined);
+        vi.useRealTimers();
     });
 
     afterEach(() => {
         vi.clearAllMocks();
+        vi.useRealTimers();
     });
 
     it("requires a context preview and keeps generated content preview-only", async () => {
@@ -81,6 +90,11 @@ describe("AiWritingDialog", () => {
         fireEvent.click(screen.getByRole("button", {name: "Preview context"}));
 
         expect(await screen.findByText("OpenAi via api.openai.com")).toBeInTheDocument();
+        const filesSummary = screen.getByText("1 file included");
+        fireEvent.click(filesSummary);
+        expect(filesSummary.closest("details")).toHaveClass("ai-context-preview__files");
+        expect(screen.getByRole("list")).toBeVisible();
+        expect(screen.getByText("src/report.ts")).toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", {name: "Generate"}));
 
         expect(await screen.findByText("No actionable findings.")).toBeInTheDocument();
@@ -90,5 +104,15 @@ describe("AiWritingDialog", () => {
                 task: "StagedReview",
             }));
         });
+
+        vi.useFakeTimers();
+        const copyButton = screen.getByRole("button", {name: "Copy"});
+        fireEvent.click(copyButton);
+        expect(writeText).toHaveBeenCalledWith("No actionable findings.");
+        expect(screen.getByRole("button", {name: "Copied"})).toBeEnabled();
+        act(() => {
+            vi.advanceTimersByTime(1200);
+        });
+        expect(screen.getByRole("button", {name: "Copy"})).toBeEnabled();
     });
 });
