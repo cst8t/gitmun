@@ -4,7 +4,7 @@ Gitmun ships AI support as a bundled, experimental extension. It is disabled by 
 
 ## Providers
 
-The provider list contains OpenAI, Anthropic Claude, Mistral, Google Gemini, OpenRouter, Azure OpenAI, Ollama, LM Studio and an advanced OpenAI-compatible option. Mistral and Gemini use their OpenAI-compatible APIs through Gitmun's shared transport. OpenRouter uses the same transport with additional privacy, routing, catalogue, pricing and usage handling.
+The provider list contains OpenAI, Anthropic Claude, Mistral, Google Gemini, OpenRouter, Azure OpenAI, Amazon Bedrock, Ollama, LM Studio and an advanced OpenAI-compatible option. Mistral and Gemini use their OpenAI-compatible APIs through Gitmun's shared transport. OpenRouter uses the same transport with additional privacy, routing, catalogue, pricing and usage handling.
 
 Profiles keep the provider, canonical endpoint, protocol, main model, optional commit-message model override and provider-specific settings together. Credentials are stored separately in the operating-system credential store and are scoped to the profile, provider and endpoint authority. Changing a destination does not reuse the previous destination's credential. Environment-provided secrets are never returned to the UI, written to the configuration file or copied to the credential store.
 
