@@ -14,7 +14,7 @@ import type {
   SubmoduleStatus,
   UnversionedItem,
 } from "../../types";
-import { getAiConflictEligibility, getNumstat, openSettingsWindow } from "../../api/commands";
+import { getNumstat, openSettingsWindow } from "../../api/commands";
 import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
@@ -63,6 +63,7 @@ type StagingViewProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onConflictResolveWithAi: (path: string) => void;
+  getAiConflictEligibility?: (path: string) => Promise<{eligible: boolean; reason: string | null}>;
   onConflictResolveAllWithAi: (paths: string[]) => void;
   onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
@@ -426,7 +427,8 @@ export function StagingView({
   onSubmoduleFetch, onSubmodulePull, onSubmoduleOpen, onStageFile, onStageFiles, onUnstageFile, onUnstageFiles,
   onDiscardFile, onDiscardFiles, onDiscardAll, onExternalDiff, onStageAll, onUnstageAll,
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
-  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
+  onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, getAiConflictEligibility,
+  onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
   stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
   aiConflictOperationId, aiConflictBatchProgress, aiConflictBatchFailure,
   onSkipAiConflictBatchFailure, onStopAiConflictBatchFailure,
@@ -444,14 +446,14 @@ export function StagingView({
   const numstatGenerationRef = useRef(0);
 
   useEffect(() => {
-    if (!repoPath || !aiConfigured || conflictedFiles.length === 0) {
+    if (!repoPath || !aiConfigured || !getAiConflictEligibility || conflictedFiles.length === 0) {
       setAiEligibility({});
       return;
     }
     let cancelled = false;
     Promise.all(conflictedFiles.map(async file => {
       try {
-        return [file.path, await getAiConflictEligibility(repoPath, file.path)] as const;
+        return [file.path, await getAiConflictEligibility(file.path)] as const;
       } catch {
         return [file.path, {eligible: false, reason: "unknown"}] as const;
       }
@@ -461,7 +463,7 @@ export function StagingView({
     return () => {
       cancelled = true;
     };
-  }, [aiConfigured, conflictedFiles, repoPath]);
+  }, [aiConfigured, conflictedFiles, getAiConflictEligibility, repoPath]);
 
   const eligibleConflictPaths = useMemo(
     () => conflictedFiles

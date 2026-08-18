@@ -119,6 +119,7 @@ type CentrePanelProps = {
   onConflictAcceptTheirs: (path: string) => void;
   onConflictAcceptOurs: (path: string) => void;
   onConflictResolveWithAi: (path: string) => void;
+  getAiConflictEligibility?: (path: string) => Promise<{eligible: boolean; reason: string | null}>;
   onConflictResolveAllWithAi: (paths: string[]) => void;
   onCancelAiConflict: () => void;
   onOpenMergeTool: (path: string) => void;
@@ -399,6 +400,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onConflictAcceptTheirs={props.onConflictAcceptTheirs}
           onConflictAcceptOurs={props.onConflictAcceptOurs}
           onConflictResolveWithAi={props.onConflictResolveWithAi}
+          getAiConflictEligibility={props.getAiConflictEligibility}
           onConflictResolveAllWithAi={props.onConflictResolveAllWithAi}
           onCancelAiConflict={props.onCancelAiConflict}
           onOpenMergeTool={props.onOpenMergeTool}

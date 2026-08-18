@@ -122,6 +122,7 @@ function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> 
     onConflictAcceptTheirs: vi.fn(),
     onConflictAcceptOurs: vi.fn(),
     onConflictResolveWithAi: vi.fn(),
+    getAiConflictEligibility: path => getAiConflictEligibility("/repo", path),
     onConflictResolveAllWithAi: vi.fn(),
     onCancelAiConflict: vi.fn(),
     onOpenMergeTool: vi.fn(),

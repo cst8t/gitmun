@@ -29,7 +29,7 @@ import { CreateTagDialog } from "./sidebar/CreateTagDialog";
 import { CreateBranchDialog } from "./sidebar/CreateBranchDialog";
 import { RenameBranchDialog } from "./sidebar/RenameBranchDialog";
 import { StashPushDialog } from "./sidebar/StashPushDialog";
-import { UpstreamDialog, type UpstreamDialogMode } from "./sidebar/UpstreamDialog";
+import { UpstreamDialog } from "./sidebar/UpstreamDialog";
 import { ChevLeftIcon, ChevRightIcon, FolderIcon, GitIcon } from "./icons";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
@@ -40,10 +40,13 @@ import { useGitIdentity } from "../hooks/useGitIdentity";
 import { useGitTags } from "../hooks/useGitTags";
 import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
+import { useStagingOperations } from "../hooks/useStagingOperations";
+import { useProjectKeyboardShortcuts } from "../hooks/useProjectKeyboardShortcuts";
+import { useRemoteOperations } from "../hooks/useRemoteOperations";
+export { buildPushRequestForCurrentBranch } from "../hooks/useRemoteOperations";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
-  AiError,
   BranchInfo,
   CommitLogScope,
   CommitMarkers,
@@ -56,10 +59,6 @@ import type {
   LongRunningOperation,
   LongRunningOperationKind,
   OperationResult,
-  PullAnalysis,
-  PullStrategy,
-  PushRequest,
-  PushRejectionAnalysis,
   RemoteInfo,
   RepoOpenLocationKind,
   RowStriping,
@@ -71,11 +70,9 @@ import type { ResultLogEntry, ResultLogLevel } from "../utils/resultLog";
 import { appendResultLog } from "../utils/resultLog";
 import type { PlatformType } from "../hooks/usePlatform";
 import type { ToastType } from "../hooks/useToast";
-import { buildPushFailureDisplay } from "../utils/gitErrorDisplay";
-import { getRemoteActionState, splitUpstreamRef } from "../utils/remoteActionState";
+import { getRemoteActionState } from "../utils/remoteActionState";
 import { displayNameForRepoPath } from "../utils/repoDisplayName";
-import {AiConflictProposalDialog, AiWritingDialog} from "../features/ai";
-import type {AiConflictOperation, AiConflictProposalResult, AiConflictReviewItem, AiContextPreview} from "../features/ai";
+import {AiConflictProposalDialog, AiWritingDialog, useAiConflictResolution} from "../features/ai";
 
 // Tracks whether the no-diff-tool warning has already been shown this session
 // (lives outside the component so repo switches don't reset it).
@@ -166,30 +163,6 @@ function localisePatchImportMessage(message: string, t: TFunction<"projectView">
   return code ? t(`patch.import.${code}`) : message;
 }
 
-export function localiseAiError(error: unknown, t: TFunction<"projectView">): string {
-  const aiError = typeof error === "object" && error !== null && "code" in error
-    ? error as AiError
-    : null;
-  if (
-    aiError?.code === "contextTooLarge"
-    && Number.isFinite(aiError.contextSizeKib)
-    && Number.isFinite(aiError.contextLimitKib)
-  ) {
-    return t("aiErrors.contextTooLargeWithSize", {
-      actual: aiError.contextSizeKib,
-      limit: aiError.contextLimitKib,
-    });
-  }
-  return t(`aiErrors.${aiError?.code ?? "unknown"}`);
-}
-
-function isAiOperationCancelled(error: unknown): boolean {
-  return typeof error === "object"
-    && error !== null
-    && "code" in error
-    && error.code === "operationCancelled";
-}
-
 export function buildStashDropPrompt(
   stash: Pick<StashEntry, "index" | "message">,
   t: TFunction<"projectView">,
@@ -213,34 +186,6 @@ export function shouldForceWithLeaseAfterRebase(
   currentBranch: string | null,
 ): boolean {
   return rebasedBranchAwaitingPush !== null && rebasedBranchAwaitingPush === currentBranch;
-}
-
-export function buildPushRequestForCurrentBranch(
-  repoPath: string,
-  currentBranchInfo: BranchInfo | null | undefined,
-  forceWithLease: boolean,
-  pushFollowTags: boolean,
-): PushRequest {
-  const request: PushRequest = {
-    repoPath,
-    forceWithLease,
-    pushFollowTags,
-  };
-
-  if (currentBranchInfo?.upstreamStatus !== "tracked") {
-    return request;
-  }
-
-  const upstream = splitUpstreamRef(currentBranchInfo.upstream);
-  if (!upstream) {
-    return request;
-  }
-
-  return {
-    ...request,
-    remote: upstream.remote,
-    remoteBranch: upstream.branch,
-  };
 }
 
 export type PatchImportOutcome = "applied" | "conflicts" | "cancelled" | "failed";
@@ -368,7 +313,6 @@ export function ProjectView({
 }: ProjectViewProps) {
   const { t } = useTranslation("projectView");
   const { t: tGitAdvice } = useTranslation("gitAdvice");
-  const { t: tAi } = useTranslation("ai");
   const emptyStateRecentRepos = !repoPath ? recentRepos.slice(0, 5) : [];
   const collapsedRightPaneBonus = leftPaneCollapsed
     ? Math.max(0, leftPaneWidth + 6 - 22)
@@ -404,7 +348,6 @@ export function ProjectView({
     centreTab === "log" ? selectedCommitHash : null,
   );
 
-  const [revertPendingPaths, setRevertPendingPaths] = useState<string[] | null>(null);
   const [mergePendingBranch, setMergePendingBranch] = useState<string | null>(null);
   const [renamePendingBranch, setRenamePendingBranch] = useState<string | null>(null);
   const [showAddRemoteDialog, setShowAddRemoteDialog] = useState(false);
@@ -421,10 +364,6 @@ export function ProjectView({
   const [showStashDialog, setShowStashDialog] = useState(false);
   const [stashBusy, setStashBusy] = useState(false);
   const [hunkActionBusy, setHunkActionBusy] = useState(false);
-  const [remoteOp, setRemoteOp] = useState<"fetch" | "pull" | "push" | null>(null);
-  const [divergentPullAnalysis, setDivergentPullAnalysis] = useState<PullAnalysis | null>(null);
-  const [pushRejectionAnalysis, setPushRejectionAnalysis] = useState<PushRejectionAnalysis | null>(null);
-  const [upstreamDialogMode, setUpstreamDialogMode] = useState<UpstreamDialogMode | null>(null);
   const [commitPrimaryAction, setCommitPrimaryActionState] = useState<CommitPrimaryAction>("commit");
   const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(72);
   const [pushFollowTags, setPushFollowTags] = useState(false);
@@ -433,37 +372,34 @@ export function ProjectView({
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
   const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
-  const [aiEnabled, setAiEnabled] = useState(false);
-  const [aiConfigured, setAiConfigured] = useState(false);
-  const [aiResolvingPath, setAiResolvingPath] = useState<string | null>(null);
-  const [aiConflictReviewItems, setAiConflictReviewItems] = useState<AiConflictReviewItem[]>([]);
-  const [aiConflictBatchProgress, setAiConflictBatchProgress] = useState<{
-    current: number;
-    total: number;
-    preparing: boolean;
-  } | null>(null);
-  const [aiConflictBatchFailure, setAiConflictBatchFailure] = useState<{
-    filePath: string;
-    message: string;
-  } | null>(null);
-  const [aiConflictOperation, setAiConflictOperation] = useState<AiConflictOperation>(null);
   const [showAiWriting, setShowAiWriting] = useState(false);
-  const aiConflictOperationIdRef = useRef("");
-  const aiConflictBatchCancelledRef = useRef(false);
-  const aiConflictBatchDecisionRef = useRef<((continueBatch: boolean) => void) | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => () => {
-    aiConflictBatchCancelledRef.current = true;
-    aiConflictBatchDecisionRef.current?.(false);
-    aiConflictBatchDecisionRef.current = null;
-    const operationId = aiConflictOperationIdRef.current;
-    if (operationId) void api.cancelAiOperation(operationId).catch(() => {});
-  }, []);
+  const {
+    enabled: aiEnabled,
+    configured: aiConfigured,
+    resolvingPath: aiResolvingPath,
+    operationId: aiConflictOperationId,
+    reviewItems: aiConflictReviewItems,
+    batchProgress: aiConflictBatchProgress,
+    batchFailure: aiConflictBatchFailure,
+    operation: aiConflictOperation,
+    getConflictEligibility: getAiConflictEligibility,
+    resolveWithAi: handleConflictResolveWithAi,
+    resolveAllWithAi: handleConflictResolveAllWithAi,
+    cancel: handleCancelAiConflict,
+    skipBatchFailure: handleSkipAiConflictBatchFailure,
+    stopBatchFailure: handleStopAiConflictBatchFailure,
+    applyProposal: handleApplyAiConflictProposal,
+    regenerateProposal: handleRegenerateAiConflictProposal,
+    retryFile: handleRetryAiConflictFile,
+    undoProposal: handleUndoAiConflictProposal,
+    undoBatch: handleBatchUndoAiConflictProposal,
+    closeReview: handleCloseAiConflictReview,
+  } = useAiConflictResolution({repoPath, settingsRevision, showToast, refreshStatus});
 
   const { identity: localIdentity, saving: localIdentitySaving, saveIdentity: saveLocalIdentity, refreshIdentity: refreshLocalIdentity } =
     useGitIdentity(repoPath, "Local");
@@ -690,34 +626,6 @@ export function ProjectView({
   }, [settingsRevision]);
 
   useEffect(() => {
-    let cancelled = false;
-    const refreshAiConfiguration = () => {
-      api.getAiConfiguration()
-        .then(configuration => {
-          if (!cancelled) {
-            setAiEnabled(configuration.enabled);
-            setAiConfigured(configuration.configured);
-          }
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setAiEnabled(false);
-            setAiConfigured(false);
-          }
-        });
-    };
-    refreshAiConfiguration();
-    let unlisten: (() => void) | null = null;
-    listen("ai-configuration-updated", refreshAiConfiguration).then(remove => {
-      if (cancelled) remove(); else unlisten = remove;
-    });
-    return () => {
-      cancelled = true;
-      unlisten?.();
-    };
-  }, [settingsRevision]);
-
-  useEffect(() => {
     // Respect the user's scope choice; fall back to global email when local
     // scope is selected but has no email configured (very common).
     const email = identityScope === "local"
@@ -734,6 +642,40 @@ export function ProjectView({
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
   }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
+
+  const handleForcePushComplete = useCallback(() => setRebasedBranchAwaitingPush(null), []);
+  const {
+    remoteOp,
+    divergentPullAnalysis,
+    pushRejectionAnalysis,
+    upstreamDialogMode,
+    fetch: handleFetch,
+    fetchSingleRemote: handleFetchSingleRemote,
+    pull: handlePull,
+    push: handlePush,
+    confirmDivergentPull: handleDivergentPullConfirm,
+    cancelDivergentPull: handleDivergentPullCancel,
+    confirmUpstream: handleUpstreamDialogConfirm,
+    cancelUpstream: handleUpstreamDialogCancel,
+    openPublish: handleOpenPublishDialog,
+    openRepairUpstream: handleOpenRepairUpstreamDialog,
+    openChangeUpstream: handleOpenChangeUpstreamDialog,
+    pushRejectedFetch: handlePushRejectedFetch,
+    pushRejectedIntegrate: handlePushRejectedIntegrate,
+    pushRejectedPublish: handlePushRejectedPublish,
+    pushRejectedRepairUpstream: handlePushRejectedRepairUpstream,
+    cancelPushRejection: handlePushRejectionCancel,
+  } = useRemoteOperations({
+    repoPath,
+    currentBranchInfo,
+    remoteActionKind: remoteActionState.kind,
+    remoteActionTitle,
+    forceWithLeaseAfterRebase,
+    pushFollowTags,
+    refreshAll,
+    showToast,
+    onForcePushComplete: handleForcePushComplete,
+  });
 
   const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
     await saveLocalIdentity(payload);
@@ -847,22 +789,28 @@ export function ProjectView({
     setOperationLock(null);
   }, []);
 
-  const runStagingOperation = useCallback(async (
-    kind: StagingOperationKind,
-    count: number | undefined,
-    task: () => Promise<void>,
-  ) => {
-    const operation = startOperation(kind, count);
-    if (!operation) {
-      return;
-    }
-
-    try {
-      await task();
-    } finally {
-      finishOperation(operation);
-    }
-  }, [finishOperation, startOperation]);
+  const {
+    revertPendingPaths,
+    stageFile: handleStageFile,
+    stageFiles: handleStageFiles,
+    unstageFile: handleUnstageFile,
+    unstageFiles: handleUnstageFiles,
+    discardFile: handleDiscardFile,
+    discardFiles: handleDiscardFiles,
+    discardAll: handleDiscardAll,
+    confirmDiscard: handleRevertConfirm,
+    cancelDiscard: handleRevertCancel,
+    stageAll: handleStageAll,
+    unstageAll: handleUnstageAll,
+  } = useStagingOperations({
+    repoPath,
+    confirmRevert,
+    onSetConfirmRevert,
+    refreshStatus,
+    showToast,
+    startOperation,
+    finishOperation,
+  });
 
   const handleFileSelect = useCallback((path: string, staged: boolean) => {
     setSelectedSubmodulePath(null);
@@ -876,133 +824,10 @@ export function ProjectView({
     setSelectedSubmodulePath(path);
   }, []);
 
-  const handleStageFile = useCallback(async (path: string) => {
-    if (!repoPath) return;
-    await runStagingOperation("stage", 1, async () => {
-      const result = await api.stageFiles(repoPath, [path]);
-      showToast(t("toast.stagedFiles", { count: 1, file: getFileName(path) }));
-      appendResultLog("success", t("log.stagedFiles", { count: 1, path }), result.backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
-
-  const handleStageFiles = useCallback(async (paths: string[]) => {
-    if (!repoPath || paths.length === 0) return;
-    await runStagingOperation("stage", paths.length, async () => {
-      const result = await api.stageFiles(repoPath, paths);
-      showToast(t("toast.stagedFiles", { count: paths.length, file: getFileName(paths[0]) }));
-      appendResultLog("success", t("log.stagedFiles", { count: paths.length, path: paths[0] }), result.backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.stageFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
-
-  const handleUnstageFile = useCallback(async (path: string) => {
-    if (!repoPath) return;
-    await runStagingOperation("unstage", 1, async () => {
-      const result = await api.unstageFile(repoPath, path);
-      showToast(t("toast.unstagedFiles", { count: 1, file: getFileName(path) }), "info");
-      appendResultLog("info", t("log.unstagedFiles", { count: 1, path }), result.backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
-
-  const handleUnstageFiles = useCallback(async (paths: string[]) => {
-    if (!repoPath || paths.length === 0) return;
-    await runStagingOperation("unstage", paths.length, async () => {
-      const result = await api.unstageFiles(repoPath, paths);
-      showToast(t("toast.unstagedFiles", { count: paths.length, file: getFileName(paths[0]) }), "info");
-      const backendUsed = result.backendUsed ?? "unknown";
-      appendResultLog("info", t("log.unstagedFiles", { count: paths.length, path: paths[0] }), backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.unstageFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
-
-  const doRevertFiles = useCallback(async (paths: string[]) => {
-    if (!repoPath) return;
-    try {
-      let backendUsed: ResultLogEntry["backend"] = "unknown";
-      for (const path of paths) {
-        const result = await api.discardFile(repoPath, path);
-        backendUsed = result.backendUsed;
-      }
-      if (paths.length === 1) {
-        showToast(t("toast.revertedFiles", { count: 1, file: getFileName(paths[0]) }), "error");
-        appendResultLog("info", t("log.revertedFiles", { count: 1, path: paths[0] }), backendUsed);
-      } else {
-        showToast(t("toast.revertedFiles", { count: paths.length }), "error");
-        appendResultLog("info", t("log.revertedFiles", { count: paths.length }), backendUsed);
-      }
-      await refreshStatus();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.revertFailed", { message: String(e) }), "unknown"); }
-  }, [repoPath, refreshStatus, showToast, t]);
-
-  const handleDiscardFile = useCallback((path: string) => {
-    if (confirmRevert) { setRevertPendingPaths([path]); } else { void doRevertFiles([path]); }
-  }, [confirmRevert, doRevertFiles]);
-
-  const handleDiscardFiles = useCallback((paths: string[]) => {
-    if (paths.length === 0) return;
-    if (confirmRevert || paths.length > 1) { setRevertPendingPaths(paths); } else { void doRevertFiles(paths); }
-  }, [confirmRevert, doRevertFiles]);
-
-  const handleDiscardAll = useCallback((paths: string[]) => {
-    if (paths.length === 0) return;
-    setRevertPendingPaths(paths);
-  }, []);
-
   const handleDismissNoDiffToolWarning = useCallback((dontShowAgain: boolean) => {
     setShowNoDiffToolWarning(false);
     if (dontShowAgain) localStorage.setItem("gitmun.hideNoDiffToolWarning", "1");
   }, []);
-
-  const handleRevertConfirm = useCallback(async (dontShowAgain: boolean) => {
-    const paths = revertPendingPaths;
-    setRevertPendingPaths(null);
-    if (!paths) return;
-    if (dontShowAgain) {
-      onSetConfirmRevert(false);
-      await api.setConfirmRevert(false).catch(() => {});
-    }
-    await doRevertFiles(paths);
-  }, [revertPendingPaths, doRevertFiles, onSetConfirmRevert]);
-
-  const handleStageAll = useCallback(async () => {
-    if (!repoPath) return;
-    await runStagingOperation("stageAll", undefined, async () => {
-      const result = await api.stageAll(repoPath);
-      showToast(t("toast.stagedAll"));
-      appendResultLog("success", t("log.stagedAll"), result.backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.stageAllFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
-
-  const handleUnstageAll = useCallback(async () => {
-    if (!repoPath) return;
-    await runStagingOperation("unstageAll", undefined, async () => {
-      const result = await api.unstageAll(repoPath);
-      showToast(t("toast.unstagedAll"), "info");
-      appendResultLog("info", t("log.unstagedAll"), result.backendUsed);
-      await refreshStatus();
-    }).catch(e => {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.unstageAllFailed", { message: String(e) }), "unknown");
-    });
-  }, [repoPath, refreshStatus, runStagingOperation, showToast, t]);
 
   const handleSelectCommitAction = useCallback(async (action: CommitPrimaryAction) => {
     if (action === commitPrimaryAction) {
@@ -1061,156 +886,6 @@ export function ProjectView({
     }
   }, [finishOperation, runCommitRequest, startOperation]);
 
-  const handleFetch = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
-    setRemoteOp("fetch");
-    try {
-      const result = await api.fetchRemote(repoPath);
-      showToast(t("toast.fetchComplete"));
-      appendResultLog("success", t("toast.fetchComplete"), result.backendUsed);
-      await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.fetchFailed", { message: String(e) }), "unknown"); }
-    finally { setRemoteOp(null); }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
-
-  const runPullWithStrategy = useCallback(async (strategy: PullStrategy) => {
-    if (!repoPath || remoteOp) return;
-    setRemoteOp("pull");
-    try {
-      const result = await api.pullWithStrategy(repoPath, strategy);
-      const conflictStarted = /conflict resolution flow|needs conflict resolution/i.test(result.message);
-      if (conflictStarted) {
-        showToast(result.message, "info");
-        appendResultLog("info", result.message, result.backendUsed);
-      } else if (strategy === "ff-only") {
-        showToast(t("toast.pullComplete"));
-        appendResultLog("success", result.message, result.backendUsed);
-      } else {
-        showToast(t("toast.integrationComplete"));
-        appendResultLog("success", result.message, result.backendUsed);
-      }
-      await refreshAll();
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.pullFailed", { message: String(e) }), "unknown"); }
-    finally { setRemoteOp(null); }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
-
-  const startPullFlow = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
-    try {
-      const analysis = await api.analyzePull(repoPath);
-      setPushRejectionAnalysis(null);
-      switch (analysis.state) {
-        case "up_to_date":
-          showToast(t("toast.alreadyUpToDate"), "info");
-          appendResultLog("info", analysis.message, "unknown");
-          return;
-        case "behind_only":
-          await runPullWithStrategy("ff-only");
-          return;
-        case "ahead_only":
-          showToast(analysis.message, "info");
-          appendResultLog("info", analysis.message, "unknown");
-          return;
-        case "divergent":
-          setDivergentPullAnalysis(analysis);
-          return;
-        case "no_upstream":
-        case "detached_head":
-        case "blocked_dirty_worktree":
-        case "operation_in_progress":
-          showToast(analysis.message, "error");
-          appendResultLog("error", analysis.message, "unknown");
-          return;
-      }
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.pullAnalysisFailed", { message: String(e) }), "unknown");
-    }
-  }, [repoPath, remoteOp, runPullWithStrategy, showToast, t]);
-
-  const handlePull = useCallback(async () => {
-    await startPullFlow();
-  }, [startPullFlow]);
-
-  const handleDivergentPullConfirm = useCallback(async (strategy: PullStrategy) => {
-    setDivergentPullAnalysis(null);
-    await runPullWithStrategy(strategy);
-  }, [runPullWithStrategy]);
-
-  const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
-    const display = buildPushFailureDisplay(result, tGitAdvice);
-    if (display.dialogRejection) {
-      setPushRejectionAnalysis(display.dialogRejection);
-      appendResultLog("error", display.logMessage, result.backendUsed, undefined, display.logDetails);
-      return;
-    }
-
-    showToast(display.toastMessage ?? result.message, "error");
-    appendResultLog("error", display.logMessage, result.backendUsed, undefined, display.logDetails);
-  }, [showToast, tGitAdvice]);
-
-  const runPushRequest = useCallback(async (
-    request: PushRequest,
-    successToast: string,
-    failurePrefix: string,
-  ) => {
-    if (!repoPath || remoteOp) {
-      return;
-    }
-
-    setRemoteOp("push");
-    try {
-      const result = await api.pushChanges(request);
-      if (!result.success) {
-        handlePushFailure(result);
-        return;
-      }
-      showToast(successToast);
-      appendResultLog("success", result.message, result.backendUsed);
-      if (request.forceWithLease) {
-        setRebasedBranchAwaitingPush(null);
-      }
-      await refreshAll();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.pushFailed", { prefix: failurePrefix, message: String(e) }), "unknown");
-    } finally {
-      setRemoteOp(null);
-    }
-  }, [handlePushFailure, refreshAll, remoteOp, repoPath, showToast, t]);
-
-  const handlePush = useCallback(async () => {
-    if (!repoPath || remoteOp) {
-      return;
-    }
-
-    if (remoteActionState.kind === "publish") {
-      setPushRejectionAnalysis(null);
-      setUpstreamDialogMode("publish");
-      return;
-    }
-    if (remoteActionState.kind === "repair-upstream") {
-      setPushRejectionAnalysis(null);
-      setUpstreamDialogMode("repair");
-      return;
-    }
-    if (remoteActionState.kind === "detached") {
-      showToast(remoteActionTitle ?? t("toast.pushDetached"), "error");
-      return;
-    }
-
-    await runPushRequest(
-      buildPushRequestForCurrentBranch(
-        repoPath,
-        currentBranchInfo,
-        forceWithLeaseAfterRebase,
-        pushFollowTags,
-      ),
-      t("toast.pushComplete"),
-      t("toast.pushFailed"),
-    );
-  }, [currentBranchInfo, forceWithLeaseAfterRebase, remoteActionState, remoteActionTitle, repoPath, remoteOp, runPushRequest, showToast, pushFollowTags, t]);
-
   const handleCommitAndPush = useCallback(async (message: string, amend: boolean) => {
     const operation = startOperation("commitAndPush");
     if (!operation) {
@@ -1228,64 +903,6 @@ export function ProjectView({
       finishOperation(operation);
     }
   }, [finishOperation, handlePush, runCommitRequest, startOperation]);
-
-  const handleUpstreamDialogConfirm = useCallback(async (selection: { remote: string; remoteBranch: string }) => {
-    if (!repoPath || !currentBranchInfo || !upstreamDialogMode) {
-      return;
-    }
-
-    const mode = upstreamDialogMode;
-    setUpstreamDialogMode(null);
-
-    if (mode === "publish") {
-      await runPushRequest({
-        repoPath,
-        remote: selection.remote,
-        remoteBranch: selection.remoteBranch,
-        setUpstream: true,
-        pushFollowTags,
-      }, t("toast.branchPublished"), t("toast.publishFailed"));
-      return;
-    }
-
-    try {
-      const result = await api.setBranchUpstream({
-        repoPath,
-        branchName: currentBranchInfo.name,
-        remote: selection.remote,
-        remoteBranch: selection.remoteBranch,
-      });
-      showToast(mode === "repair" ? t("toast.upstreamRepaired") : t("toast.upstreamChanged"));
-      appendResultLog("success", result.message, result.backendUsed);
-      await refreshAll();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", mode === "repair"
-        ? t("log.repairUpstreamFailed", { message: String(e) })
-        : t("log.changeUpstreamFailed", { message: String(e) }), "unknown");
-    }
-  }, [currentBranchInfo, pushFollowTags, refreshAll, repoPath, runPushRequest, showToast, t, upstreamDialogMode]);
-
-  const handlePushRejectedFetch = useCallback(async () => {
-    setPushRejectionAnalysis(null);
-    await handleFetch();
-  }, [handleFetch]);
-
-  const handlePushRejectedIntegrate = useCallback(async () => {
-    setPushRejectionAnalysis(null);
-    await handleFetch();
-    await startPullFlow();
-  }, [handleFetch, startPullFlow]);
-
-  const handlePushRejectedPublish = useCallback(() => {
-    setPushRejectionAnalysis(null);
-    setUpstreamDialogMode("publish");
-  }, []);
-
-  const handlePushRejectedRepairUpstream = useCallback(() => {
-    setPushRejectionAnalysis(null);
-    setUpstreamDialogMode("repair");
-  }, []);
 
   const handleStash = useCallback(() => {
     if (!repoPath) return;
@@ -1492,21 +1109,6 @@ export function ProjectView({
       appendResultLog("error", t("log.createBranchFailed", { message: String(e) }), "unknown");
     }
   }, [repoPath, refreshAll, showToast, t]);
-
-  const handleOpenPublishDialog = useCallback(() => {
-    setPushRejectionAnalysis(null);
-    setUpstreamDialogMode("publish");
-  }, []);
-
-  const handleOpenRepairUpstreamDialog = useCallback(() => {
-    setPushRejectionAnalysis(null);
-    setUpstreamDialogMode("repair");
-  }, []);
-
-  const handleOpenChangeUpstreamDialog = useCallback(() => {
-    setPushRejectionAnalysis(null);
-    setUpstreamDialogMode("change");
-  }, []);
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
@@ -1827,22 +1429,6 @@ export function ProjectView({
       await refreshAll();
     }
   }, [repoPath, editingRemote, refreshAll, showToast, t]);
-
-  const handleFetchSingleRemote = useCallback(async (remoteName: string) => {
-    if (!repoPath || remoteOp) return;
-    setRemoteOp("fetch");
-    try {
-      const result = await api.fetchRemote(repoPath, remoteName);
-      showToast(t("toast.fetchedFrom", { remote: remoteName }), "success");
-      appendResultLog("success", result.message, result.backendUsed);
-      await refreshAll();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.fetchRemoteFailed", { remote: remoteName, message: String(e) }), "unknown");
-    } finally {
-      setRemoteOp(null);
-    }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
 
   const handlePruneRemote = useCallback(async (remoteName: string) => {
     if (!repoPath) return;
@@ -2384,331 +1970,6 @@ export function ProjectView({
     }
   }, [repoPath, refreshStatus, showToast, t]);
 
-  const handleConflictResolveWithAi = useCallback(async (path: string) => {
-    if (!repoPath) return;
-    if (aiResolvingPath || aiConflictOperationIdRef.current) return;
-    const operationId = `conflict-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    aiConflictBatchCancelledRef.current = false;
-    aiConflictOperationIdRef.current = operationId;
-    setAiConflictBatchProgress(null);
-    setAiResolvingPath(path);
-    try {
-      const configuration = await api.getAiConfiguration();
-      if (configuration.consentRequired) {
-        const preview = await api.getAiConflictContextPreview(repoPath, path);
-        const confirmed = await ask([
-          tAi("context.destination", {
-            provider: preview.provider,
-            authority: preview.destinationAuthority,
-          }),
-          tAi("context.files", {count: preview.files.length}),
-          tAi("context.size", {
-            size: preview.contextSizeKib,
-            limit: preview.contextLimitKib,
-          }),
-          "",
-          tAi("context.consent", {authority: preview.destinationAuthority}),
-        ].join("\n"), {
-          title: tAi("context.title"),
-          kind: "warning",
-        });
-        if (!confirmed) return;
-        await api.grantAiConsent();
-      }
-      const result = await api.resolveConflictWithAi(repoPath, path, operationId);
-      if (aiConflictBatchCancelledRef.current) return;
-      setAiConflictReviewItems([{status: "ready", filePath: result.filePath, proposal: result}]);
-    } catch (error) {
-      if (isAiOperationCancelled(error)) return;
-      const message = localiseAiError(error, t);
-      showToast(message, "error");
-    } finally {
-      aiConflictOperationIdRef.current = "";
-      setAiResolvingPath(null);
-    }
-  }, [aiResolvingPath, repoPath, showToast, t, tAi]);
-
-  const handleCancelAiConflict = useCallback(async () => {
-    const operationId = aiConflictOperationIdRef.current;
-    if (!operationId) return;
-    aiConflictBatchCancelledRef.current = true;
-    aiConflictBatchDecisionRef.current?.(false);
-    aiConflictBatchDecisionRef.current = null;
-    await api.cancelAiOperation(operationId).catch(() => {});
-  }, []);
-
-  const handleSkipAiConflictBatchFailure = useCallback(() => {
-    setAiConflictBatchFailure(null);
-    aiConflictBatchDecisionRef.current?.(true);
-    aiConflictBatchDecisionRef.current = null;
-  }, []);
-
-  const handleStopAiConflictBatchFailure = useCallback(() => {
-    setAiConflictBatchFailure(null);
-    aiConflictBatchCancelledRef.current = true;
-    aiConflictBatchDecisionRef.current?.(false);
-    aiConflictBatchDecisionRef.current = null;
-  }, []);
-
-  const handleConflictResolveAllWithAi = useCallback(async (paths: string[]) => {
-    if (!repoPath || paths.length === 0 || aiResolvingPath || aiConflictOperationIdRef.current) return;
-    const batchId = `conflict-batch-${Date.now()}-${Math.random().toString(16).slice(2)}`;
-    aiConflictBatchCancelledRef.current = false;
-    setAiConflictBatchFailure(null);
-    aiConflictOperationIdRef.current = batchId;
-    setAiConflictBatchProgress({current: 1, total: paths.length, preparing: true});
-    setAiResolvingPath(paths[0]);
-
-    try {
-      const configuration = await api.getAiConfiguration();
-      const previews = new Map<string, AiContextPreview>();
-      const failures = new Map<string, string>();
-      for (const path of paths) {
-        if (aiConflictBatchCancelledRef.current) return;
-        try {
-          previews.set(path, await api.getAiConflictContextPreview(repoPath, path));
-        } catch (error) {
-          const message = localiseAiError(error, t);
-          failures.set(path, message);
-          setAiConflictBatchFailure({filePath: path, message});
-          const continueBatch = await new Promise<boolean>(resolve => {
-            aiConflictBatchDecisionRef.current = resolve;
-          });
-          if (!continueBatch) break;
-        }
-      }
-      const preparedPaths = paths.filter(path => previews.has(path));
-      if (preparedPaths.length === 0) {
-        setAiConflictReviewItems(paths.map(path => ({
-          status: "failed",
-          filePath: path,
-          message: failures.get(path) ?? t("aiErrors.unknown"),
-        })));
-        return;
-      }
-      const firstPreview = previews.get(preparedPaths[0])!;
-      const totalContextSizeKib = preparedPaths.reduce(
-        (total, path) => total + (previews.get(path)?.contextSizeKib ?? 0),
-        0,
-      );
-      const warning = [
-        tAi("conflict.batchRequestWarning", {
-          count: preparedPaths.length,
-          provider: firstPreview.provider,
-          authority: firstPreview.destinationAuthority,
-        }),
-        tAi("conflict.batchContext", {
-          count: preparedPaths.length,
-          size: totalContextSizeKib,
-          limit: firstPreview.contextLimitKib,
-        }),
-        failures.size > 0 ? tAi("conflict.batchExcluded", {count: failures.size}) : "",
-        failures.size > 0 ? tAi("conflict.batchExcludedDetails", {
-          files: [...failures].map(([path, message]) => `${path}: ${message}`).join("\n"),
-        }) : "",
-        tAi("conflict.batchSequential"),
-        configuration.consentRequired
-          ? tAi("context.consent", {authority: firstPreview.destinationAuthority})
-          : "",
-      ].filter(Boolean).join("\n\n");
-      const confirmed = await ask(warning, {
-        title: tAi("conflict.batchTitle"),
-        kind: "warning",
-        okLabel: tAi("actions.generate"),
-        cancelLabel: tAi("actions.cancel"),
-      });
-      if (!confirmed || aiConflictBatchCancelledRef.current) return;
-      if (configuration.consentRequired) await api.grantAiConsent();
-
-      setAiConflictReviewItems([]);
-      const proposals = new Map<string, AiConflictProposalResult>();
-      for (const [index, path] of preparedPaths.entries()) {
-        if (aiConflictBatchCancelledRef.current) break;
-        const operationId = `${batchId}-${index + 1}`;
-        aiConflictOperationIdRef.current = operationId;
-        setAiConflictBatchProgress({current: index + 1, total: preparedPaths.length, preparing: false});
-        setAiResolvingPath(path);
-        try {
-          const proposal = await api.resolveConflictWithAi(repoPath, path, operationId);
-          if (aiConflictBatchCancelledRef.current) break;
-          proposals.set(path, proposal);
-        } catch (error) {
-          if (isAiOperationCancelled(error) || aiConflictBatchCancelledRef.current) {
-            aiConflictBatchCancelledRef.current = true;
-            break;
-          }
-          const message = localiseAiError(error, t);
-          failures.set(path, message);
-          setAiConflictBatchFailure({filePath: path, message});
-          const continueBatch = await new Promise<boolean>(resolve => {
-            aiConflictBatchDecisionRef.current = resolve;
-          });
-          if (!continueBatch) break;
-        }
-      }
-
-      const reviewItems = paths.flatMap((path): AiConflictReviewItem[] => {
-        const proposal = proposals.get(path);
-        if (proposal) return [{status: "ready", filePath: path, proposal}];
-        const message = failures.get(path);
-        return message ? [{status: "failed", filePath: path, message}] : [];
-      });
-      if (reviewItems.length > 0) setAiConflictReviewItems(reviewItems);
-      if (aiConflictBatchCancelledRef.current) {
-        showToast(tAi("conflict.batchCancelled", {
-          completed: proposals.size,
-          total: preparedPaths.length,
-        }), "info");
-      } else if (failures.size > 0) {
-        const [firstFailedFile, firstFailure] = failures.entries().next().value!;
-        showToast(tAi("conflict.batchFailed", {
-          count: failures.size,
-          completed: proposals.size,
-          failed: failures.size,
-          total: paths.length,
-          file: firstFailedFile,
-          message: firstFailure,
-        }), "error");
-      }
-    } catch (error) {
-      if (!isAiOperationCancelled(error) && !aiConflictBatchCancelledRef.current) {
-        showToast(localiseAiError(error, t), "error");
-      }
-    } finally {
-      aiConflictBatchDecisionRef.current = null;
-      setAiConflictBatchFailure(null);
-      aiConflictOperationIdRef.current = "";
-      setAiResolvingPath(null);
-      setAiConflictBatchProgress(null);
-    }
-  }, [aiResolvingPath, repoPath, showToast, t, tAi]);
-
-  const handleApplyAiConflictProposal = useCallback(async (proposalId: string, regionIds: string[]) => {
-    if (aiConflictOperation) throw {code: "operationInProgress"} satisfies AiError;
-    setAiConflictOperation("apply");
-    try {
-      const result = await api.applyAiConflictProposal(proposalId, regionIds);
-      showToast(t(result.markedResolved ? "toast.aiConflictFileResolved" : "toast.aiConflictRegionsApplied", {
-        file: getFileName(result.filePath),
-        count: result.resolvedRegions,
-      }), "success");
-      await refreshStatus();
-      return result;
-    } catch (error) {
-      showToast(localiseAiError(error, t), "error");
-      throw error;
-    } finally {
-      setAiConflictOperation(null);
-    }
-  }, [aiConflictOperation, refreshStatus, showToast, t]);
-
-  const handleRegenerateAiConflictProposal = useCallback(async (proposalId: string, regionIds?: string[]) => {
-    if (!repoPath || aiConflictOperation) return;
-    const reviewItem = aiConflictReviewItems.find(item => (
-      item.status === "ready" && item.proposal.proposalId === proposalId
-    ));
-    if (!reviewItem || reviewItem.status !== "ready") return;
-    const proposal = reviewItem.proposal;
-    setAiConflictOperation("regenerate");
-    try {
-      if (!regionIds?.length) {
-        const regenerated = await api.resolveConflictWithAi(repoPath, proposal.filePath);
-        setAiConflictReviewItems(current => current.map(item => (
-          item.status === "ready" && item.proposal.proposalId === proposalId
-            ? {status: "ready", filePath: regenerated.filePath, proposal: regenerated}
-            : item
-        )));
-        return;
-      }
-      const refreshed = await api.regenerateAiConflictRegions(proposalId, regionIds);
-      const replacements = new Map(refreshed.regions.map(region => [region.id, region]));
-      setAiConflictReviewItems(current => current.map(item => (
-        item.status === "ready" && item.proposal.proposalId === refreshed.proposalId
-          ? {
-            ...item,
-            proposal: {
-              ...item.proposal,
-              usage: refreshed.usage,
-              requestId: refreshed.requestId,
-              generationId: refreshed.generationId,
-              routedProvider: refreshed.routedProvider,
-              routedModel: refreshed.routedModel,
-              regions: item.proposal.regions.map(region => replacements.get(region.id) ?? region),
-            },
-          }
-          : item
-      )));
-    } catch (error) {
-      showToast(localiseAiError(error, t), "error");
-      throw error;
-    } finally {
-      setAiConflictOperation(null);
-    }
-  }, [aiConflictOperation, aiConflictReviewItems, repoPath, showToast, t]);
-
-  const handleRetryAiConflictFile = useCallback(async (filePath: string) => {
-    if (!repoPath || aiConflictOperation) return;
-    setAiConflictOperation("regenerate");
-    try {
-      const proposal = await api.resolveConflictWithAi(repoPath, filePath);
-      setAiConflictReviewItems(current => current.map(item => (
-        item.filePath === filePath
-          ? {status: "ready", filePath: proposal.filePath, proposal}
-          : item
-      )));
-    } catch (error) {
-      const message = localiseAiError(error, t);
-      setAiConflictReviewItems(current => current.map(item => (
-        item.filePath === filePath ? {status: "failed", filePath, message} : item
-      )));
-      showToast(message, "error");
-      throw error;
-    } finally {
-      setAiConflictOperation(null);
-    }
-  }, [aiConflictOperation, repoPath, showToast, t]);
-
-  const handleUndoAiConflictProposal = useCallback(async (proposalId: string) => {
-    if (aiConflictOperation) return;
-    setAiConflictOperation("undo");
-    try {
-      await api.undoAiConflictProposal(proposalId);
-      await refreshStatus();
-      setAiConflictReviewItems(current => current.filter(item => (
-        item.status !== "ready" || item.proposal.proposalId !== proposalId
-      )));
-    } catch (error) {
-      showToast(localiseAiError(error, t), "error");
-      throw error;
-    } finally {
-      setAiConflictOperation(null);
-    }
-  }, [aiConflictOperation, refreshStatus, showToast, t]);
-
-  const handleBatchUndoAiConflictProposal = useCallback(async (proposalIds: string[]) => {
-    if (aiConflictOperation) return;
-    setAiConflictOperation("undo");
-    try {
-      const result = await api.undoAiConflictBatch(proposalIds);
-      await refreshStatus();
-      const failedIds = new Set(result.failed.map(failure => failure.proposalId));
-      const undoneIds = new Set(proposalIds.filter(id => !failedIds.has(id)));
-      setAiConflictReviewItems(current => current.filter(item => (
-        item.status !== "ready" || !undoneIds.has(item.proposal.proposalId)
-      )));
-      if (result.failed.length > 0) {
-        showToast(
-          tAi("conflict.batchUndoFailed", {count: result.failed.length}) as string,
-          "error"
-        );
-      }
-    } catch (error) {
-      showToast(localiseAiError(error, t), "error");
-    } finally {
-      setAiConflictOperation(null);
-    }
-  }, [aiConflictOperation, refreshStatus, showToast, t, tAi]);
-
   const handleOpenMergeTool = useCallback(async (path: string) => {
     if (!repoPath) return;
     try {
@@ -2722,35 +1983,22 @@ export function ProjectView({
     ? t("labels.compareInTool", { tool: repoDiffToolName })
     : t("labels.compareInDiffTool");
 
-  useEffect(() => {
-    const isMac = platform === "macos";
-    const handler = (e: KeyboardEvent) => {
-      const mod = isMac ? e.metaKey : e.ctrlKey;
-      const target = e.target as HTMLElement;
-      const inInput = target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.tagName === "SELECT";
-
-      if (mod && e.key === "Enter") { e.preventDefault(); return; }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "a") { e.preventDefault(); handleStageAll(); return; }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "p") { e.preventDefault(); handlePush(); return; }
-      if (mod && e.key === ",") { e.preventDefault(); onSettingsClick(); return; }
-      if (mod && !e.shiftKey && e.key.toLowerCase() === "f") {
-        e.preventDefault();
-        setCentreTab("log");
-        searchInputRef.current?.focus();
-        searchInputRef.current?.select();
-        return;
-      }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "f") { e.preventDefault(); handleFetch(); return; }
-      if (mod && e.shiftKey && e.key.toLowerCase() === "l") { e.preventDefault(); handlePull(); return; }
-      if (inInput) return;
-      if (e.key === "s" && selectedFile && isUnstaged) { e.preventDefault(); handleStageFile(selectedFile); return; }
-      if (e.key === "u" && selectedFile && !isUnstaged) { e.preventDefault(); handleUnstageFile(selectedFile); return; }
-      if (e.key === "r") { e.preventDefault(); refreshAll(); return; }
-    };
-    window.addEventListener("keydown", handler);
-    return () => window.removeEventListener("keydown", handler);
-  }, [platform, selectedFile, isUnstaged, handleStageFile, handleUnstageFile, handleStageAll,
-    handlePush, handleFetch, handlePull, onSettingsClick, refreshAll]);
+  const handleShowLogSearch = useCallback(() => setCentreTab("log"), []);
+  useProjectKeyboardShortcuts({
+    platform,
+    selectedFile,
+    isUnstaged,
+    searchInputRef,
+    onShowLog: handleShowLogSearch,
+    onStageFile: handleStageFile,
+    onUnstageFile: handleUnstageFile,
+    onStageAll: handleStageAll,
+    onPush: handlePush,
+    onFetch: handleFetch,
+    onPull: handlePull,
+    onOpenSettings: onSettingsClick,
+    onRefresh: refreshAll,
+  });
 
   return (
     <>
@@ -2781,7 +2029,7 @@ export function ProjectView({
         <ConfirmRevertDialog
           filePaths={revertPendingPaths}
           onConfirm={handleRevertConfirm}
-          onCancel={() => setRevertPendingPaths(null)}
+          onCancel={handleRevertCancel}
         />
       )}
 
@@ -2798,7 +2046,7 @@ export function ProjectView({
         <DivergentPullDialog
           analysis={divergentPullAnalysis}
           onConfirm={handleDivergentPullConfirm}
-          onCancel={() => setDivergentPullAnalysis(null)}
+          onCancel={handleDivergentPullCancel}
         />
       )}
 
@@ -2809,7 +2057,7 @@ export function ProjectView({
           onIntegrate={handlePushRejectedIntegrate}
           onPublish={handlePushRejectedPublish}
           onRepairUpstream={handlePushRejectedRepairUpstream}
-          onCancel={() => setPushRejectionAnalysis(null)}
+          onCancel={handlePushRejectionCancel}
         />
       )}
 
@@ -2821,7 +2069,7 @@ export function ProjectView({
           remoteBranches={remoteBranches}
           initialUpstream={currentBranchInfo.upstream}
           onConfirm={handleUpstreamDialogConfirm}
-          onCancel={() => setUpstreamDialogMode(null)}
+          onCancel={handleUpstreamDialogCancel}
         />
       )}
 
@@ -3107,6 +2355,7 @@ export function ProjectView({
                   onConflictAcceptTheirs={handleConflictAcceptTheirs}
                   onConflictAcceptOurs={handleConflictAcceptOurs}
                   onConflictResolveWithAi={handleConflictResolveWithAi}
+                  getAiConflictEligibility={getAiConflictEligibility}
                   onConflictResolveAllWithAi={handleConflictResolveAllWithAi}
                   onCancelAiConflict={handleCancelAiConflict}
                   onOpenMergeTool={handleOpenMergeTool}
@@ -3120,7 +2369,7 @@ export function ProjectView({
                   aiEnabled={aiEnabled}
                   aiConfigured={aiConfigured}
                   aiResolvingPath={aiResolvingPath}
-                   aiConflictOperationId={aiResolvingPath ? aiConflictOperationIdRef.current : null}
+                   aiConflictOperationId={aiConflictOperationId}
                    aiConflictBatchProgress={aiConflictBatchProgress}
                    aiConflictBatchFailure={aiConflictBatchFailure}
                    onSkipAiConflictBatchFailure={handleSkipAiConflictBatchFailure}
@@ -3218,7 +2467,7 @@ export function ProjectView({
           onRetry={handleRetryAiConflictFile}
           onUndo={handleUndoAiConflictProposal}
           onBatchUndo={handleBatchUndoAiConflictProposal}
-          onClose={() => setAiConflictReviewItems([])}
+          onClose={handleCloseAiConflictReview}
         />
       )}
       {aiEnabled && showAiWriting && repoPath && (

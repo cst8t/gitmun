@@ -7,9 +7,9 @@ import {
   getEffectiveCommitAction,
   importPatchWithRecovery,
   isPatchConflictResult,
-  localiseAiError,
   shouldForceWithLeaseAfterRebase,
 } from "./ProjectView";
+import {localiseAiError} from "../features/ai";
 
 const t = i18n.getFixedT("en", "projectView");
 
