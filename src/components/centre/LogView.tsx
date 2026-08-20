@@ -516,6 +516,7 @@ type LogViewProps = {
   pageSize: number;
   logLoading: boolean;
   logError: string | null;
+  searching?: boolean;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
@@ -623,6 +624,7 @@ export function LogView({
   pageSize,
   logLoading,
   logError,
+  searching = false,
   commitMarkers,
   logScope,
   rowStriping,
@@ -1343,6 +1345,9 @@ export function LogView({
           EmptyPlaceholder: () => {
             if (logError) {
               return <div className="log-view__empty">{t("log.loadFailed", { message: logError })}</div>;
+            }
+            if (searching) {
+              return <div className="log-view__empty">{t("log.noCommitsFound")}</div>;
             }
             if (logLoading) {
               return <div className="log-view__empty">{t("log.loading")}</div>;

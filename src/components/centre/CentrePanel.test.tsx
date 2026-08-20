@@ -204,6 +204,39 @@ describe("CentrePanel commit graph toggle", () => {
     expect(container.querySelector(".log-view__graph")).toBeNull();
     expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
   });
+
+  it("disables the commit graph while searching without changing the saved preference", () => {
+    localStorage.setItem("gitmun.showCommitGraph", "true");
+    const onCommitGraphVisibilityChange = vi.fn();
+
+    const { container } = renderCentrePanel({
+      searching: true,
+      onCommitGraphVisibilityChange,
+    });
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+    expect(screen.getByLabelText("Hide commit graph")).toBeDisabled();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+    expect(onCommitGraphVisibilityChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores the commit graph when search is cleared", () => {
+    localStorage.setItem("gitmun.showCommitGraph", "true");
+    const onCommitGraphVisibilityChange = vi.fn();
+    const { container, props, rerender } = renderCentrePanel({
+      searching: true,
+      onCommitGraphVisibilityChange,
+    });
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+
+    rerender(<CentrePanel {...props} searching={false} />);
+
+    expect(container.querySelector(".log-view__graph")).not.toBeNull();
+    expect(screen.getByLabelText("Hide commit graph")).toBeEnabled();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+    expect(onCommitGraphVisibilityChange).toHaveBeenLastCalledWith(true);
+  });
 });
 
 describe("CentrePanel operation feedback", () => {

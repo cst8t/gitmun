@@ -64,6 +64,7 @@ type CentrePanelProps = {
   pageSize: number;
   logLoading: boolean;
   logError: string | null;
+  searching?: boolean;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
@@ -221,7 +222,8 @@ function getOperationContent(
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
   const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
-  const effectiveShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
+  const preferredShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
+  const effectiveShowCommitGraph = preferredShowCommitGraph && !props.searching;
   const tab = props.activeTab;
   const operationContent = getOperationContent(props.operationLock, t);
   const operationFeedback = useDelayedOperationFeedback(props.operationLock);
@@ -233,8 +235,8 @@ export function CentrePanel(props: CentrePanelProps) {
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
 
   React.useEffect(() => {
-    props.onCommitGraphVisibilityChange?.(effectiveShowCommitGraph);
-  }, [effectiveShowCommitGraph, props.onCommitGraphVisibilityChange]);
+    props.onCommitGraphVisibilityChange?.(preferredShowCommitGraph);
+  }, [preferredShowCommitGraph, props.onCommitGraphVisibilityChange]);
 
   const handleToggleCommitGraph = () => {
     setShowCommitGraph(previous => {
@@ -323,6 +325,7 @@ export function CentrePanel(props: CentrePanelProps) {
                 title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
                 aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
                 aria-pressed={showCommitGraph}
+                disabled={props.searching}
                 onClick={handleToggleCommitGraph}
               >
                 <BranchIcon size={15} />
@@ -431,6 +434,7 @@ export function CentrePanel(props: CentrePanelProps) {
           pageSize={props.pageSize}
           logLoading={props.logLoading}
           logError={props.logError}
+          searching={props.searching}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
           rowStriping={props.rowStriping}

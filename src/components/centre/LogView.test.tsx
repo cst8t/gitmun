@@ -819,6 +819,33 @@ describe("LogView commit selection", () => {
     expect(screen.queryByRole("button", { name: "View next 100 commits" })).not.toBeInTheDocument();
   });
 
+  it("shows no commits yet when the history is empty", () => {
+    renderLog({ commits: [] });
+
+    expect(screen.getByText("No commits yet")).toBeInTheDocument();
+  });
+
+  it("shows no commits found when a search matches nothing", () => {
+    renderLog({ commits: [], searching: true });
+
+    expect(screen.getByText("No commits found")).toBeInTheDocument();
+    expect(screen.queryByText("No commits yet")).not.toBeInTheDocument();
+  });
+
+  it("shows no commits found for an empty all-refs search", () => {
+    renderLog({ commits: [], searching: true, logScope: "allRefs" });
+
+    expect(screen.getByText("No commits found")).toBeInTheDocument();
+    expect(screen.queryByText("No commits were returned for any refs.")).not.toBeInTheDocument();
+  });
+
+  it("keeps no commits found when a search refresh sets loading", () => {
+    renderLog({ commits: [], searching: true, logLoading: true });
+
+    expect(screen.getByText("No commits found")).toBeInTheDocument();
+    expect(screen.queryByText("Loading commit history...")).not.toBeInTheDocument();
+  });
+
   it("hides the load more footer while the first page is loading", () => {
     renderLog({ commits: [], hasMore: true, logLoading: true });
 

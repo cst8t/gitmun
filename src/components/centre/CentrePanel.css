@@ -800,9 +800,14 @@
   cursor: pointer;
 }
 
-.log-view__toolbar-toggle:hover {
+.log-view__toolbar-toggle:hover:not(:disabled) {
   color: var(--text-primary);
   background: var(--bg-hover);
+}
+
+.log-view__toolbar-toggle:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .log-view__toolbar-toggle--active {

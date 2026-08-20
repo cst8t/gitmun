@@ -130,6 +130,7 @@
     "moreRefsLabel": "+{{count}}",
     "noCommits": "No commits yet",
     "noCommitsAllRefs": "No commits were returned for any refs.",
+    "noCommitsFound": "No commits found",
     "revertCommit": "Revert Commit...",
     "remoteBranchRef": "Remote branch {{name}}",
     "showCommitGraph": "Show commit graph",

@@ -2298,6 +2298,7 @@ export function ProjectView({
                   pageSize={logPageSize}
                   logLoading={logLoading}
                   logError={logError}
+                  searching={searching}
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   rowStriping={rowStriping}
