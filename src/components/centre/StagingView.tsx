@@ -15,7 +15,7 @@ import type {
   UnversionedItem,
 } from "../../types";
 import { getNumstat, openSettingsWindow } from "../../api/commands";
-import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
+import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type VisibleFileTreeRow, visibleFileTreeRows } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
 type StagingViewProps = {
@@ -91,22 +91,16 @@ type CachedNumstat = {
 
 type TreeSection = "staged" | "unstaged";
 
-type VisibleTreeRow =
-  | { type: "directory"; node: FileTreeDirectoryNode; depth: number; expanded: boolean }
-  | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number; fileIndex: number };
-
 type StagingListRow =
   | { type: "section"; key: string; section: "submodules" | "conflicts" | TreeSection }
   | { type: "submodule"; key: string; submodule: SubmoduleStatus; index: number }
   | { type: "conflict"; key: string; file: ConflictFileItem; index: number }
-  | { type: "tree"; key: string; section: TreeSection; row: VisibleTreeRow }
+  | { type: "tree"; key: string; section: TreeSection; row: VisibleFileTreeRow }
   | { type: "empty"; key: string; section: TreeSection };
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
 const NUMSTAT_FAILURE_BACKOFF_MS = 3000;
-const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
-const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
 
 const SUBMODULE_STATE_LABELS: Record<SubmoduleStatus["state"], string> = {
   clean: "Clean",
@@ -124,46 +118,6 @@ function cacheKey(path: string, staged: boolean): string {
 
 function folderStateKey(section: TreeSection, path: string): string {
   return `${section}:${path}`;
-}
-
-function defaultDirectoryExpanded(node: FileTreeDirectoryNode, depth: number, totalFiles: number): boolean {
-  if (totalFiles <= AUTO_COLLAPSE_SECTION_THRESHOLD) return true;
-  return depth > 0 && node.fileCount < AUTO_COLLAPSE_DIRECTORY_THRESHOLD;
-}
-
-function isDirectoryExpanded(
-  section: TreeSection,
-  node: FileTreeDirectoryNode,
-  depth: number,
-  totalFiles: number,
-  expandedFolders: Record<string, boolean>,
-): boolean {
-  const key = folderStateKey(section, node.path);
-  return expandedFolders[key] ?? defaultDirectoryExpanded(node, depth, totalFiles);
-}
-
-function visibleTreeRows(
-  nodes: FileTreeNode[],
-  section: TreeSection,
-  expandedFolders: Record<string, boolean>,
-  totalFiles: number,
-): VisibleTreeRow[] {
-  let fileIndex = 0;
-
-  const visit = (currentNodes: FileTreeNode[], depth: number): VisibleTreeRow[] =>
-    currentNodes.flatMap((node): VisibleTreeRow[] => {
-      if (node.type === "file") {
-        const row = { type: "file" as const, node, depth, fileIndex };
-        fileIndex += 1;
-        return [row];
-      }
-
-      const expanded = node.children.length > 0 && isDirectoryExpanded(section, node, depth, totalFiles, expandedFolders);
-      const children = expanded ? visit(node.children, depth + 1) : [];
-      return [{ type: "directory", node, depth, expanded }, ...children];
-    });
-
-  return visit(nodes, 0);
 }
 
 function shortHash(hash: string | null): string {
@@ -602,11 +556,11 @@ export function StagingView({
   const stagedTree = useMemo(() => buildFileTree(mergedStaged), [mergedStaged]);
   const unstagedTree = useMemo(() => buildFileTree(allUnstaged), [allUnstaged]);
   const stagedTreeRows = useMemo(
-    () => visibleTreeRows(stagedTree, "staged", expandedFolders, mergedStaged.length),
+    () => visibleFileTreeRows(stagedTree, expandedFolders, mergedStaged.length, (path) => folderStateKey("staged", path)),
     [stagedTree, expandedFolders, mergedStaged.length],
   );
   const unstagedTreeRows = useMemo(
-    () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders, allUnstaged.length),
+    () => visibleFileTreeRows(unstagedTree, expandedFolders, allUnstaged.length, (path) => folderStateKey("unstaged", path)),
     [unstagedTree, expandedFolders, allUnstaged.length],
   );
   const stagingBusy = stagingOperation != null || aiResolvingPath !== null;
@@ -648,7 +602,7 @@ export function StagingView({
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
   };
-  const renderTreeRow = (row: VisibleTreeRow, section: TreeSection) => {
+  const renderTreeRow = (row: VisibleFileTreeRow, section: TreeSection) => {
     const isStaged = section === "staged";
     const selectedMap = isStaged ? selectedStaged : selectedUnstaged;
     const onSelectedChange = isStaged ? onSelectedStagedChange : onSelectedUnstagedChange;

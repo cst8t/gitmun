@@ -147,3 +147,45 @@ export function descendantFilePaths(node: FileTreeDirectoryNode): string[] {
     ),
   ];
 }
+
+export const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
+export const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
+
+export type VisibleFileTreeRow =
+  | { type: "file"; node: FileTreeFileNode; depth: number; fileIndex: number }
+  | { type: "directory"; node: FileTreeDirectoryNode; depth: number; expanded: boolean };
+
+export function defaultDirectoryExpanded(
+  node: FileTreeDirectoryNode,
+  depth: number,
+  totalFiles: number,
+): boolean {
+  if (totalFiles <= AUTO_COLLAPSE_SECTION_THRESHOLD) return true;
+  return depth > 0 && node.fileCount < AUTO_COLLAPSE_DIRECTORY_THRESHOLD;
+}
+
+export function visibleFileTreeRows(
+  nodes: FileTreeNode[],
+  expandedFolders: Record<string, boolean>,
+  totalFiles: number,
+  folderKey: (path: string) => string,
+): VisibleFileTreeRow[] {
+  let fileIndex = 0;
+
+  const visit = (currentNodes: FileTreeNode[], depth: number): VisibleFileTreeRow[] =>
+    currentNodes.flatMap((node): VisibleFileTreeRow[] => {
+      if (node.type === "file") {
+        const row = { type: "file" as const, node, depth, fileIndex };
+        fileIndex += 1;
+        return [row];
+      }
+
+      const expanded =
+        node.children.length > 0 &&
+        (expandedFolders[folderKey(node.path)] ?? defaultDirectoryExpanded(node, depth, totalFiles));
+      const children = expanded ? visit(node.children, depth + 1) : [];
+      return [{ type: "directory", node, depth, expanded }, ...children];
+    });
+
+  return visit(nodes, 0);
+}

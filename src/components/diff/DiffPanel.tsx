@@ -1,9 +1,10 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
-import { CloseIcon, FileIcon } from "../icons";
+import { ChevDownIcon, ChevRightIcon, CloseIcon, FileIcon, FolderIcon, SearchIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
 import type { CommitDetails, CommitFileItem, FileDiff, RowStriping, SubmoduleStatus } from "../../types";
+import { buildFileTree, visibleFileTreeRows } from "../../utils/fileTree";
 import { getCommitDetails } from "../../api/commands";
 import type { CentreTab } from "../centre/CentrePanel";
 import "react-diff-view/style/index.css";
@@ -216,6 +217,8 @@ export function DiffPanel({
   const { t } = useTranslation("diffPanel");
   const [viewType, setViewType] = React.useState<ViewType>("unified");
   const [selectedCommitFile, setSelectedCommitFile] = React.useState<string | null>(null);
+  const [expandedFolders, setExpandedFolders] = React.useState<Record<string, boolean>>({});
+  const [commitFileQuery, setCommitFileQuery] = React.useState("");
   const [detailsPopover, setDetailsPopover] = React.useState<{ rect: DOMRect; data: CommitDetails } | null>(null);
   const [detailsLoading, setDetailsLoading] = React.useState(false);
 
@@ -225,8 +228,41 @@ export function DiffPanel({
 
   React.useEffect(() => {
     setSelectedCommitFile(null);
+    setExpandedFolders({});
+    setCommitFileQuery("");
     setDetailsPopover(null);
   }, [selectedCommitHash]);
+
+  const filteredCommitFiles = React.useMemo(() => {
+    const query = commitFileQuery.trim().toLowerCase();
+    if (!query) return commitFiles;
+    return commitFiles.filter((file) => file.path.toLowerCase().includes(query));
+  }, [commitFiles, commitFileQuery]);
+
+  const commitTreeRows = React.useMemo(() => {
+    const treeItems = filteredCommitFiles.map((file) => ({
+      path: file.path,
+      status: file.status,
+      additions: null,
+      deletions: null,
+    }));
+    return visibleFileTreeRows(
+      buildFileTree(treeItems),
+      commitFileQuery.trim() ? {} : expandedFolders,
+      filteredCommitFiles.length,
+      (path) => path,
+    );
+  }, [commitFileQuery, filteredCommitFiles, expandedFolders]);
+
+  const toggleFolderExpanded = (path: string) => {
+    setExpandedFolders((prev) => {
+      const currentRow = commitTreeRows.find((row) => row.type === "directory" && row.node.path === path);
+      const currentExpanded = currentRow?.type === "directory"
+        ? currentRow.expanded
+        : prev[path] ?? true;
+      return { ...prev, [path]: !currentExpanded };
+    });
+  };
 
   const hasSelectedFile = mode === "changes" && !!selectedFile;
   const hasSelectedSubmodule = mode === "changes" && !!selectedSubmodule;
@@ -397,20 +433,71 @@ export function DiffPanel({
             <div className="diff-panel__placeholder">{t("placeholders.loadingCommitFiles")}</div>
           ) : commitFiles.length > 0 ? (
             <div className="diff-panel__commit-files">
-              {commitFiles.map((file, index) => {
-                const rowStripe = striped(index);
+              <label className="diff-panel__commit-file-search">
+                <SearchIcon size={14} />
+                <input
+                  className="diff-panel__commit-file-search-input"
+                  type="text"
+                  value={commitFileQuery}
+                  placeholder={t("searchCommitFiles")}
+                  aria-label={t("searchCommitFiles")}
+                  onChange={(event) => setCommitFileQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Escape") setCommitFileQuery("");
+                  }}
+                />
+              </label>
+              {filteredCommitFiles.length === 0 ? (
+                <div className="diff-panel__placeholder">{t("placeholders.noMatchingCommitFiles")}</div>
+              ) : commitTreeRows.map((row) => {
+                const indent = row.depth > 0 ? { paddingLeft: 8 + row.depth * 18 } : undefined;
+
+                if (row.type === "directory") {
+                  return (
+                    <div
+                      key={`dir:${row.node.path}`}
+                      className="diff-panel__commit-folder-row"
+                      style={indent}
+                      title={row.node.path}
+                    >
+                      {row.node.children.length > 0 && (
+                        <button
+                          className="diff-panel__commit-folder-toggle"
+                          type="button"
+                          aria-label={t(row.expanded ? "collapseFolder" : "expandFolder", { path: row.node.path })}
+                          onClick={() => toggleFolderExpanded(row.node.path)}
+                        >
+                          {row.expanded ? <ChevDownIcon size={13} /> : <ChevRightIcon size={13} />}
+                        </button>
+                      )}
+                      <span className="diff-panel__commit-folder-icon">
+                        <FolderIcon size={15} />
+                      </span>
+                      <span className="diff-panel__commit-folder-name">{row.node.name}</span>
+                      <span className="diff-panel__commit-folder-count">
+                        {t("fileCount", { ns: "common", count: row.node.fileCount })}
+                      </span>
+                    </div>
+                  );
+                }
+
+                const file = row.node.file;
+                const rowStripe = striped(row.fileIndex);
                 return (
                   <button
                     key={`${file.status}:${file.path}`}
                     className={`diff-panel__commit-file-row${rowStripe ? ` diff-panel__commit-file-row--striped-${rowStripe.toLowerCase()}` : ""} ${selectedCommitFile === file.path ? "diff-panel__commit-file-row--selected" : ""}`}
+                    style={indent}
                     onClick={() => setSelectedCommitFile(file.path)}
                     onDoubleClick={() => onOpenCommitFileDiff(file.path)}
-                    title={t("toolbar.openDiff", {defaultValue: "Double-click to open diff"})}
+                    title={file.path}
                   >
                     <span className={`diff-panel__commit-file-status diff-panel__commit-file-status--${file.status.toLowerCase()}`}>
                       {statusLetter(file.status)}
                     </span>
-                    <span className="diff-panel__commit-file-path">{file.path}</span>
+                    <span className="diff-panel__commit-file-path">
+                      {row.depth > 0 ? row.node.name : file.path}
+                    </span>
                   </button>
                 );
               })}
