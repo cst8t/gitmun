@@ -349,10 +349,10 @@ export function CentrePanel(props: CentrePanelProps) {
       </div>
 
       {/*
-        Both panels are always in the DOM. Mounting LogView on first click is
-        expensive (DOM creation + IntersectionObserver + avatar fetches). By
-        keeping both rendered and toggling CSS display, switching tabs is a
-        zero-cost CSS property change instead of a full React mount.
+        Both panels stay mounted so tab switches keep Log scroll, selection,
+        and graph state. Changes stays CSS-hidden so CommitBox drafts and
+        in-progress AI conflict UI keep their Effects. Log uses Activity so
+        its Effects pause while hidden, without dropping DOM or React state.
       */}
       <div style={{ display: tab === "changes" ? "contents" : "none" }}>
         <StagingView
@@ -419,7 +419,7 @@ export function CentrePanel(props: CentrePanelProps) {
            onStopAiConflictBatchFailure={props.onStopAiConflictBatchFailure ?? (() => {})}
          />
       </div>
-      <div style={{ display: tab === "log" ? "contents" : "none" }}>
+      <React.Activity mode={tab === "log" ? "visible" : "hidden"} name="log">
         <LogView
           active={tab === "log"}
           repoPath={props.repoPath}
@@ -445,7 +445,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onResetToCommit={props.onResetToCommit}
           onExportCommitPatch={props.onExportCommitPatch}
         />
-      </div>
+      </React.Activity>
       {popupOperationContent && (
         <>
           <div className="centre__operation-backdrop" />

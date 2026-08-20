@@ -7,7 +7,7 @@
  * in-flight async result from a previous project can ever survive into the
  * new one.
  */
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useDeferredValue, useMemo } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
@@ -374,6 +374,7 @@ export function ProjectView({
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
   const [showAiWriting, setShowAiWriting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
@@ -432,6 +433,16 @@ export function ProjectView({
     pageSize: logPageSize,
     refresh: refreshLog,
   } = useGitLog(repoPath, logScope, windowFocused, showCommitGraphButton && showCommitGraph);
+  const searching = deferredSearchQuery.length > 0;
+  const visibleCommits = useMemo(() => {
+    if (!searching) return commits;
+    const q = deferredSearchQuery.toLowerCase();
+    return commits.filter(c =>
+      c.message.toLowerCase().includes(q)
+      || c.author.toLowerCase().includes(q)
+      || c.shortHash.toLowerCase().includes(q),
+    );
+  }, [commits, deferredSearchQuery, searching]);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -2279,18 +2290,11 @@ export function ProjectView({
                   cherryPickHead={cherryPickHead}
                   revertInProgress={revertInProgress}
                   revertHead={revertHead}
-                  commits={searchQuery
-                    ? commits.filter(c => {
-                        const q = searchQuery.toLowerCase();
-                        return c.message.toLowerCase().includes(q)
-                          || c.author.toLowerCase().includes(q)
-                          || c.shortHash.toLowerCase().includes(q);
-                      })
-                    : commits}
-                  loadMore={searchQuery ? () => {} : loadMore}
-                  hasMore={searchQuery ? false : hasMore}
-                  loadingMore={searchQuery ? false : logLoadingMore}
-                  loadMoreError={searchQuery ? null : logLoadMoreError}
+                  commits={visibleCommits}
+                  loadMore={searching ? () => {} : loadMore}
+                  hasMore={searching ? false : hasMore}
+                  loadingMore={searching ? false : logLoadingMore}
+                  loadMoreError={searching ? null : logLoadMoreError}
                   pageSize={logPageSize}
                   logLoading={logLoading}
                   logError={logError}

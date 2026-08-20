@@ -324,6 +324,44 @@ describe("CentrePanel operation feedback", () => {
   });
 });
 
+describe("CentrePanel tab persistence", () => {
+  it("keeps both views mounted and hides the log when Changes is active", () => {
+    renderCentrePanel({ activeTab: "changes" });
+
+    expect(screen.getByTestId("staging-view")).toBeInTheDocument();
+    const log = screen.getByTestId("log-view");
+    expect(log).toBeInTheDocument();
+    expect(log.style.display).toBe("none");
+  });
+
+  it("keeps both views mounted and shows the log when Log is active", () => {
+    renderCentrePanel({ activeTab: "log" });
+
+    expect(screen.getByTestId("staging-view")).toBeInTheDocument();
+    const log = screen.getByTestId("log-view");
+    expect(log).toBeInTheDocument();
+    expect(log.style.display).not.toBe("none");
+  });
+
+  it("does not remount either view when switching tabs", () => {
+    const { props, rerender } = renderCentrePanel({ activeTab: "changes" });
+    const staging = screen.getByTestId("staging-view");
+    const log = screen.getByTestId("log-view");
+
+    rerender(<CentrePanel {...props} activeTab="log" />);
+
+    expect(screen.getByTestId("staging-view")).toBe(staging);
+    expect(screen.getByTestId("log-view")).toBe(log);
+    expect(screen.getByTestId("log-view").style.display).not.toBe("none");
+
+    rerender(<CentrePanel {...props} activeTab="changes" />);
+
+    expect(screen.getByTestId("staging-view")).toBe(staging);
+    expect(screen.getByTestId("log-view")).toBe(log);
+    expect(screen.getByTestId("log-view").style.display).toBe("none");
+  });
+});
+
 describe("CentrePanel AI conflict lock", () => {
   it("disables merge workflow actions while AI conflict resolution is active", () => {
     renderCentrePanel({
