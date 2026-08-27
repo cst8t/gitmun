@@ -43,6 +43,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import { useStagingOperations } from "../hooks/useStagingOperations";
 import { useProjectKeyboardShortcuts } from "../hooks/useProjectKeyboardShortcuts";
 import { useRemoteOperations } from "../hooks/useRemoteOperations";
+import { useAutoFetch } from "../hooks/useAutoFetch";
 export { buildPushRequestForCurrentBranch } from "../hooks/useRemoteOperations";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
@@ -255,6 +256,8 @@ export type ProjectViewProps = {
   repoDisplayName: string | null;
   /** Increments each time settings are saved - triggers a full data refresh. */
   settingsRevision: number;
+  lastFetchAttemptAt: number | null;
+  onFetchAttemptComplete: (repoPath: string) => void;
   platform: PlatformType;
   showToast: (message: string, type?: ToastType) => void;
   recentRepos: string[];
@@ -286,6 +289,8 @@ export function ProjectView({
   repoPath,
   repoDisplayName,
   settingsRevision,
+  lastFetchAttemptAt,
+  onFetchAttemptComplete,
   platform,
   showToast,
   recentRepos,
@@ -325,6 +330,7 @@ export function ProjectView({
   const { remotes, refresh: refreshRemotes } = useGitRemotes(repoPath);
   const { stashes, refresh: refreshStashes } = useGitStashes(repoPath);
   const [logScope, setLogScope] = useState<CommitLogScope>("currentCheckout");
+  const [autoFetchIntervalMinutes, setAutoFetchIntervalMinutes] = useState(0);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
@@ -661,6 +667,7 @@ export function ProjectView({
     pushRejectionAnalysis,
     upstreamDialogMode,
     fetch: handleFetch,
+    autoFetch: handleAutoFetch,
     fetchSingleRemote: handleFetchSingleRemote,
     pull: handlePull,
     push: handlePush,
@@ -686,7 +693,26 @@ export function ProjectView({
     refreshAll,
     showToast,
     onForcePushComplete: handleForcePushComplete,
+    onFetchAttemptComplete,
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSettings().then(settings => {
+      if (!cancelled) setAutoFetchIntervalMinutes(settings.autoFetchIntervalMinutes ?? 0);
+    }).catch(() => {
+      if (!cancelled) setAutoFetchIntervalMinutes(0);
+    });
+    return () => { cancelled = true; };
+  }, [settingsRevision]);
+
+  useAutoFetch(
+    autoFetchIntervalMinutes,
+    Boolean(repoPath && windowFocused && !operationLock && !remoteOp),
+    repoPath,
+    lastFetchAttemptAt,
+    handleAutoFetch,
+  );
 
   const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
     await saveLocalIdentity(payload);

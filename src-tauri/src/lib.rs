@@ -218,6 +218,7 @@ pub(crate) fn git_command() -> std::process::Command {
 
     command.env("LC_ALL", "C");
     command.env("LANG", "C");
+    command.env("GIT_TERMINAL_PROMPT", "0");
     command
 }
 
@@ -235,6 +236,12 @@ mod git_command_tests {
 
         assert!(command_env_is(&command, "LC_ALL", "C"));
         assert!(command_env_is(&command, "LANG", "C"));
+    }
+
+    #[test]
+    fn git_command_disables_terminal_prompt() {
+        let command = crate::git_command();
+        assert!(command_env_is(&command, "GIT_TERMINAL_PROMPT", "0"));
     }
 }
 
@@ -1597,6 +1604,7 @@ pub fn run() {
             commands::settings::set_commit_message_recommended_length,
             commands::settings::set_auto_check_for_updates_on_launch,
             commands::settings::set_auto_install_updates,
+            commands::settings::set_auto_fetch_interval_minutes,
             commands::settings::set_update_endpoint,
             commands::settings::set_linux_graphics_mode,
             commands::settings::get_linux_terminal_options,

@@ -83,6 +83,16 @@ export function App() {
     const [identityOpen, setIdentityOpen] = useState(false);
     const [confirmRevert, setConfirmRevert] = useState(true);
     const [settingsRevision, setSettingsRevision] = useState(0);
+    const [lastFetchAttemptAtByRepo, setLastFetchAttemptAtByRepo] = useState(
+        () => new Map<string, number>(),
+    );
+    const recordFetchAttempt = useCallback((path: string) => {
+        setLastFetchAttemptAtByRepo(previous => {
+            const next = new Map(previous);
+            next.set(path, Date.now());
+            return next;
+        });
+    }, []);
     const activeRepoDisplayName = repoPath && repoDisplayName?.repoPath === repoPath
         ? repoDisplayName.name
         : null;
@@ -681,6 +691,8 @@ export function App() {
                 repoPath={repoPath}
                 repoDisplayName={activeRepoDisplayName}
                 settingsRevision={settingsRevision}
+                lastFetchAttemptAt={repoPath ? lastFetchAttemptAtByRepo.get(repoPath) ?? null : null}
+                onFetchAttemptComplete={recordFetchAttempt}
                 platform={platform}
                 showToast={showToast}
                 recentRepos={recentRepos}

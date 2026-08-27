@@ -335,6 +335,13 @@ impl GitService {
         })
     }
 
+    pub fn set_auto_fetch_interval_minutes(&self, minutes: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.auto_fetch_interval_minutes =
+                Settings::normalised_auto_fetch_interval_minutes(minutes);
+        })
+    }
+
     pub fn set_commit_primary_action(
         &self,
         commit_primary_action: CommitPrimaryAction,
@@ -763,6 +770,17 @@ mod tests {
 
         assert!(settings.enable_local_copy);
         assert!(service.get_settings().enable_local_copy);
+    }
+
+    #[test]
+    fn auto_fetch_interval_setter_disables_unsupported_values() {
+        let service = GitService::new();
+
+        let settings = service.set_auto_fetch_interval_minutes(5);
+        assert_eq!(settings.auto_fetch_interval_minutes, 5);
+
+        let settings = service.set_auto_fetch_interval_minutes(1);
+        assert_eq!(settings.auto_fetch_interval_minutes, 0);
     }
 
     #[test]

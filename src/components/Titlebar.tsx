@@ -197,14 +197,14 @@ export function Titlebar({
 
       {/* Action buttons */}
       <div className="titlebar__actions">
-        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath} loading={remoteOp === "fetch"} />
-        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath} loading={remoteOp === "pull"} />
+        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath || !!remoteOp} loading={remoteOp === "fetch"} />
+        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath || !!remoteOp} loading={remoteOp === "pull"} />
         <ActionBtn
           icon={<PushIcon size={18} className="titlebar__toolbar-icon" />}
           label={pushActionLabel}
           badge={pushActionLabel === t("actions.push") && ahead > 0 ? String(ahead) : undefined}
           onClick={onPush}
-          disabled={!repoPath || pushDisabled}
+          disabled={!repoPath || pushDisabled || !!remoteOp}
           loading={remoteOp === "push"}
           title={pushTitle}
         />

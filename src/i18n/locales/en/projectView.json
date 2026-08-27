@@ -118,6 +118,9 @@
     "showSidebar": "Show sidebar"
   },
   "log": {
+    "autoFetchComplete": "Automatic fetch completed.",
+    "autoFetchFailed": "Automatic fetch failed: {{message}}",
+    "autoFetchTimedOut": "Automatic fetch timed out.",
     "acceptOursFailed": "Accept ours failed: {{message}}",
     "acceptTheirsFailed": "Accept theirs failed: {{message}}",
     "acceptedOurs": "Accepted ours for {{path}}",

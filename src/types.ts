@@ -85,6 +85,7 @@ export type Settings = {
     commitPrimaryAction: CommitPrimaryAction;
     commitMessageRecommendedLength: number;
     pushFollowTags: boolean;
+    autoFetchIntervalMinutes?: number;
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;

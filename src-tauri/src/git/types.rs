@@ -316,6 +316,10 @@ pub struct Settings {
     pub commit_message_recommended_length: u32,
     #[serde(default)]
     pub push_follow_tags: bool,
+    /// How often an open, focused repository is fetched automatically.
+    /// Zero disables automatic fetching.
+    #[serde(default)]
+    pub auto_fetch_interval_minutes: u32,
     #[serde(default = "Settings::default_auto_check_for_updates_on_launch")]
     pub auto_check_for_updates_on_launch: bool,
     #[serde(default)]
@@ -421,6 +425,7 @@ impl Default for Settings {
             commit_primary_action: CommitPrimaryAction::Commit,
             commit_message_recommended_length: 72,
             push_follow_tags: false,
+            auto_fetch_interval_minutes: 0,
             auto_check_for_updates_on_launch: true,
             auto_install_updates: false,
             update_endpoint: Self::default_update_endpoint(),
@@ -447,6 +452,14 @@ impl Default for Settings {
 }
 
 impl Settings {
+    pub fn normalised_auto_fetch_interval_minutes(value: u32) -> u32 {
+        if [0, 5, 10, 30, 60].contains(&value) {
+            value
+        } else {
+            0
+        }
+    }
+
     pub fn normalised_ui_text_scale(value: f64) -> f64 {
         normalise_ui_text_scale(value)
     }

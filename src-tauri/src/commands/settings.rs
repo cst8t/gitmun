@@ -1142,6 +1142,16 @@ pub fn set_push_follow_tags(push_follow_tags: bool, state: tauri::State<'_, AppS
 }
 
 #[tauri::command]
+pub fn set_auto_fetch_interval_minutes(
+    auto_fetch_interval_minutes: u32,
+    state: tauri::State<'_, AppState>,
+) -> Settings {
+    state
+        .git_service
+        .set_auto_fetch_interval_minutes(auto_fetch_interval_minutes)
+}
+
+#[tauri::command]
 pub fn set_commit_primary_action(
     commit_primary_action: CommitPrimaryAction,
     state: tauri::State<'_, AppState>,
