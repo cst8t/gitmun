@@ -6,19 +6,19 @@ use super::error::GitResult;
 use super::gix_handler::GixGitHandler;
 use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
-    CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
-    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
-    CommitMessageRecovery, CommitPrimaryAction, CommitRequest, CreateBranchRequest,
-    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
-    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
-    IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
+    CloneRequest, CommitAttemptResult, CommitDateMode, CommitDetails, CommitDetailsRequest,
+    CommitFileItem, CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
+    CommitMessageRecovery, CommitPrimaryAction, CommitProgressEvent, CommitRequest,
+    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
+    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExportCommitPatchRequest,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
+    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
+    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
+    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -146,7 +146,7 @@ pub struct GitService {
     settings: RwLock<Settings>,
     config_path: RwLock<Option<PathBuf>>,
     gix_handler: Arc<dyn GitOperationHandler>,
-    cli_handler: Arc<dyn GitOperationHandler>,
+    cli_handler: Arc<CliGitHandler>,
 }
 
 impl GitService {
@@ -622,12 +622,12 @@ impl GitService {
 
         match mode {
             BackendMode::Default => Arc::clone(&self.gix_handler),
-            BackendMode::GitCliOnly => Arc::clone(&self.cli_handler),
+            BackendMode::GitCliOnly => self.cli_handler.clone(),
         }
     }
 
     fn active_write_handler(&self) -> Arc<dyn GitOperationHandler> {
-        Arc::clone(&self.cli_handler)
+        self.cli_handler.clone()
     }
 
     #[allow(dead_code)]
@@ -649,6 +649,15 @@ impl GitService {
     ) -> GitResult<Option<CommitMessageRecovery>> {
         self.active_read_handler()
             .get_commit_message_recovery(&request)
+    }
+
+    pub fn commit_changes_with_progress(
+        &self,
+        request: CommitRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<CommitAttemptResult> {
+        self.cli_handler
+            .commit_changes_with_progress(&request, on_progress)
     }
 
     forward_write_methods! {

@@ -180,6 +180,12 @@ fn detect_git_backend() -> GitBackend {
 }
 
 pub(crate) fn git_command() -> std::process::Command {
+    git_command_with_environment(&[])
+}
+
+pub(crate) fn git_command_with_environment(
+    environment: &[(&str, &std::ffi::OsStr)],
+) -> std::process::Command {
     let mut command = if let Some(git_exe) = configured_git_executable_path() {
         #[cfg(windows)]
         {
@@ -196,7 +202,15 @@ pub(crate) fn git_command() -> std::process::Command {
         match git_backend() {
             GitBackend::FlatpakHost => {
                 let mut cmd = std::process::Command::new("flatpak-spawn");
-                cmd.args(["--host", "--env=LC_ALL=C", "--env=LANG=C", "git"]);
+                cmd.args(["--host", "--env=LC_ALL=C", "--env=LANG=C"]);
+                for (key, value) in environment {
+                    let mut argument = std::ffi::OsString::from("--env=");
+                    argument.push(key);
+                    argument.push("=");
+                    argument.push(value);
+                    cmd.arg(argument);
+                }
+                cmd.arg("git");
                 cmd
             }
             GitBackend::FlatpakBundled => std::process::Command::new("/app/bin/git"),
@@ -219,6 +233,9 @@ pub(crate) fn git_command() -> std::process::Command {
     command.env("LC_ALL", "C");
     command.env("LANG", "C");
     command.env("GIT_TERMINAL_PROMPT", "0");
+    for (key, value) in environment {
+        command.env(key, value);
+    }
     command
 }
 
@@ -242,6 +259,19 @@ mod git_command_tests {
     fn git_command_disables_terminal_prompt() {
         let command = crate::git_command();
         assert!(command_env_is(&command, "GIT_TERMINAL_PROMPT", "0"));
+    }
+
+    #[test]
+    fn git_command_applies_additional_environment() {
+        let command = crate::git_command_with_environment(&[(
+            "GIT_TRACE2_EVENT",
+            std::ffi::OsStr::new("/tmp/gitmun-trace"),
+        )]);
+        assert!(command_env_is(
+            &command,
+            "GIT_TRACE2_EVENT",
+            "/tmp/gitmun-trace"
+        ));
     }
 }
 

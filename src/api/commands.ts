@@ -8,6 +8,8 @@ import type {
     CommitMarkers,
     CommitPrimaryAction,
     CommitVerification,
+    CommitAttemptResult,
+    CommitProgressEvent,
     CommitRequest,
     CommitMessageRecovery,
     CreateBranchRequest,
@@ -285,8 +287,17 @@ export function submodulePull(request: SubmoduleActionRequest): Promise<Operatio
     return invoke<OperationResult>("submodule_pull", {request});
 }
 
-export function commitChanges(repoPath: string, message: string, amend?: boolean): Promise<OperationResult> {
-    return invoke<OperationResult>("commit_changes", {request: {repoPath, message, amend}});
+export function commitChanges(
+    repoPath: string,
+    message: string,
+    amend: boolean | undefined,
+    onProgress: Channel<CommitProgressEvent>,
+    skipHooks = false,
+): Promise<CommitAttemptResult> {
+    return invoke<CommitAttemptResult>("commit_changes", {
+        request: {repoPath, message, amend, skipHooks},
+        onProgress,
+    });
 }
 
 export function getCommitMessageRecovery(repoPath: string): Promise<CommitMessageRecovery | null> {

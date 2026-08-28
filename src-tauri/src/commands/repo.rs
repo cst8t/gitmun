@@ -1,13 +1,13 @@
 use crate::git::types::{
-    CloneRequest, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitMarkers, CommitMessageRecovery, CommitRequest, DiffRequest, ExportCommitPatchRequest,
-    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, ImportPatchRequest, LocalCopyDestinationMode,
-    LocalCopyError, LocalCopyMode, LocalCopyProgress, LocalCopyProgressPhase, LocalCopyRequest,
-    LocalCopyResult, LocalCopyWarning, NumstatRequest, NumstatResult, OperationResult,
-    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, RepoRequest, RepoStatus,
-    SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest,
+    CloneRequest, CommitAttemptResult, CommitDetails, CommitDetailsRequest, CommitFileItem,
+    CommitFilesRequest, CommitMarkers, CommitMessageRecovery, CommitProgressEvent, CommitRequest,
+    DiffRequest, ExportCommitPatchRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest,
+    FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
+    LocalCopyDestinationMode, LocalCopyError, LocalCopyMode, LocalCopyProgress,
+    LocalCopyProgressPhase, LocalCopyRequest, LocalCopyResult, LocalCopyWarning, NumstatRequest,
+    NumstatResult, OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult,
+    RepoRequest, RepoStatus, SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest,
+    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
 };
 #[cfg(target_os = "linux")]
 use crate::git::types::{LINUX_TERMINAL_AUTO_ID, LINUX_TERMINAL_CUSTOM_ID};
@@ -2556,10 +2556,16 @@ pub async fn stage_files(
 #[tauri::command]
 pub async fn commit_changes(
     request: CommitRequest,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<OperationResult, String> {
+) -> Result<CommitAttemptResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.commit_changes(request)
+        app.state::<AppState>()
+            .git_service
+            .commit_changes_with_progress(
+                request,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?

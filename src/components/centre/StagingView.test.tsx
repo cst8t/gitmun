@@ -634,4 +634,67 @@ describe("StagingView file tree", () => {
 
     expect(screen.getByText("root-600.ts")).toBeInTheDocument();
   });
+
+  it("shows live commit hook output when expanded", () => {
+    renderStagingView({
+      commitProgress: {
+        startedAt: Date.now() - 2_000,
+        phase: "running",
+        hookName: "pre-commit",
+        output: "Checking formatting\n",
+        outputTruncated: false,
+        expanded: false,
+      },
+    });
+
+    expect(screen.getByText("Running pre-commit hook")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name: "View output"}));
+    expect(screen.getByText("Checking formatting")).toBeInTheDocument();
+  });
+
+  it("shows a hook rejection dialog with a supported bypass action", () => {
+    const onClose = vi.fn();
+    const onBypass = vi.fn();
+    renderStagingView({
+      hookRejection: {
+        hookName: "commit-msg",
+        exitStatus: 1,
+        output: "Subject is required",
+        outputTruncated: false,
+        bypassSupported: true,
+      },
+      onHookRejectionClose: onClose,
+      onHookRejectionBypass: onBypass,
+    });
+
+    expect(screen.getByRole("alertdialog")).toHaveTextContent("The commit-msg hook exited with status 1.");
+    fireEvent.click(screen.getByRole("button", {name: "Commit without hooks"}));
+    expect(onBypass).toHaveBeenCalledOnce();
+    fireEvent.click(screen.getByRole("button", {name: "Close"}));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer bypass for a non-bypassable hook", () => {
+    renderStagingView({
+      commitProgress: {
+        startedAt: Date.now() - 2_000,
+        phase: "awaitingDecision",
+        hookName: "prepare-commit-msg",
+        output: "Commit message preparation failed",
+        outputTruncated: false,
+        expanded: true,
+      },
+      hookRejection: {
+        hookName: "prepare-commit-msg",
+        exitStatus: 1,
+        output: "Commit message preparation failed",
+        outputTruncated: false,
+        bypassSupported: false,
+      },
+    });
+
+    expect(screen.getByText("Choose how to continue.")).toBeInTheDocument();
+    expect(screen.getByRole("alertdialog")).toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: "Commit without hooks"})).not.toBeInTheDocument();
+  });
 });

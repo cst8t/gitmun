@@ -9,6 +9,7 @@
  */
 import React, { useState, useCallback, useEffect, useRef, useDeferredValue, useMemo } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -49,9 +50,12 @@ import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
   BranchInfo,
+  CommitHookRejection,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
+  CommitProgressEvent,
+  CommitProgressState,
   CreateBranchRequest,
   ExportPatchFileSelection,
   ExportPatchScope,
@@ -364,6 +368,14 @@ export function ProjectView({
   const [operationLock, setOperationLock] = useState<LongRunningOperation | null>(null);
   const operationLockRef = useRef<LongRunningOperation | null>(null);
   const nextOperationIdRef = useRef(1);
+  const [commitProgress, setCommitProgress] = useState<CommitProgressState | null>(null);
+  const [hookRejection, setHookRejection] = useState<CommitHookRejection | null>(null);
+  const hookDecisionRef = useRef<((skipHooks: boolean) => void) | null>(null);
+
+  useEffect(() => () => {
+    hookDecisionRef.current?.(false);
+    hookDecisionRef.current = null;
+  }, []);
   const [isRebaseActionRunning, setIsRebaseActionRunning] = useState(false);
   const [isCherryPickActionRunning, setIsCherryPickActionRunning] = useState(false);
   const [isRevertActionRunning, setIsRevertActionRunning] = useState(false);
@@ -883,6 +895,18 @@ export function ProjectView({
     }
   }, [commitPrimaryAction, showToast, t]);
 
+  const handleHookRejectionClose = useCallback(() => {
+    hookDecisionRef.current?.(false);
+    hookDecisionRef.current = null;
+    setHookRejection(null);
+  }, []);
+
+  const handleHookRejectionBypass = useCallback(() => {
+    hookDecisionRef.current?.(true);
+    hookDecisionRef.current = null;
+    setHookRejection(null);
+  }, []);
+
   const runCommitRequest = useCallback(async (message: string, amend: boolean) => {
     if (!repoPath) return false;
     if (rebaseInProgress) {
@@ -898,15 +922,68 @@ export function ProjectView({
       return false;
     }
     try {
-      const result = await api.commitChanges(repoPath, message, amend);
-      showToast(amend ? t("toast.amendedCommit") : t("toast.commitCreated"));
-      appendResultLog("success", amend ? t("toast.amendedLatestCommit") : t("toast.createdCommit"), result.backendUsed);
-      await refreshAll();
-      return true;
+      let skipHooks = false;
+      for (;;) {
+        let capturedOutput = "";
+        const progress = new Channel<CommitProgressEvent>();
+        progress.onmessage = event => {
+          setCommitProgress(current => {
+            if (!current) return current;
+            if (event.event === "output") {
+              capturedOutput = `${capturedOutput}${event.text}`.slice(-1024 * 1024);
+              return {...current, output: capturedOutput, outputTruncated: current.outputTruncated || event.truncated};
+            }
+            if (event.event === "hookStarted") {
+              return {...current, hookName: event.hookName};
+            }
+            return current.hookName === event.hookName ? {...current, hookName: null} : current;
+          });
+        };
+        setCommitProgress({startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
+        const attempt = await api.commitChanges(repoPath, message, amend, progress, skipHooks);
+        if (attempt.status === "committed") {
+          const { result } = attempt;
+          showToast(amend ? t("toast.amendedCommit") : t("toast.commitCreated"));
+          appendResultLog(
+            "success",
+            amend ? t("toast.amendedLatestCommit") : t("toast.createdCommit"),
+            result.backendUsed,
+            undefined,
+            `${result.output ?? capturedOutput}${attempt.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}` || undefined,
+          );
+          if (skipHooks) {
+            appendResultLog("info", t("log.commitHooksSkipped"), result.backendUsed);
+          }
+          await refreshAll();
+          return true;
+        }
+
+        setCommitProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? capturedOutput, outputTruncated: Boolean(attempt.outputTruncated), expanded: true} : current);
+        setHookRejection(attempt);
+        skipHooks = await new Promise<boolean>(resolve => {
+          hookDecisionRef.current = resolve;
+        });
+        if (!skipHooks) {
+          appendResultLog(
+            "error",
+            t("log.commitHookRejected", {
+              hook: attempt.hookName,
+              exitStatus: attempt.exitStatus ?? t("commitHooks.unknownExitStatus"),
+            }),
+            "git-cli",
+            undefined,
+            `${attempt.output ?? capturedOutput}${attempt.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}` || undefined,
+          );
+          return false;
+        }
+      }
     } catch (e) {
       showToast(String(e), "error");
       appendResultLog("error", t("log.commitFailed", { message: String(e) }), "unknown");
       return false;
+    } finally {
+      setCommitProgress(null);
+      hookDecisionRef.current = null;
     }
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
 
@@ -2392,6 +2469,10 @@ export function ProjectView({
                   onOpenMergeTool={handleOpenMergeTool}
                   stagingOperation={stagingOperation}
                   operationLock={operationLock}
+                  commitProgress={commitProgress}
+                  hookRejection={hookRejection}
+                  onHookRejectionClose={handleHookRejectionClose}
+                  onHookRejectionBypass={handleHookRejectionBypass}
                   isCommitting={isCommitting}
                   isRebaseActionRunning={isRebaseActionRunning}
                   isCherryPickActionRunning={isCherryPickActionRunning}

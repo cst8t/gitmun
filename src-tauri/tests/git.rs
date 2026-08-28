@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 use std::process::Command;
+use std::sync::{Arc, Mutex};
 use tempfile::TempDir;
 
 use gitmun_lib::git::cli::CliGitHandler;
@@ -8,12 +9,13 @@ use gitmun_lib::git::error_interpretation::GitErrorCategory;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitDetailsRequest, CommitHistoryRequest, CommitLogScope, CommitRefKind, CommitRequest,
-    CreateBranchRequest, DeleteBranchRequest, ExportCommitPatchRequest, ExportPatchFileSelection,
-    ExportPatchRequest, ExportPatchScope, FileRequest, IdentityRequest, IdentityScope,
-    ImportPatchRequest, PushFailureKind, PushRequest, RepoRequest, RepoStatus, ResetMode,
-    ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest, SshAllowedSignerReason,
-    StageFilesRequest, SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
+    CommitAttemptResult, CommitDetailsRequest, CommitHistoryRequest, CommitLogScope,
+    CommitProgressEvent, CommitRefKind, CommitRequest, CreateBranchRequest, DeleteBranchRequest,
+    ExportCommitPatchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
+    FileRequest, IdentityRequest, IdentityScope, ImportPatchRequest, PushFailureKind, PushRequest,
+    RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
+    UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -1436,6 +1438,7 @@ fn commit_creates_entry_in_log() {
             repo_path: dir.path().to_str().unwrap().to_string(),
             message: "add b.txt".to_string(),
             amend: None,
+            skip_hooks: false,
         })
         .expect("commit_changes");
     let commits = handler()
@@ -1464,6 +1467,7 @@ fn commit_does_not_sign_when_gpgsign_is_unset() {
             repo_path: dir.path().to_str().unwrap().to_string(),
             message: "commit without signing".to_string(),
             amend: None,
+            skip_hooks: false,
         })
         .expect("commit_changes should not sign when commit.gpgsign is unset");
 
@@ -1485,11 +1489,223 @@ fn commit_preserves_description_and_trailer_like_lines() {
             repo_path: dir.path().to_str().unwrap().to_string(),
             message: message.to_string(),
             amend: None,
+            skip_hooks: false,
         })
         .expect("commit_changes");
 
     let committed_message = git_stdout(dir.path(), &["log", "-1", "--format=%B"]);
     assert_eq!(committed_message, message);
+}
+
+#[cfg(unix)]
+#[test]
+fn commit_progress_reports_hook_rejection_and_bypasses_supported_hooks() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = init_repo();
+    write_file(dir.path(), "checked.txt", "data");
+    git(dir.path(), &["add", "checked.txt"]);
+    let hook_path = dir.path().join(".git/hooks/pre-commit");
+    fs::write(
+        &hook_path,
+        "#!/bin/sh\necho hook output\necho hook error >&2\nexit 1\n",
+    )
+    .expect("write hook");
+    let mut permissions = fs::metadata(&hook_path)
+        .expect("hook metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&hook_path, permissions).expect("make hook executable");
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+    let request = CommitRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        message: "checked commit".to_string(),
+        amend: None,
+        skip_hooks: false,
+    };
+    let result = handler()
+        .commit_changes_with_progress(
+            &request,
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("hook rejection result");
+    assert!(matches!(
+        result,
+        CommitAttemptResult::HookRejected {
+            ref hook_name,
+            bypass_supported: true,
+            ..
+        } if hook_name == "pre-commit"
+    ));
+    assert!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .any(|event| matches!(
+                event,
+                CommitProgressEvent::Output { text, .. } if text.contains("hook output")
+            ))
+    );
+    assert!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .any(|event| matches!(
+                event,
+                CommitProgressEvent::HookStarted { hook_name } if hook_name == "pre-commit"
+            ))
+    );
+    assert!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .any(|event| matches!(
+                event,
+                CommitProgressEvent::HookFinished { hook_name, exit_status: Some(1) }
+                    if hook_name == "pre-commit"
+            ))
+    );
+
+    let bypass_result = handler()
+        .commit_changes_with_progress(
+            &CommitRequest {
+                skip_hooks: true,
+                ..request
+            },
+            Arc::new(|_| {}),
+        )
+        .expect("bypass result");
+    assert!(matches!(
+        bypass_result,
+        CommitAttemptResult::Committed { .. }
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn commit_progress_classifies_commit_message_and_custom_hook_paths() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let run_hook = |hook_name: &str, custom_hooks_path: bool| {
+        let dir = init_repo();
+        write_file(dir.path(), "checked.txt", "data");
+        git(dir.path(), &["add", "checked.txt"]);
+        let hooks_dir = if custom_hooks_path {
+            let path = dir.path().join("custom-hooks");
+            fs::create_dir(&path).expect("create custom hooks");
+            git(
+                dir.path(),
+                &["config", "core.hooksPath", path.to_str().unwrap()],
+            );
+            path
+        } else {
+            dir.path().join(".git/hooks")
+        };
+        let hook_path = hooks_dir.join(hook_name);
+        fs::write(&hook_path, "#!/bin/sh\nexit 1\n").expect("write hook");
+        let mut permissions = fs::metadata(&hook_path)
+            .expect("hook metadata")
+            .permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&hook_path, permissions).expect("make hook executable");
+        handler()
+            .commit_changes_with_progress(
+                &CommitRequest {
+                    repo_path: dir.path().to_str().unwrap().to_string(),
+                    message: "checked commit".to_string(),
+                    amend: None,
+                    skip_hooks: false,
+                },
+                Arc::new(|_| {}),
+            )
+            .expect("hook rejection result")
+    };
+
+    assert!(matches!(
+        run_hook("commit-msg", false),
+        CommitAttemptResult::HookRejected { ref hook_name, bypass_supported: true, .. }
+            if hook_name == "commit-msg"
+    ));
+    assert!(matches!(
+        run_hook("prepare-commit-msg", false),
+        CommitAttemptResult::HookRejected { ref hook_name, bypass_supported: false, .. }
+            if hook_name == "prepare-commit-msg"
+    ));
+    assert!(matches!(
+        run_hook("pre-commit", true),
+        CommitAttemptResult::HookRejected { ref hook_name, .. } if hook_name == "pre-commit"
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn commit_progress_truncates_successful_hook_output() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = init_repo();
+    write_file(dir.path(), "large-output.txt", "data");
+    git(dir.path(), &["add", "large-output.txt"]);
+    let hook_path = dir.path().join(".git/hooks/pre-commit");
+    fs::write(
+        &hook_path,
+        "#!/bin/sh\ndd if=/dev/zero bs=1048577 count=1 2>/dev/null | tr '\\000' x\n",
+    )
+    .expect("write hook");
+    let mut permissions = fs::metadata(&hook_path)
+        .expect("hook metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&hook_path, permissions).expect("make hook executable");
+
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+    let result = handler()
+        .commit_changes_with_progress(
+            &CommitRequest {
+                repo_path: dir.path().to_str().unwrap().to_string(),
+                message: "large hook output".to_string(),
+                amend: None,
+                skip_hooks: false,
+            },
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("successful commit");
+
+    assert!(matches!(
+        result,
+        CommitAttemptResult::Committed {
+            output_truncated: true,
+            ..
+        }
+    ));
+    assert_eq!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .filter(|event| matches!(
+                event,
+                CommitProgressEvent::Output {
+                    truncated: true,
+                    ..
+                }
+            ))
+            .count(),
+        1
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["log", "-1", "--format=%s"]),
+        "large hook output"
+    );
 }
 
 #[test]

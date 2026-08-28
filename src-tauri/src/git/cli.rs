@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::error::{GitError, GitResult};
@@ -12,11 +13,12 @@ use super::error_interpretation::{GitErrorCategory, InterpretedGitError, interpr
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
-    CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitMessageRecovery,
-    CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
-    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
-    DeleteTagRequest, DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
+    CommitAttemptResult, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
+    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers,
+    CommitMessageRecovery, CommitOutputStream, CommitProgressEvent, CommitRefDecoration,
+    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
+    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
+    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
     FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest,
     IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult,
@@ -717,6 +719,308 @@ impl CliGitHandler {
         Err(GitError::IoError(
             "Could not create a temporary commit message file".to_string(),
         ))
+    }
+
+    fn strip_terminal_controls(text: &str) -> String {
+        let mut cleaned = String::with_capacity(text.len());
+        let mut chars = text.chars();
+        while let Some(character) = chars.next() {
+            if character != '\u{1b}' {
+                cleaned.push(character);
+                continue;
+            }
+
+            match chars.next() {
+                Some('[') => {
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    let mut previous_was_escape = false;
+                    for next in chars.by_ref() {
+                        if next == '\u{7}' || (previous_was_escape && next == '\\') {
+                            break;
+                        }
+                        previous_was_escape = next == '\u{1b}';
+                    }
+                }
+                Some(_) | None => {}
+            }
+        }
+        cleaned
+    }
+
+    fn hooks_from_trace(trace_path: &Path) -> Vec<(String, String, Option<i32>)> {
+        let Ok(trace) = fs::read_to_string(trace_path) else {
+            return Vec::new();
+        };
+        let root_session_id = trace.lines().find_map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()?
+                .get("sid")?
+                .as_str()
+                .map(str::to_string)
+        });
+        let Some(root_session_id) = root_session_id else {
+            return Vec::new();
+        };
+        let mut hooks = Vec::new();
+        let mut exit_codes = HashMap::new();
+        for line in trace.lines() {
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let session_id = event.get("sid").and_then(serde_json::Value::as_str);
+            if session_id != Some(root_session_id.as_str()) {
+                continue;
+            }
+            let child_id = event.get("child_id").and_then(serde_json::Value::as_u64);
+            match event.get("event").and_then(serde_json::Value::as_str) {
+                Some("child_start")
+                    if event.get("child_class").and_then(serde_json::Value::as_str)
+                        == Some("hook") =>
+                {
+                    if let (Some(child_id), Some(hook_name)) = (
+                        child_id,
+                        event.get("hook_name").and_then(serde_json::Value::as_str),
+                    ) {
+                        hooks.push((child_id, hook_name.to_string()));
+                    }
+                }
+                Some("child_exit") => {
+                    if let (Some(child_id), Some(code)) = (
+                        child_id,
+                        event.get("code").and_then(serde_json::Value::as_i64),
+                    ) {
+                        exit_codes.insert(child_id, code as i32);
+                    }
+                }
+                _ => {}
+            }
+        }
+        hooks
+            .into_iter()
+            .map(|(child_id, hook_name)| {
+                (
+                    format!("{root_session_id}:{child_id}"),
+                    hook_name,
+                    exit_codes.get(&child_id).copied(),
+                )
+            })
+            .collect()
+    }
+
+    pub fn commit_changes_with_progress(
+        &self,
+        request: &CommitRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<CommitAttemptResult> {
+        const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
+
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let message = request.message.trim();
+        if message.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Commit message cannot be empty".to_string(),
+            ));
+        }
+
+        let git_dir = Self::run_git(&["rev-parse", "--absolute-git-dir"], Some(&repo_path))?;
+        let trace = tempfile::NamedTempFile::new_in(Path::new(&git_dir))?;
+        let message_file_path = Self::write_commit_message_file(message)?;
+        let message_file = Self::path_to_string(&message_file_path);
+        let mut command =
+            crate::git_command_with_environment(&[("GIT_TRACE2_EVENT", trace.path().as_os_str())]);
+        Self::configure_command(&mut command);
+        command
+            .args(["commit", "--file", message_file.as_str()])
+            .current_dir(&repo_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+        if request.skip_hooks {
+            command.arg("--no-verify");
+        }
+        if request.amend == Some(true) {
+            command.arg("--amend");
+        }
+        let commit_gpgsign = Self::run_git_allow_exit_codes(
+            &["config", "--get", "commit.gpgsign"],
+            Some(&repo_path),
+            &[1],
+        )
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+        let should_sign = match commit_gpgsign.as_deref() {
+            Some("false") | Some("0") | Some("no") | Some("off") => false,
+            Some("true") | Some("1") | Some("yes") | Some("on") => true,
+            Some(_) => true,
+            None => false,
+        };
+        if should_sign {
+            #[cfg(windows)]
+            {
+                let signing_format = Self::run_git_allow_exit_codes(
+                    &["config", "--get", "gpg.format"],
+                    Some(&repo_path),
+                    &[1],
+                )
+                .ok()
+                .map(|value| value.trim().to_ascii_lowercase());
+                if !matches!(signing_format.as_deref(), Some("ssh")) {
+                    crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                        .map_err(GitError::InvalidInput)?;
+                }
+            }
+            command.arg("-S");
+        }
+
+        let mut child = command.spawn()?;
+        let stdout = child.stdout.take().expect("Git commit stdout is piped");
+        let stderr = child.stderr.take().expect("Git commit stderr is piped");
+        let captured = Arc::new(Mutex::new((String::new(), false)));
+        let spawn_reader = |reader: Box<dyn Read + Send>, stream: CommitOutputStream| {
+            let captured = Arc::clone(&captured);
+            let on_progress = Arc::clone(&on_progress);
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(reader);
+                let mut buffer = [0_u8; 4096];
+                loop {
+                    let bytes_read = match reader.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(bytes_read) => bytes_read,
+                    };
+                    let text = Self::strip_terminal_controls(&String::from_utf8_lossy(
+                        &buffer[..bytes_read],
+                    ));
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let mut emitted = None;
+                    let mut truncation_marker = false;
+                    if let Ok(mut output) = captured.lock() {
+                        let remaining = MAX_CAPTURED_OUTPUT_BYTES.saturating_sub(output.0.len());
+                        if remaining == 0 {
+                            truncation_marker = !output.1;
+                            output.1 = true;
+                        } else if text.len() > remaining {
+                            let mut end = remaining;
+                            while end > 0 && !text.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            let accepted = text[..end].to_string();
+                            output.0.push_str(&accepted);
+                            emitted = Some(accepted);
+                            truncation_marker = !output.1;
+                            output.1 = true;
+                        } else {
+                            output.0.push_str(&text);
+                            emitted = Some(text);
+                        }
+                    }
+                    if let Some(text) = emitted {
+                        on_progress(CommitProgressEvent::Output {
+                            stream: stream.clone(),
+                            text,
+                            truncated: false,
+                        });
+                    }
+                    if truncation_marker {
+                        on_progress(CommitProgressEvent::Output {
+                            stream: stream.clone(),
+                            text: String::new(),
+                            truncated: true,
+                        });
+                    }
+                }
+            })
+        };
+        let stdout_reader = spawn_reader(Box::new(stdout), CommitOutputStream::Stdout);
+        let stderr_reader = spawn_reader(Box::new(stderr), CommitOutputStream::Stderr);
+        let mut announced_hooks = HashSet::new();
+        let mut finished_hooks = HashSet::new();
+        let status = loop {
+            for (key, hook_name, hook_exit_status) in Self::hooks_from_trace(trace.path()) {
+                if announced_hooks.insert(key.clone()) {
+                    on_progress(CommitProgressEvent::HookStarted {
+                        hook_name: hook_name.clone(),
+                    });
+                }
+                if let Some(exit_status) = hook_exit_status
+                    && finished_hooks.insert(key)
+                {
+                    on_progress(CommitProgressEvent::HookFinished {
+                        hook_name,
+                        exit_status: Some(exit_status),
+                    });
+                }
+            }
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
+        drop(stdout_reader.join());
+        drop(stderr_reader.join());
+        for (key, hook_name, hook_exit_status) in Self::hooks_from_trace(trace.path()) {
+            if announced_hooks.insert(key.clone()) {
+                on_progress(CommitProgressEvent::HookStarted {
+                    hook_name: hook_name.clone(),
+                });
+            }
+            if let Some(exit_status) = hook_exit_status
+                && finished_hooks.insert(key)
+            {
+                on_progress(CommitProgressEvent::HookFinished {
+                    hook_name,
+                    exit_status: Some(exit_status),
+                });
+            }
+        }
+        drop(fs::remove_file(&message_file_path));
+
+        let (output, truncated) = captured
+            .lock()
+            .map(|output| output.clone())
+            .unwrap_or_default();
+        let output = (!output.trim().is_empty()).then_some(output);
+        if status.success() {
+            return Ok(CommitAttemptResult::Committed {
+                result: OperationResult {
+                    message: format!("Committed changes in {}", repo_path.display()),
+                    output,
+                    repo_path: Some(Self::path_to_string(&repo_path)),
+                    backend_used: "git-cli".to_string(),
+                    interpreted_error: None,
+                },
+                output_truncated: truncated,
+            });
+        }
+
+        let rejected_hook = Self::hooks_from_trace(trace.path())
+            .into_iter()
+            .rev()
+            .find(|(_, _, hook_exit_status)| hook_exit_status.is_some_and(|code| code != 0));
+        if let Some((_, hook_name, hook_exit_status)) = rejected_hook {
+            let bypass_supported = matches!(hook_name.as_str(), "pre-commit" | "commit-msg");
+            return Ok(CommitAttemptResult::HookRejected {
+                hook_name,
+                exit_status: hook_exit_status,
+                output,
+                output_truncated: truncated,
+                bypass_supported,
+            });
+        }
+
+        Err(GitError::CommandFailed {
+            command: "git commit".to_string(),
+            stderr: output.unwrap_or_default(),
+            exit_code: status.code(),
+        })
     }
 
     fn clean_commit_edit_message(message: &str) -> String {
@@ -2521,6 +2825,9 @@ impl GitOperationHandler for CliGitHandler {
         }
         if request.amend == Some(true) {
             args.push("--amend");
+        }
+        if request.skip_hooks {
+            args.push("--no-verify");
         }
         let output = Self::run_git(&args, Some(&repo_path));
         let _ = fs::remove_file(&message_file_path);

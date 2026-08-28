@@ -139,6 +139,56 @@
   flex-shrink: 0;
 }
 
+.staging__operation-failed {
+  display: grid;
+  width: 16px;
+  height: 16px;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--text-on-accent);
+  background: var(--red);
+  font-size: var(--font-size-xs);
+  font-weight: var(--font-weight-semibold);
+  flex-shrink: 0;
+}
+
+.staging__commit-output,
+.commit-hook-dialog__output {
+  max-height: 180px;
+  margin: 6px 14px 0;
+  padding: 8px;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+  white-space: pre-wrap;
+}
+
+.commit-hook-dialog {
+  width: 560px;
+}
+
+.commit-hook-dialog__summary,
+.commit-hook-dialog__warning {
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.4;
+}
+
+.commit-hook-dialog__warning {
+  padding: 8px 10px;
+  border-left: 3px solid var(--yellow);
+  background: var(--bg-elevated);
+}
+
+.commit-hook-dialog__output {
+  max-height: min(40vh, 320px);
+  margin: 0;
+}
+
 .staging__operation-copy {
   display: flex;
   flex: 1;

@@ -10,9 +10,11 @@ import { CherryPickBanner } from "./CherryPickBanner";
 import { RevertBanner } from "./RevertBanner";
 import type {
   CommitHistoryItem,
+  CommitHookRejection,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
+  CommitProgressState,
   ConflictFileItem,
   FileStatusItem,
   LongRunningOperation,
@@ -126,6 +128,10 @@ type CentrePanelProps = {
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
+  commitProgress?: CommitProgressState | null;
+  hookRejection?: CommitHookRejection | null;
+  onHookRejectionClose?: () => void;
+  onHookRejectionBypass?: () => void;
   isCommitting: boolean;
   isRebaseActionRunning: boolean;
   isCherryPickActionRunning: boolean;
@@ -228,7 +234,7 @@ export function CentrePanel(props: CentrePanelProps) {
   const operationContent = getOperationContent(props.operationLock, t);
   const operationFeedback = useDelayedOperationFeedback(props.operationLock);
   const inlineOperationContent = operationFeedback.showInline ? operationContent : null;
-  const popupOperationContent = operationFeedback.showPopup && operationContent
+  const popupOperationContent = operationFeedback.showPopup && operationContent && !props.commitProgress
     ? { ...operationContent, message: t("operation.stillRunningMessage") }
     : null;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
@@ -409,6 +415,10 @@ export function CentrePanel(props: CentrePanelProps) {
           onOpenMergeTool={props.onOpenMergeTool}
           stagingOperation={props.stagingOperation}
           inlineOperation={inlineOperationContent}
+          commitProgress={props.commitProgress ?? null}
+          hookRejection={props.hookRejection ?? null}
+          onHookRejectionClose={props.onHookRejectionClose ?? (() => {})}
+          onHookRejectionBypass={props.onHookRejectionBypass ?? (() => {})}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
           rowStriping={props.rowStriping}

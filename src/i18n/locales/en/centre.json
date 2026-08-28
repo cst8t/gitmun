@@ -94,6 +94,8 @@
     "cherryPickCommit": "Cherry-pick Commit",
     "close": "Close",
     "commitLogScope": "Commit log scope",
+    "commitHookRejected": "Commit rejected by {{hook}} (exit status {{exitStatus}}).",
+    "commitHooksSkipped": "Committed without verification hooks.",
     "commitRefs": "Commit refs",
     "copyCommitHash": "Copy Commit Hash",
     "copyDetails": "Copy Details",
@@ -168,6 +170,22 @@
     "unstageMessage_one": "Gitmun is unstaging {{count}} file.",
     "unstageMessage_other": "Gitmun is unstaging {{count}} files.",
     "unstageTitle": "Unstaging changes"
+  },
+  "commitHooks": {
+    "awaitingDecision": "Commit hook failed",
+    "bypassWarning": "Committing without hooks skips repository checks.",
+    "close": "Close",
+    "committing": "Committing",
+    "commitWithoutHooks": "Commit without hooks",
+    "elapsed": "Running for {{seconds}}s",
+    "failedDescription": "The {{hook}} hook exited with status {{exitStatus}}.",
+    "failedTitle": "Commit hook failed",
+    "hideOutput": "Hide output",
+    "outputTruncated": "Output was truncated.",
+    "reviewFailure": "Choose how to continue.",
+    "runningHook": "Running {{hook}} hook",
+    "unknownExitStatus": "an unknown status",
+    "viewOutput": "View output"
   },
   "pushRejected": {
     "cancel": "Cancel",

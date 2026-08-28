@@ -719,6 +719,98 @@ pub struct CommitRequest {
     pub repo_path: String,
     pub message: String,
     pub amend: Option<bool>,
+    #[serde(default)]
+    pub skip_hooks: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "event"
+)]
+pub enum CommitProgressEvent {
+    Output {
+        stream: CommitOutputStream,
+        text: String,
+        truncated: bool,
+    },
+    HookStarted {
+        hook_name: String,
+    },
+    HookFinished {
+        hook_name: String,
+        exit_status: Option<i32>,
+    },
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitOutputStream {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "status"
+)]
+pub enum CommitAttemptResult {
+    Committed {
+        result: OperationResult,
+        output_truncated: bool,
+    },
+    HookRejected {
+        hook_name: String,
+        exit_status: Option<i32>,
+        output: Option<String>,
+        output_truncated: bool,
+        bypass_supported: bool,
+    },
+}
+
+#[cfg(test)]
+mod commit_hook_serialisation_tests {
+    use super::{CommitAttemptResult, CommitProgressEvent};
+
+    #[test]
+    fn serialises_commit_hook_wire_fields_in_camel_case() {
+        let progress = serde_json::to_value(CommitProgressEvent::HookFinished {
+            hook_name: "pre-commit".to_string(),
+            exit_status: Some(1),
+        })
+        .expect("serialise hook progress");
+        assert_eq!(
+            progress,
+            serde_json::json!({
+                "event": "hookFinished",
+                "hookName": "pre-commit",
+                "exitStatus": 1,
+            })
+        );
+
+        let rejection = serde_json::to_value(CommitAttemptResult::HookRejected {
+            hook_name: "pre-commit".to_string(),
+            exit_status: Some(1),
+            output: Some("check failed".to_string()),
+            output_truncated: false,
+            bypass_supported: true,
+        })
+        .expect("serialise hook rejection");
+        assert_eq!(
+            rejection,
+            serde_json::json!({
+                "status": "hookRejected",
+                "hookName": "pre-commit",
+                "exitStatus": 1,
+                "output": "check failed",
+                "outputTruncated": false,
+                "bypassSupported": true,
+            })
+        );
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
