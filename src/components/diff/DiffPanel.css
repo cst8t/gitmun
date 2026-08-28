@@ -167,17 +167,22 @@
 .diff-panel__submodule-state--conflict { color: var(--red); }
 
 .diff-panel__commit-files {
-  padding: 8px 0;
+  padding-bottom: 8px;
 }
 
-.diff-panel__commit-file-search {
+.diff-panel__commit-file-toolbar {
   position: sticky;
   top: 0;
   z-index: 1;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.diff-panel__commit-file-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin: 0 10px 8px;
   padding: 6px 10px;
   min-height: 32px;
   box-sizing: border-box;

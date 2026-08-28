@@ -433,20 +433,22 @@ export function DiffPanel({
             <div className="diff-panel__placeholder">{t("placeholders.loadingCommitFiles")}</div>
           ) : commitFiles.length > 0 ? (
             <div className="diff-panel__commit-files">
-              <label className="diff-panel__commit-file-search">
-                <SearchIcon size={14} />
-                <input
-                  className="diff-panel__commit-file-search-input"
-                  type="text"
-                  value={commitFileQuery}
-                  placeholder={t("searchCommitFiles")}
-                  aria-label={t("searchCommitFiles")}
-                  onChange={(event) => setCommitFileQuery(event.target.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") setCommitFileQuery("");
-                  }}
-                />
-              </label>
+              <div className="diff-panel__commit-file-toolbar">
+                <label className="diff-panel__commit-file-search">
+                  <SearchIcon size={14} />
+                  <input
+                    className="diff-panel__commit-file-search-input"
+                    type="text"
+                    value={commitFileQuery}
+                    placeholder={t("searchCommitFiles")}
+                    aria-label={t("searchCommitFiles")}
+                    onChange={(event) => setCommitFileQuery(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setCommitFileQuery("");
+                    }}
+                  />
+                </label>
+              </div>
               {filteredCommitFiles.length === 0 ? (
                 <div className="diff-panel__placeholder">{t("placeholders.noMatchingCommitFiles")}</div>
               ) : commitTreeRows.map((row) => {
