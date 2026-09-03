@@ -78,7 +78,7 @@ fn jump_list_destinations(
         .take(capacity)
         .map(|path| JumpListDestination {
             path: path.clone(),
-            title: repository_title(path),
+            title: format!("{} - {}", repository_title(path), path),
             arguments: format!("--new-window open {}", quote_windows_argument(path)),
         })
         .collect()
@@ -429,12 +429,15 @@ mod tests {
     }
 
     #[test]
-    fn builds_unicode_titles_and_correctly_quoted_arguments() {
+    fn builds_unicode_titles_with_paths_and_correctly_quoted_arguments() {
         let paths = vec![r#"C:\Repos\quoted name\résumé"#.to_string()];
 
         let destinations = jump_list_destinations(&paths, &[], 10);
 
-        assert_eq!(destinations[0].title, "résumé");
+        assert_eq!(
+            destinations[0].title,
+            r#"résumé - C:\Repos\quoted name\résumé"#
+        );
         assert_eq!(
             destinations[0].arguments,
             r#"--new-window open "C:\Repos\quoted name\résumé""#
