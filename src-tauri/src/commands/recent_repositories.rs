@@ -20,14 +20,14 @@ struct JumpListDestination {
 #[cfg(any(target_os = "windows", test))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum WindowsAppIdentity {
-    Packaged(String),
+    Packaged,
     RunningProcess,
 }
 
 #[cfg(any(target_os = "windows", test))]
 fn windows_app_identity(is_msix_build: bool, has_package_identity: bool) -> WindowsAppIdentity {
     if is_msix_build && has_package_identity {
-        WindowsAppIdentity::Packaged(format!("{}!Gitmun", crate::MSIX_PACKAGE_FAMILY_NAME))
+        WindowsAppIdentity::Packaged
     } else {
         WindowsAppIdentity::RunningProcess
     }
@@ -257,15 +257,13 @@ mod platform {
             let destination_list: ICustomDestinationList =
                 unsafe { CoCreateInstance(&DestinationList, None, CLSCTX_INPROC_SERVER) }
                     .map_err(|error| error.to_string())?;
-            if let WindowsAppIdentity::Packaged(app_id) = &self.identity {
-                let app_id = wide_string(app_id);
-                unsafe { destination_list.SetAppID(PCWSTR::from_raw(app_id.as_ptr())) }
-                    .map_err(|error| error.to_string())?;
-            } else if let Ok(app_id) = unsafe { GetCurrentProcessExplicitAppUserModelID() } {
-                let result =
-                    unsafe { destination_list.SetAppID(PCWSTR::from_raw(app_id.as_ptr())) };
-                unsafe { CoTaskMemFree(Some(app_id.as_ptr().cast())) };
-                result.map_err(|error| error.to_string())?;
+            if self.identity == WindowsAppIdentity::RunningProcess {
+                if let Ok(app_id) = unsafe { GetCurrentProcessExplicitAppUserModelID() } {
+                    let result =
+                        unsafe { destination_list.SetAppID(PCWSTR::from_raw(app_id.as_ptr())) };
+                    unsafe { CoTaskMemFree(Some(app_id.as_ptr().cast())) };
+                    result.map_err(|error| error.to_string())?;
+                }
             }
 
             let mut capacity = 0;
@@ -452,7 +450,7 @@ mod tests {
     fn selects_packaged_and_running_process_identities() {
         assert_eq!(
             windows_app_identity(true, true),
-            WindowsAppIdentity::Packaged("cst8t.Gitmun_yqm0gq6me4wme!Gitmun".to_string())
+            WindowsAppIdentity::Packaged
         );
         assert_eq!(
             windows_app_identity(false, false),
