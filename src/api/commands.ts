@@ -723,6 +723,17 @@ export function getStartupAction(): Promise<ShellStartupAction | null> {
     return invoke<ShellStartupAction | null>("get_startup_action");
 }
 
+export type RecentRepositoriesSyncRequest = {
+    paths: string[];
+    categoryLabel: string;
+    accessedPath: string | null;
+    linuxSeedPaths: string[];
+};
+
+export function syncRecentRepositories(request: RecentRepositoriesSyncRequest): Promise<string[]> {
+    return invoke<string[]>("sync_recent_repositories", {request});
+}
+
 export function openRepoInNewWindow(path: string): Promise<void> {
     return invoke("open_repo_in_new_window", {path});
 }

@@ -3,6 +3,7 @@ import {useTranslation} from "react-i18next";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
 import {ask, open} from "@tauri-apps/plugin-dialog";
+import {platform as operatingSystem} from "@tauri-apps/plugin-os";
 import {Toast} from "./Toast";
 import {ProjectView} from "./ProjectView";
 import {UpdateDialog} from "./update/UpdateDialog";
@@ -15,6 +16,12 @@ import {appendResultLog, setResultLogRepoPath} from "../utils/resultLog";
 import {buildMainWindowTitle, repoNameFromPath} from "../utils/repoDisplayName";
 import {applyThemeMode} from "../utils/theme";
 import {applyUiTextScale} from "../utils/uiTextScale";
+import {
+    addRecentRepository,
+    loadRecentRepositories,
+    removeRecentRepository,
+    saveRecentRepositories,
+} from "../utils/recentRepositories";
 import {
     DEFAULT_LEFT_PANEL_WIDTH,
     DEFAULT_RIGHT_PANEL_WIDTH,
@@ -36,6 +43,7 @@ const BACKEND_MODE_KEY = "gitmun.backendMode";
 const SHOW_RESULT_LOG_KEY = "gitmun.showResultLog";
 const THEME_MODE_KEY = "gitmun.themeMode";
 const LEFT_PANE_COLLAPSED_KEY = "gitmun.leftPaneCollapsed";
+const LINUX_RECENT_REPOSITORIES_MIGRATION_KEY = "gitmun.linuxRecentRepositoriesMigrated";
 const DEFAULT_ERROR_TOAST_CLEAR_DELAY_MS = 8000;
 
 function savePanelRatios(totalWidth: number, left: number, right: number): void {
@@ -72,13 +80,10 @@ export function App() {
     const [repoPath, setRepoPath] = useState<string | null>(null);
     const [repoDisplayName, setRepoDisplayName] = useState<{repoPath: string; name: string | null} | null>(null);
     const [ready, setReady] = useState(false);
-    const [recentRepos, setRecentRepos] = useState<string[]>(() => {
-        try {
-            return JSON.parse(localStorage.getItem("gitmun.recentRepos") ?? "[]");
-        } catch {
-            return [];
-        }
-    });
+    const [recentRepos, setRecentRepos] = useState<string[]>(() => loadRecentRepositories(localStorage));
+    const recentReposRef = useRef(recentRepos);
+    const recentSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
+    const initialRecentSyncStartedRef = useRef(false);
     const [recentRepoDisplayNames, setRecentRepoDisplayNames] = useState<Record<string, string>>({});
     const [identityOpen, setIdentityOpen] = useState(false);
     const [confirmRevert, setConfirmRevert] = useState(true);
@@ -113,13 +118,74 @@ export function App() {
         right: parsePanelRatio(localStorage.getItem(RIGHT_PANEL_RATIO_KEY)),
     });
 
-    const pushRecentRepo = useCallback((path: string) => {
-        setRecentRepos(prev => {
-            const next = [path, ...prev.filter(p => p !== path)].slice(0, 10);
-            localStorage.setItem("gitmun.recentRepos", JSON.stringify(next));
-            return next;
-        });
+    const storeRecentRepositories = useCallback((paths: readonly string[]) => {
+        const next = saveRecentRepositories(localStorage, paths);
+        recentReposRef.current = next;
+        setRecentRepos(next);
+        return next;
     }, []);
+
+    const synchroniseRecentRepositories = useCallback((
+        accessedPath: string | null = null,
+        linuxSeedPaths: string[] = [],
+    ): Promise<void> => {
+        const synchronisation = recentSyncQueueRef.current
+            .catch(() => undefined)
+            .then(async () => {
+                const removedPaths = await api.syncRecentRepositories({
+                    paths: recentReposRef.current,
+                    categoryLabel: t("recentRepositories.category"),
+                    accessedPath,
+                    linuxSeedPaths,
+                });
+                if (removedPaths.length === 0) return;
+
+                const removedPathSet = new Set(removedPaths);
+                const next = recentReposRef.current.filter(path => !removedPathSet.has(path));
+                if (next.length === recentReposRef.current.length) return;
+                storeRecentRepositories(next);
+            });
+        recentSyncQueueRef.current = synchronisation.catch(() => undefined);
+        return synchronisation;
+    }, [storeRecentRepositories, t]);
+
+    const persistRecentRepositories = useCallback((paths: readonly string[], accessedPath: string | null = null) => {
+        storeRecentRepositories(paths);
+        void synchroniseRecentRepositories(accessedPath);
+    }, [storeRecentRepositories, synchroniseRecentRepositories]);
+
+    const pushRecentRepo = useCallback((path: string) => {
+        persistRecentRepositories(addRecentRepository(recentReposRef.current, path), path);
+    }, [persistRecentRepositories]);
+
+    const removeRecentRepo = useCallback((path: string) => {
+        persistRecentRepositories(removeRecentRepository(recentReposRef.current, path));
+    }, [persistRecentRepositories]);
+
+    useEffect(() => {
+        if (initialRecentSyncStartedRef.current) return;
+        initialRecentSyncStartedRef.current = true;
+        storeRecentRepositories(recentReposRef.current);
+
+        const isLinux = (() => {
+            try {
+                return operatingSystem() === "linux";
+            } catch {
+                return false;
+            }
+        })();
+        const shouldSeedLinuxHistory = isLinux
+            && localStorage.getItem(LINUX_RECENT_REPOSITORIES_MIGRATION_KEY) !== "true";
+        const linuxSeedPaths = shouldSeedLinuxHistory
+            ? [...recentReposRef.current].reverse()
+            : [];
+
+        synchroniseRecentRepositories(null, linuxSeedPaths).then(() => {
+            if (shouldSeedLinuxHistory) {
+                localStorage.setItem(LINUX_RECENT_REPOSITORIES_MIGRATION_KEY, "true");
+            }
+        }).catch(() => undefined);
+    }, [synchroniseRecentRepositories]);
 
     useEffect(() => {
         const paths = recentRepos.slice(0, 5);
@@ -700,6 +766,7 @@ export function App() {
                 identityOpen={identityOpen}
                 onIdentityToggle={() => setIdentityOpen(v => !v)}
                 onRepoSelect={handleRepoSelect}
+                onRemoveRecentRepo={removeRecentRepo}
                 onOpenRepoLocation={handleOpenRepoLocation}
                 onOpenExistingClick={handleOpenExistingClick}
                 onCloneClick={handleCloneClick}

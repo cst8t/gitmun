@@ -69,8 +69,8 @@ static BUNDLED_GIT_EXE: OnceLock<Option<PathBuf>> = OnceLock::new();
 
 static CONFIGURED_GIT_EXE: OnceLock<RwLock<Option<PathBuf>>> = OnceLock::new();
 
-#[cfg(windows)]
-const MSIX_PACKAGE_FAMILY_NAME: &str = "cst8t.Gitmun_yqm0gq6me4wme";
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) const MSIX_PACKAGE_FAMILY_NAME: &str = "cst8t.Gitmun_yqm0gq6me4wme";
 
 #[cfg_attr(not(target_os = "windows"), allow(dead_code))]
 pub(crate) fn is_msix_build() -> bool {
@@ -1658,6 +1658,7 @@ pub fn run() {
             commands::history::conflict_accept_theirs,
             commands::history::conflict_accept_ours,
             commands::history::open_merge_tool,
+            commands::recent_repositories::sync_recent_repositories,
             commands::repo::get_commit_markers,
             commands::repo::get_commit_files,
             commands::repo::get_commit_details,

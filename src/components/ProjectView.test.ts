@@ -1,9 +1,13 @@
+// @vitest-environment jsdom
+import React, {useState} from "react";
+import {fireEvent, render, screen} from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import i18n from "../i18n";
 import type { BranchInfo, OperationResult } from "../types";
 import {
   buildPushRequestForCurrentBranch,
   buildStashDropPrompt,
+  EmptyRecentRepositories,
   getEffectiveCommitAction,
   importPatchWithRecovery,
   isPatchConflictResult,
@@ -12,6 +16,34 @@ import {
 import {localiseAiError} from "../features/ai";
 
 const t = i18n.getFixedT("en", "projectView");
+
+describe("EmptyRecentRepositories", () => {
+  it("removes a repository without opening it and reveals the next stored entry", () => {
+    const onRepoSelect = vi.fn();
+    const paths = Array.from({length: 6}, (_, index) => `/repos/repository-${index + 1}`);
+
+    function RecentRepositoryHarness() {
+      const [recentPaths, setRecentPaths] = useState(paths);
+      return React.createElement(EmptyRecentRepositories, {
+        paths: recentPaths.slice(0, 5),
+        displayNames: {},
+        onRepoSelect,
+        onRemoveRecentRepo: path => setRecentPaths(current => current.filter(item => item !== path)),
+      });
+    }
+
+    render(React.createElement(RecentRepositoryHarness));
+    const removeButton = screen.getByRole("button", {
+      name: "Remove repository-1 from recent repositories",
+    });
+    expect(removeButton).toHaveAttribute("title", "Remove repository-1 from recent repositories");
+    fireEvent.click(removeButton);
+
+    expect(onRepoSelect).not.toHaveBeenCalled();
+    expect(screen.queryByText("repository-1")).not.toBeInTheDocument();
+    expect(screen.getByText("repository-6")).toBeInTheDocument();
+  });
+});
 
 describe("buildStashDropPrompt", () => {
   it("includes the stash index and message without brace syntax", () => {

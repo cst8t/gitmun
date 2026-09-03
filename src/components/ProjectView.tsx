@@ -31,7 +31,7 @@ import { CreateBranchDialog } from "./sidebar/CreateBranchDialog";
 import { RenameBranchDialog } from "./sidebar/RenameBranchDialog";
 import { StashPushDialog } from "./sidebar/StashPushDialog";
 import { UpstreamDialog } from "./sidebar/UpstreamDialog";
-import { ChevLeftIcon, ChevRightIcon, FolderIcon, GitIcon } from "./icons";
+import { ChevLeftIcon, ChevRightIcon, CloseIcon, FolderIcon, GitIcon } from "./icons";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
 import { useGitLog } from "../hooks/useGitLog";
@@ -269,6 +269,7 @@ export type ProjectViewProps = {
   identityOpen: boolean;
   onIdentityToggle: () => void;
   onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
   onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onOpenExistingClick: () => void;
   onCloneClick: () => void;
@@ -289,6 +290,61 @@ export type ProjectViewProps = {
   winRadius: number;
 };
 
+export function EmptyRecentRepositories({
+  paths,
+  displayNames,
+  onRepoSelect,
+  onRemoveRecentRepo,
+}: {
+  paths: string[];
+  displayNames: Record<string, string>;
+  onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
+}) {
+  const {t} = useTranslation("projectView");
+  if (paths.length === 0) return null;
+
+  return (
+    <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
+      <div className="app__empty-recent-divider" />
+      <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
+      <div className="app__empty-recent-list">
+        {paths.map(path => {
+          const name = displayNameForRepoPath(path, displayNames[path]);
+          return (
+            <div key={path} className="app__empty-recent-item">
+              <button
+                type="button"
+                className="app__empty-recent-select"
+                onClick={() => onRepoSelect(path)}
+                title={path}
+              >
+                <FolderIcon size={15} />
+                <span className="app__empty-recent-text">
+                  <span className="app__empty-recent-name">{name}</span>
+                  <span className="app__empty-recent-path">{path}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="app__empty-recent-remove"
+                onClick={event => {
+                  event.stopPropagation();
+                  onRemoveRecentRepo(path);
+                }}
+                aria-label={t("recentRepositories.remove", {ns: "app", name})}
+                title={t("recentRepositories.remove", {ns: "app", name})}
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectView({
   repoPath,
   repoDisplayName,
@@ -302,6 +358,7 @@ export function ProjectView({
   identityOpen,
   onIdentityToggle,
   onRepoSelect,
+  onRemoveRecentRepo,
   onOpenRepoLocation,
   onOpenExistingClick,
   onCloneClick,
@@ -2277,6 +2334,7 @@ export function ProjectView({
           onInitRepoClick={onInitRepoClick}
           onOpenExistingClick={onOpenExistingClick}
           onRepoSelect={onRepoSelect}
+          onRemoveRecentRepo={onRemoveRecentRepo}
           onOpenRepoLocation={onOpenRepoLocation}
           onFetch={handleFetch}
           onPull={handlePull}
@@ -2541,30 +2599,12 @@ export function ProjectView({
                     <span>{t("emptyState.openExisting")}</span>
                   </button>
                 </div>
-                {emptyStateRecentRepos.length > 0 && (
-                  <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
-                    <div className="app__empty-recent-divider" />
-                    <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
-                    <div className="app__empty-recent-list">
-                      {emptyStateRecentRepos.map(path => {
-                        const name = displayNameForRepoPath(path, recentRepoDisplayNames[path]);
-                        return (
-                          <button
-                            type="button"
-                            key={path}
-                            className="app__empty-recent-item"
-                            onClick={() => onRepoSelect(path)}
-                            title={path}
-                          >
-                            <FolderIcon size={15} />
-                            <span className="app__empty-recent-name">{name}</span>
-                            <span className="app__empty-recent-path">{path}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <EmptyRecentRepositories
+                  paths={emptyStateRecentRepos}
+                  displayNames={recentRepoDisplayNames}
+                  onRepoSelect={onRepoSelect}
+                  onRemoveRecentRepo={onRemoveRecentRepo}
+                />
               </div>
             </div>
           )}

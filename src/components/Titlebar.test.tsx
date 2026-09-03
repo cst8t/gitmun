@@ -47,6 +47,9 @@ function renderTitlebar(
     aiConfigured?: boolean;
     onAiWriting?: () => void;
     onSettingsClick?: () => void;
+    recentRepos?: string[];
+    onRepoSelect?: (path: string) => void;
+    onRemoveRecentRepo?: (path: string) => void;
   } = {},
 ) {
   const onImportPatch = patchHandlers.onImportPatch ?? vi.fn();
@@ -61,7 +64,7 @@ function renderTitlebar(
       branches={branches}
       identityName="Gitmun Maintainer"
       identityAvatarUrl={null}
-      recentRepos={[]}
+      recentRepos={patchHandlers.recentRepos ?? []}
       searchQuery=""
       searchInputRef={{ current: null }}
       onSearchChange={vi.fn()}
@@ -71,7 +74,8 @@ function renderTitlebar(
       onCloneClick={vi.fn()}
       onInitRepoClick={vi.fn()}
       onOpenExistingClick={vi.fn()}
-      onRepoSelect={vi.fn()}
+      onRepoSelect={patchHandlers.onRepoSelect ?? vi.fn()}
+      onRemoveRecentRepo={patchHandlers.onRemoveRecentRepo ?? vi.fn()}
       onOpenRepoLocation={onOpenRepoLocation}
       onFetch={vi.fn()}
       onPull={vi.fn()}
@@ -124,6 +128,28 @@ describe("Titlebar", () => {
   it("shows Push for tracked branches", () => {
     renderTitlebar([makeBranch({ upstream: "origin/feature/demo", upstreamStatus: "tracked" })], "Push");
     expect(screen.getByText("Push")).toBeInTheDocument();
+  });
+
+  it("removes a recent repository without opening it or closing the menu", () => {
+    const onRepoSelect = vi.fn();
+    const onRemoveRecentRepo = vi.fn();
+    renderTitlebar([makeBranch()], "Push", "/current", vi.fn(), {
+      recentRepos: ["/repos/one", "/repos/two"],
+      onRepoSelect,
+      onRemoveRecentRepo,
+    });
+    fireEvent.click(screen.getByTitle("Open a repository"));
+
+    const removeButton = screen.getByRole("button", {
+      name: "Remove one from recent repositories",
+    });
+    expect(removeButton).toHaveAttribute("title", "Remove one from recent repositories");
+    fireEvent.click(removeButton);
+
+    expect(onRemoveRecentRepo).toHaveBeenCalledWith("/repos/one");
+    expect(onRepoSelect).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", {name: "Remove two from recent repositories"}))
+      .toBeInTheDocument();
   });
 
   it("shows a disclosure with the full branch name when the branch label is truncated", () => {

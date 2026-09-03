@@ -24,6 +24,10 @@
     "initialiseRepository": "Initialise repository in folder",
     "openExistingRepository": "Open existing repository"
   },
+  "recentRepositories": {
+    "category": "Recent repositories",
+    "remove": "Remove {{name}} from recent repositories"
+  },
   "toast": {
     "opened": "Opened {{name}}",
     "repositoryInitialised": "Repository initialised",
