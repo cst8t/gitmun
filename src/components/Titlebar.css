@@ -366,7 +366,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: 4px;
-  min-width: 180px;
+  min-width: 220px;
   max-width: min(420px, calc(100vw - 16px));
   box-sizing: border-box;
   z-index: 100;
@@ -442,7 +442,7 @@
 }
 
 .titlebar__open-menu-item--recent {
-  gap: 2px;
+  gap: 0;
   padding: 0;
 }
 
@@ -464,10 +464,10 @@
 
 .titlebar__open-menu-recent-remove {
   width: 26px;
-  height: 26px;
   flex: 0 0 26px;
+  align-self: stretch;
   border: 0;
-  border-radius: var(--radius-md);
+  border-radius: 0 var(--radius-md) var(--radius-md) 0;
   background: transparent;
   color: var(--text-muted);
   display: inline-flex;
