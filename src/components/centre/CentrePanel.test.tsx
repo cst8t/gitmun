@@ -204,6 +204,39 @@ describe("CentrePanel commit graph toggle", () => {
     expect(container.querySelector(".log-view__graph")).toBeNull();
     expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
   });
+
+  it("disables the commit graph while searching without changing the saved preference", () => {
+    localStorage.setItem("gitmun.showCommitGraph", "true");
+    const onCommitGraphVisibilityChange = vi.fn();
+
+    const { container } = renderCentrePanel({
+      searching: true,
+      onCommitGraphVisibilityChange,
+    });
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+    expect(screen.getByLabelText("Hide commit graph")).toBeDisabled();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+    expect(onCommitGraphVisibilityChange).toHaveBeenLastCalledWith(true);
+  });
+
+  it("restores the commit graph when search is cleared", () => {
+    localStorage.setItem("gitmun.showCommitGraph", "true");
+    const onCommitGraphVisibilityChange = vi.fn();
+    const { container, props, rerender } = renderCentrePanel({
+      searching: true,
+      onCommitGraphVisibilityChange,
+    });
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
+
+    rerender(<CentrePanel {...props} searching={false} />);
+
+    expect(container.querySelector(".log-view__graph")).not.toBeNull();
+    expect(screen.getByLabelText("Hide commit graph")).toBeEnabled();
+    expect(localStorage.getItem("gitmun.showCommitGraph")).toBe("true");
+    expect(onCommitGraphVisibilityChange).toHaveBeenLastCalledWith(true);
+  });
 });
 
 describe("CentrePanel operation feedback", () => {
@@ -321,6 +354,103 @@ describe("CentrePanel operation feedback", () => {
 
     expect(screen.getByRole("status")).toHaveTextContent("Creating commit");
     expect(screen.getByRole("status")).toHaveTextContent("This operation is still running.");
+  });
+});
+
+describe("CentrePanel tab persistence", () => {
+  it("keeps both views mounted and hides the log when Changes is active", () => {
+    renderCentrePanel({ activeTab: "changes" });
+
+    expect(screen.getByTestId("staging-view")).toBeInTheDocument();
+    const log = screen.getByTestId("log-view");
+    expect(log).toBeInTheDocument();
+    expect(log.style.display).toBe("none");
+  });
+
+  it("keeps both views mounted and shows the log when Log is active", () => {
+    renderCentrePanel({ activeTab: "log" });
+
+    expect(screen.getByTestId("staging-view")).toBeInTheDocument();
+    const log = screen.getByTestId("log-view");
+    expect(log).toBeInTheDocument();
+    expect(log.style.display).not.toBe("none");
+  });
+
+  it("does not remount either view when switching tabs", () => {
+    const { props, rerender } = renderCentrePanel({ activeTab: "changes" });
+    const staging = screen.getByTestId("staging-view");
+    const log = screen.getByTestId("log-view");
+
+    rerender(<CentrePanel {...props} activeTab="log" />);
+
+    expect(screen.getByTestId("staging-view")).toBe(staging);
+    expect(screen.getByTestId("log-view")).toBe(log);
+    expect(screen.getByTestId("log-view").style.display).not.toBe("none");
+
+    rerender(<CentrePanel {...props} activeTab="changes" />);
+
+    expect(screen.getByTestId("staging-view")).toBe(staging);
+    expect(screen.getByTestId("log-view")).toBe(log);
+    expect(screen.getByTestId("log-view").style.display).toBe("none");
+  });
+});
+
+describe("CentrePanel hook feedback", () => {
+  it("shows push hook progress while the Log tab is active", () => {
+    renderCentrePanel({
+      activeTab: "log",
+      hookProgress: {
+        operation: "push",
+        startedAt: Date.now(),
+        phase: "running",
+        hookName: "pre-push",
+        output: "Checking refs\n",
+        outputTruncated: false,
+        expanded: false,
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Running pre-push hook");
+    fireEvent.click(screen.getByRole("button", {name: "View output"}));
+    expect(screen.getByText("Checking refs")).toBeInTheDocument();
+  });
+
+  it("offers the operation-specific push bypass", () => {
+    const onBypass = vi.fn();
+    renderCentrePanel({
+      hookRejection: {
+        operation: "push",
+        hookName: "pre-push",
+        exitStatus: 1,
+        output: "Push rejected",
+        outputTruncated: false,
+        bypassSupported: true,
+      },
+      onHookRejectionBypass: onBypass,
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Push without hooks"}));
+    expect(onBypass).toHaveBeenCalledOnce();
+  });
+
+  it("reports checkout completion with a dismissible warning", () => {
+    const onDismiss = vi.fn();
+    renderCentrePanel({
+      hookProgress: {
+        operation: "checkout",
+        startedAt: Date.now(),
+        phase: "warning",
+        hookName: "post-checkout",
+        output: "Environment setup failed",
+        outputTruncated: false,
+        expanded: true,
+      },
+      onHookRejectionClose: onDismiss,
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Checkout completed with a warning");
+    fireEvent.click(screen.getByRole("button", {name: "Dismiss"}));
+    expect(onDismiss).toHaveBeenCalledOnce();
   });
 });
 

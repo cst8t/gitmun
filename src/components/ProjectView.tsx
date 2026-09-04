@@ -7,8 +7,9 @@
  * in-flight async result from a previous project can ever survive into the
  * new one.
  */
-import React, { useState, useCallback, useEffect, useRef } from "react";
+import React, { useState, useCallback, useEffect, useRef, useDeferredValue, useMemo } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
+import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
@@ -30,7 +31,7 @@ import { CreateBranchDialog } from "./sidebar/CreateBranchDialog";
 import { RenameBranchDialog } from "./sidebar/RenameBranchDialog";
 import { StashPushDialog } from "./sidebar/StashPushDialog";
 import { UpstreamDialog } from "./sidebar/UpstreamDialog";
-import { ChevLeftIcon, ChevRightIcon, FolderIcon, GitIcon } from "./icons";
+import { ChevLeftIcon, ChevRightIcon, CloseIcon, FolderIcon, GitIcon } from "./icons";
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
 import { useGitLog } from "../hooks/useGitLog";
@@ -43,6 +44,7 @@ import { useGitStashes } from "../hooks/useGitStashes";
 import { useStagingOperations } from "../hooks/useStagingOperations";
 import { useProjectKeyboardShortcuts } from "../hooks/useProjectKeyboardShortcuts";
 import { useRemoteOperations } from "../hooks/useRemoteOperations";
+import { useAutoFetch } from "../hooks/useAutoFetch";
 export { buildPushRequestForCurrentBranch } from "../hooks/useRemoteOperations";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
@@ -51,10 +53,15 @@ import type {
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
+  CommitProgressEvent,
   CreateBranchRequest,
   ExportPatchFileSelection,
   ExportPatchScope,
   GitIdentity,
+  GitHookAttemptResult,
+  GitHookFailure,
+  GitHookProgressEvent,
+  GitHookProgressState,
   ImportPatchRequest,
   LongRunningOperation,
   LongRunningOperationKind,
@@ -255,6 +262,8 @@ export type ProjectViewProps = {
   repoDisplayName: string | null;
   /** Increments each time settings are saved - triggers a full data refresh. */
   settingsRevision: number;
+  lastFetchAttemptAt: number | null;
+  onFetchAttemptComplete: (repoPath: string) => void;
   platform: PlatformType;
   showToast: (message: string, type?: ToastType) => void;
   recentRepos: string[];
@@ -262,6 +271,7 @@ export type ProjectViewProps = {
   identityOpen: boolean;
   onIdentityToggle: () => void;
   onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
   onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onOpenExistingClick: () => void;
   onCloneClick: () => void;
@@ -282,10 +292,67 @@ export type ProjectViewProps = {
   winRadius: number;
 };
 
+export function EmptyRecentRepositories({
+  paths,
+  displayNames,
+  onRepoSelect,
+  onRemoveRecentRepo,
+}: {
+  paths: string[];
+  displayNames: Record<string, string>;
+  onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
+}) {
+  const {t} = useTranslation("projectView");
+  if (paths.length === 0) return null;
+
+  return (
+    <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
+      <div className="app__empty-recent-divider" />
+      <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
+      <div className="app__empty-recent-list">
+        {paths.map(path => {
+          const name = displayNameForRepoPath(path, displayNames[path]);
+          return (
+            <div key={path} className="app__empty-recent-item">
+              <button
+                type="button"
+                className="app__empty-recent-select"
+                onClick={() => onRepoSelect(path)}
+                title={path}
+              >
+                <FolderIcon size={15} />
+                <span className="app__empty-recent-text">
+                  <span className="app__empty-recent-name">{name}</span>
+                  <span className="app__empty-recent-path">{path}</span>
+                </span>
+              </button>
+              <button
+                type="button"
+                className="app__empty-recent-remove"
+                onClick={event => {
+                  event.stopPropagation();
+                  onRemoveRecentRepo(path);
+                }}
+                aria-label={t("recentRepositories.remove", {ns: "app", name})}
+                title={t("recentRepositories.remove", {ns: "app", name})}
+              >
+                <CloseIcon size={14} />
+              </button>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 export function ProjectView({
   repoPath,
   repoDisplayName,
   settingsRevision,
+  lastFetchAttemptAt,
+  onFetchAttemptComplete,
   platform,
   showToast,
   recentRepos,
@@ -293,6 +360,7 @@ export function ProjectView({
   identityOpen,
   onIdentityToggle,
   onRepoSelect,
+  onRemoveRecentRepo,
   onOpenRepoLocation,
   onOpenExistingClick,
   onCloneClick,
@@ -325,6 +393,7 @@ export function ProjectView({
   const { remotes, refresh: refreshRemotes } = useGitRemotes(repoPath);
   const { stashes, refresh: refreshStashes } = useGitStashes(repoPath);
   const [logScope, setLogScope] = useState<CommitLogScope>("currentCheckout");
+  const [autoFetchIntervalMinutes, setAutoFetchIntervalMinutes] = useState(0);
 
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [selectedFileStaged, setSelectedFileStaged] = useState(false);
@@ -358,6 +427,14 @@ export function ProjectView({
   const [operationLock, setOperationLock] = useState<LongRunningOperation | null>(null);
   const operationLockRef = useRef<LongRunningOperation | null>(null);
   const nextOperationIdRef = useRef(1);
+  const [hookProgress, setHookProgress] = useState<GitHookProgressState | null>(null);
+  const [hookRejection, setHookRejection] = useState<(GitHookFailure & {operation: "commit" | "push"}) | null>(null);
+  const hookDecisionRef = useRef<((skipHooks: boolean) => void) | null>(null);
+
+  useEffect(() => () => {
+    hookDecisionRef.current?.(false);
+    hookDecisionRef.current = null;
+  }, []);
   const [isRebaseActionRunning, setIsRebaseActionRunning] = useState(false);
   const [isCherryPickActionRunning, setIsCherryPickActionRunning] = useState(false);
   const [isRevertActionRunning, setIsRevertActionRunning] = useState(false);
@@ -374,6 +451,7 @@ export function ProjectView({
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
   const [showAiWriting, setShowAiWriting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
@@ -432,6 +510,16 @@ export function ProjectView({
     pageSize: logPageSize,
     refresh: refreshLog,
   } = useGitLog(repoPath, logScope, windowFocused, showCommitGraphButton && showCommitGraph);
+  const searching = deferredSearchQuery.length > 0;
+  const visibleCommits = useMemo(() => {
+    if (!searching) return commits;
+    const q = deferredSearchQuery.toLowerCase();
+    return commits.filter(c =>
+      c.message.toLowerCase().includes(q)
+      || c.author.toLowerCase().includes(q)
+      || c.shortHash.toLowerCase().includes(q),
+    );
+  }, [commits, deferredSearchQuery, searching]);
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -643,6 +731,81 @@ export function ProjectView({
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
   }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
 
+  const createHookProgressChannel = useCallback((operation: "commit" | "push" | "checkout") => {
+    const progress = new Channel<GitHookProgressEvent>();
+    setHookProgress({operation, startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
+    progress.onmessage = event => {
+      setHookProgress(current => {
+        if (!current || current.operation !== operation) return current;
+        if (event.event === "output") {
+          return {...current, output: `${current.output}${event.text}`.slice(-1024 * 1024), outputTruncated: current.outputTruncated || event.truncated};
+        }
+        if (event.event === "hookStarted") return {...current, hookName: event.hookName};
+        return current.hookName === event.hookName ? {...current, hookName: null} : current;
+      });
+    };
+    return progress;
+  }, []);
+
+  const runPushHookOperation = useCallback(async <T,>(
+    operation: (progress: Channel<GitHookProgressEvent>, skipHooks: boolean) => Promise<GitHookAttemptResult<T>>,
+  ): Promise<T | null> => {
+    let skipHooks = false;
+    for (;;) {
+      let attempt: GitHookAttemptResult<T>;
+      try {
+        attempt = await operation(createHookProgressChannel("push"), skipHooks);
+      } catch (error) {
+        setHookProgress(null);
+        throw error;
+      }
+      if (attempt.status === "completed") {
+        setHookProgress(null);
+        if (skipHooks) appendResultLog("info", t("log.pushHooksSkipped"), "git-cli");
+        return attempt.result;
+      }
+      setHookProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? current.output, outputTruncated: attempt.outputTruncated, expanded: true} : current);
+      setHookRejection({...attempt, operation: "push"});
+      skipHooks = await new Promise<boolean>(resolve => { hookDecisionRef.current = resolve; });
+      if (!skipHooks) {
+        appendResultLog("error", t("log.pushHookRejected", {hook: attempt.hookName}), "git-cli", undefined, attempt.output ?? undefined);
+        setHookProgress(null);
+        return null;
+      }
+    }
+  }, [createHookProgressChannel, t]);
+
+  const runCheckoutHookOperation = useCallback(async (
+    operation: (progress: Channel<GitHookProgressEvent>) => Promise<GitHookAttemptResult<OperationResult>>,
+  ) => {
+    let attempt: GitHookAttemptResult<OperationResult>;
+    try {
+      attempt = await operation(createHookProgressChannel("checkout"));
+    } catch (error) {
+      setHookProgress(null);
+      throw error;
+    }
+    if (attempt.status === "hookRejected") {
+      throw new Error(attempt.output ?? t("toast.checkoutHookFailed"));
+    }
+    if (attempt.hookWarning) {
+      setHookProgress(current => ({
+        operation: "checkout",
+        startedAt: current?.startedAt ?? Date.now(),
+        phase: "warning",
+        hookName: attempt.hookWarning?.hookName ?? null,
+        output: attempt.hookWarning?.output ?? current?.output ?? "",
+        outputTruncated: attempt.hookWarning?.outputTruncated ?? false,
+        expanded: true,
+      }));
+      showToast(t("toast.checkoutHookWarning"), "info");
+      appendResultLog("error", t("log.checkoutHookWarning"), attempt.result.backendUsed, undefined, attempt.hookWarning.output ?? undefined);
+    } else {
+      setHookProgress(null);
+    }
+    return attempt.result;
+  }, [createHookProgressChannel, showToast, t]);
+
   const handleForcePushComplete = useCallback(() => setRebasedBranchAwaitingPush(null), []);
   const {
     remoteOp,
@@ -650,6 +813,7 @@ export function ProjectView({
     pushRejectionAnalysis,
     upstreamDialogMode,
     fetch: handleFetch,
+    autoFetch: handleAutoFetch,
     fetchSingleRemote: handleFetchSingleRemote,
     pull: handlePull,
     push: handlePush,
@@ -675,7 +839,27 @@ export function ProjectView({
     refreshAll,
     showToast,
     onForcePushComplete: handleForcePushComplete,
+    onFetchAttemptComplete,
+    pushChanges: request => runPushHookOperation((progress, skipHooks) => api.pushChanges(request, progress, skipHooks)),
   });
+
+  useEffect(() => {
+    let cancelled = false;
+    api.getSettings().then(settings => {
+      if (!cancelled) setAutoFetchIntervalMinutes(settings.autoFetchIntervalMinutes ?? 0);
+    }).catch(() => {
+      if (!cancelled) setAutoFetchIntervalMinutes(0);
+    });
+    return () => { cancelled = true; };
+  }, [settingsRevision]);
+
+  useAutoFetch(
+    autoFetchIntervalMinutes,
+    Boolean(repoPath && windowFocused && !operationLock && !remoteOp),
+    repoPath,
+    lastFetchAttemptAt,
+    handleAutoFetch,
+  );
 
   const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
     await saveLocalIdentity(payload);
@@ -846,6 +1030,19 @@ export function ProjectView({
     }
   }, [commitPrimaryAction, showToast, t]);
 
+  const handleHookRejectionClose = useCallback(() => {
+    hookDecisionRef.current?.(false);
+    hookDecisionRef.current = null;
+    setHookRejection(null);
+    setHookProgress(null);
+  }, []);
+
+  const handleHookRejectionBypass = useCallback(() => {
+    hookDecisionRef.current?.(true);
+    hookDecisionRef.current = null;
+    setHookRejection(null);
+  }, []);
+
   const runCommitRequest = useCallback(async (message: string, amend: boolean) => {
     if (!repoPath) return false;
     if (rebaseInProgress) {
@@ -861,15 +1058,68 @@ export function ProjectView({
       return false;
     }
     try {
-      const result = await api.commitChanges(repoPath, message, amend);
-      showToast(amend ? t("toast.amendedCommit") : t("toast.commitCreated"));
-      appendResultLog("success", amend ? t("toast.amendedLatestCommit") : t("toast.createdCommit"), result.backendUsed);
-      await refreshAll();
-      return true;
+      let skipHooks = false;
+      for (;;) {
+        let capturedOutput = "";
+        const progress = new Channel<CommitProgressEvent>();
+        progress.onmessage = event => {
+          setHookProgress(current => {
+            if (!current || current.operation !== "commit") return current;
+            if (event.event === "output") {
+              capturedOutput = `${capturedOutput}${event.text}`.slice(-1024 * 1024);
+              return {...current, output: capturedOutput, outputTruncated: current.outputTruncated || event.truncated};
+            }
+            if (event.event === "hookStarted") {
+              return {...current, hookName: event.hookName};
+            }
+            return current.hookName === event.hookName ? {...current, hookName: null} : current;
+          });
+        };
+        setHookProgress({operation: "commit", startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
+        const attempt = await api.commitChanges(repoPath, message, amend, progress, skipHooks);
+        if (attempt.status === "committed") {
+          const { result } = attempt;
+          showToast(amend ? t("toast.amendedCommit") : t("toast.commitCreated"));
+          appendResultLog(
+            "success",
+            amend ? t("toast.amendedLatestCommit") : t("toast.createdCommit"),
+            result.backendUsed,
+            undefined,
+            `${result.output ?? capturedOutput}${attempt.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}` || undefined,
+          );
+          if (skipHooks) {
+            appendResultLog("info", t("log.commitHooksSkipped"), result.backendUsed);
+          }
+          await refreshAll();
+          return true;
+        }
+
+        setHookProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? capturedOutput, outputTruncated: Boolean(attempt.outputTruncated), expanded: true} : current);
+        setHookRejection({...attempt, operation: "commit"});
+        skipHooks = await new Promise<boolean>(resolve => {
+          hookDecisionRef.current = resolve;
+        });
+        if (!skipHooks) {
+          appendResultLog(
+            "error",
+            t("log.commitHookRejected", {
+              hook: attempt.hookName,
+              exitStatus: attempt.exitStatus ?? t("commitHooks.unknownExitStatus"),
+            }),
+            "git-cli",
+            undefined,
+            `${attempt.output ?? capturedOutput}${attempt.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}` || undefined,
+          );
+          return false;
+        }
+      }
     } catch (e) {
       showToast(String(e), "error");
       appendResultLog("error", t("log.commitFailed", { message: String(e) }), "unknown");
       return false;
+    } finally {
+      setHookProgress(null);
+      hookDecisionRef.current = null;
     }
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
 
@@ -1072,7 +1322,7 @@ export function ProjectView({
     }
 
     try {
-      const result = await api.switchBranch(repoPath, branchName);
+      const result = await runCheckoutHookOperation(progress => api.switchBranch(repoPath, branchName, progress));
       if (stashedRef) {
         showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
@@ -1095,12 +1345,12 @@ export function ProjectView({
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleCreateBranch = useCallback(async (request: CreateBranchRequest) => {
     if (!repoPath) return;
     try {
-      const result = await api.createBranch(request);
+      const result = await runCheckoutHookOperation(progress => api.createBranch(request, progress));
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1108,7 +1358,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.createBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast, t]);
+  }, [repoPath, refreshAll, runCheckoutHookOperation, showToast, t]);
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
@@ -1210,14 +1460,15 @@ export function ProjectView({
     const remote = remotes[0]?.name;
     if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
     try {
-      const result = await api.pushTag({ repoPath, remote, tagName });
+      const result = await runPushHookOperation((progress, skipHooks) => api.pushTag({ repoPath, remote, tagName }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
     } catch (e) {
       showToast(String(e), "error");
       appendResultLog("error", t("log.pushTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, showToast, t]);
+  }, [repoPath, remotes, runPushHookOperation, showToast, t]);
 
   const handleDeleteRemoteTag = useCallback(async (tagName: string) => {
     if (!repoPath) return;
@@ -1228,7 +1479,8 @@ export function ProjectView({
     });
     if (!confirmed) return;
     try {
-      const result = await api.deleteRemoteTag({ repoPath, remote, tagName });
+      const result = await runPushHookOperation((progress, skipHooks) => api.deleteRemoteTag({ repoPath, remote, tagName }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1236,7 +1488,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.deleteRemoteTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, refreshAll, showToast, t]);
+  }, [repoPath, remotes, refreshAll, runPushHookOperation, showToast, t]);
 
   const handleCreateBranchFromTag = useCallback((tagName: string) => {
     setCreateBranchFromTagName(tagName);
@@ -1299,7 +1551,8 @@ export function ProjectView({
     });
     if (!confirmed) return;
     try {
-      const result = await api.deleteRemoteBranch({ repoPath, remote, branch });
+      const result = await runPushHookOperation((progress, skipHooks) => api.deleteRemoteBranch({ repoPath, remote, branch }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1307,7 +1560,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.deleteRemoteBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast, t]);
+  }, [repoPath, refreshAll, runPushHookOperation, showToast, t]);
 
   const handleCheckoutRemoteBranch = useCallback(async (remoteBranchName: string) => {
     if (!repoPath) return;
@@ -1342,14 +1595,14 @@ export function ProjectView({
     }
 
     try {
-      const result = await api.createBranch({
+      const result = await runCheckoutHookOperation(progress => api.createBranch({
         repoPath,
         branchName: localBranchName,
         baseRef: remoteBranchName,
         checkoutAfterCreation: true,
         trackRemote: true,
         matchTrackingBranch: true,
-      });
+      }, progress));
       if (stashedRef) {
         showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
@@ -1368,7 +1621,7 @@ export function ProjectView({
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleAddRemote = useCallback(async (name: string, url: string) => {
     if (!repoPath) return;
@@ -2163,6 +2416,7 @@ export function ProjectView({
           onInitRepoClick={onInitRepoClick}
           onOpenExistingClick={onOpenExistingClick}
           onRepoSelect={onRepoSelect}
+          onRemoveRecentRepo={onRemoveRecentRepo}
           onOpenRepoLocation={onOpenRepoLocation}
           onFetch={handleFetch}
           onPull={handlePull}
@@ -2279,21 +2533,15 @@ export function ProjectView({
                   cherryPickHead={cherryPickHead}
                   revertInProgress={revertInProgress}
                   revertHead={revertHead}
-                  commits={searchQuery
-                    ? commits.filter(c => {
-                        const q = searchQuery.toLowerCase();
-                        return c.message.toLowerCase().includes(q)
-                          || c.author.toLowerCase().includes(q)
-                          || c.shortHash.toLowerCase().includes(q);
-                      })
-                    : commits}
-                  loadMore={searchQuery ? () => {} : loadMore}
-                  hasMore={searchQuery ? false : hasMore}
-                  loadingMore={searchQuery ? false : logLoadingMore}
-                  loadMoreError={searchQuery ? null : logLoadMoreError}
+                  commits={visibleCommits}
+                  loadMore={searching ? () => {} : loadMore}
+                  hasMore={searching ? false : hasMore}
+                  loadingMore={searching ? false : logLoadingMore}
+                  loadMoreError={searching ? null : logLoadMoreError}
                   pageSize={logPageSize}
                   logLoading={logLoading}
                   logError={logError}
+                  searching={searching}
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   rowStriping={rowStriping}
@@ -2361,6 +2609,10 @@ export function ProjectView({
                   onOpenMergeTool={handleOpenMergeTool}
                   stagingOperation={stagingOperation}
                   operationLock={operationLock}
+                  hookProgress={hookProgress}
+                  hookRejection={hookRejection}
+                  onHookRejectionClose={handleHookRejectionClose}
+                  onHookRejectionBypass={handleHookRejectionBypass}
                   isCommitting={isCommitting}
                   isRebaseActionRunning={isRebaseActionRunning}
                   isCherryPickActionRunning={isCherryPickActionRunning}
@@ -2429,30 +2681,12 @@ export function ProjectView({
                     <span>{t("emptyState.openExisting")}</span>
                   </button>
                 </div>
-                {emptyStateRecentRepos.length > 0 && (
-                  <div className="app__empty-recent" aria-label={t("emptyState.recentRepositories")}>
-                    <div className="app__empty-recent-divider" />
-                    <div className="app__empty-recent-title">{t("emptyState.recentRepositories")}</div>
-                    <div className="app__empty-recent-list">
-                      {emptyStateRecentRepos.map(path => {
-                        const name = displayNameForRepoPath(path, recentRepoDisplayNames[path]);
-                        return (
-                          <button
-                            type="button"
-                            key={path}
-                            className="app__empty-recent-item"
-                            onClick={() => onRepoSelect(path)}
-                            title={path}
-                          >
-                            <FolderIcon size={15} />
-                            <span className="app__empty-recent-name">{name}</span>
-                            <span className="app__empty-recent-path">{path}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
+                <EmptyRecentRepositories
+                  paths={emptyStateRecentRepos}
+                  displayNames={recentRepoDisplayNames}
+                  onRepoSelect={onRepoSelect}
+                  onRemoveRecentRepo={onRemoveRecentRepo}
+                />
               </div>
             </div>
           )}

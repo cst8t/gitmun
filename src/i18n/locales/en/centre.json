@@ -94,6 +94,8 @@
     "cherryPickCommit": "Cherry-pick Commit",
     "close": "Close",
     "commitLogScope": "Commit log scope",
+    "commitHookRejected": "Commit rejected by {{hook}} (exit status {{exitStatus}}).",
+    "commitHooksSkipped": "Committed without verification hooks.",
     "commitRefs": "Commit refs",
     "copyCommitHash": "Copy Commit Hash",
     "copyDetails": "Copy Details",
@@ -130,6 +132,7 @@
     "moreRefsLabel": "+{{count}}",
     "noCommits": "No commits yet",
     "noCommitsAllRefs": "No commits were returned for any refs.",
+    "noCommitsFound": "No commits found",
     "revertCommit": "Revert Commit...",
     "remoteBranchRef": "Remote branch {{name}}",
     "showCommitGraph": "Show commit graph",
@@ -167,6 +170,51 @@
     "unstageMessage_one": "Gitmun is unstaging {{count}} file.",
     "unstageMessage_other": "Gitmun is unstaging {{count}} files.",
     "unstageTitle": "Unstaging changes"
+  },
+  "commitHooks": {
+    "awaitingDecision": "Commit hook failed",
+    "bypassWarning": "Committing without hooks skips repository checks.",
+    "close": "Close",
+    "committing": "Committing",
+    "commitWithoutHooks": "Commit without hooks",
+    "elapsed": "Running for {{seconds}}s",
+    "failedDescription": "The {{hook}} hook exited with status {{exitStatus}}.",
+    "failedTitle": "Commit hook failed",
+    "hideOutput": "Hide output",
+    "outputTruncated": "Output was truncated.",
+    "reviewFailure": "Choose how to continue.",
+    "runningHook": "Running {{hook}} hook",
+    "unknownExitStatus": "an unknown status",
+    "viewOutput": "View output"
+  },
+  "gitHooks": {
+    "bypassAction": {
+      "commit": "Commit without hooks",
+      "push": "Push without hooks"
+    },
+    "bypassWarning": {
+      "commit": "Committing without hooks skips repository checks.",
+      "push": "Pushing without hooks skips repository checks."
+    },
+    "checkoutWarningMessage": "The checkout changed, but its post-checkout hook reported a failure.",
+    "checkoutWarningTitle": "Checkout completed with a warning",
+    "close": "Close",
+    "dismiss": "Dismiss",
+    "elapsed": "Running for {{seconds}}s",
+    "failedDescription": "The {{hook}} hook exited with status {{exitStatus}}.",
+    "failedTitle": "{{operation}} hook failed",
+    "hideOutput": "Hide output",
+    "operations": {
+      "checkout": "Checkout",
+      "commit": "Commit",
+      "push": "Push"
+    },
+    "outputTruncated": "Output was truncated.",
+    "reviewFailure": "Choose how to continue.",
+    "runningHook": "Running {{hook}} hook",
+    "runningOperation": "{{operation}} in progress",
+    "unknownExitStatus": "an unknown status",
+    "viewOutput": "View output"
   },
   "pushRejected": {
     "cancel": "Cancel",

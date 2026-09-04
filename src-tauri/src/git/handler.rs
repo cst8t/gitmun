@@ -6,19 +6,19 @@ use super::error::GitResult;
 use super::gix_handler::GixGitHandler;
 use super::types::{
     AddRemoteRequest, BackendMode, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult,
-    CloneRequest, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
-    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
-    CommitMessageRecovery, CommitPrimaryAction, CommitRequest, CreateBranchRequest,
-    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
-    DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity, HunkStageRequest,
-    IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult, NumstatRequest, NumstatResult,
-    OperationResult, PruneRemoteRequest, PullAnalysis, PullStrategyRequest, PushRequest,
-    PushResult, PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetRequest,
-    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
-    Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest,
-    StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
+    CloneRequest, CommitAttemptResult, CommitDateMode, CommitDetails, CommitDetailsRequest,
+    CommitFileItem, CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitMarkers,
+    CommitMessageRecovery, CommitPrimaryAction, CommitProgressEvent, CommitRequest,
+    CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
+    DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExportCommitPatchRequest,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
+    GitHookAttemptResult, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
+    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
+    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
+    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
+    SetIdentityRequest, SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest,
+    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -146,7 +146,7 @@ pub struct GitService {
     settings: RwLock<Settings>,
     config_path: RwLock<Option<PathBuf>>,
     gix_handler: Arc<dyn GitOperationHandler>,
-    cli_handler: Arc<dyn GitOperationHandler>,
+    cli_handler: Arc<CliGitHandler>,
 }
 
 impl GitService {
@@ -332,6 +332,13 @@ impl GitService {
     pub fn set_push_follow_tags(&self, push_follow_tags: bool) -> Settings {
         self.update_settings(|settings| {
             settings.push_follow_tags = push_follow_tags;
+        })
+    }
+
+    pub fn set_auto_fetch_interval_minutes(&self, minutes: u32) -> Settings {
+        self.update_settings(|settings| {
+            settings.auto_fetch_interval_minutes =
+                Settings::normalised_auto_fetch_interval_minutes(minutes);
         })
     }
 
@@ -615,12 +622,12 @@ impl GitService {
 
         match mode {
             BackendMode::Default => Arc::clone(&self.gix_handler),
-            BackendMode::GitCliOnly => Arc::clone(&self.cli_handler),
+            BackendMode::GitCliOnly => self.cli_handler.clone(),
         }
     }
 
     fn active_write_handler(&self) -> Arc<dyn GitOperationHandler> {
-        Arc::clone(&self.cli_handler)
+        self.cli_handler.clone()
     }
 
     #[allow(dead_code)]
@@ -642,6 +649,73 @@ impl GitService {
     ) -> GitResult<Option<CommitMessageRecovery>> {
         self.active_read_handler()
             .get_commit_message_recovery(&request)
+    }
+
+    pub fn commit_changes_with_progress(
+        &self,
+        request: CommitRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<CommitAttemptResult> {
+        self.cli_handler
+            .commit_changes_with_progress(&request, on_progress)
+    }
+
+    pub fn push_changes_with_progress(
+        &self,
+        request: PushRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<PushResult>> {
+        self.cli_handler
+            .push_changes_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn switch_branch_with_progress(
+        &self,
+        request: BranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .switch_branch_with_progress(&request, on_progress)
+    }
+
+    pub fn create_branch_with_progress(
+        &self,
+        request: CreateBranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .create_branch_with_progress(&request, on_progress)
+    }
+
+    pub fn push_tag_with_progress(
+        &self,
+        request: PushTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .push_tag_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn delete_remote_tag_with_progress(
+        &self,
+        request: DeleteRemoteTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .delete_remote_tag_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn delete_remote_branch_with_progress(
+        &self,
+        request: DeleteRemoteBranchRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .delete_remote_branch_with_progress(&request, skip_hooks, on_progress)
     }
 
     forward_write_methods! {
@@ -763,6 +837,17 @@ mod tests {
 
         assert!(settings.enable_local_copy);
         assert!(service.get_settings().enable_local_copy);
+    }
+
+    #[test]
+    fn auto_fetch_interval_setter_disables_unsupported_values() {
+        let service = GitService::new();
+
+        let settings = service.set_auto_fetch_interval_minutes(5);
+        assert_eq!(settings.auto_fetch_interval_minutes, 5);
+
+        let settings = service.set_auto_fetch_interval_minutes(1);
+        assert_eq!(settings.auto_fetch_interval_minutes, 0);
     }
 
     #[test]

@@ -1,10 +1,11 @@
 use std::collections::{HashMap, HashSet};
 use std::fs;
-use std::io::Write;
+use std::io::{Read, Write};
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use super::error::{GitError, GitResult};
@@ -12,13 +13,15 @@ use super::error_interpretation::{GitErrorCategory, InterpretedGitError, interpr
 use super::handler::GitOperationHandler;
 use super::types::{
     AddRemoteRequest, BranchInfo, BranchRequest, CherryPickRequest, CherryPickResult, CloneRequest,
-    CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem, CommitFilesRequest,
-    CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers, CommitMessageRecovery,
-    CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
-    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
-    DeleteTagRequest, DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
+    CommitAttemptResult, CommitDateMode, CommitDetails, CommitDetailsRequest, CommitFileItem,
+    CommitFilesRequest, CommitHistoryItem, CommitHistoryRequest, CommitLogScope, CommitMarkers,
+    CommitMessageRecovery, CommitOutputStream, CommitProgressEvent, CommitRefDecoration,
+    CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest, CreateTagRequest,
+    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
+    DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
-    FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity, HunkStageRequest,
+    FetchRequest, FileDiff, FileRequest, FileStatusItem, GitHookAttemptResult, GitHookFailure,
+    GitIdentity, HunkStageRequest,
     IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult,
     NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest, PushFailureKind,
@@ -32,6 +35,13 @@ use super::types::{
 };
 
 pub struct CliGitHandler;
+
+struct HookCommandOutput {
+    status: std::process::ExitStatus,
+    output: Option<String>,
+    output_truncated: bool,
+    hooks: Vec<(String, String, Option<i32>)>,
+}
 
 #[derive(Debug, Clone)]
 struct ConfiguredSubmodule {
@@ -717,6 +727,323 @@ impl CliGitHandler {
         Err(GitError::IoError(
             "Could not create a temporary commit message file".to_string(),
         ))
+    }
+
+    fn strip_terminal_controls(text: &str) -> String {
+        let mut cleaned = String::with_capacity(text.len());
+        let mut chars = text.chars();
+        while let Some(character) = chars.next() {
+            if character != '\u{1b}' {
+                cleaned.push(character);
+                continue;
+            }
+
+            match chars.next() {
+                Some('[') => {
+                    for next in chars.by_ref() {
+                        if ('@'..='~').contains(&next) {
+                            break;
+                        }
+                    }
+                }
+                Some(']') => {
+                    let mut previous_was_escape = false;
+                    for next in chars.by_ref() {
+                        if next == '\u{7}' || (previous_was_escape && next == '\\') {
+                            break;
+                        }
+                        previous_was_escape = next == '\u{1b}';
+                    }
+                }
+                Some(_) | None => {}
+            }
+        }
+        cleaned
+    }
+
+    fn hooks_from_trace(trace_path: &Path) -> Vec<(String, String, Option<i32>)> {
+        let Ok(trace) = fs::read_to_string(trace_path) else {
+            return Vec::new();
+        };
+        let root_session_id = trace.lines().find_map(|line| {
+            serde_json::from_str::<serde_json::Value>(line)
+                .ok()?
+                .get("sid")?
+                .as_str()
+                .map(str::to_string)
+        });
+        let Some(root_session_id) = root_session_id else {
+            return Vec::new();
+        };
+        let mut hooks = Vec::new();
+        let mut exit_codes = HashMap::new();
+        for line in trace.lines() {
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+                continue;
+            };
+            let session_id = event.get("sid").and_then(serde_json::Value::as_str);
+            if session_id != Some(root_session_id.as_str()) {
+                continue;
+            }
+            let child_id = event.get("child_id").and_then(serde_json::Value::as_u64);
+            match event.get("event").and_then(serde_json::Value::as_str) {
+                Some("child_start")
+                    if event.get("child_class").and_then(serde_json::Value::as_str)
+                        == Some("hook") =>
+                {
+                    if let (Some(child_id), Some(hook_name)) = (
+                        child_id,
+                        event.get("hook_name").and_then(serde_json::Value::as_str),
+                    ) {
+                        hooks.push((child_id, hook_name.to_string()));
+                    }
+                }
+                Some("child_exit") => {
+                    if let (Some(child_id), Some(code)) = (
+                        child_id,
+                        event.get("code").and_then(serde_json::Value::as_i64),
+                    ) {
+                        exit_codes.insert(child_id, code as i32);
+                    }
+                }
+                _ => {}
+            }
+        }
+        hooks
+            .into_iter()
+            .map(|(child_id, hook_name)| {
+                (
+                    format!("{root_session_id}:{child_id}"),
+                    hook_name,
+                    exit_codes.get(&child_id).copied(),
+                )
+            })
+            .collect()
+    }
+
+    fn run_git_with_hook_progress(
+        repo_path: &Path,
+        args: &[String],
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<HookCommandOutput> {
+        const MAX_CAPTURED_OUTPUT_BYTES: usize = 1024 * 1024;
+
+        let git_dir = Self::run_git(&["rev-parse", "--absolute-git-dir"], Some(repo_path))?;
+        let trace = tempfile::NamedTempFile::new_in(Path::new(&git_dir))?;
+        let mut command =
+            crate::git_command_with_environment(&[("GIT_TRACE2_EVENT", trace.path().as_os_str())]);
+        Self::configure_command(&mut command);
+        command
+            .args(args)
+            .current_dir(repo_path)
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        let mut child = command.spawn()?;
+        let stdout = child.stdout.take().expect("Git command stdout is piped");
+        let stderr = child.stderr.take().expect("Git command stderr is piped");
+        let captured = Arc::new(Mutex::new((String::new(), false)));
+        let spawn_reader = |reader: Box<dyn Read + Send>, stream: CommitOutputStream| {
+            let captured = Arc::clone(&captured);
+            let on_progress = Arc::clone(&on_progress);
+            std::thread::spawn(move || {
+                let mut reader = std::io::BufReader::new(reader);
+                let mut buffer = [0_u8; 4096];
+                loop {
+                    let bytes_read = match reader.read(&mut buffer) {
+                        Ok(0) | Err(_) => break,
+                        Ok(bytes_read) => bytes_read,
+                    };
+                    let text = Self::strip_terminal_controls(&String::from_utf8_lossy(
+                        &buffer[..bytes_read],
+                    ));
+                    if text.is_empty() {
+                        continue;
+                    }
+                    let mut emitted = None;
+                    let mut truncation_marker = false;
+                    if let Ok(mut output) = captured.lock() {
+                        let remaining = MAX_CAPTURED_OUTPUT_BYTES.saturating_sub(output.0.len());
+                        if remaining == 0 {
+                            truncation_marker = !output.1;
+                            output.1 = true;
+                        } else if text.len() > remaining {
+                            let mut end = remaining;
+                            while end > 0 && !text.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            let accepted = text[..end].to_string();
+                            output.0.push_str(&accepted);
+                            emitted = Some(accepted);
+                            truncation_marker = !output.1;
+                            output.1 = true;
+                        } else {
+                            output.0.push_str(&text);
+                            emitted = Some(text);
+                        }
+                    }
+                    if let Some(text) = emitted {
+                        on_progress(CommitProgressEvent::Output {
+                            stream: stream.clone(),
+                            text,
+                            truncated: false,
+                        });
+                    }
+                    if truncation_marker {
+                        on_progress(CommitProgressEvent::Output {
+                            stream: stream.clone(),
+                            text: String::new(),
+                            truncated: true,
+                        });
+                    }
+                }
+            })
+        };
+        let stdout_reader = spawn_reader(Box::new(stdout), CommitOutputStream::Stdout);
+        let stderr_reader = spawn_reader(Box::new(stderr), CommitOutputStream::Stderr);
+        let mut announced_hooks = HashSet::new();
+        let mut finished_hooks = HashSet::new();
+        let status = loop {
+            for (key, hook_name, hook_exit_status) in Self::hooks_from_trace(trace.path()) {
+                if announced_hooks.insert(key.clone()) {
+                    on_progress(CommitProgressEvent::HookStarted {
+                        hook_name: hook_name.clone(),
+                    });
+                }
+                if let Some(exit_status) = hook_exit_status
+                    && finished_hooks.insert(key)
+                {
+                    on_progress(CommitProgressEvent::HookFinished {
+                        hook_name,
+                        exit_status: Some(exit_status),
+                    });
+                }
+            }
+            if let Some(status) = child.try_wait()? {
+                break status;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(25));
+        };
+        drop(stdout_reader.join());
+        drop(stderr_reader.join());
+        let hooks = Self::hooks_from_trace(trace.path());
+        for (key, hook_name, hook_exit_status) in &hooks {
+            if announced_hooks.insert(key.clone()) {
+                on_progress(CommitProgressEvent::HookStarted {
+                    hook_name: hook_name.clone(),
+                });
+            }
+            if let Some(exit_status) = hook_exit_status
+                && finished_hooks.insert(key.clone())
+            {
+                on_progress(CommitProgressEvent::HookFinished {
+                    hook_name: hook_name.clone(),
+                    exit_status: Some(*exit_status),
+                });
+            }
+        }
+        let (output, output_truncated) = captured
+            .lock()
+            .map(|output| output.clone())
+            .unwrap_or_default();
+        Ok(HookCommandOutput {
+            status,
+            output: (!output.trim().is_empty()).then_some(output),
+            output_truncated,
+            hooks,
+        })
+    }
+
+    pub fn commit_changes_with_progress(
+        &self,
+        request: &CommitRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<CommitAttemptResult> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let message = request.message.trim();
+        if message.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Commit message cannot be empty".to_string(),
+            ));
+        }
+
+        let message_file_path = Self::write_commit_message_file(message)?;
+        let message_file = Self::path_to_string(&message_file_path);
+        let mut args = vec!["commit".to_string(), "--file".to_string(), message_file];
+        if request.skip_hooks {
+            args.push("--no-verify".to_string());
+        }
+        if request.amend == Some(true) {
+            args.push("--amend".to_string());
+        }
+        let commit_gpgsign = Self::run_git_allow_exit_codes(
+            &["config", "--get", "commit.gpgsign"],
+            Some(&repo_path),
+            &[1],
+        )
+        .ok()
+        .map(|value| value.trim().to_ascii_lowercase())
+        .filter(|value| !value.is_empty());
+        let should_sign = match commit_gpgsign.as_deref() {
+            Some("false") | Some("0") | Some("no") | Some("off") => false,
+            Some("true") | Some("1") | Some("yes") | Some("on") => true,
+            Some(_) => true,
+            None => false,
+        };
+        if should_sign {
+            #[cfg(windows)]
+            {
+                let signing_format = Self::run_git_allow_exit_codes(
+                    &["config", "--get", "gpg.format"],
+                    Some(&repo_path),
+                    &[1],
+                )
+                .ok()
+                .map(|value| value.trim().to_ascii_lowercase());
+                if !matches!(signing_format.as_deref(), Some("ssh")) {
+                    crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                        .map_err(GitError::InvalidInput)?;
+                }
+            }
+            args.push("-S".to_string());
+        }
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        drop(fs::remove_file(&message_file_path));
+        if outcome.status.success() {
+            return Ok(CommitAttemptResult::Committed {
+                result: OperationResult {
+                    message: format!("Committed changes in {}", repo_path.display()),
+                    output: outcome.output,
+                    repo_path: Some(Self::path_to_string(&repo_path)),
+                    backend_used: "git-cli".to_string(),
+                    interpreted_error: None,
+                },
+                output_truncated: outcome.output_truncated,
+            });
+        }
+
+        let rejected_hook = outcome
+            .hooks
+            .into_iter()
+            .rev()
+            .find(|(_, _, hook_exit_status)| hook_exit_status.is_some_and(|code| code != 0));
+        if let Some((_, hook_name, hook_exit_status)) = rejected_hook {
+            let bypass_supported = matches!(hook_name.as_str(), "pre-commit" | "commit-msg");
+            return Ok(CommitAttemptResult::HookRejected {
+                hook_name,
+                exit_status: hook_exit_status,
+                output: outcome.output,
+                output_truncated: outcome.output_truncated,
+                bypass_supported,
+            });
+        }
+
+        Err(GitError::CommandFailed {
+            command: "git commit".to_string(),
+            stderr: outcome.output.unwrap_or_default(),
+            exit_code: outcome.status.code(),
+        })
     }
 
     fn clean_commit_edit_message(message: &str) -> String {
@@ -2337,6 +2664,353 @@ impl CliGitHandler {
         )?;
         Ok(!output.trim().is_empty())
     }
+
+    fn hook_failure(
+        outcome: &HookCommandOutput,
+        hook_name: &str,
+        bypass_supported: bool,
+    ) -> Option<GitHookFailure> {
+        outcome
+            .hooks
+            .iter()
+            .rev()
+            .find(|(_, name, status)| name == hook_name && status.is_some_and(|code| code != 0))
+            .map(|(_, name, status)| GitHookFailure {
+                hook_name: name.clone(),
+                exit_status: *status,
+                output: outcome.output.clone(),
+                output_truncated: outcome.output_truncated,
+                bypass_supported,
+            })
+    }
+
+    fn completed_hook_operation(
+        repo_path: &Path,
+        args: Vec<String>,
+        message: String,
+        warning_hook: Option<&str>,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let outcome = Self::run_git_with_hook_progress(repo_path, &args, on_progress)?;
+        let hook_warning = warning_hook.and_then(|name| Self::hook_failure(&outcome, name, false));
+        if !outcome.status.success() && hook_warning.is_none() {
+            return Err(GitError::CommandFailed {
+                command: args.join(" "),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        Ok(GitHookAttemptResult::Completed {
+            result: OperationResult {
+                message,
+                output: outcome.output,
+                repo_path: Some(Self::path_to_string(repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: None,
+            },
+            hook_warning,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    fn push_hook_operation(
+        repo_path: &Path,
+        mut args: Vec<String>,
+        message: String,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        if skip_hooks {
+            args.insert(1, "--no-verify".to_string());
+        }
+        let outcome = Self::run_git_with_hook_progress(repo_path, &args, on_progress)?;
+        if let Some(failure) = Self::hook_failure(&outcome, "pre-push", true) {
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: failure.bypass_supported,
+            });
+        }
+        if !outcome.status.success() {
+            return Err(GitError::CommandFailed {
+                command: args.join(" "),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        Ok(GitHookAttemptResult::Completed {
+            result: OperationResult {
+                message,
+                output: outcome.output,
+                repo_path: Some(Self::path_to_string(repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: None,
+            },
+            hook_warning: None,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    pub fn push_tag_with_progress(
+        &self,
+        request: &PushTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let remote = request.remote.trim();
+        let tag_name = request.tag_name.trim();
+        Self::ensure_valid_remote_name(&repo_path, remote)?;
+        Self::ensure_valid_tag_name(&repo_path, tag_name)?;
+        Self::push_hook_operation(
+            &repo_path,
+            vec!["push".to_string(), remote.to_string(), tag_name.to_string()],
+            format!("Pushed tag '{tag_name}' to '{remote}'"),
+            skip_hooks,
+            on_progress,
+        )
+    }
+
+    pub fn delete_remote_tag_with_progress(
+        &self,
+        request: &DeleteRemoteTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let remote = request.remote.trim();
+        let tag_name = request.tag_name.trim();
+        Self::ensure_valid_remote_name(&repo_path, remote)?;
+        Self::ensure_valid_tag_name(&repo_path, tag_name)?;
+        Self::push_hook_operation(
+            &repo_path,
+            vec!["push".to_string(), remote.to_string(), "--delete".to_string(), tag_name.to_string()],
+            format!("Deleted tag '{tag_name}' from remote '{remote}'"),
+            skip_hooks,
+            on_progress,
+        )
+    }
+
+    pub fn delete_remote_branch_with_progress(
+        &self,
+        request: &DeleteRemoteBranchRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let remote = request.remote.trim();
+        let branch = request.branch.trim();
+        if branch.is_empty() {
+            return Err(GitError::InvalidInput("Branch name cannot be empty".to_string()));
+        }
+        Self::ensure_valid_remote_name(&repo_path, remote)?;
+        match Self::push_hook_operation(
+            &repo_path,
+            vec!["push".to_string(), remote.to_string(), format!(":{branch}")],
+            format!("Deleted remote branch '{remote}/{branch}'"),
+            skip_hooks,
+            on_progress,
+        ) {
+            Err(GitError::CommandFailed { ref stderr, .. })
+                if stderr.contains("remote ref does not exist") =>
+            {
+                Err(GitError::InvalidInput(format!(
+                    "Branch '{branch}' no longer exists on remote '{remote}'. Try fetching to refresh the branch list."
+                )))
+            }
+            result => result,
+        }
+    }
+
+    pub fn switch_branch_with_progress(
+        &self,
+        request: &BranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let branch_name = request.branch_name.trim();
+        if branch_name.is_empty() {
+            return Err(GitError::InvalidInput("Branch name cannot be empty".to_string()));
+        }
+        Self::ensure_no_active_branch_operation(&repo_path, "switch branches")?;
+        let args = vec!["switch".to_string(), branch_name.to_string()];
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, Arc::clone(&on_progress))?;
+        let unavailable = !outcome.status.success()
+            && outcome.hooks.is_empty()
+            && outcome.output.as_deref().is_some_and(|output| output.contains("'switch' is not a git command"));
+        if unavailable {
+            return Self::completed_hook_operation(
+                &repo_path,
+                vec!["checkout".to_string(), branch_name.to_string()],
+                format!("Switched to branch '{branch_name}'"),
+                Some("post-checkout"),
+                on_progress,
+            );
+        }
+        let hook_warning = Self::hook_failure(&outcome, "post-checkout", false);
+        if !outcome.status.success() && hook_warning.is_none() {
+            return Err(GitError::CommandFailed {
+                command: args.join(" "),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        Ok(GitHookAttemptResult::Completed {
+            result: OperationResult {
+                message: format!("Switched to branch '{branch_name}'"),
+                output: outcome.output,
+                repo_path: Some(Self::path_to_string(&repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: None,
+            },
+            hook_warning,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    pub fn push_changes_with_progress(
+        &self,
+        request: &PushRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<PushResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let current_branch = Self::current_branch_name(&repo_path)
+            .filter(|branch| !Self::is_detached_head(Some(branch)))
+            .ok_or_else(|| GitError::InvalidInput("Push is unavailable while HEAD is detached.".to_string()))?;
+        let remote = request.remote.as_deref().map(str::trim).filter(|value| !value.is_empty());
+        let explicit_remote_branch = request.remote_branch.as_deref().map(str::trim).filter(|value| !value.is_empty());
+        if remote.is_none() && (request.set_upstream || explicit_remote_branch.is_some()) {
+            return Err(GitError::InvalidInput("Publishing requires an explicit remote selection.".to_string()));
+        }
+        let target_remote_branch = match (remote, explicit_remote_branch) {
+            (Some(_), Some(branch)) => Some(branch.to_string()),
+            (Some(_), None) => Some(current_branch.clone()),
+            (None, Some(_)) => unreachable!(),
+            (None, None) => None,
+        };
+        let mut args = vec!["push".to_string()];
+        if skip_hooks { args.push("--no-verify".to_string()); }
+        if request.force_with_lease { args.push("--force-with-lease".to_string()); }
+        if request.push_follow_tags { args.push("--follow-tags".to_string()); }
+        if request.set_upstream { args.push("--set-upstream".to_string()); }
+        let refspec = match (remote, target_remote_branch.as_deref()) {
+            (Some(_), Some(target_branch)) if target_branch != current_branch => Some(format!("{current_branch}:{target_branch}")),
+            (Some(_), Some(_)) => Some(current_branch.clone()),
+            _ => None,
+        };
+        if let Some(remote_name) = remote {
+            args.push(remote_name.to_string());
+            if let Some(target_refspec) = refspec { args.push(target_refspec); }
+        }
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        if let Some(failure) = Self::hook_failure(&outcome, "pre-push", true) {
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: true,
+            });
+        }
+        let message = match (remote, target_remote_branch.as_deref(), request.set_upstream) {
+            (Some(remote_name), Some(target_branch), true) => format!("Published branch to {remote_name}/{target_branch}"),
+            (Some(remote_name), Some(target_branch), false) => format!("Pushed changes to {remote_name}/{target_branch}"),
+            _ => "Pushed changes".to_string(),
+        };
+        let result = if outcome.status.success() {
+            PushResult {
+                message,
+                output: outcome.output,
+                repo_path: Some(Self::path_to_string(&repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: None,
+                success: true,
+                rejection: None,
+            }
+        } else {
+            let stderr = outcome.output.unwrap_or_default();
+            let interpreted = Self::interpret_push_failure(&stderr, outcome.status.code());
+            let rejection = Self::classify_push_failure(&repo_path, &stderr);
+            PushResult {
+                message: rejection.message.clone(),
+                output: (!stderr.is_empty()).then_some(stderr),
+                repo_path: Some(Self::path_to_string(&repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: Some(interpreted),
+                success: false,
+                rejection: Some(rejection),
+            }
+        };
+        Ok(GitHookAttemptResult::Completed {
+            result,
+            hook_warning: None,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    pub fn create_branch_with_progress(
+        &self,
+        request: &CreateBranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        if request.checkout_after_creation != Some(true) {
+            return self.create_branch(request).map(|result| GitHookAttemptResult::Completed {
+                result,
+                hook_warning: None,
+                output_truncated: false,
+            });
+        }
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let mut branch_name = request.branch_name.trim().to_string();
+        let base_ref = request.base_ref.as_deref().map(str::trim).filter(|value| !value.is_empty());
+        let remote_tracking_ref = base_ref.and_then(|reference| Self::resolve_remote_tracking_ref(&repo_path, reference));
+        if request.match_tracking_branch.unwrap_or(false) {
+            let remote_ref = remote_tracking_ref.as_deref().ok_or_else(|| GitError::InvalidInput(
+                "Match tracking branch name requires a remote branch base reference".to_string(),
+            ))?;
+            branch_name = Self::derive_local_branch_from_remote_ref(remote_ref).ok_or_else(|| GitError::InvalidInput(
+                "Cannot derive a local branch name from this remote reference".to_string(),
+            ))?;
+        }
+        if branch_name.trim().is_empty() {
+            return Err(GitError::InvalidInput("Branch name cannot be empty".to_string()));
+        }
+        Self::ensure_valid_branch_name(&repo_path, &branch_name)?;
+        let mut args = vec!["checkout".to_string(), "-b".to_string(), branch_name.clone()];
+        if let Some(base_ref) = base_ref { args.push(base_ref.to_string()); }
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        let hook_warning = Self::hook_failure(&outcome, "post-checkout", false);
+        if !outcome.status.success() && hook_warning.is_none() {
+            return Err(GitError::CommandFailed {
+                command: args.join(" "),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        let mut message = format!("Created branch '{branch_name}'");
+        if request.track_remote.unwrap_or(false) {
+            let remote_branch = remote_tracking_ref.as_deref().ok_or_else(|| GitError::InvalidInput(
+                "Tracking requires a valid remote branch base reference".to_string(),
+            ))?;
+            Self::run_git(&["branch", "--set-upstream-to", remote_branch, &branch_name], Some(&repo_path))?;
+            message.push_str(&format!(" and set to track '{remote_branch}'"));
+        }
+        message.push_str(" and checked out");
+        Ok(GitHookAttemptResult::Completed {
+            result: OperationResult {
+                message,
+                output: outcome.output,
+                repo_path: Some(Self::path_to_string(&repo_path)),
+                backend_used: "git-cli".to_string(),
+                interpreted_error: None,
+            },
+            hook_warning,
+            output_truncated: outcome.output_truncated,
+        })
+    }
 }
 
 impl GitOperationHandler for CliGitHandler {
@@ -2521,6 +3195,9 @@ impl GitOperationHandler for CliGitHandler {
         }
         if request.amend == Some(true) {
             args.push("--amend");
+        }
+        if request.skip_hooks {
+            args.push("--no-verify");
         }
         let output = Self::run_git(&args, Some(&repo_path));
         let _ = fs::remove_file(&message_file_path);

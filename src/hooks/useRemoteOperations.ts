@@ -7,11 +7,14 @@ import type {
   PullStrategy,
   PushRejectionAnalysis,
   PushRequest,
+  PushResult,
 } from "../types";
 import {buildPushFailureDisplay} from "../utils/gitErrorDisplay";
 import {splitUpstreamRef, type RemoteActionKind} from "../utils/remoteActionState";
 import {appendResultLog} from "../utils/resultLog";
 import type {ToastType} from "./useToast";
+
+const AUTO_FETCH_TIMEOUT_MS = 90_000;
 
 type UpstreamDialogMode = "publish" | "repair" | "change";
 
@@ -25,6 +28,8 @@ type UseRemoteOperationsOptions = {
   refreshAll: () => Promise<void>;
   showToast: (message: string, type?: ToastType) => void;
   onForcePushComplete: () => void;
+  onFetchAttemptComplete: (repoPath: string) => void;
+  pushChanges: (request: PushRequest) => Promise<PushResult | null>;
 };
 
 export function buildPushRequestForCurrentBranch(
@@ -56,6 +61,8 @@ export function useRemoteOperations({
   refreshAll,
   showToast,
   onForcePushComplete,
+  onFetchAttemptComplete,
+  pushChanges,
 }: UseRemoteOperationsOptions) {
   const {t} = useTranslation("projectView");
   const {t: tGitAdvice} = useTranslation("gitAdvice");
@@ -76,9 +83,35 @@ export function useRemoteOperations({
       showToast(String(error), "error");
       appendResultLog("error", t("log.fetchFailed", {message: String(error)}), "unknown");
     } finally {
+      onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
+
+  const autoFetchRemote = useCallback(async () => {
+    if (!repoPath || remoteOp) return;
+    setRemoteOp("fetch");
+    const fetchPromise = api.fetchRemote(repoPath);
+    let timeoutId: ReturnType<typeof setTimeout>;
+    try {
+      const result = await Promise.race([
+        fetchPromise,
+        new Promise<never>((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error(t("log.autoFetchTimedOut"))), AUTO_FETCH_TIMEOUT_MS);
+        }),
+      ]);
+      appendResultLog("success", t("log.autoFetchComplete"), result.backendUsed);
+      await refreshAll();
+    } catch (error) {
+      const message = String(error);
+      appendResultLog("error", t("log.autoFetchFailed", {message}), "unknown");
+    } finally {
+      clearTimeout(timeoutId!);
+      await fetchPromise.catch(() => undefined);
+      onFetchAttemptComplete(repoPath);
+      setRemoteOp(null);
+    }
+  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, t]);
 
   const fetchSingleRemote = useCallback(async (remoteName: string) => {
     if (!repoPath || remoteOp) return;
@@ -92,9 +125,10 @@ export function useRemoteOperations({
       showToast(String(error), "error");
       appendResultLog("error", t("log.fetchRemoteFailed", {remote: remoteName, message: String(error)}), "unknown");
     } finally {
+      onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const runPullWithStrategy = useCallback(async (strategy: PullStrategy) => {
     if (!repoPath || remoteOp) return;
@@ -117,9 +151,10 @@ export function useRemoteOperations({
       showToast(String(error), "error");
       appendResultLog("error", t("log.pullFailed", {message: String(error)}), "unknown");
     } finally {
+      onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const startPullFlow = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -154,7 +189,7 @@ export function useRemoteOperations({
     }
   }, [repoPath, remoteOp, runPullWithStrategy, showToast, t]);
 
-  const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
+  const handlePushFailure = useCallback((result: PushResult) => {
     const display = buildPushFailureDisplay(result, tGitAdvice);
     if (display.dialogRejection) {
       setPushRejectionAnalysis(display.dialogRejection);
@@ -173,7 +208,8 @@ export function useRemoteOperations({
     if (!repoPath || remoteOp) return;
     setRemoteOp("push");
     try {
-      const result = await api.pushChanges(request);
+      const result = await pushChanges(request);
+      if (!result) return;
       if (!result.success) {
         handlePushFailure(result);
         return;
@@ -188,7 +224,7 @@ export function useRemoteOperations({
     } finally {
       setRemoteOp(null);
     }
-  }, [handlePushFailure, onForcePushComplete, refreshAll, remoteOp, repoPath, showToast, t]);
+  }, [handlePushFailure, onForcePushComplete, pushChanges, refreshAll, remoteOp, repoPath, showToast, t]);
 
   const push = useCallback(async () => {
     if (!repoPath || remoteOp) return;
@@ -277,6 +313,7 @@ export function useRemoteOperations({
     pushRejectionAnalysis,
     upstreamDialogMode,
     fetch: fetchRemote,
+    autoFetch: autoFetchRemote,
     fetchSingleRemote,
     pull: startPullFlow,
     push,

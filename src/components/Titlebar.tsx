@@ -4,6 +4,7 @@ import {
   GitIcon, BranchIcon, FetchIcon, PullIcon, PushIcon,
   StashIcon, SearchIcon, SettingsIcon, FolderIcon, CopyIcon, ChevDownIcon, InfoIcon, TerminalIcon, OpenExternalIcon,
   MoreIcon,
+  CloseIcon,
 } from "./icons";
 import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
@@ -37,6 +38,7 @@ type TitlebarProps = {
   onInitRepoClick: () => void;
   onOpenExistingClick: () => void;
   onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
   onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onFetch: () => void;
   onPull: () => void;
@@ -58,7 +60,7 @@ export function Titlebar({
   repoDisplayName,
   identityName, identityAvatarUrl, recentRepos, searchQuery, searchInputRef,
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
-  onRepoSelect, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
+  onRepoSelect, onRemoveRecentRepo, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
   onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled,
   identityOpen, remoteOp, aiEnabled = false, aiConfigured = false, onAiWriting,
 }: TitlebarProps) {
@@ -197,14 +199,14 @@ export function Titlebar({
 
       {/* Action buttons */}
       <div className="titlebar__actions">
-        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath} loading={remoteOp === "fetch"} />
-        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath} loading={remoteOp === "pull"} />
+        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath || !!remoteOp} loading={remoteOp === "fetch"} />
+        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath || !!remoteOp} loading={remoteOp === "pull"} />
         <ActionBtn
           icon={<PushIcon size={18} className="titlebar__toolbar-icon" />}
           label={pushActionLabel}
           badge={pushActionLabel === t("actions.push") && ahead > 0 ? String(ahead) : undefined}
           onClick={onPush}
-          disabled={!repoPath || pushDisabled}
+          disabled={!repoPath || pushDisabled || !!remoteOp}
           loading={remoteOp === "push"}
           title={pushTitle}
         />
@@ -235,6 +237,7 @@ export function Titlebar({
           recentRepos={recentRepos}
           onOpenExistingClick={onOpenExistingClick}
           onRepoSelect={onRepoSelect}
+          onRemoveRecentRepo={onRemoveRecentRepo}
         />
         <OpenInDropdown
           repoPath={repoPath}
@@ -511,11 +514,12 @@ function OpenInDropdown({ repoPath, onOpenRepoLocation }: {
   );
 }
 
-function OpenDropdown({ repoPath, recentRepos, onOpenExistingClick, onRepoSelect }: {
+function OpenDropdown({ repoPath, recentRepos, onOpenExistingClick, onRepoSelect, onRemoveRecentRepo }: {
   repoPath: string | null;
   recentRepos: string[];
   onOpenExistingClick: () => void;
   onRepoSelect: (path: string) => void;
+  onRemoveRecentRepo: (path: string) => void;
 }) {
   const { t } = useTranslation("titlebar");
   const [open, setOpen] = useState(false);
@@ -557,16 +561,36 @@ function OpenDropdown({ repoPath, recentRepos, onOpenExistingClick, onRepoSelect
           {recent.length > 0 && (
             <>
               <div className="titlebar__open-menu-sep" />
-              {recent.map(r => (
+              {recent.map(path => {
+                const name = displayNameForRepoPath(path, null);
+                return (
                 <div
-                  key={r}
+                  key={path}
                   className="titlebar__open-menu-item titlebar__open-menu-item--recent"
-                  onClick={() => { setOpen(false); onRepoSelect(r); }}
-                  title={r}
                 >
-                  {r.split("/").pop()}
+                  <button
+                    type="button"
+                    className="titlebar__open-menu-recent-select"
+                    onClick={() => { setOpen(false); onRepoSelect(path); }}
+                    title={path}
+                  >
+                    {name}
+                  </button>
+                  <button
+                    type="button"
+                    className="titlebar__open-menu-recent-remove"
+                    onClick={event => {
+                      event.stopPropagation();
+                      onRemoveRecentRepo(path);
+                    }}
+                    aria-label={t("recentRepositories.remove", {ns: "app", name})}
+                    title={t("recentRepositories.remove", {ns: "app", name})}
+                  >
+                    <CloseIcon size={13} />
+                  </button>
                 </div>
-              ))}
+                );
+              })}
             </>
           )}
         </div>

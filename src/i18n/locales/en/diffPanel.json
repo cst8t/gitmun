@@ -11,10 +11,12 @@
     "parents": "Parents",
     "tags": "Tags"
   },
+  "collapseFolder": "Collapse {{path}}",
   "eol": {
     "mixed": "Mixed EOL",
     "unknown": "Unknown EOL"
   },
+  "expandFolder": "Expand {{path}}",
   "header": {
     "clickFile": "Click a file to show changes",
     "commit": "Commit {{hash}}",
@@ -27,8 +29,10 @@
     "emptyFile": "Empty file - no changes to display",
     "loadingCommitFiles": "Loading commit files...",
     "loadingDiff": "Loading diff...",
+    "noMatchingCommitFiles": "No files match this search",
     "selectCommit": "Select a commit to view changed files"
   },
+  "searchCommitFiles": "Search changed files...",
   "submodule": {
     "checkedOutCommit": "Checked-out commit",
     "configuredBranch": "Configured branch",

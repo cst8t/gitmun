@@ -18,6 +18,7 @@ import type {
 } from "../../types";
 import {
   addSshSigningKeyToAllowedSigners,
+  getSettings,
   getSshAllowedSignerStatus,
   verifyCommits,
 } from "../../api/commands";
@@ -515,6 +516,7 @@ type LogViewProps = {
   pageSize: number;
   logLoading: boolean;
   logError: string | null;
+  searching?: boolean;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
@@ -622,6 +624,7 @@ export function LogView({
   pageSize,
   logLoading,
   logError,
+  searching = false,
   commitMarkers,
   logScope,
   rowStriping,
@@ -665,6 +668,7 @@ export function LogView({
   const verificationPumpQueuedRef = useRef(false);
   const verificationRequestIdRef = useRef(0);
   const lastSettingsRef = useRef<Settings | null>(null);
+  const signatureSettingsEffectMountedRef = useRef(false);
   const visibleRangeRef = useRef<ListRange>({ startIndex: 0, endIndex: 19 });
   const pendingRevealIndexRef = useRef<number | null>(null);
   const commitHashes = useMemo(() => new Set(commits.map(c => c.hash)), [commits]);
@@ -1096,6 +1100,16 @@ export function LogView({
     let cancelled = false;
     let unlisten: (() => void) | null = null;
     (async () => {
+      try {
+        const next = await getSettings();
+        if (!cancelled && signatureSettingsChanged(lastSettingsRef.current, next)) {
+          verifyVisibleSignedCommits(visibleRangeRef.current.startIndex, visibleRangeRef.current.endIndex, true);
+        }
+        if (!cancelled) lastSettingsRef.current = next;
+      } catch {
+        // Keep the last known snapshot if settings cannot be read.
+      }
+      if (cancelled) return;
       const fn = await listen<Settings>("settings-updated", (event) => {
         if (signatureSettingsChanged(lastSettingsRef.current, event.payload)) {
           verifyVisibleSignedCommits(visibleRangeRef.current.startIndex, visibleRangeRef.current.endIndex, true);
@@ -1117,6 +1131,10 @@ export function LogView({
   useEffect(() => {
     let cancelled = false;
     let unlisten: (() => void) | null = null;
+    if (signatureSettingsEffectMountedRef.current) {
+      verifyVisibleSignedCommits(visibleRangeRef.current.startIndex, visibleRangeRef.current.endIndex, true);
+    }
+    signatureSettingsEffectMountedRef.current = true;
     (async () => {
       const fn = await listen("signature-settings-updated", () => {
         verifyVisibleSignedCommits(visibleRangeRef.current.startIndex, visibleRangeRef.current.endIndex, true);
@@ -1327,6 +1345,9 @@ export function LogView({
           EmptyPlaceholder: () => {
             if (logError) {
               return <div className="log-view__empty">{t("log.loadFailed", { message: logError })}</div>;
+            }
+            if (searching) {
+              return <div className="log-view__empty">{t("log.noCommitsFound")}</div>;
             }
             if (logLoading) {
               return <div className="log-view__empty">{t("log.loading")}</div>;

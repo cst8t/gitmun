@@ -85,6 +85,7 @@ export type Settings = {
     commitPrimaryAction: CommitPrimaryAction;
     commitMessageRecommendedLength: number;
     pushFollowTags: boolean;
+    autoFetchIntervalMinutes?: number;
     autoCheckForUpdatesOnLaunch: boolean;
     autoInstallUpdates: boolean;
     updateEndpoint: string;
@@ -241,7 +242,60 @@ export type ExportCommitPatchRequest = RepoRequest & {
 export type CommitRequest = RepoRequest & {
     message: string;
     amend?: boolean;
+    skipHooks?: boolean;
 };
+
+export type CommitProgressEvent =
+    | { event: "output"; stream: "stdout" | "stderr"; text: string; truncated: boolean }
+    | { event: "hookStarted"; hookName: string }
+    | { event: "hookFinished"; hookName: string; exitStatus: number | null };
+
+export type GitHookProgressEvent = CommitProgressEvent;
+
+export type GitHookFailure = {
+    hookName: string;
+    exitStatus: number | null;
+    output: string | null;
+    outputTruncated: boolean;
+    bypassSupported: boolean;
+};
+
+export type GitHookAttemptResult<T> =
+    | { status: "completed"; result: T; hookWarning: GitHookFailure | null; outputTruncated: boolean }
+    | ({ status: "hookRejected" } & GitHookFailure);
+
+export type GitHookOperation = "commit" | "push" | "checkout";
+
+export type GitHookProgressState = {
+    operation: GitHookOperation;
+    startedAt: number;
+    phase: "running" | "awaitingDecision" | "warning";
+    hookName: string | null;
+    output: string;
+    outputTruncated: boolean;
+    expanded: boolean;
+};
+
+export type CommitProgressState = {
+    startedAt: number;
+    phase: "running" | "awaitingDecision";
+    hookName: string | null;
+    output: string;
+    outputTruncated: boolean;
+    expanded: boolean;
+};
+
+export type CommitHookRejection = {
+    hookName: string;
+    exitStatus: number | null;
+    output: string | null;
+    outputTruncated: boolean;
+    bypassSupported: boolean;
+};
+
+export type CommitAttemptResult =
+    | { status: "committed"; result: OperationResult; outputTruncated: boolean }
+    | ({ status: "hookRejected" } & CommitHookRejection);
 
 export type CommitMessageRecovery = {
     message: string;

@@ -13,6 +13,10 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
         match std::fs::read_to_string(toml_path) {
             Ok(text) => match toml::from_str::<Settings>(&text) {
                 Ok(mut settings) => {
+                    settings.auto_fetch_interval_minutes =
+                        Settings::normalised_auto_fetch_interval_minutes(
+                            settings.auto_fetch_interval_minutes,
+                        );
                     let migrated = settings.migrate_legacy_ai(contains_legacy_ai_keys(&text));
                     archive_migrated_json_config(json_path);
                     return (settings, migrated);
@@ -29,6 +33,8 @@ pub fn load_or_migrate(toml_path: &Path, json_path: &Path) -> (Settings, bool) {
     if json_path.exists() {
         let text = std::fs::read_to_string(json_path).unwrap_or_default();
         let mut settings = serde_json::from_str::<Settings>(&text).unwrap_or_default();
+        settings.auto_fetch_interval_minutes =
+            Settings::normalised_auto_fetch_interval_minutes(settings.auto_fetch_interval_minutes);
         settings.migrate_legacy_ai(contains_legacy_ai_keys(&text));
 
         let created = create_from_template(toml_path, &settings).is_ok();
@@ -276,6 +282,19 @@ mod tests {
                 .ai_conflict_resolution_prompt
                 .starts_with("Resolve the supplied")
         );
+    }
+
+    #[test]
+    fn load_toml_disables_unsupported_auto_fetch_interval() {
+        let dir = TempDir::new().unwrap();
+        let toml_path = dir.path().join("config.toml");
+        let json_path = dir.path().join("config.json");
+
+        write_file(&toml_path, "autoFetchIntervalMinutes = 1\n");
+
+        let (settings, should_persist) = load_or_migrate(&toml_path, &json_path);
+        assert!(!should_persist);
+        assert_eq!(settings.auto_fetch_interval_minutes, 0);
     }
 
     #[test]

@@ -357,6 +357,7 @@ export function SettingsWindow() {
     const [commitDateMode, setCommitDateMode] = useState<CommitDateMode>("AuthorDate");
     const [commitMessageRecommendedLength, setCommitMessageRecommendedLength] = useState(String(DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
     const [pushFollowTags, setPushFollowTags] = useState(false);
+    const [autoFetchIntervalMinutes, setAutoFetchIntervalMinutes] = useState(0);
     const [autoCheckForUpdatesOnLaunch, setAutoCheckForUpdatesOnLaunch] = useState(true);
     const [autoInstallUpdates, setAutoInstallUpdates] = useState(false);
     const [updateEndpoint, setUpdateEndpointState] = useState(DEFAULT_UPDATE_ENDPOINT);
@@ -614,6 +615,7 @@ export function SettingsWindow() {
             setCommitDateMode(settings.commitDateMode ?? "AuthorDate");
             setCommitMessageRecommendedLength(String(settings.commitMessageRecommendedLength ?? DEFAULT_COMMIT_MESSAGE_RECOMMENDED_LENGTH));
             setPushFollowTags(settings.pushFollowTags ?? false);
+            setAutoFetchIntervalMinutes(settings.autoFetchIntervalMinutes ?? 0);
             setAutoCheckForUpdatesOnLaunch(settings.autoCheckForUpdatesOnLaunch ?? true);
             setAutoInstallUpdates(settings.autoInstallUpdates ?? false);
             setUpdateEndpointState(settings.updateEndpoint ?? DEFAULT_UPDATE_ENDPOINT);
@@ -1161,6 +1163,7 @@ export function SettingsWindow() {
             await invoke("set_commit_date_mode", {commitDateMode});
             await invoke("set_commit_message_recommended_length", {commitMessageRecommendedLength: savedCommitMessageRecommendedLength});
             await invoke("set_push_follow_tags", {pushFollowTags});
+            await invoke("set_auto_fetch_interval_minutes", {autoFetchIntervalMinutes});
             await invoke("set_auto_check_for_updates_on_launch", {autoCheckForUpdatesOnLaunch});
             await invoke("set_auto_install_updates", {autoInstallUpdates});
             await setUpdateEndpoint(updateEndpoint);
@@ -2795,6 +2798,22 @@ export function SettingsWindow() {
 
                     <section className="settings-window__section">
                         <div className="settings-window__section-title">{t("labels.gitGroupGitmunBehaviour")}</div>
+
+                        <div className="settings-window__row">
+                            <label className="settings-window__label">{t("labels.autoFetch")}</label>
+                            <select
+                                className="settings-window__select"
+                                value={autoFetchIntervalMinutes}
+                                onChange={e => setAutoFetchIntervalMinutes(Number(e.target.value))}
+                            >
+                                <option value={0}>{t("options.autoFetchOff")}</option>
+                                <option value={5}>{t("options.autoFetchMinutes", {count: 5})}</option>
+                                <option value={10}>{t("options.autoFetchMinutes", {count: 10})}</option>
+                                <option value={30}>{t("options.autoFetchMinutes", {count: 30})}</option>
+                                <option value={60}>{t("options.autoFetchMinutes", {count: 60})}</option>
+                            </select>
+                            <div className="settings-window__section-note">{t("notes.autoFetch")}</div>
+                        </div>
 
                         <div className="settings-window__row">
                             <label className="settings-window__label">{t("labels.pushBehaviour")}</label>

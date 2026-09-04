@@ -1,11 +1,12 @@
 use crate::AppState;
 use crate::git::types::{
-    AddRemoteRequest, BranchInfo, BranchRequest, CreateBranchRequest, CreateTagRequest,
-    DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
-    OperationResult, PruneRemoteRequest, PushTagRequest, RemoteInfo, RemoveRemoteRequest,
-    RenameBranchRequest, RenameRemoteRequest, RepoRequest, SetBranchUpstreamRequest,
-    SetRemoteUrlRequest, TagInfo,
+    AddRemoteRequest, BranchInfo, BranchRequest, CommitProgressEvent, CreateBranchRequest,
+    CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
+    DeleteTagRequest, GitHookAttemptResult, OperationResult, PruneRemoteRequest, PushTagRequest,
+    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
+    SetBranchUpstreamRequest, SetRemoteUrlRequest, TagInfo,
 };
+use std::sync::Arc;
 use tauri::Manager;
 
 #[tauri::command]
@@ -22,14 +23,22 @@ pub async fn get_branches(
 }
 
 #[tauri::command]
-pub fn switch_branch(
+pub async fn switch_branch(
     request: BranchRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .switch_branch(request)
-        .map_err(|error| error.to_string())
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
+    app: tauri::AppHandle,
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .switch_branch_with_progress(
+                request,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -44,14 +53,22 @@ pub fn set_branch_upstream(
 }
 
 #[tauri::command]
-pub fn create_branch(
+pub async fn create_branch(
     request: CreateBranchRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .create_branch(request)
-        .map_err(|error| error.to_string())
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
+    app: tauri::AppHandle,
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .create_branch_with_progress(
+                request,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -109,36 +126,64 @@ pub fn create_tag(
 }
 
 #[tauri::command]
-pub fn push_tag(
+pub async fn push_tag(
     request: PushTagRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .push_tag(request)
-        .map_err(|e| e.to_string())
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
+    app: tauri::AppHandle,
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.push_tag_with_progress(
+            request,
+            skip_hooks,
+            Arc::new(move |event| drop(on_progress.send(event))),
+        )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn delete_remote_tag(
+pub async fn delete_remote_tag(
     request: DeleteRemoteTagRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .delete_remote_tag(request)
-        .map_err(|error| error.to_string())
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
+    app: tauri::AppHandle,
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .delete_remote_tag_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn delete_remote_branch(
+pub async fn delete_remote_branch(
     request: DeleteRemoteBranchRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .delete_remote_branch(request)
-        .map_err(|error| error.to_string())
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
+    app: tauri::AppHandle,
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .delete_remote_branch_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

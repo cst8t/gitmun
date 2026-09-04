@@ -70,6 +70,10 @@ commitMessageRecommendedLength = 72
 # Whether to automatically push tags when pushing commits.
 pushFollowTags = false
 
+# Fetch remotes periodically while a repository window is focused.
+# Use 0 to disable, or 5, 10, 30, or 60 minutes.
+autoFetchIntervalMinutes = 0
+
 # Whether to check for application updates on launch.
 autoCheckForUpdatesOnLaunch = true
 

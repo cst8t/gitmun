@@ -167,7 +167,95 @@
 .diff-panel__submodule-state--conflict { color: var(--red); }
 
 .diff-panel__commit-files {
-  padding: 8px 0;
+  padding-bottom: 8px;
+}
+
+.diff-panel__commit-file-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-surface);
+}
+
+.diff-panel__commit-file-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  min-height: 32px;
+  box-sizing: border-box;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  color: var(--text-muted);
+}
+
+.diff-panel__commit-file-search:focus-within {
+  border-color: var(--accent);
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 1px;
+}
+
+.diff-panel__commit-file-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+}
+
+.diff-panel__commit-file-search-input::placeholder {
+  color: var(--text-secondary);
+}
+
+.diff-panel__commit-folder-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  min-height: 32px;
+  color: var(--text-secondary-strong);
+}
+
+.diff-panel__commit-folder-toggle {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.diff-panel__commit-folder-icon {
+  display: flex;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.diff-panel__commit-folder-name {
+  flex: 1;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-sm);
+  font-weight: var(--font-weight-semibold);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.diff-panel__commit-folder-count {
+  font-size: var(--font-size-xs);
+  color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .diff-panel__commit-file-row {

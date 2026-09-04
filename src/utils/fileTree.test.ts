@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { FileStatusItem } from "../types";
-import { buildFileTree, descendantFilePaths } from "./fileTree";
+import {
+  AUTO_COLLAPSE_SECTION_THRESHOLD,
+  buildFileTree,
+  descendantFilePaths,
+  visibleFileTreeRows,
+} from "./fileTree";
 
 function file(path: string, additions: number | null = null, deletions: number | null = null): FileStatusItem {
   return {
@@ -214,5 +219,90 @@ describe("buildFileTree", () => {
     if (node.type !== "directory") return;
 
     expect(descendantFilePaths(node)).toEqual(["drafts"]);
+  });
+});
+
+describe("visibleFileTreeRows", () => {
+  const folderKey = (path: string) => path;
+
+  function rowSummary(rows: ReturnType<typeof visibleFileTreeRows>) {
+    return rows.map((row) =>
+      row.type === "directory"
+        ? { type: row.type, name: row.node.name, depth: row.depth, expanded: row.expanded }
+        : { type: row.type, name: row.node.name, depth: row.depth, fileIndex: row.fileIndex },
+    );
+  }
+
+  it("shows compact folders and nested basenames", () => {
+    const files = [
+      file("src/components/Button.tsx"),
+      file("src/components/Icon.tsx"),
+    ];
+    const rows = visibleFileTreeRows(buildFileTree(files), {}, files.length, folderKey);
+
+    expect(rowSummary(rows)).toEqual([
+      { type: "directory", name: "src/components", depth: 0, expanded: true },
+      { type: "file", name: "Button.tsx", depth: 1, fileIndex: 0 },
+      { type: "file", name: "Icon.tsx", depth: 1, fileIndex: 1 },
+    ]);
+  });
+
+  it("hides descendants when a folder is collapsed", () => {
+    const files = [
+      file("src/components/Button.tsx"),
+      file("src/components/Icon.tsx"),
+      file("README.md"),
+    ];
+    const rows = visibleFileTreeRows(
+      buildFileTree(files),
+      { "src/components": false },
+      files.length,
+      folderKey,
+    );
+
+    expect(rowSummary(rows)).toEqual([
+      { type: "directory", name: "src/components", depth: 0, expanded: false },
+      { type: "file", name: "README.md", depth: 0, fileIndex: 0 },
+    ]);
+  });
+
+  it("auto-collapses top-level folders when the tree has more than 500 files", () => {
+    const files = Array.from({ length: AUTO_COLLAPSE_SECTION_THRESHOLD + 1 }, (_, index) =>
+      file(`marine-lab/samples/sample-${String(index).padStart(4, "0")}.csv`),
+    );
+    const rows = visibleFileTreeRows(buildFileTree(files), {}, files.length, folderKey);
+
+    expect(rowSummary(rows)).toEqual([
+      { type: "directory", name: "marine-lab/samples", depth: 0, expanded: false },
+    ]);
+  });
+
+  it("keeps small nested folders expanded in large trees", () => {
+    const nested = [
+      file("marine-lab/reports/current/plankton.json"),
+      file("marine-lab/reports/current/salinity.json"),
+    ];
+    const topLevel = Array.from({ length: AUTO_COLLAPSE_SECTION_THRESHOLD }, (_, index) =>
+      file(`marine-lab/samples/sample-${String(index).padStart(4, "0")}.csv`),
+    );
+    const files = [...topLevel, ...nested];
+    const rows = visibleFileTreeRows(
+      buildFileTree(files),
+      { "marine-lab": true },
+      files.length,
+      folderKey,
+    );
+
+    expect(rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        type: "directory",
+        expanded: true,
+        node: expect.objectContaining({ name: "reports/current" }),
+      }),
+      expect.objectContaining({
+        type: "file",
+        node: expect.objectContaining({ name: "plankton.json" }),
+      }),
+    ]));
   });
 });

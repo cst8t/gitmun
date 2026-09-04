@@ -5,7 +5,9 @@ import { useTranslation } from "react-i18next";
 import { FileRow } from "./FileRow";
 import { CommitBox } from "./CommitBox";
 import type {
+  CommitHookRejection,
   CommitPrimaryAction,
+  CommitProgressState,
   ConflictFileItem,
   FileStatusItem,
   OperationFeedbackContent,
@@ -15,7 +17,7 @@ import type {
   UnversionedItem,
 } from "../../types";
 import { getNumstat, openSettingsWindow } from "../../api/commands";
-import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type FileTreeNode } from "../../utils/fileTree";
+import { buildFileTree, descendantFilePaths, type FileTreeDirectoryNode, type VisibleFileTreeRow, visibleFileTreeRows } from "../../utils/fileTree";
 import { ChevDownIcon, ChevRightIcon, FolderIcon } from "../icons";
 
 type StagingViewProps = {
@@ -69,6 +71,10 @@ type StagingViewProps = {
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   inlineOperation: OperationFeedbackContent | null;
+  commitProgress?: CommitProgressState | null;
+  hookRejection?: CommitHookRejection | null;
+  onHookRejectionClose?: () => void;
+  onHookRejectionBypass?: () => void;
   isCommitting: boolean;
   lastCommitMessage: string;
   rowStriping: RowStriping;
@@ -91,22 +97,16 @@ type CachedNumstat = {
 
 type TreeSection = "staged" | "unstaged";
 
-type VisibleTreeRow =
-  | { type: "directory"; node: FileTreeDirectoryNode; depth: number; expanded: boolean }
-  | { type: "file"; node: Extract<FileTreeNode, { type: "file" }>; depth: number; fileIndex: number };
-
 type StagingListRow =
   | { type: "section"; key: string; section: "submodules" | "conflicts" | TreeSection }
   | { type: "submodule"; key: string; submodule: SubmoduleStatus; index: number }
   | { type: "conflict"; key: string; file: ConflictFileItem; index: number }
-  | { type: "tree"; key: string; section: TreeSection; row: VisibleTreeRow }
+  | { type: "tree"; key: string; section: TreeSection; row: VisibleFileTreeRow }
   | { type: "empty"; key: string; section: TreeSection };
 
 const NUMSTAT_REFRESH_MS = 7000;
 const NUMSTAT_BATCH_SIZE = 6;
 const NUMSTAT_FAILURE_BACKOFF_MS = 3000;
-const AUTO_COLLAPSE_SECTION_THRESHOLD = 500;
-const AUTO_COLLAPSE_DIRECTORY_THRESHOLD = 100;
 
 const SUBMODULE_STATE_LABELS: Record<SubmoduleStatus["state"], string> = {
   clean: "Clean",
@@ -124,46 +124,6 @@ function cacheKey(path: string, staged: boolean): string {
 
 function folderStateKey(section: TreeSection, path: string): string {
   return `${section}:${path}`;
-}
-
-function defaultDirectoryExpanded(node: FileTreeDirectoryNode, depth: number, totalFiles: number): boolean {
-  if (totalFiles <= AUTO_COLLAPSE_SECTION_THRESHOLD) return true;
-  return depth > 0 && node.fileCount < AUTO_COLLAPSE_DIRECTORY_THRESHOLD;
-}
-
-function isDirectoryExpanded(
-  section: TreeSection,
-  node: FileTreeDirectoryNode,
-  depth: number,
-  totalFiles: number,
-  expandedFolders: Record<string, boolean>,
-): boolean {
-  const key = folderStateKey(section, node.path);
-  return expandedFolders[key] ?? defaultDirectoryExpanded(node, depth, totalFiles);
-}
-
-function visibleTreeRows(
-  nodes: FileTreeNode[],
-  section: TreeSection,
-  expandedFolders: Record<string, boolean>,
-  totalFiles: number,
-): VisibleTreeRow[] {
-  let fileIndex = 0;
-
-  const visit = (currentNodes: FileTreeNode[], depth: number): VisibleTreeRow[] =>
-    currentNodes.flatMap((node): VisibleTreeRow[] => {
-      if (node.type === "file") {
-        const row = { type: "file" as const, node, depth, fileIndex };
-        fileIndex += 1;
-        return [row];
-      }
-
-      const expanded = node.children.length > 0 && isDirectoryExpanded(section, node, depth, totalFiles, expandedFolders);
-      const children = expanded ? visit(node.children, depth + 1) : [];
-      return [{ type: "directory", node, depth, expanded }, ...children];
-    });
-
-  return visit(nodes, 0);
 }
 
 function shortHash(hash: string | null): string {
@@ -184,6 +144,96 @@ function OperationInlineFeedback({
       </div>
       {action}
     </div>
+  );
+}
+
+function CommitHookProgress({progress}: {progress: NonNullable<StagingViewProps["commitProgress"]>}) {
+  const { t } = useTranslation("centre");
+  const [expanded, setExpanded] = useState(progress.expanded);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    setExpanded(progress.expanded);
+  }, [progress.expanded]);
+
+  useEffect(() => {
+    const update = () => setElapsedSeconds(Math.floor((Date.now() - progress.startedAt) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [progress.startedAt]);
+
+  const title = progress.phase === "awaitingDecision"
+    ? t("commitHooks.awaitingDecision")
+    : progress.hookName
+      ? t("commitHooks.runningHook", {hook: progress.hookName})
+      : t("commitHooks.committing");
+
+  return (
+    <div className="staging__commit-progress" role="status" aria-live="polite">
+      <div className="staging__operation-inline">
+        {progress.phase === "running" ? <div className="staging__operation-spinner" aria-hidden="true" /> : <div className="staging__operation-failed" aria-hidden="true">!</div>}
+        <div className="staging__operation-copy">
+          <div className="staging__operation-title">{title}</div>
+          <div className="staging__operation-message">{progress.phase === "running" ? t("commitHooks.elapsed", {seconds: elapsedSeconds}) : t("commitHooks.reviewFailure")}</div>
+        </div>
+        {progress.output && (
+          <button
+            type="button"
+            className="staging__operation-cancel"
+            aria-expanded={expanded}
+            onClick={() => setExpanded(current => !current)}>
+            {expanded ? t("commitHooks.hideOutput") : t("commitHooks.viewOutput")}
+          </button>
+        )}
+      </div>
+      {expanded && progress.output && (
+        <pre className="staging__commit-output">{progress.output}{progress.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}</pre>
+      )}
+    </div>
+  );
+}
+
+function HookFailureDialog({
+  rejection,
+  onClose,
+  onBypass,
+}: {
+  rejection: NonNullable<StagingViewProps["hookRejection"]>;
+  onClose: () => void;
+  onBypass: () => void;
+}) {
+  const { t } = useTranslation("centre");
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    closeButtonRef.current?.focus();
+  }, []);
+
+  return (
+    <>
+      <div className="dialog-backdrop" />
+      <div className="dialog commit-hook-dialog" role="alertdialog" aria-modal="true" aria-labelledby="commit-hook-dialog-title">
+        <div id="commit-hook-dialog-title" className="dialog__title">{t("commitHooks.failedTitle")}</div>
+        <div className="commit-hook-dialog__summary">
+          {t("commitHooks.failedDescription", {hook: rejection.hookName, exitStatus: rejection.exitStatus ?? t("commitHooks.unknownExitStatus")})}
+        </div>
+        {rejection.bypassSupported && <div className="commit-hook-dialog__warning">{t("commitHooks.bypassWarning")}</div>}
+        {rejection.output && (
+          <pre className="commit-hook-dialog__output">{rejection.output}{rejection.outputTruncated ? `\n${t("commitHooks.outputTruncated")}` : ""}</pre>
+        )}
+        <div className="dialog__actions">
+          <button ref={closeButtonRef} type="button" className="dialog__btn dialog__btn--cancel" onClick={onClose}>
+            {t("commitHooks.close")}
+          </button>
+          {rejection.bypassSupported && (
+            <button type="button" className="dialog__btn dialog__btn--confirm" onClick={onBypass}>
+              {t("commitHooks.commitWithoutHooks")}
+            </button>
+          )}
+        </div>
+      </div>
+    </>
   );
 }
 
@@ -429,7 +479,7 @@ export function StagingView({
   selectedCommitAction, commitMessageRecommendedLength, allowCommitAndPush, onSelectCommitAction, onCommit,
   onConflictAcceptTheirs, onConflictAcceptOurs, onConflictResolveWithAi, getAiConflictEligibility,
   onConflictResolveAllWithAi, onCancelAiConflict, onOpenMergeTool,
-  stagingOperation, inlineOperation, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
+  stagingOperation, inlineOperation, commitProgress, hookRejection, onHookRejectionClose, onHookRejectionBypass, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
   aiConflictOperationId, aiConflictBatchProgress, aiConflictBatchFailure,
   onSkipAiConflictBatchFailure, onStopAiConflictBatchFailure,
 }: StagingViewProps) {
@@ -602,11 +652,11 @@ export function StagingView({
   const stagedTree = useMemo(() => buildFileTree(mergedStaged), [mergedStaged]);
   const unstagedTree = useMemo(() => buildFileTree(allUnstaged), [allUnstaged]);
   const stagedTreeRows = useMemo(
-    () => visibleTreeRows(stagedTree, "staged", expandedFolders, mergedStaged.length),
+    () => visibleFileTreeRows(stagedTree, expandedFolders, mergedStaged.length, (path) => folderStateKey("staged", path)),
     [stagedTree, expandedFolders, mergedStaged.length],
   );
   const unstagedTreeRows = useMemo(
-    () => visibleTreeRows(unstagedTree, "unstaged", expandedFolders, allUnstaged.length),
+    () => visibleFileTreeRows(unstagedTree, expandedFolders, allUnstaged.length, (path) => folderStateKey("unstaged", path)),
     [unstagedTree, expandedFolders, allUnstaged.length],
   );
   const stagingBusy = stagingOperation != null || aiResolvingPath !== null;
@@ -648,7 +698,7 @@ export function StagingView({
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
   };
-  const renderTreeRow = (row: VisibleTreeRow, section: TreeSection) => {
+  const renderTreeRow = (row: VisibleFileTreeRow, section: TreeSection) => {
     const isStaged = section === "staged";
     const selectedMap = isStaged ? selectedStaged : selectedUnstaged;
     const onSelectedChange = isStaged ? onSelectedStagedChange : onSelectedUnstagedChange;
@@ -1016,7 +1066,9 @@ export function StagingView({
         />
       </div>
 
-      {inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
+      {commitProgress
+        ? <CommitHookProgress progress={commitProgress} />
+        : inlineOperation && inlineOperationIsCommit && <OperationInlineFeedback {...inlineOperation} />}
       <CommitBox
         repoPath={repoPath}
         stagedCount={stagedFiles.length}
@@ -1035,6 +1087,13 @@ export function StagingView({
         aiEnabled={aiEnabled}
         aiConfigured={aiConfigured}
       />
+      {hookRejection && (
+        <HookFailureDialog
+          rejection={hookRejection}
+          onClose={onHookRejectionClose ?? (() => {})}
+          onBypass={onHookRejectionBypass ?? (() => {})}
+        />
+      )}
     </div>
   );
 }
