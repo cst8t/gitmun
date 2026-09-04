@@ -7,6 +7,7 @@ import type {
   PullStrategy,
   PushRejectionAnalysis,
   PushRequest,
+  PushResult,
 } from "../types";
 import {buildPushFailureDisplay} from "../utils/gitErrorDisplay";
 import {splitUpstreamRef, type RemoteActionKind} from "../utils/remoteActionState";
@@ -28,6 +29,7 @@ type UseRemoteOperationsOptions = {
   showToast: (message: string, type?: ToastType) => void;
   onForcePushComplete: () => void;
   onFetchAttemptComplete: (repoPath: string) => void;
+  pushChanges: (request: PushRequest) => Promise<PushResult | null>;
 };
 
 export function buildPushRequestForCurrentBranch(
@@ -60,6 +62,7 @@ export function useRemoteOperations({
   showToast,
   onForcePushComplete,
   onFetchAttemptComplete,
+  pushChanges,
 }: UseRemoteOperationsOptions) {
   const {t} = useTranslation("projectView");
   const {t: tGitAdvice} = useTranslation("gitAdvice");
@@ -186,7 +189,7 @@ export function useRemoteOperations({
     }
   }, [repoPath, remoteOp, runPullWithStrategy, showToast, t]);
 
-  const handlePushFailure = useCallback((result: Awaited<ReturnType<typeof api.pushChanges>>) => {
+  const handlePushFailure = useCallback((result: PushResult) => {
     const display = buildPushFailureDisplay(result, tGitAdvice);
     if (display.dialogRejection) {
       setPushRejectionAnalysis(display.dialogRejection);
@@ -205,7 +208,8 @@ export function useRemoteOperations({
     if (!repoPath || remoteOp) return;
     setRemoteOp("push");
     try {
-      const result = await api.pushChanges(request);
+      const result = await pushChanges(request);
+      if (!result) return;
       if (!result.success) {
         handlePushFailure(result);
         return;
@@ -220,7 +224,7 @@ export function useRemoteOperations({
     } finally {
       setRemoteOp(null);
     }
-  }, [handlePushFailure, onForcePushComplete, refreshAll, remoteOp, repoPath, showToast, t]);
+  }, [handlePushFailure, onForcePushComplete, pushChanges, refreshAll, remoteOp, repoPath, showToast, t]);
 
   const push = useCallback(async () => {
     if (!repoPath || remoteOp) return;

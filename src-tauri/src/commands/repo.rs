@@ -2,8 +2,8 @@ use crate::git::types::{
     CloneRequest, CommitAttemptResult, CommitDetails, CommitDetailsRequest, CommitFileItem,
     CommitFilesRequest, CommitMarkers, CommitMessageRecovery, CommitProgressEvent, CommitRequest,
     DiffRequest, ExportCommitPatchRequest, ExportPatchRequest, ExternalDiffRequest, FetchRequest,
-    FileDiff, FileRequest, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
-    LocalCopyDestinationMode, LocalCopyError, LocalCopyMode, LocalCopyProgress,
+    FileDiff, FileRequest, GitHookAttemptResult, GitIdentity, HunkStageRequest, IdentityRequest,
+    ImportPatchRequest, LocalCopyDestinationMode, LocalCopyError, LocalCopyMode, LocalCopyProgress,
     LocalCopyProgressPhase, LocalCopyRequest, LocalCopyResult, LocalCopyWarning, NumstatRequest,
     NumstatResult, OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult,
     RepoRequest, RepoStatus, SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest,
@@ -2850,10 +2850,18 @@ pub fn add_ssh_signing_key_to_allowed_signers(
 #[tauri::command]
 pub async fn push_changes(
     request: PushRequest,
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<PushResult, String> {
+) -> Result<GitHookAttemptResult<PushResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.push_changes(request)
+        app.state::<AppState>()
+            .git_service
+            .push_changes_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?

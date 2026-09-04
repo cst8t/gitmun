@@ -44,6 +44,7 @@ describe("useRemoteOperations", () => {
       showToast,
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
+      pushChanges: mocks.pushChanges,
     }));
 
     await act(async () => {
@@ -73,6 +74,7 @@ describe("useRemoteOperations", () => {
       showToast,
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
+      pushChanges: mocks.pushChanges,
     }));
 
     await act(async () => {
@@ -98,6 +100,7 @@ describe("useRemoteOperations", () => {
       showToast: vi.fn(),
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
+      pushChanges: mocks.pushChanges,
     }));
 
     let autoFetchPromise!: Promise<void>;
@@ -139,6 +142,7 @@ describe("useRemoteOperations", () => {
       showToast: vi.fn(),
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
+      pushChanges: mocks.pushChanges,
     }));
 
     await act(async () => {
@@ -168,6 +172,7 @@ describe("useRemoteOperations", () => {
       showToast: vi.fn(),
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
+      pushChanges: mocks.pushChanges,
     }));
 
     await act(async () => {

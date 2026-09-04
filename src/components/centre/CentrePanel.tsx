@@ -10,13 +10,13 @@ import { CherryPickBanner } from "./CherryPickBanner";
 import { RevertBanner } from "./RevertBanner";
 import type {
   CommitHistoryItem,
-  CommitHookRejection,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
-  CommitProgressState,
   ConflictFileItem,
   FileStatusItem,
+  GitHookFailure,
+  GitHookProgressState,
   LongRunningOperation,
   OperationFeedbackContent,
   RowStriping,
@@ -128,8 +128,8 @@ type CentrePanelProps = {
   onOpenMergeTool: (path: string) => void;
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
-  commitProgress?: CommitProgressState | null;
-  hookRejection?: CommitHookRejection | null;
+  hookProgress?: GitHookProgressState | null;
+  hookRejection?: (GitHookFailure & {operation: "commit" | "push"}) | null;
   onHookRejectionClose?: () => void;
   onHookRejectionBypass?: () => void;
   isCommitting: boolean;
@@ -146,6 +146,51 @@ type CentrePanelProps = {
   onSkipAiConflictBatchFailure?: () => void;
   onStopAiConflictBatchFailure?: () => void;
 };
+
+function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressState; onDismiss: () => void}) {
+  const {t} = useTranslation("centre");
+  const [expanded, setExpanded] = React.useState(progress.expanded);
+  const [elapsedSeconds, setElapsedSeconds] = React.useState(0);
+  React.useEffect(() => setExpanded(progress.expanded), [progress.expanded]);
+  React.useEffect(() => {
+    const update = () => setElapsedSeconds(Math.floor((Date.now() - progress.startedAt) / 1000));
+    update();
+    const timer = window.setInterval(update, 1000);
+    return () => window.clearInterval(timer);
+  }, [progress.startedAt]);
+  const title = progress.phase === "warning"
+    ? t("gitHooks.checkoutWarningTitle")
+    : progress.phase === "awaitingDecision"
+      ? t("gitHooks.failedTitle", {operation: t(`gitHooks.operations.${progress.operation}`)})
+      : progress.hookName
+        ? t("gitHooks.runningHook", {hook: progress.hookName})
+        : t("gitHooks.runningOperation", {operation: t(`gitHooks.operations.${progress.operation}`)});
+  return <div className="staging__commit-progress" role="status" aria-live="polite">
+    <div className="staging__operation-inline">
+      {progress.phase === "running" ? <div className="staging__operation-spinner" aria-hidden="true" /> : <div className="staging__operation-failed" aria-hidden="true">!</div>}
+      <div className="staging__operation-copy">
+        <div className="staging__operation-title">{title}</div>
+        <div className="staging__operation-message">{progress.phase === "running" ? t("gitHooks.elapsed", {seconds: elapsedSeconds}) : t(progress.phase === "warning" ? "gitHooks.checkoutWarningMessage" : "gitHooks.reviewFailure")}</div>
+      </div>
+      {progress.output && <button type="button" className="staging__operation-cancel" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{t(expanded ? "gitHooks.hideOutput" : "gitHooks.viewOutput")}</button>}
+      {progress.phase === "warning" && <button type="button" className="staging__operation-cancel" onClick={onDismiss}>{t("gitHooks.dismiss")}</button>}
+    </div>
+    {expanded && progress.output && <pre className="staging__commit-output">{progress.output}{progress.outputTruncated ? `\n${t("gitHooks.outputTruncated")}` : ""}</pre>}
+  </div>;
+}
+
+function HookFailureDialog({failure, onClose, onBypass}: {failure: GitHookFailure & {operation: "commit" | "push"}; onClose: () => void; onBypass: () => void}) {
+  const {t} = useTranslation("centre");
+  const closeButtonRef = React.useRef<HTMLButtonElement>(null);
+  React.useEffect(() => { closeButtonRef.current?.focus(); }, []);
+  return <><div className="dialog-backdrop" /><div className="dialog commit-hook-dialog" role="alertdialog" aria-modal="true" aria-labelledby="git-hook-dialog-title">
+    <div id="git-hook-dialog-title" className="dialog__title">{t("gitHooks.failedTitle", {operation: t(`gitHooks.operations.${failure.operation}`)})}</div>
+    <div className="commit-hook-dialog__summary">{t("gitHooks.failedDescription", {hook: failure.hookName, exitStatus: failure.exitStatus ?? t("gitHooks.unknownExitStatus")})}</div>
+    {failure.bypassSupported && <div className="commit-hook-dialog__warning">{t(`gitHooks.bypassWarning.${failure.operation}`)}</div>}
+    {failure.output && <pre className="commit-hook-dialog__output">{failure.output}{failure.outputTruncated ? `\n${t("gitHooks.outputTruncated")}` : ""}</pre>}
+    <div className="dialog__actions"><button ref={closeButtonRef} type="button" className="dialog__btn dialog__btn--cancel" onClick={onClose}>{t("gitHooks.close")}</button>{failure.bypassSupported && <button type="button" className="dialog__btn dialog__btn--confirm" onClick={onBypass}>{t(`gitHooks.bypassAction.${failure.operation}`)}</button>}</div>
+  </div></>;
+}
 
 function useDelayedOperationFeedback(operation: LongRunningOperation | null) {
   const [now, setNow] = React.useState(() => Date.now());
@@ -234,7 +279,7 @@ export function CentrePanel(props: CentrePanelProps) {
   const operationContent = getOperationContent(props.operationLock, t);
   const operationFeedback = useDelayedOperationFeedback(props.operationLock);
   const inlineOperationContent = operationFeedback.showInline ? operationContent : null;
-  const popupOperationContent = operationFeedback.showPopup && operationContent && !props.commitProgress
+  const popupOperationContent = operationFeedback.showPopup && operationContent && !props.hookProgress
     ? { ...operationContent, message: t("operation.stillRunningMessage") }
     : null;
   const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
@@ -309,6 +354,7 @@ export function CentrePanel(props: CentrePanelProps) {
           interactionLocked={props.aiResolvingPath !== null}
         />
       )}
+      {props.hookProgress && <HookProgressBanner progress={props.hookProgress} onDismiss={props.onHookRejectionClose ?? (() => {})} />}
       <div className="centre__tabs">
         <button
           className={`centre__tab ${tab === "changes" ? "centre__tab--active" : ""}`}
@@ -415,10 +461,8 @@ export function CentrePanel(props: CentrePanelProps) {
           onOpenMergeTool={props.onOpenMergeTool}
           stagingOperation={props.stagingOperation}
           inlineOperation={inlineOperationContent}
-          commitProgress={props.commitProgress ?? null}
-          hookRejection={props.hookRejection ?? null}
-          onHookRejectionClose={props.onHookRejectionClose ?? (() => {})}
-          onHookRejectionBypass={props.onHookRejectionBypass ?? (() => {})}
+          commitProgress={null}
+          hookRejection={null}
           isCommitting={props.isCommitting}
           lastCommitMessage={props.lastCommitMessage}
           rowStriping={props.rowStriping}
@@ -460,6 +504,7 @@ export function CentrePanel(props: CentrePanelProps) {
           onExportCommitPatch={props.onExportCommitPatch}
         />
       </React.Activity>
+      {props.hookRejection && <HookFailureDialog failure={props.hookRejection} onClose={props.onHookRejectionClose ?? (() => {})} onBypass={props.onHookRejectionBypass ?? (() => {})} />}
       {popupOperationContent && (
         <>
           <div className="centre__operation-backdrop" />

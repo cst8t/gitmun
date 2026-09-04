@@ -50,16 +50,18 @@ import * as api from "../api/commands";
 import type { ResetMode } from "../api/commands";
 import type {
   BranchInfo,
-  CommitHookRejection,
   CommitLogScope,
   CommitMarkers,
   CommitPrimaryAction,
   CommitProgressEvent,
-  CommitProgressState,
   CreateBranchRequest,
   ExportPatchFileSelection,
   ExportPatchScope,
   GitIdentity,
+  GitHookAttemptResult,
+  GitHookFailure,
+  GitHookProgressEvent,
+  GitHookProgressState,
   ImportPatchRequest,
   LongRunningOperation,
   LongRunningOperationKind,
@@ -425,8 +427,8 @@ export function ProjectView({
   const [operationLock, setOperationLock] = useState<LongRunningOperation | null>(null);
   const operationLockRef = useRef<LongRunningOperation | null>(null);
   const nextOperationIdRef = useRef(1);
-  const [commitProgress, setCommitProgress] = useState<CommitProgressState | null>(null);
-  const [hookRejection, setHookRejection] = useState<CommitHookRejection | null>(null);
+  const [hookProgress, setHookProgress] = useState<GitHookProgressState | null>(null);
+  const [hookRejection, setHookRejection] = useState<(GitHookFailure & {operation: "commit" | "push"}) | null>(null);
   const hookDecisionRef = useRef<((skipHooks: boolean) => void) | null>(null);
 
   useEffect(() => () => {
@@ -729,6 +731,81 @@ export function ProjectView({
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
   }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
 
+  const createHookProgressChannel = useCallback((operation: "commit" | "push" | "checkout") => {
+    const progress = new Channel<GitHookProgressEvent>();
+    setHookProgress({operation, startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
+    progress.onmessage = event => {
+      setHookProgress(current => {
+        if (!current || current.operation !== operation) return current;
+        if (event.event === "output") {
+          return {...current, output: `${current.output}${event.text}`.slice(-1024 * 1024), outputTruncated: current.outputTruncated || event.truncated};
+        }
+        if (event.event === "hookStarted") return {...current, hookName: event.hookName};
+        return current.hookName === event.hookName ? {...current, hookName: null} : current;
+      });
+    };
+    return progress;
+  }, []);
+
+  const runPushHookOperation = useCallback(async <T,>(
+    operation: (progress: Channel<GitHookProgressEvent>, skipHooks: boolean) => Promise<GitHookAttemptResult<T>>,
+  ): Promise<T | null> => {
+    let skipHooks = false;
+    for (;;) {
+      let attempt: GitHookAttemptResult<T>;
+      try {
+        attempt = await operation(createHookProgressChannel("push"), skipHooks);
+      } catch (error) {
+        setHookProgress(null);
+        throw error;
+      }
+      if (attempt.status === "completed") {
+        setHookProgress(null);
+        if (skipHooks) appendResultLog("info", t("log.pushHooksSkipped"), "git-cli");
+        return attempt.result;
+      }
+      setHookProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? current.output, outputTruncated: attempt.outputTruncated, expanded: true} : current);
+      setHookRejection({...attempt, operation: "push"});
+      skipHooks = await new Promise<boolean>(resolve => { hookDecisionRef.current = resolve; });
+      if (!skipHooks) {
+        appendResultLog("error", t("log.pushHookRejected", {hook: attempt.hookName}), "git-cli", undefined, attempt.output ?? undefined);
+        setHookProgress(null);
+        return null;
+      }
+    }
+  }, [createHookProgressChannel, t]);
+
+  const runCheckoutHookOperation = useCallback(async (
+    operation: (progress: Channel<GitHookProgressEvent>) => Promise<GitHookAttemptResult<OperationResult>>,
+  ) => {
+    let attempt: GitHookAttemptResult<OperationResult>;
+    try {
+      attempt = await operation(createHookProgressChannel("checkout"));
+    } catch (error) {
+      setHookProgress(null);
+      throw error;
+    }
+    if (attempt.status === "hookRejected") {
+      throw new Error(attempt.output ?? t("toast.checkoutHookFailed"));
+    }
+    if (attempt.hookWarning) {
+      setHookProgress(current => ({
+        operation: "checkout",
+        startedAt: current?.startedAt ?? Date.now(),
+        phase: "warning",
+        hookName: attempt.hookWarning?.hookName ?? null,
+        output: attempt.hookWarning?.output ?? current?.output ?? "",
+        outputTruncated: attempt.hookWarning?.outputTruncated ?? false,
+        expanded: true,
+      }));
+      showToast(t("toast.checkoutHookWarning"), "info");
+      appendResultLog("error", t("log.checkoutHookWarning"), attempt.result.backendUsed, undefined, attempt.hookWarning.output ?? undefined);
+    } else {
+      setHookProgress(null);
+    }
+    return attempt.result;
+  }, [createHookProgressChannel, showToast, t]);
+
   const handleForcePushComplete = useCallback(() => setRebasedBranchAwaitingPush(null), []);
   const {
     remoteOp,
@@ -763,6 +840,7 @@ export function ProjectView({
     showToast,
     onForcePushComplete: handleForcePushComplete,
     onFetchAttemptComplete,
+    pushChanges: request => runPushHookOperation((progress, skipHooks) => api.pushChanges(request, progress, skipHooks)),
   });
 
   useEffect(() => {
@@ -956,6 +1034,7 @@ export function ProjectView({
     hookDecisionRef.current?.(false);
     hookDecisionRef.current = null;
     setHookRejection(null);
+    setHookProgress(null);
   }, []);
 
   const handleHookRejectionBypass = useCallback(() => {
@@ -984,8 +1063,8 @@ export function ProjectView({
         let capturedOutput = "";
         const progress = new Channel<CommitProgressEvent>();
         progress.onmessage = event => {
-          setCommitProgress(current => {
-            if (!current) return current;
+          setHookProgress(current => {
+            if (!current || current.operation !== "commit") return current;
             if (event.event === "output") {
               capturedOutput = `${capturedOutput}${event.text}`.slice(-1024 * 1024);
               return {...current, output: capturedOutput, outputTruncated: current.outputTruncated || event.truncated};
@@ -996,7 +1075,7 @@ export function ProjectView({
             return current.hookName === event.hookName ? {...current, hookName: null} : current;
           });
         };
-        setCommitProgress({startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
+        setHookProgress({operation: "commit", startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
         const attempt = await api.commitChanges(repoPath, message, amend, progress, skipHooks);
         if (attempt.status === "committed") {
           const { result } = attempt;
@@ -1015,8 +1094,8 @@ export function ProjectView({
           return true;
         }
 
-        setCommitProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? capturedOutput, outputTruncated: Boolean(attempt.outputTruncated), expanded: true} : current);
-        setHookRejection(attempt);
+        setHookProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? capturedOutput, outputTruncated: Boolean(attempt.outputTruncated), expanded: true} : current);
+        setHookRejection({...attempt, operation: "commit"});
         skipHooks = await new Promise<boolean>(resolve => {
           hookDecisionRef.current = resolve;
         });
@@ -1039,7 +1118,7 @@ export function ProjectView({
       appendResultLog("error", t("log.commitFailed", { message: String(e) }), "unknown");
       return false;
     } finally {
-      setCommitProgress(null);
+      setHookProgress(null);
       hookDecisionRef.current = null;
     }
   }, [repoPath, rebaseInProgress, cherryPickInProgress, revertInProgress, refreshAll, showToast, t]);
@@ -1243,7 +1322,7 @@ export function ProjectView({
     }
 
     try {
-      const result = await api.switchBranch(repoPath, branchName);
+      const result = await runCheckoutHookOperation(progress => api.switchBranch(repoPath, branchName, progress));
       if (stashedRef) {
         showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
@@ -1266,12 +1345,12 @@ export function ProjectView({
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleCreateBranch = useCallback(async (request: CreateBranchRequest) => {
     if (!repoPath) return;
     try {
-      const result = await api.createBranch(request);
+      const result = await runCheckoutHookOperation(progress => api.createBranch(request, progress));
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1279,7 +1358,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.createBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast, t]);
+  }, [repoPath, refreshAll, runCheckoutHookOperation, showToast, t]);
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
     if (!repoPath) return;
@@ -1381,14 +1460,15 @@ export function ProjectView({
     const remote = remotes[0]?.name;
     if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
     try {
-      const result = await api.pushTag({ repoPath, remote, tagName });
+      const result = await runPushHookOperation((progress, skipHooks) => api.pushTag({ repoPath, remote, tagName }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
     } catch (e) {
       showToast(String(e), "error");
       appendResultLog("error", t("log.pushTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, showToast, t]);
+  }, [repoPath, remotes, runPushHookOperation, showToast, t]);
 
   const handleDeleteRemoteTag = useCallback(async (tagName: string) => {
     if (!repoPath) return;
@@ -1399,7 +1479,8 @@ export function ProjectView({
     });
     if (!confirmed) return;
     try {
-      const result = await api.deleteRemoteTag({ repoPath, remote, tagName });
+      const result = await runPushHookOperation((progress, skipHooks) => api.deleteRemoteTag({ repoPath, remote, tagName }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1407,7 +1488,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.deleteRemoteTagFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, remotes, refreshAll, showToast, t]);
+  }, [repoPath, remotes, refreshAll, runPushHookOperation, showToast, t]);
 
   const handleCreateBranchFromTag = useCallback((tagName: string) => {
     setCreateBranchFromTagName(tagName);
@@ -1470,7 +1551,8 @@ export function ProjectView({
     });
     if (!confirmed) return;
     try {
-      const result = await api.deleteRemoteBranch({ repoPath, remote, branch });
+      const result = await runPushHookOperation((progress, skipHooks) => api.deleteRemoteBranch({ repoPath, remote, branch }, progress, skipHooks));
+      if (!result) return;
       showToast(result.message, "success");
       appendResultLog("success", result.message, result.backendUsed);
       await refreshAll();
@@ -1478,7 +1560,7 @@ export function ProjectView({
       showToast(String(e), "error");
       appendResultLog("error", t("log.deleteRemoteBranchFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, refreshAll, showToast, t]);
+  }, [repoPath, refreshAll, runPushHookOperation, showToast, t]);
 
   const handleCheckoutRemoteBranch = useCallback(async (remoteBranchName: string) => {
     if (!repoPath) return;
@@ -1513,14 +1595,14 @@ export function ProjectView({
     }
 
     try {
-      const result = await api.createBranch({
+      const result = await runCheckoutHookOperation(progress => api.createBranch({
         repoPath,
         branchName: localBranchName,
         baseRef: remoteBranchName,
         checkoutAfterCreation: true,
         trackRemote: true,
         matchTrackingBranch: true,
-      });
+      }, progress));
       if (stashedRef) {
         showToast(t("toast.switchedWithStash", { message: result.message, stashRef: stashedRef }), "success");
       } else {
@@ -1539,7 +1621,7 @@ export function ProjectView({
       }
       await refreshStatus();
     }
-  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, showToast, stashBeforeBranchSwitch, t]);
+  }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleAddRemote = useCallback(async (name: string, url: string) => {
     if (!repoPath) return;
@@ -2527,7 +2609,7 @@ export function ProjectView({
                   onOpenMergeTool={handleOpenMergeTool}
                   stagingOperation={stagingOperation}
                   operationLock={operationLock}
-                  commitProgress={commitProgress}
+                  hookProgress={hookProgress}
                   hookRejection={hookRejection}
                   onHookRejectionClose={handleHookRejectionClose}
                   onHookRejectionBypass={handleHookRejectionBypass}

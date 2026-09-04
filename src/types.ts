@@ -250,6 +250,32 @@ export type CommitProgressEvent =
     | { event: "hookStarted"; hookName: string }
     | { event: "hookFinished"; hookName: string; exitStatus: number | null };
 
+export type GitHookProgressEvent = CommitProgressEvent;
+
+export type GitHookFailure = {
+    hookName: string;
+    exitStatus: number | null;
+    output: string | null;
+    outputTruncated: boolean;
+    bypassSupported: boolean;
+};
+
+export type GitHookAttemptResult<T> =
+    | { status: "completed"; result: T; hookWarning: GitHookFailure | null; outputTruncated: boolean }
+    | ({ status: "hookRejected" } & GitHookFailure);
+
+export type GitHookOperation = "commit" | "push" | "checkout";
+
+export type GitHookProgressState = {
+    operation: GitHookOperation;
+    startedAt: number;
+    phase: "running" | "awaitingDecision" | "warning";
+    hookName: string | null;
+    output: string;
+    outputTruncated: boolean;
+    expanded: boolean;
+};
+
 export type CommitProgressState = {
     startedAt: number;
     phase: "running" | "awaitingDecision";

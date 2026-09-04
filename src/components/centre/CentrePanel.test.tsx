@@ -395,6 +395,65 @@ describe("CentrePanel tab persistence", () => {
   });
 });
 
+describe("CentrePanel hook feedback", () => {
+  it("shows push hook progress while the Log tab is active", () => {
+    renderCentrePanel({
+      activeTab: "log",
+      hookProgress: {
+        operation: "push",
+        startedAt: Date.now(),
+        phase: "running",
+        hookName: "pre-push",
+        output: "Checking refs\n",
+        outputTruncated: false,
+        expanded: false,
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Running pre-push hook");
+    fireEvent.click(screen.getByRole("button", {name: "View output"}));
+    expect(screen.getByText("Checking refs")).toBeInTheDocument();
+  });
+
+  it("offers the operation-specific push bypass", () => {
+    const onBypass = vi.fn();
+    renderCentrePanel({
+      hookRejection: {
+        operation: "push",
+        hookName: "pre-push",
+        exitStatus: 1,
+        output: "Push rejected",
+        outputTruncated: false,
+        bypassSupported: true,
+      },
+      onHookRejectionBypass: onBypass,
+    });
+
+    fireEvent.click(screen.getByRole("button", {name: "Push without hooks"}));
+    expect(onBypass).toHaveBeenCalledOnce();
+  });
+
+  it("reports checkout completion with a dismissible warning", () => {
+    const onDismiss = vi.fn();
+    renderCentrePanel({
+      hookProgress: {
+        operation: "checkout",
+        startedAt: Date.now(),
+        phase: "warning",
+        hookName: "post-checkout",
+        output: "Environment setup failed",
+        outputTruncated: false,
+        expanded: true,
+      },
+      onHookRejectionClose: onDismiss,
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Checkout completed with a warning");
+    fireEvent.click(screen.getByRole("button", {name: "Dismiss"}));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+});
+
 describe("CentrePanel AI conflict lock", () => {
   it("disables merge workflow actions while AI conflict resolution is active", () => {
     renderCentrePanel({

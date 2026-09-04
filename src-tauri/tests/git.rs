@@ -9,13 +9,13 @@ use gitmun_lib::git::error_interpretation::GitErrorCategory;
 use gitmun_lib::git::gix_handler::GixGitHandler;
 use gitmun_lib::git::handler::GitOperationHandler;
 use gitmun_lib::git::types::{
-    CommitAttemptResult, CommitDetailsRequest, CommitHistoryRequest, CommitLogScope,
+    BranchRequest, CommitAttemptResult, CommitDetailsRequest, CommitHistoryRequest, CommitLogScope,
     CommitProgressEvent, CommitRefKind, CommitRequest, CreateBranchRequest, DeleteBranchRequest,
     ExportCommitPatchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
-    FileRequest, IdentityRequest, IdentityScope, ImportPatchRequest, PushFailureKind, PushRequest,
-    RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
-    UnversionedItemKind,
+    FileRequest, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
+    PushFailureKind, PushRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
+    SetBranchUpstreamRequest, SetIdentityRequest, SshAllowedSignerReason, StageFilesRequest,
+    SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -1705,6 +1705,90 @@ fn commit_progress_truncates_successful_hook_output() {
     assert_eq!(
         git_stdout(dir.path(), &["log", "-1", "--format=%s"]),
         "large hook output"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn pre_push_rejection_can_be_retried_without_hooks() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (remote, local) = init_remote_with_clone();
+    write_file(local.path(), "push-check.txt", "checked");
+    git(local.path(), &["add", "push-check.txt"]);
+    git(local.path(), &["commit", "-m", "push check"]);
+    let hook_path = local.path().join(".git/hooks/pre-push");
+    fs::write(&hook_path, "#!/bin/sh\necho push hook output >&2\nexit 1\n")
+        .expect("write pre-push hook");
+    let mut permissions = fs::metadata(&hook_path)
+        .expect("hook metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&hook_path, permissions).expect("make hook executable");
+
+    let request = push_request(&local);
+    let rejected = handler()
+        .push_changes_with_progress(&request, false, Arc::new(|_| {}))
+        .expect("push result");
+    assert!(
+        matches!(rejected, GitHookAttemptResult::HookRejected { ref hook_name, bypass_supported: true, .. } if hook_name == "pre-push")
+    );
+    assert_ne!(head_hash(remote.path()), head_hash(local.path()));
+
+    let bypassed = handler()
+        .push_changes_with_progress(&request, true, Arc::new(|_| {}))
+        .expect("bypassed push");
+    assert!(
+        matches!(bypassed, GitHookAttemptResult::Completed { ref result, .. } if result.success)
+    );
+    assert_eq!(head_hash(remote.path()), head_hash(local.path()));
+}
+
+#[cfg(unix)]
+#[test]
+fn post_checkout_failure_reports_warning_without_repeating_checkout() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = init_repo();
+    git(dir.path(), &["branch", "feature/hook-warning"]);
+    let hook_path = dir.path().join(".git/hooks/post-checkout");
+    let count_path = dir.path().join("hook-count.txt");
+    fs::write(
+        &hook_path,
+        format!(
+            "#!/bin/sh\necho run >> '{}'\necho checkout hook output >&2\nexit 1\n",
+            count_path.display()
+        ),
+    )
+    .expect("write post-checkout hook");
+    let mut permissions = fs::metadata(&hook_path)
+        .expect("hook metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(&hook_path, permissions).expect("make hook executable");
+
+    let result = handler()
+        .switch_branch_with_progress(
+            &BranchRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                branch_name: "feature/hook-warning".to_string(),
+            },
+            Arc::new(|_| {}),
+        )
+        .expect("checkout warning result");
+    assert!(
+        matches!(result, GitHookAttemptResult::Completed { hook_warning: Some(ref warning), .. } if warning.hook_name == "post-checkout")
+    );
+    assert_eq!(
+        git_stdout(dir.path(), &["branch", "--show-current"]),
+        "feature/hook-warning"
+    );
+    assert_eq!(
+        fs::read_to_string(count_path)
+            .expect("read hook count")
+            .lines()
+            .count(),
+        1
     );
 }
 

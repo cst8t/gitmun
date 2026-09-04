@@ -11,14 +11,14 @@ use super::types::{
     CommitMessageRecovery, CommitPrimaryAction, CommitProgressEvent, CommitRequest,
     CreateBranchRequest, CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest,
     DeleteRemoteTagRequest, DeleteTagRequest, DiffRequest, ExportCommitPatchRequest,
-    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, GitIdentity,
-    HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
-    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
-    PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
+    ExportPatchRequest, ExternalDiffRequest, FetchRequest, FileDiff, FileRequest,
+    GitHookAttemptResult, GitIdentity, HunkStageRequest, IdentityRequest, ImportPatchRequest,
+    MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest,
+    PullAnalysis, PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest,
+    RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
+    RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
+    SetIdentityRequest, SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest,
+    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -658,6 +658,64 @@ impl GitService {
     ) -> GitResult<CommitAttemptResult> {
         self.cli_handler
             .commit_changes_with_progress(&request, on_progress)
+    }
+
+    pub fn push_changes_with_progress(
+        &self,
+        request: PushRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<PushResult>> {
+        self.cli_handler
+            .push_changes_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn switch_branch_with_progress(
+        &self,
+        request: BranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .switch_branch_with_progress(&request, on_progress)
+    }
+
+    pub fn create_branch_with_progress(
+        &self,
+        request: CreateBranchRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .create_branch_with_progress(&request, on_progress)
+    }
+
+    pub fn push_tag_with_progress(
+        &self,
+        request: PushTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .push_tag_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn delete_remote_tag_with_progress(
+        &self,
+        request: DeleteRemoteTagRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .delete_remote_tag_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn delete_remote_branch_with_progress(
+        &self,
+        request: DeleteRemoteBranchRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .delete_remote_branch_with_progress(&request, skip_hooks, on_progress)
     }
 
     forward_write_methods! {

@@ -771,6 +771,37 @@ pub enum CommitAttemptResult {
     },
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHookFailure {
+    pub hook_name: String,
+    pub exit_status: Option<i32>,
+    pub output: Option<String>,
+    pub output_truncated: bool,
+    pub bypass_supported: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "status"
+)]
+pub enum GitHookAttemptResult<T> {
+    Completed {
+        result: T,
+        hook_warning: Option<GitHookFailure>,
+        output_truncated: bool,
+    },
+    HookRejected {
+        hook_name: String,
+        exit_status: Option<i32>,
+        output: Option<String>,
+        output_truncated: bool,
+        bypass_supported: bool,
+    },
+}
+
 #[cfg(test)]
 mod commit_hook_serialisation_tests {
     use super::{CommitAttemptResult, CommitProgressEvent};

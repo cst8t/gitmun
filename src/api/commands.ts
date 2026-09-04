@@ -10,6 +10,8 @@ import type {
     CommitVerification,
     CommitAttemptResult,
     CommitProgressEvent,
+    GitHookAttemptResult,
+    GitHookProgressEvent,
     CommitRequest,
     CommitMessageRecovery,
     CreateBranchRequest,
@@ -136,12 +138,12 @@ export function getBranches(repoPath: string): Promise<BranchInfo[]> {
     return invoke<BranchInfo[]>("get_branches", {request: {repoPath}});
 }
 
-export function switchBranch(repoPath: string, branchName: string): Promise<OperationResult> {
-    return invoke<OperationResult>("switch_branch", {request: {repoPath, branchName}});
+export function switchBranch(repoPath: string, branchName: string, onProgress: Channel<GitHookProgressEvent>): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("switch_branch", {request: {repoPath, branchName}, onProgress});
 }
 
-export function createBranch(request: CreateBranchRequest): Promise<OperationResult> {
-    return invoke<OperationResult>("create_branch", {request});
+export function createBranch(request: CreateBranchRequest, onProgress: Channel<GitHookProgressEvent>): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("create_branch", {request, onProgress});
 }
 
 export function deleteBranch(request: DeleteBranchRequest): Promise<OperationResult> {
@@ -160,16 +162,16 @@ export function createTag(request: CreateTagRequest): Promise<OperationResult> {
     return invoke<OperationResult>("create_tag", {request});
 }
 
-export function pushTag(request: PushTagRequest): Promise<OperationResult> {
-    return invoke<OperationResult>("push_tag", {request});
+export function pushTag(request: PushTagRequest, onProgress: Channel<GitHookProgressEvent>, skipHooks = false): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("push_tag", {request, onProgress, skipHooks});
 }
 
-export function deleteRemoteTag(request: DeleteRemoteTagRequest): Promise<OperationResult> {
-    return invoke<OperationResult>("delete_remote_tag", {request});
+export function deleteRemoteTag(request: DeleteRemoteTagRequest, onProgress: Channel<GitHookProgressEvent>, skipHooks = false): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("delete_remote_tag", {request, onProgress, skipHooks});
 }
 
-export function deleteRemoteBranch(request: DeleteRemoteBranchRequest): Promise<OperationResult> {
-    return invoke<OperationResult>("delete_remote_branch", {request});
+export function deleteRemoteBranch(request: DeleteRemoteBranchRequest, onProgress: Channel<GitHookProgressEvent>, skipHooks = false): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("delete_remote_branch", {request, onProgress, skipHooks});
 }
 
 export function getCommitHistory(
@@ -320,8 +322,8 @@ export function pullWithStrategy(repoPath: string, strategy: PullStrategy): Prom
     return invoke<OperationResult>("pull_with_strategy", {request: {repoPath, strategy}});
 }
 
-export function pushChanges(request: PushRequest): Promise<PushResult> {
-    return invoke<PushResult>("push_changes", {request});
+export function pushChanges(request: PushRequest, onProgress: Channel<GitHookProgressEvent>, skipHooks = false): Promise<GitHookAttemptResult<PushResult>> {
+    return invoke<GitHookAttemptResult<PushResult>>("push_changes", {request, onProgress, skipHooks});
 }
 
 export function setBranchUpstream(request: SetBranchUpstreamRequest): Promise<OperationResult> {
