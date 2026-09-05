@@ -350,10 +350,9 @@ fn effective_gpg_program(
     runner: &impl VerificationRunner,
 ) -> Result<String, String> {
     if let Ok(Some(program)) = runner.git_config_get(repo_path, "gpg.program") {
-        // Validate the repository-provided gpg.program to prevent arbitrary code execution.
-        // Repository-local config is untrusted and must not specify arbitrary executable paths.
-        let validated = validate_gpg_program_from_repo(&program)?;
-        return Ok(validated);
+        if let Some(validated) = validate_gpg_program_from_repo(&program) {
+            return Ok(validated);
+        }
     }
 
     #[cfg(windows)]
@@ -366,78 +365,41 @@ fn effective_gpg_program(
     Ok("gpg".to_string())
 }
 
-/// Validates a GPG program path from repository-local configuration.
-/// Repository config is untrusted, so we only allow:
-/// 1. Simple program names (no path separators) that exist on system PATH
-/// 2. Absolute paths that exist and point to real files
-/// This prevents arbitrary code execution via crafted .git/config files.
-fn validate_gpg_program_from_repo(program: &str) -> Result<String, String> {
+/// Accepts programs resolved from `PATH` and existing absolute files.
+fn validate_gpg_program_from_repo(program: &str) -> Option<String> {
     let trimmed = program.trim().trim_matches('"');
-    
+
     if trimmed.is_empty() {
-        return Err("GPG program cannot be empty".to_string());
+        return None;
     }
 
-    // Check if this looks like a path (contains path separators or is absolute)
-    let is_path_like = Path::new(trimmed).is_absolute() 
-        || trimmed.contains('/') 
-        || trimmed.contains('\\');
+    let is_path_like =
+        Path::new(trimmed).is_absolute() || trimmed.contains('/') || trimmed.contains('\\');
 
     if is_path_like {
-        // For path-like values, require absolute paths that exist
         let path = Path::new(trimmed);
-        if !path.is_absolute() {
-            return Err(format!(
-                "Repository-local gpg.program must be an absolute path or simple program name, got: {}",
-                trimmed
-            ));
+        if path.is_absolute() && path.is_file() {
+            return Some(trimmed.to_string());
         }
-        if !path.exists() {
-            return Err(format!(
-                "Repository-local gpg.program path does not exist: {}",
-                trimmed
-            ));
-        }
-        if !path.is_file() {
-            return Err(format!(
-                "Repository-local gpg.program must be a file, not a directory: {}",
-                trimmed
-            ));
-        }
-        Ok(trimmed.to_string())
-    } else {
-        // For simple program names, verify they exist on PATH
-        #[cfg(windows)]
-        {
-            let exe_name = format!("{}.exe", trimmed);
-            let names = [exe_name.as_str(), trimmed];
-            if !program_exists_on_path(&names) {
-                return Err(format!(
-                    "Repository-local gpg.program '{}' not found on system PATH",
-                    trimmed
-                ));
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            let names = [trimmed];
-            if !program_exists_on_path(&names) {
-                return Err(format!(
-                    "Repository-local gpg.program '{}' not found on system PATH",
-                    trimmed
-                ));
-            }
-        }
-        Ok(trimmed.to_string())
+        return None;
     }
+
+    #[cfg(windows)]
+    let exists = {
+        let executable_name = format!("{trimmed}.exe");
+        program_exists_on_path(&[executable_name.as_str(), trimmed])
+    };
+    #[cfg(not(windows))]
+    let exists = program_exists_on_path(&[trimmed]);
+
+    exists.then(|| trimmed.to_string())
 }
 
-/// Checks if a program exists on the system PATH
 fn program_exists_on_path(names: &[&str]) -> bool {
     let Some(path_var) = std::env::var_os("PATH") else {
         return false;
     };
-    
+
     for dir in std::env::split_paths(&path_var) {
         for name in names {
             let candidate = dir.join(name);
@@ -688,51 +650,45 @@ mod tests {
 
     #[test]
     fn validate_gpg_program_rejects_empty_string() {
-        let result = validate_gpg_program_from_repo("");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("cannot be empty"));
+        assert_eq!(validate_gpg_program_from_repo(""), None);
     }
 
     #[test]
     fn validate_gpg_program_rejects_relative_paths() {
-        let result = validate_gpg_program_from_repo("./malicious/gpg");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("absolute path"));
+        assert_eq!(validate_gpg_program_from_repo("./malicious/gpg"), None);
     }
 
     #[test]
     fn validate_gpg_program_rejects_relative_paths_with_backslash() {
-        let result = validate_gpg_program_from_repo(".\\malicious\\gpg");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("absolute path"));
+        assert_eq!(validate_gpg_program_from_repo(".\\malicious\\gpg"), None);
     }
 
     #[test]
     fn validate_gpg_program_rejects_nonexistent_absolute_paths() {
-        let result = validate_gpg_program_from_repo("/nonexistent/path/to/gpg");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("does not exist"));
+        assert_eq!(
+            validate_gpg_program_from_repo("/nonexistent/path/to/gpg"),
+            None
+        );
     }
 
     #[test]
     fn validate_gpg_program_rejects_nonexistent_program_names() {
-        let result = validate_gpg_program_from_repo("nonexistent_gpg_program_12345");
-        assert!(result.is_err());
-        assert!(result.unwrap_err().contains("not found on system PATH"));
+        assert_eq!(
+            validate_gpg_program_from_repo("nonexistent_gpg_program_12345"),
+            None
+        );
     }
 
     #[test]
-    fn validate_gpg_program_accepts_gpg_if_on_path() {
-        // This test will pass if gpg is on PATH, otherwise it will fail
-        // which is the correct behavior - we should only accept programs that exist
-        let result = validate_gpg_program_from_repo("gpg");
-        // We can't assert success here because gpg might not be installed
-        // but we can verify the error message is correct if it fails
-        if let Err(e) = result {
-            assert!(e.contains("not found on system PATH"));
-        }
+    fn validate_gpg_program_accepts_existing_absolute_file() {
+        let executable = std::env::current_exe().expect("current test executable");
+        let executable = executable.to_str().expect("UTF-8 executable path");
+
+        assert_eq!(
+            validate_gpg_program_from_repo(executable),
+            Some(executable.to_string())
+        );
     }
-}
 }
 
 #[tauri::command]
