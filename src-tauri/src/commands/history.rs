@@ -110,8 +110,6 @@ impl VerificationRunner for ProcessVerificationRunner {
     fn git_config_get_global(&self, repo_path: &str, key: &str) -> Result<Option<String>, String> {
         let mut command = crate::configured_git_command();
         command.current_dir(repo_path);
-        // Use --global flag to only read from global config, not repository-local config.
-        // This prevents malicious repositories from specifying arbitrary executables.
         let output = command
             .args(["config", "--global", "--get", key])
             .output()
@@ -377,16 +375,10 @@ fn effective_gpg_program(
     repo_path: &str,
     runner: &impl VerificationRunner,
 ) -> Result<String, String> {
-    // Only read gpg.program from global config to prevent repository-local
-    // config from specifying arbitrary executables. This mitigates a code execution
-    // vulnerability where a malicious repository could set gpg.program to an
-    // attacker-controlled executable.
     if let Ok(Some(program)) = runner.git_config_get_global(repo_path, "gpg.program") {
         if let Some(validated) = validate_gpg_program_path(&program) {
             return Ok(validated);
         }
-        // If validation fails, fall through to system defaults rather than failing,
-        // to maintain functionality when global config contains invalid values
     }
 
     #[cfg(windows)]
@@ -399,13 +391,7 @@ fn effective_gpg_program(
     Ok("gpg".to_string())
 }
 
-/// Validates that a GPG program path is safe to execute.
-/// Returns Some(validated_path) if the program is safe, None otherwise.
-/// 
-/// Safety criteria:
-/// - Simple command names (no path separators) are allowed and resolved via PATH
-/// - Absolute paths must exist and point to a file
-/// - Relative paths are rejected to prevent repository-controlled executables
+/// Accepts command names and existing absolute files, but not relative paths.
 fn validate_gpg_program_path(program: &str) -> Option<String> {
     let trimmed = program.trim().trim_matches('"');
     if trimmed.is_empty() {
@@ -413,20 +399,16 @@ fn validate_gpg_program_path(program: &str) -> Option<String> {
     }
 
     let path = Path::new(trimmed);
-    
-    // Check if this looks like a path (contains path separators)
+
     let is_path_like = path.is_absolute() || trimmed.contains('/') || trimmed.contains('\\');
-    
+
     if is_path_like {
-        // For path-like values, only accept absolute paths that exist
         if path.is_absolute() && path.is_file() {
             return Some(trimmed.to_string());
         }
-        // Reject relative paths - they could point to repository-controlled files
         return None;
     }
-    
-    // Simple command names (no path separators) are safe - they'll be resolved via PATH
+
     Some(trimmed.to_string())
 }
 
@@ -454,7 +436,7 @@ mod tests {
         verification_succeeds: bool,
         verification_stderr: Option<String>,
         key_types: HashMap<String, String>,
-        gpg_program: Option<String>,
+        global_gpg_program: Option<String>,
     }
 
     impl FakeRunner {
@@ -469,7 +451,7 @@ mod tests {
                 verification_succeeds: true,
                 verification_stderr: None,
                 key_types: HashMap::new(),
-                gpg_program: None,
+                global_gpg_program: None,
             }
         }
 
@@ -490,23 +472,25 @@ mod tests {
             self
         }
 
-        fn with_gpg_program(mut self, program: &str) -> Self {
-            self.gpg_program = Some(program.to_string());
+        fn with_global_gpg_program(mut self, program: &str) -> Self {
+            self.global_gpg_program = Some(program.to_string());
             self
         }
     }
 
     impl VerificationRunner for FakeRunner {
         fn git_config_get(&self, _repo_path: &str, key: &str) -> Result<Option<String>, String> {
-            Ok(match key {
-                "gpg.program" => self.gpg_program.clone(),
-                _ => None,
-            })
+            Ok((key == "gpg.program").then(|| "repository-controlled-gpg".to_string()))
         }
 
-        fn git_config_get_global(&self, _repo_path: &str, key: &str) -> Result<Option<String>, String> {
-            // For tests, treat global config the same as regular config
-            self.git_config_get(_repo_path, key)
+        fn git_config_get_global(
+            &self,
+            _repo_path: &str,
+            key: &str,
+        ) -> Result<Option<String>, String> {
+            Ok((key == "gpg.program")
+                .then(|| self.global_gpg_program.clone())
+                .flatten())
         }
 
         fn verify_signatures(
@@ -596,14 +580,14 @@ mod tests {
             "a\x1fG\x1fAlice\x1fABC123\x1fABC123",
         ])
         .with_key_type("a", "gpg")
-        .with_gpg_program("/usr/local/bin/gpg");
+        .with_global_gpg_program("gpg");
         let results = verify_commit_signatures("/repo", &["a".to_string()], true, &runner)
             .expect("verification should complete");
 
         assert_eq!(results[0].status, SignatureStatus::Verified);
         assert_eq!(
             runner.fetched_keys.borrow().as_slice(),
-            &["/usr/local/bin/gpg ABC123".to_string()]
+            &["gpg ABC123".to_string()]
         );
         assert_eq!(
             runner.verified_hashes.borrow().as_slice(),
@@ -674,14 +658,8 @@ mod tests {
 
     #[test]
     fn validate_gpg_program_accepts_simple_command_names() {
-        assert_eq!(
-            validate_gpg_program_path("gpg"),
-            Some("gpg".to_string())
-        );
-        assert_eq!(
-            validate_gpg_program_path("gpg2"),
-            Some("gpg2".to_string())
-        );
+        assert_eq!(validate_gpg_program_path("gpg"), Some("gpg".to_string()));
+        assert_eq!(validate_gpg_program_path("gpg2"), Some("gpg2".to_string()));
         assert_eq!(
             validate_gpg_program_path("  gpg  "),
             Some("gpg".to_string())
@@ -699,10 +677,7 @@ mod tests {
 
     #[test]
     fn validate_gpg_program_rejects_nonexistent_absolute_paths() {
-        assert_eq!(
-            validate_gpg_program_path("/nonexistent/path/to/gpg"),
-            None
-        );
+        assert_eq!(validate_gpg_program_path("/nonexistent/path/to/gpg"), None);
         #[cfg(windows)]
         assert_eq!(
             validate_gpg_program_path("C:\\nonexistent\\path\\to\\gpg.exe"),
