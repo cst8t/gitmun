@@ -52,6 +52,12 @@ jobs:
       - name: Run frontend tests
         run: npm test
 
+      - name: Test OBS release readiness
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m unittest scripts/obs/tests/test_release_readiness.py
+          bash scripts/obs/tests/test_wait_timeout.sh
+
       - name: TypeScript type check
         run: npx tsc --noEmit
 

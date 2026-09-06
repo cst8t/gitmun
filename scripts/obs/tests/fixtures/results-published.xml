@@ -1,0 +1,8 @@
+<resultlist state="fixture">
+  <result repository="xUbuntu_26.04" arch="x86_64" code="published" state="published">
+    <status package="gitmun" code="succeeded"/>
+  </result>
+  <result repository="AppImage" arch="x86_64" code="published" state="published">
+    <status package="gitmun" code="succeeded"/>
+  </result>
+</resultlist>

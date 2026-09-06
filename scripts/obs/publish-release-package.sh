@@ -14,7 +14,11 @@ package="${OBS_PACKAGE:-gitmun}"
 deb_repository="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
 deb_arch="${OBS_DEB_ARCH:-x86_64}"
 obs_poll_seconds="${OBS_POLL_SECONDS:-60}"
+ubuntu_rust_source_project="home:alvistack"
+ubuntu_rust_source_package="rust-lang-rust-1.98.0"
+ubuntu_rust_aggregate_package="rust-toolchain-ubuntu"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
+project_metadata="${repo_root}/packaging/obs/home-cst8t-gitmun-project.xml"
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
 
@@ -23,64 +27,33 @@ source_tarball="${tmp_dir}/${release_root}.tar.xz"
 render_dir="${tmp_dir}/rendered"
 checkout_dir="${tmp_dir}/checkout"
 
-read_obs_build_code() {
-  local results_file="$1"
+ensure_ubuntu_rust_toolchain() {
+  local aggregate_checkout="${tmp_dir}/${ubuntu_rust_aggregate_package}"
+  local aggregate_definition="${tmp_dir}/_aggregate"
 
-  OBS_PACKAGE_NAME="$package" python3 - "$results_file" <<'PY'
-import os
-import sys
-import xml.etree.ElementTree as ET
+  cat >"$aggregate_definition" <<EOF
+<aggregatelist>
+  <aggregate project="${ubuntu_rust_source_project}">
+    <package>${ubuntu_rust_source_package}</package>
+    <nosources />
+    <repository target="${deb_repository}" source="${deb_repository}" />
+  </aggregate>
+</aggregatelist>
+EOF
 
-package = os.environ["OBS_PACKAGE_NAME"]
-root = ET.parse(sys.argv[1]).getroot()
-
-for result in root.findall("result"):
-    result_dirty = result.get("dirty") is not None
-    result_code = result.get("code") or "unknown"
-    for status in result.findall("status"):
-        if status.get("package") == package:
-            print("dirty" if result_dirty else status.get("code", result_code))
-            raise SystemExit(0)
-
-print("missing")
-raise SystemExit(2)
-PY
-}
-
-wait_for_obs_build() {
-  local repository="$1"
-  local arch="$2"
-  local results_file="${tmp_dir}/obs-results.xml"
-  local build_code
-
-  echo "Waiting for OBS build: ${project}/${package} ${repository} ${arch}"
-
-  while true; do
-    osc results --xml --no-multibuild -r "$repository" -a "$arch" "$project" "$package" >"$results_file"
-    if ! build_code="$(read_obs_build_code "$results_file")"; then
-      build_code="${build_code:-missing}"
+  if osc checkout --output-dir "$aggregate_checkout" "$project" "$ubuntu_rust_aggregate_package"; then
+    if ! cmp -s "$aggregate_definition" "${aggregate_checkout}/_aggregate"; then
+      cp "$aggregate_definition" "${aggregate_checkout}/_aggregate"
+      (
+        cd "$aggregate_checkout"
+        osc commit -m "Update Ubuntu Rust toolchain aggregate to ${ubuntu_rust_source_package}"
+      )
     fi
-    echo "OBS build status for ${repository}/${arch}: ${build_code}"
-
-    case "$build_code" in
-      succeeded)
-        osc results --no-multibuild -r "$repository" -a "$arch" "$project" "$package"
-        return 0
-        ;;
-      failed|broken|unresolvable|missing)
-        osc results -v --no-multibuild -r "$repository" -a "$arch" "$project" "$package" || true
-        return 1
-        ;;
-      blocked|scheduled|dispatching|building|signing|finished|dirty|unknown)
-        sleep "$obs_poll_seconds"
-        ;;
-      *)
-        echo "Unexpected OBS build status for ${repository}/${arch}: ${build_code}" >&2
-        osc results -v --no-multibuild -r "$repository" -a "$arch" "$project" "$package" || true
-        return 1
-        ;;
-    esac
-  done
+  else
+    osc aggregatepac --nosources -m "${deb_repository}=${deb_repository}" \
+      "$ubuntu_rust_source_project" "$ubuntu_rust_source_package" \
+      "$project" "$ubuntu_rust_aggregate_package"
+  fi
 }
 
 for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc package-lock.json ATTRIBUTIONS.html commit-hash.txt; do
@@ -89,6 +62,10 @@ for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc pa
     exit 1
   fi
 done
+
+if [ "$deb_repository" = "xUbuntu_26.04" ]; then
+  ensure_ubuntu_rust_toolchain
+fi
 
 mkdir -p "$render_dir"
 
@@ -166,4 +143,6 @@ cp "${input_dir}/commit-hash.txt" "$checkout_dir"/
 )
 
 osc rebuild "$project" "$package" "$deb_repository" "$deb_arch"
-wait_for_obs_build "$deb_repository" "$deb_arch"
+OBS_POLL_SECONDS="$obs_poll_seconds" \
+  bash "${repo_root}/scripts/obs/wait-for-release-publication.sh" \
+  "$project" "$package" "$project_metadata"

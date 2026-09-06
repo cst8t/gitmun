@@ -1,0 +1,8 @@
+<project name="home:cst8t:gitmun">
+  <repository name="xUbuntu_26.04">
+    <arch>x86_64</arch>
+  </repository>
+  <repository name="AppImage">
+    <arch>x86_64</arch>
+  </repository>
+</project>

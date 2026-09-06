@@ -119,6 +119,8 @@ jobs:
           OBS_PACKAGE: gitmun
           OBS_DEB_REPOSITORY: xUbuntu_26.04
           OBS_DEB_ARCH: x86_64
+          OBS_POLL_SECONDS: '60'
+          OBS_WAIT_TIMEOUT_SECONDS: '21600'
         run: bash ./scripts/obs/publish-release-package.sh "${BUNDLE_VERSION}" ./obs-release-inputs
 
       - name: Download Ubuntu deb package from OBS
