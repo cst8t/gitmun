@@ -129,6 +129,24 @@
   background: var(--bg-surface);
 }
 
+.staging__commit-progress--banner {
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+
+.staging__commit-progress--banner .staging__operation-inline {
+  margin: 0;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.staging__commit-progress--banner .staging__commit-output {
+  margin: 0 14px 8px;
+}
+
 .staging__operation-spinner {
   width: 16px;
   height: 16px;

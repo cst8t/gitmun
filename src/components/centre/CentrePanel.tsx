@@ -165,7 +165,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
       : progress.hookName
         ? t("gitHooks.runningHook", {hook: progress.hookName})
         : t("gitHooks.runningOperation", {operation: t(`gitHooks.operations.${progress.operation}`)});
-  return <div className="staging__commit-progress" role="status" aria-live="polite">
+  return <div className="staging__commit-progress staging__commit-progress--banner" role="status" aria-live="polite">
     <div className="staging__operation-inline">
       {progress.phase === "running" ? <div className="staging__operation-spinner" aria-hidden="true" /> : <div className="staging__operation-failed" aria-hidden="true">!</div>}
       <div className="staging__operation-copy">
