@@ -14,9 +14,6 @@ package="${OBS_PACKAGE:-gitmun}"
 deb_repository="${OBS_DEB_REPOSITORY:-xUbuntu_26.04}"
 deb_arch="${OBS_DEB_ARCH:-x86_64}"
 obs_poll_seconds="${OBS_POLL_SECONDS:-60}"
-ubuntu_rust_source_project="home:alvistack"
-ubuntu_rust_source_package="rust-lang-rust-1.98.0"
-ubuntu_rust_aggregate_package="rust-toolchain-ubuntu"
 repo_root="$(cd "$(dirname "$0")/../.." && pwd)"
 project_metadata="${repo_root}/packaging/obs/home-cst8t-gitmun-project.xml"
 tmp_dir="$(mktemp -d)"
@@ -27,45 +24,12 @@ source_tarball="${tmp_dir}/${release_root}.tar.xz"
 render_dir="${tmp_dir}/rendered"
 checkout_dir="${tmp_dir}/checkout"
 
-ensure_ubuntu_rust_toolchain() {
-  local aggregate_checkout="${tmp_dir}/${ubuntu_rust_aggregate_package}"
-  local aggregate_definition="${tmp_dir}/_aggregate"
-
-  cat >"$aggregate_definition" <<EOF
-<aggregatelist>
-  <aggregate project="${ubuntu_rust_source_project}">
-    <package>${ubuntu_rust_source_package}</package>
-    <nosources />
-    <repository target="${deb_repository}" source="${deb_repository}" />
-  </aggregate>
-</aggregatelist>
-EOF
-
-  if osc checkout --output-dir "$aggregate_checkout" "$project" "$ubuntu_rust_aggregate_package"; then
-    if ! cmp -s "$aggregate_definition" "${aggregate_checkout}/_aggregate"; then
-      cp "$aggregate_definition" "${aggregate_checkout}/_aggregate"
-      (
-        cd "$aggregate_checkout"
-        osc commit -m "Update Ubuntu Rust toolchain aggregate to ${ubuntu_rust_source_package}"
-      )
-    fi
-  else
-    osc aggregatepac --nosources -m "${deb_repository}=${deb_repository}" \
-      "$ubuntu_rust_source_project" "$ubuntu_rust_source_package" \
-      "$project" "$ubuntu_rust_aggregate_package"
-  fi
-}
-
 for required_file in vendor.tar.xz node_modules.obscpio node_modules.spec.inc package-lock.json ATTRIBUTIONS.html commit-hash.txt; do
   if [ ! -f "${input_dir}/${required_file}" ]; then
     echo "missing required input: ${input_dir}/${required_file}" >&2
     exit 1
   fi
 done
-
-if [ "$deb_repository" = "xUbuntu_26.04" ]; then
-  ensure_ubuntu_rust_toolchain
-fi
 
 mkdir -p "$render_dir"
 
