@@ -1,0 +1,9 @@
+<package name="rust-toolchain-1.98.1" project="home:cst8t:gitmun">
+  <title>Fixed Rust 1.98.1 toolchain for Gitmun</title>
+  <description>Independent copy of home:alvistack/rust-lang-rust-1.98.1 revision 1, source MD5 5a5a495f4adfdd6d666f4506f7ba0743.</description>
+  <build>
+    <disable repository="AppImage"/>
+    <disable repository="openSUSE_Slowroll"/>
+  </build>
+  <url>https://github.com/rust-lang/rust/releases/tag/1.98.1</url>
+</package>
