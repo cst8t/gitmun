@@ -60,6 +60,7 @@ import type {
   GitIdentity,
   GitHookAttemptResult,
   GitHookFailure,
+  GitHookOperation,
   GitHookProgressEvent,
   GitHookProgressState,
   ImportPatchRequest,
@@ -143,6 +144,8 @@ const PATCH_EXPORT_ERROR_CODES = [
 ] as const;
 const PATCH_IMPORT_APPLIED = "GITMUN_PATCH_IMPORT_APPLIED";
 const PATCH_IMPORT_CONFLICTS = "GITMUN_PATCH_IMPORT_CONFLICTS";
+const MERGE_HOOK_ROLLBACK_FAILED = "GITMUN_MERGE_HOOK_ROLLBACK_FAILED";
+const MERGE_HOOK_ROLLBACK_INCOMPLETE = "GITMUN_MERGE_HOOK_ROLLBACK_INCOMPLETE";
 const PATCH_IMPORT_MESSAGE_CODES = [
   PATCH_IMPORT_APPLIED,
   PATCH_IMPORT_CONFLICTS,
@@ -168,6 +171,13 @@ function localisePatchExportError(message: string, t: TFunction<"projectView">):
 function localisePatchImportMessage(message: string, t: TFunction<"projectView">): string {
   const code = PATCH_IMPORT_MESSAGE_CODES.find(code => message.includes(code));
   return code ? t(`patch.import.${code}`) : message;
+}
+
+function localiseMergeHookRollbackError(error: unknown, t: TFunction<"projectView">): string {
+  const message = String(error);
+  if (message.includes(MERGE_HOOK_ROLLBACK_FAILED)) return t("toast.mergeHookRollbackFailed");
+  if (message.includes(MERGE_HOOK_ROLLBACK_INCOMPLETE)) return t("toast.mergeHookRollbackIncomplete");
+  return message;
 }
 
 export function buildStashDropPrompt(
@@ -428,7 +438,7 @@ export function ProjectView({
   const operationLockRef = useRef<LongRunningOperation | null>(null);
   const nextOperationIdRef = useRef(1);
   const [hookProgress, setHookProgress] = useState<GitHookProgressState | null>(null);
-  const [hookRejection, setHookRejection] = useState<(GitHookFailure & {operation: "commit" | "push"}) | null>(null);
+  const [hookRejection, setHookRejection] = useState<(GitHookFailure & {operation: GitHookOperation}) | null>(null);
   const hookDecisionRef = useRef<((skipHooks: boolean) => void) | null>(null);
 
   useEffect(() => () => {
@@ -731,7 +741,7 @@ export function ProjectView({
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
   }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
 
-  const createHookProgressChannel = useCallback((operation: "commit" | "push" | "checkout") => {
+  const createHookProgressChannel = useCallback((operation: GitHookOperation) => {
     const progress = new Channel<GitHookProgressEvent>();
     setHookProgress({operation, startedAt: Date.now(), phase: "running", hookName: null, output: "", outputTruncated: false, expanded: false});
     progress.onmessage = event => {
@@ -747,33 +757,54 @@ export function ProjectView({
     return progress;
   }, []);
 
-  const runPushHookOperation = useCallback(async <T,>(
+  const runBlockingHookOperation = useCallback(async <T extends Pick<OperationResult, "backendUsed">,>(
+    hookOperation: Exclude<GitHookOperation, "checkout">,
     operation: (progress: Channel<GitHookProgressEvent>, skipHooks: boolean) => Promise<GitHookAttemptResult<T>>,
   ): Promise<T | null> => {
     let skipHooks = false;
     for (;;) {
       let attempt: GitHookAttemptResult<T>;
       try {
-        attempt = await operation(createHookProgressChannel("push"), skipHooks);
+        attempt = await operation(createHookProgressChannel(hookOperation), skipHooks);
       } catch (error) {
         setHookProgress(null);
         throw error;
       }
       if (attempt.status === "completed") {
-        setHookProgress(null);
-        if (skipHooks) appendResultLog("info", t("log.pushHooksSkipped"), "git-cli");
+        await refreshAll().catch(() => undefined);
+        if (attempt.hookWarning) {
+          setHookProgress(current => ({
+            operation: hookOperation,
+            startedAt: current?.startedAt ?? Date.now(),
+            phase: "warning",
+            hookName: attempt.hookWarning?.hookName ?? null,
+            output: attempt.hookWarning?.output ?? current?.output ?? "",
+            outputTruncated: attempt.hookWarning?.outputTruncated ?? false,
+            expanded: true,
+          }));
+          showToast(t("toast.hookWarning", {operation: t(`hookOperationNames.${hookOperation}`)}), "info");
+          appendResultLog("error", t("log.hookWarning", {operation: t(`hookOperationNames.${hookOperation}`), hook: attempt.hookWarning.hookName}), attempt.result.backendUsed, undefined, attempt.hookWarning.output ?? undefined);
+        } else {
+          setHookProgress(null);
+        }
+        if (skipHooks) appendResultLog("info", t("log.hooksSkipped", {operation: t(`hookOperationNames.${hookOperation}`)}), "git-cli");
         return attempt.result;
       }
       setHookProgress(current => current ? {...current, phase: "awaitingDecision", hookName: attempt.hookName, output: attempt.output ?? current.output, outputTruncated: attempt.outputTruncated, expanded: true} : current);
-      setHookRejection({...attempt, operation: "push"});
+      await refreshAll().catch(() => undefined);
+      setHookRejection({...attempt, operation: hookOperation});
       skipHooks = await new Promise<boolean>(resolve => { hookDecisionRef.current = resolve; });
       if (!skipHooks) {
-        appendResultLog("error", t("log.pushHookRejected", {hook: attempt.hookName}), "git-cli", undefined, attempt.output ?? undefined);
+        appendResultLog("error", t("log.hookRejected", {operation: t(`hookOperationNames.${hookOperation}`), hook: attempt.hookName}), "git-cli", undefined, attempt.output ?? undefined);
         setHookProgress(null);
         return null;
       }
     }
-  }, [createHookProgressChannel, t]);
+  }, [createHookProgressChannel, refreshAll, showToast, t]);
+
+  const runPushHookOperation = useCallback(<T extends Pick<OperationResult, "backendUsed">>(
+    operation: (progress: Channel<GitHookProgressEvent>, skipHooks: boolean) => Promise<GitHookAttemptResult<T>>,
+  ) => runBlockingHookOperation("push", operation), [runBlockingHookOperation]);
 
   const runCheckoutHookOperation = useCallback(async (
     operation: (progress: Channel<GitHookProgressEvent>) => Promise<GitHookAttemptResult<OperationResult>>,
@@ -840,7 +871,8 @@ export function ProjectView({
     showToast,
     onForcePushComplete: handleForcePushComplete,
     onFetchAttemptComplete,
-    pushChanges: request => runPushHookOperation((progress, skipHooks) => api.pushChanges(request, progress, skipHooks)),
+    pushChanges: request => runBlockingHookOperation("push", (progress, skipHooks) => api.pushChanges(request, progress, skipHooks)),
+    pullWithStrategy: strategy => runBlockingHookOperation("pull", (progress, skipHooks) => api.pullWithStrategy(repoPath!, strategy, progress, skipHooks)),
   });
 
   useEffect(() => {
@@ -1907,7 +1939,8 @@ export function ProjectView({
 
     setIsRebaseActionRunning(true);
     try {
-      const result = await api.rebaseStart({ repoPath, onto: ontoBranch });
+      const result = await runBlockingHookOperation("rebase", progress => api.rebaseStart({ repoPath, onto: ontoBranch }, progress));
+      if (!result) return;
       if (result.hasConflicts) {
         showToast(t("toast.rebaseConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
@@ -1919,18 +1952,20 @@ export function ProjectView({
       }
       await refreshAll();
     } catch (e) {
+      await refreshAll().catch(() => undefined);
       showToast(String(e), "error");
       appendResultLog("error", t("log.rebaseFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, cherryPickInProgress, mergeInProgress, rebaseInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, showToast, t]);
+  }, [repoPath, cherryPickInProgress, mergeInProgress, rebaseInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleRebaseContinue = useCallback(async () => {
     if (!repoPath || !rebaseInProgress) return;
     setIsRebaseActionRunning(true);
     try {
-      const result = await api.rebaseContinue(repoPath);
+      const result = await runBlockingHookOperation("rebase", progress => api.rebaseContinue(repoPath, progress));
+      if (!result) return;
       if (result.hasConflicts) {
         showToast(t("toast.rebaseConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
@@ -1944,12 +1979,13 @@ export function ProjectView({
       }
       await refreshAll();
     } catch (e) {
+      await refreshAll().catch(() => undefined);
       showToast(String(e), "error");
       appendResultLog("error", t("log.rebaseContinueFailed", { message: String(e) }), "unknown");
     } finally {
       setIsRebaseActionRunning(false);
     }
-  }, [repoPath, rebaseInProgress, currentBranch, refreshAll, showToast, t]);
+  }, [repoPath, rebaseInProgress, currentBranch, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleRebaseAbort = useCallback(async () => {
     if (!repoPath || !rebaseInProgress) return;
@@ -2163,7 +2199,8 @@ export function ProjectView({
         noFf: strategy === "no-ff",
         ffOnly: strategy === "ff-only",
       };
-      const result = await api.mergeBranch(repoPath, mergePendingBranch, options);
+      const result = await runBlockingHookOperation("merge", (progress, skipHooks) => api.mergeBranch(repoPath, mergePendingBranch, options, progress, skipHooks));
+      if (!result) return;
       if (result.hasConflicts) {
         showToast(t("toast.mergeConflicts", { count: result.conflictedFiles.length }), "error");
         appendResultLog("error", result.message, result.backendUsed);
@@ -2174,10 +2211,11 @@ export function ProjectView({
       await refreshAll();
       setCentreTab("changes");
     } catch (e) {
-      showToast(String(e), "error");
+      await refreshAll().catch(() => undefined);
+      showToast(localiseMergeHookRollbackError(e, t), "error");
       appendResultLog("error", t("log.mergeFailed", { message: String(e) }), "unknown");
     }
-  }, [repoPath, mergePendingBranch, refreshAll, showToast, t]);
+  }, [repoPath, mergePendingBranch, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleMergeAbort = useCallback(async () => {
     if (!repoPath) return;

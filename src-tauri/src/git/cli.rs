@@ -21,17 +21,16 @@ use super::types::{
     DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
     FetchRequest, FileDiff, FileRequest, FileStatusItem, GitHookAttemptResult, GitHookFailure,
-    GitIdentity, HunkStageRequest,
-    IdentityRequest, IdentityScope, ImportPatchRequest, LineEndingStyle, MergeRequest, MergeResult,
-    NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
-    PullRecommendedAction, PullState, PullStrategy, PullStrategyRequest, PushFailureKind,
-    PushRejectionAnalysis, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
-    RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
-    RepoStatus, ResetMode, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
-    SetIdentityRequest, SetRemoteUrlRequest, SignatureStatus, SshAllowedSignerReason,
-    SshAllowedSignerStatus, StageFilesRequest, StashEntry, StashPushRequest, StashRequest,
-    SubmoduleActionRequest, SubmoduleState, SubmoduleStatus, TagInfo, UnversionedItem,
-    UnversionedItemKind, UpstreamStatus,
+    GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest,
+    LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
+    PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState, PullStrategy,
+    PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult,
+    PushTagRequest, RebaseRequest, RebaseResult, RemoteInfo, RemoveRemoteRequest,
+    RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
+    RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
+    SignatureStatus, SshAllowedSignerReason, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleState, SubmoduleStatus,
+    TagInfo, UnversionedItem, UnversionedItemKind, UpstreamStatus,
 };
 
 pub struct CliGitHandler;
@@ -41,6 +40,13 @@ struct HookCommandOutput {
     output: Option<String>,
     output_truncated: bool,
     hooks: Vec<(String, String, Option<i32>)>,
+}
+
+#[derive(Clone, Copy)]
+enum PullIntegrationKind {
+    Auto,
+    Merge,
+    Rebase,
 }
 
 #[derive(Debug, Clone)]
@@ -781,8 +787,14 @@ impl CliGitHandler {
             let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
                 continue;
             };
-            let session_id = event.get("sid").and_then(serde_json::Value::as_str);
-            if session_id != Some(root_session_id.as_str()) {
+            let Some(session_id) = event.get("sid").and_then(serde_json::Value::as_str) else {
+                continue;
+            };
+            if session_id != root_session_id
+                && !session_id
+                    .strip_prefix(root_session_id.as_str())
+                    .is_some_and(|suffix| suffix.starts_with('/'))
+            {
                 continue;
             }
             let child_id = event.get("child_id").and_then(serde_json::Value::as_u64);
@@ -795,7 +807,7 @@ impl CliGitHandler {
                         child_id,
                         event.get("hook_name").and_then(serde_json::Value::as_str),
                     ) {
-                        hooks.push((child_id, hook_name.to_string()));
+                        hooks.push((format!("{session_id}:{child_id}"), hook_name.to_string()));
                     }
                 }
                 Some("child_exit") => {
@@ -803,7 +815,7 @@ impl CliGitHandler {
                         child_id,
                         event.get("code").and_then(serde_json::Value::as_i64),
                     ) {
-                        exit_codes.insert(child_id, code as i32);
+                        exit_codes.insert(format!("{session_id}:{child_id}"), code as i32);
                     }
                 }
                 _ => {}
@@ -811,13 +823,7 @@ impl CliGitHandler {
         }
         hooks
             .into_iter()
-            .map(|(child_id, hook_name)| {
-                (
-                    format!("{root_session_id}:{child_id}"),
-                    hook_name,
-                    exit_codes.get(&child_id).copied(),
-                )
-            })
+            .map(|(key, hook_name)| (key.clone(), hook_name, exit_codes.get(&key).copied()))
             .collect()
     }
 
@@ -1891,6 +1897,107 @@ impl CliGitHandler {
         }
     }
 
+    fn execute_pull_command_with_progress(
+        &self,
+        repo_path: &Path,
+        mut args: Vec<String>,
+        success_message: &str,
+        conflict_message: &str,
+        integration_kind: PullIntegrationKind,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        if skip_hooks {
+            args.push("--no-verify".to_string());
+        }
+
+        let outcome = Self::run_git_with_hook_progress(repo_path, &args, on_progress)?;
+        let is_rebase_pull = matches!(integration_kind, PullIntegrationKind::Rebase)
+            || matches!(integration_kind, PullIntegrationKind::Auto)
+                && (outcome
+                    .hooks
+                    .iter()
+                    .any(|(name, _, _)| name == "pre-rebase")
+                    || Self::is_rebase_in_progress(repo_path));
+
+        if !is_rebase_pull
+            && let Some(failure) = Self::latest_hook_failure(
+                &outcome,
+                &["pre-merge-commit", "prepare-commit-msg", "commit-msg"],
+                &["pre-merge-commit", "commit-msg"],
+            )
+        {
+            Self::rollback_merge_after_hook_failure(repo_path, &failure)?;
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: failure.bypass_supported,
+            });
+        }
+
+        if is_rebase_pull
+            && !outcome.status.success()
+            && let Some(failure) = Self::latest_hook_failure(
+                &outcome,
+                &[
+                    "pre-rebase",
+                    "prepare-commit-msg",
+                    "commit-msg",
+                    "applypatch-msg",
+                    "pre-applypatch",
+                ],
+                &[],
+            )
+        {
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: false,
+            });
+        }
+
+        let hook_warning =
+            Self::latest_hook_failure(&outcome, &["post-merge", "post-rewrite"], &[]);
+        if outcome.status.success() || hook_warning.is_some() {
+            return Ok(GitHookAttemptResult::Completed {
+                result: OperationResult {
+                    message: success_message.to_string(),
+                    output: outcome.output,
+                    repo_path: Some(Self::path_to_string(repo_path)),
+                    backend_used: "git-cli".to_string(),
+                    interpreted_error: None,
+                },
+                hook_warning,
+                output_truncated: outcome.output_truncated,
+            });
+        }
+
+        let status = self.get_repo_status(&Self::repo_request(repo_path))?;
+        if status.merge_in_progress || status.rebase_in_progress {
+            return Ok(GitHookAttemptResult::Completed {
+                result: OperationResult {
+                    message: conflict_message.to_string(),
+                    output: outcome.output,
+                    repo_path: Some(Self::path_to_string(repo_path)),
+                    backend_used: "git-cli".to_string(),
+                    interpreted_error: None,
+                },
+                hook_warning: None,
+                output_truncated: outcome.output_truncated,
+            });
+        }
+
+        Err(GitError::CommandFailed {
+            command: format!("git {}", args.join(" ")),
+            stderr: outcome.output.unwrap_or_default(),
+            exit_code: outcome.status.code(),
+        })
+    }
+
     fn try_rev_parse(repo_path: &Path, rev: &str) -> Option<String> {
         Self::run_git(&["rev-parse", rev], Some(repo_path))
             .ok()
@@ -2684,6 +2791,65 @@ impl CliGitHandler {
             })
     }
 
+    fn latest_hook_failure(
+        outcome: &HookCommandOutput,
+        hook_names: &[&str],
+        bypassable_hook_names: &[&str],
+    ) -> Option<GitHookFailure> {
+        outcome
+            .hooks
+            .iter()
+            .rev()
+            .find(|(_, name, status)| {
+                hook_names.contains(&name.as_str()) && status.is_some_and(|code| code != 0)
+            })
+            .map(|(_, name, status)| GitHookFailure {
+                hook_name: name.clone(),
+                exit_status: *status,
+                output: outcome.output.clone(),
+                output_truncated: outcome.output_truncated,
+                bypass_supported: bypassable_hook_names.contains(&name.as_str()),
+            })
+    }
+
+    fn rollback_merge_after_hook_failure(
+        repo_path: &Path,
+        failure: &GitHookFailure,
+    ) -> GitResult<()> {
+        if !Self::is_merge_in_progress(repo_path) {
+            return Ok(());
+        }
+
+        if let Err(rollback_error) = Self::run_git(&["merge", "--abort"], Some(repo_path)) {
+            return Err(GitError::CommandFailed {
+                command: "git merge --abort".to_string(),
+                stderr: format!(
+                    "GITMUN_MERGE_HOOK_ROLLBACK_FAILED: {}\nHook output:\n{}\nRollback failure:\n{}",
+                    failure.hook_name,
+                    failure
+                        .output
+                        .as_deref()
+                        .unwrap_or("No hook output was captured."),
+                    rollback_error
+                ),
+                exit_code: None,
+            });
+        }
+
+        if Self::is_merge_in_progress(repo_path) {
+            return Err(GitError::CommandFailed {
+                command: "git merge --abort".to_string(),
+                stderr: format!(
+                    "GITMUN_MERGE_HOOK_ROLLBACK_INCOMPLETE: {}",
+                    failure.hook_name
+                ),
+                exit_code: None,
+            });
+        }
+
+        Ok(())
+    }
+
     fn completed_hook_operation(
         repo_path: &Path,
         args: Vec<String>,
@@ -3010,6 +3176,299 @@ impl CliGitHandler {
             hook_warning,
             output_truncated: outcome.output_truncated,
         })
+    }
+
+    pub fn pull_changes_with_progress(
+        &self,
+        request: &RepoRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        self.execute_pull_command_with_progress(
+            &repo_path,
+            vec!["pull".to_string()],
+            &format!("Pulled latest changes in {}", repo_path.display()),
+            "Pull started a conflict resolution flow. Resolve the conflicts, then continue or complete the operation.",
+            PullIntegrationKind::Auto,
+            skip_hooks,
+            on_progress,
+        )
+    }
+
+    pub fn pull_with_strategy_with_progress(
+        &self,
+        request: &PullStrategyRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let analysis = self.build_pull_analysis(&repo_path)?;
+        let (args, success_message, conflict_message, integration_kind) = match request.strategy {
+            PullStrategy::FfOnly => {
+                if !matches!(analysis.state, PullState::BehindOnly) {
+                    return Err(GitError::InvalidInput(
+                        "Fast-forward pull is only available when the branch is behind its upstream."
+                            .to_string(),
+                    ));
+                }
+                (
+                    vec!["pull".to_string(), "--ff-only".to_string()],
+                    "Fast-forward pull complete.",
+                    "Pull started a conflict resolution flow. Resolve the conflicts, then continue or complete the operation.",
+                    PullIntegrationKind::Merge,
+                )
+            }
+            PullStrategy::Rebase => {
+                if !matches!(analysis.state, PullState::BehindOnly | PullState::Divergent) {
+                    return Err(GitError::InvalidInput(
+                        "Rebase pull is only available when remote changes need to be integrated."
+                            .to_string(),
+                    ));
+                }
+                (
+                    vec!["pull".to_string(), "--rebase".to_string()],
+                    "Rebase pull complete.",
+                    "Rebase started and needs conflict resolution. Resolve the conflicts, then continue the rebase.",
+                    PullIntegrationKind::Rebase,
+                )
+            }
+            PullStrategy::Merge => {
+                if !matches!(analysis.state, PullState::BehindOnly | PullState::Divergent) {
+                    return Err(GitError::InvalidInput(
+                        "Merge pull is only available when remote changes need to be integrated."
+                            .to_string(),
+                    ));
+                }
+                (
+                    vec!["pull".to_string(), "--no-rebase".to_string()],
+                    "Merge pull complete.",
+                    "Merge started and needs conflict resolution. Resolve the conflicts, then complete or abort the merge.",
+                    PullIntegrationKind::Merge,
+                )
+            }
+        };
+        self.execute_pull_command_with_progress(
+            &repo_path,
+            args,
+            success_message,
+            conflict_message,
+            integration_kind,
+            skip_hooks,
+            on_progress,
+        )
+    }
+
+    pub fn merge_branch_with_progress(
+        &self,
+        request: &MergeRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<MergeResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        if Self::is_merge_in_progress(&repo_path) {
+            return Err(GitError::InvalidInput(
+                "Cannot start merge while another merge is in progress".to_string(),
+            ));
+        }
+        if Self::is_rebase_in_progress(&repo_path) {
+            return Err(GitError::InvalidInput(
+                "Cannot start merge while a rebase is in progress".to_string(),
+            ));
+        }
+        if Self::is_cherry_pick_in_progress(&repo_path) {
+            return Err(GitError::InvalidInput(
+                "Cannot start merge while a cherry-pick is in progress".to_string(),
+            ));
+        }
+        let mut args = vec!["merge".to_string()];
+        if skip_hooks {
+            args.push("--no-verify".to_string());
+        }
+        if request.no_ff == Some(true) {
+            args.push("--no-ff".to_string());
+        }
+        if request.ff_only == Some(true) {
+            args.push("--ff-only".to_string());
+        }
+        if let Some(message) = &request.message {
+            args.push("-m".to_string());
+            args.push(message.clone());
+        }
+        args.push(request.branch_name.clone());
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        if let Some(failure) = Self::latest_hook_failure(
+            &outcome,
+            &["pre-merge-commit", "prepare-commit-msg", "commit-msg"],
+            &["pre-merge-commit", "commit-msg"],
+        ) {
+            Self::rollback_merge_after_hook_failure(&repo_path, &failure)?;
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: failure.bypass_supported,
+            });
+        }
+        let hook_warning = Self::hook_failure(&outcome, "post-merge", false);
+        let has_conflicts = Self::is_merge_in_progress(&repo_path);
+        if !outcome.status.success() && !has_conflicts && hook_warning.is_none() {
+            return Err(GitError::CommandFailed {
+                command: format!("git {}", args.join(" ")),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        let conflicted_files = if has_conflicts {
+            Self::get_conflicted_files(&repo_path)
+        } else {
+            vec![]
+        };
+        let result = MergeResult {
+            message: if has_conflicts {
+                format!(
+                    "Merge conflicts in {} file(s) - resolve and commit",
+                    conflicted_files.len()
+                )
+            } else {
+                format!("Merged '{}' into current branch", request.branch_name)
+            },
+            output: outcome.output.clone(),
+            repo_path: Some(Self::path_to_string(&repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+            success: !has_conflicts,
+            has_conflicts,
+            conflicted_files,
+        };
+        Ok(GitHookAttemptResult::Completed {
+            result,
+            hook_warning,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    fn rebase_hook_attempt_result(
+        repo_path: &Path,
+        args: &[String],
+        outcome: HookCommandOutput,
+        complete_message: String,
+        in_progress_message: &str,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        if !outcome.status.success()
+            && let Some(failure) = Self::latest_hook_failure(
+                &outcome,
+                &[
+                    "pre-rebase",
+                    "pre-commit",
+                    "prepare-commit-msg",
+                    "commit-msg",
+                    "applypatch-msg",
+                    "pre-applypatch",
+                ],
+                &[],
+            )
+        {
+            return Ok(GitHookAttemptResult::HookRejected {
+                hook_name: failure.hook_name,
+                exit_status: failure.exit_status,
+                output: failure.output,
+                output_truncated: failure.output_truncated,
+                bypass_supported: false,
+            });
+        }
+        let hook_warning = Self::hook_failure(&outcome, "post-rewrite", false);
+        let rebase_in_progress = Self::is_rebase_in_progress(repo_path);
+        if !outcome.status.success() && outcome.status.code() != Some(1) && hook_warning.is_none() {
+            return Err(GitError::CommandFailed {
+                command: format!("git {}", args.join(" ")),
+                stderr: outcome.output.unwrap_or_default(),
+                exit_code: outcome.status.code(),
+            });
+        }
+        let conflicted_files = if rebase_in_progress {
+            Self::get_conflicted_files(repo_path)
+        } else {
+            vec![]
+        };
+        let has_conflicts = !conflicted_files.is_empty();
+        let result = RebaseResult {
+            message: if has_conflicts {
+                format!(
+                    "Rebase conflicts in {} file(s) - resolve and continue",
+                    conflicted_files.len()
+                )
+            } else if rebase_in_progress {
+                in_progress_message.to_string()
+            } else {
+                complete_message
+            },
+            output: outcome.output,
+            repo_path: Some(Self::path_to_string(repo_path)),
+            backend_used: "git-cli".to_string(),
+            interpreted_error: None,
+            success: !has_conflicts,
+            has_conflicts,
+            conflicted_files,
+            rebase_in_progress,
+        };
+        Ok(GitHookAttemptResult::Completed {
+            result,
+            hook_warning,
+            output_truncated: outcome.output_truncated,
+        })
+    }
+
+    pub fn rebase_start_with_progress(
+        &self,
+        request: &RebaseRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        Self::ensure_no_active_branch_operation(&repo_path, "start a rebase")?;
+        let onto = request.onto.trim();
+        if onto.is_empty() {
+            return Err(GitError::InvalidInput(
+                "Rebase target cannot be empty".to_string(),
+            ));
+        }
+        let args = vec!["rebase".to_string(), onto.to_string()];
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        Self::rebase_hook_attempt_result(
+            &repo_path,
+            &args,
+            outcome,
+            format!("Rebased current branch onto '{onto}'"),
+            "Rebase continued",
+        )
+    }
+
+    pub fn rebase_continue_with_progress(
+        &self,
+        request: &RepoRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        if !Self::is_rebase_in_progress(&repo_path) {
+            return Err(GitError::InvalidInput(
+                "No rebase in progress to continue".to_string(),
+            ));
+        }
+        let args = vec![
+            "-c".to_string(),
+            "core.editor=true".to_string(),
+            "rebase".to_string(),
+            "--continue".to_string(),
+        ];
+        let outcome = Self::run_git_with_hook_progress(&repo_path, &args, on_progress)?;
+        Self::rebase_hook_attempt_result(
+            &repo_path,
+            &args,
+            outcome,
+            "Rebase complete".to_string(),
+            "Rebase continued",
+        )
     }
 }
 

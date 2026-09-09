@@ -670,6 +670,54 @@ impl GitService {
             .push_changes_with_progress(&request, skip_hooks, on_progress)
     }
 
+    pub fn pull_changes_with_progress(
+        &self,
+        request: RepoRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .pull_changes_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn pull_with_strategy_with_progress(
+        &self,
+        request: PullStrategyRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .pull_with_strategy_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn merge_branch_with_progress(
+        &self,
+        request: MergeRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<MergeResult>> {
+        self.cli_handler
+            .merge_branch_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn rebase_start_with_progress(
+        &self,
+        request: RebaseRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        self.cli_handler
+            .rebase_start_with_progress(&request, on_progress)
+    }
+
+    pub fn rebase_continue_with_progress(
+        &self,
+        request: RepoRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        self.cli_handler
+            .rebase_continue_with_progress(&request, on_progress)
+    }
+
     pub fn switch_branch_with_progress(
         &self,
         request: BranchRequest,

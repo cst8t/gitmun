@@ -1,12 +1,14 @@
 use crate::AppState;
 use crate::git::types::{
     CherryPickRequest, CherryPickResult, CommitHistoryItem, CommitHistoryRequest,
-    CommitVerification, FileRequest, MergeRequest, MergeResult, OperationResult, RebaseRequest,
-    RebaseResult, RepoRequest, ResetRequest, RevertCommitRequest, SignatureStatus,
+    CommitProgressEvent, CommitVerification, FileRequest, GitHookAttemptResult, MergeRequest,
+    MergeResult, OperationResult, RebaseRequest, RebaseResult, RepoRequest, ResetRequest,
+    RevertCommitRequest, SignatureStatus,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
 
@@ -696,10 +698,18 @@ mod tests {
 #[tauri::command]
 pub async fn merge_branch(
     request: MergeRequest,
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<MergeResult, String> {
+) -> Result<GitHookAttemptResult<MergeResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.merge_branch(request)
+        app.state::<AppState>()
+            .git_service
+            .merge_branch_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -722,10 +732,16 @@ pub async fn merge_abort(
 #[tauri::command]
 pub async fn rebase_start(
     request: RebaseRequest,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<RebaseResult, String> {
+) -> Result<GitHookAttemptResult<RebaseResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.rebase_start(request)
+        app.state::<AppState>()
+            .git_service
+            .rebase_start_with_progress(
+                request,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -735,10 +751,16 @@ pub async fn rebase_start(
 #[tauri::command]
 pub async fn rebase_continue(
     request: RepoRequest,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<RebaseResult, String> {
+) -> Result<GitHookAttemptResult<RebaseResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.rebase_continue(request)
+        app.state::<AppState>()
+            .git_service
+            .rebase_continue_with_progress(
+                request,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?

@@ -13,9 +13,10 @@ use gitmun_lib::git::types::{
     CommitProgressEvent, CommitRefKind, CommitRequest, CreateBranchRequest, DeleteBranchRequest,
     ExportCommitPatchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
     FileRequest, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
-    PushFailureKind, PushRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
-    SetBranchUpstreamRequest, SetIdentityRequest, SshAllowedSignerReason, StageFilesRequest,
-    SubmoduleActionRequest, SubmoduleState, UnversionedItemKind,
+    MergeRequest, PullStrategy, PullStrategyRequest, PushFailureKind, PushRequest, RebaseRequest,
+    RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
+    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
+    UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -72,6 +73,19 @@ fn git_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) {
 
 fn write_file(repo: &Path, name: &str, content: &str) {
     fs::write(repo.join(name), content).expect("write file");
+}
+
+#[cfg(unix)]
+fn install_hook(repo: &Path, hook_name: &str, script: &str) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let hook_path = repo.join(".git/hooks").join(hook_name);
+    fs::write(&hook_path, script).expect("write hook");
+    let mut permissions = fs::metadata(&hook_path)
+        .expect("hook metadata")
+        .permissions();
+    permissions.set_mode(0o755);
+    fs::set_permissions(hook_path, permissions).expect("make hook executable");
 }
 
 fn make_index_entry_stale(repo: &Path, file_path: &str) -> (std::path::PathBuf, Vec<u8>) {
@@ -163,6 +177,22 @@ fn init_remote_with_clone() -> (TempDir, TempDir) {
     git(local.path(), &["commit", "-m", "seed"]);
     git(local.path(), &["push", "-u", "origin", "main"]);
     (remote, local)
+}
+
+fn clone_test_remote(remote: &TempDir) -> TempDir {
+    let clone = TempDir::new().expect("create clone dir");
+    git(
+        Path::new("."),
+        &[
+            "clone",
+            remote.path().to_str().unwrap(),
+            clone.path().to_str().unwrap(),
+        ],
+    );
+    git(clone.path(), &["config", "user.email", "peer@gitmun.test"]);
+    git(clone.path(), &["config", "user.name", "Gitmun Test Peer"]);
+    git(clone.path(), &["config", "commit.gpgsign", "false"]);
+    clone
 }
 
 fn init_submodule_source() -> TempDir {
@@ -1789,6 +1819,433 @@ fn post_checkout_failure_reports_warning_without_repeating_checkout() {
             .lines()
             .count(),
         1
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn merge_hook_rejections_roll_back_and_only_supported_hooks_can_be_bypassed() {
+    for (installed_hook_name, bypass_supported) in [
+        ("pre-merge-commit", true),
+        ("prepare-commit-msg", false),
+        ("commit-msg", true),
+    ] {
+        let dir = init_repo();
+        git(dir.path(), &["switch", "-c", "feature/hook-check"]);
+        write_file(dir.path(), "feature.txt", installed_hook_name);
+        git(dir.path(), &["add", "feature.txt"]);
+        git(dir.path(), &["commit", "-m", "feature change"]);
+        git(dir.path(), &["switch", "main"]);
+        install_hook(
+            dir.path(),
+            installed_hook_name,
+            "#!/bin/sh\necho merge hook rejected >&2\nexit 1\n",
+        );
+        let head_before = head_hash(dir.path());
+        let request = MergeRequest {
+            repo_path: dir.path().to_string_lossy().into_owned(),
+            branch_name: "feature/hook-check".to_string(),
+            no_ff: Some(true),
+            ff_only: None,
+            message: None,
+        };
+
+        let rejected = handler()
+            .merge_branch_with_progress(&request, false, Arc::new(|_| {}))
+            .expect("merge hook rejection");
+        assert!(matches!(
+            rejected,
+            GitHookAttemptResult::HookRejected {
+                ref hook_name,
+                bypass_supported: actual_bypass,
+                ..
+            } if hook_name == installed_hook_name && actual_bypass == bypass_supported
+        ));
+        assert_eq!(head_hash(dir.path()), head_before);
+        assert!(!dir.path().join(".git/MERGE_HEAD").exists());
+        assert!(git_stdout(dir.path(), &["status", "--porcelain"]).is_empty());
+
+        if bypass_supported {
+            let bypassed = handler()
+                .merge_branch_with_progress(&request, true, Arc::new(|_| {}))
+                .expect("merge hook bypass");
+            assert!(matches!(
+                bypassed,
+                GitHookAttemptResult::Completed { ref result, .. } if result.success
+            ));
+            assert_ne!(head_hash(dir.path()), head_before);
+        }
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn clean_merge_emits_merge_message_and_post_merge_hook_progress() {
+    let dir = init_repo();
+    git(dir.path(), &["switch", "-c", "feature/hook-progress"]);
+    write_file(dir.path(), "feature.txt", "feature change");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature change"]);
+    git(dir.path(), &["switch", "main"]);
+    for hook_name in [
+        "pre-merge-commit",
+        "prepare-commit-msg",
+        "commit-msg",
+        "post-merge",
+    ] {
+        install_hook(dir.path(), hook_name, "#!/bin/sh\nexit 0\n");
+    }
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+
+    let result = handler()
+        .merge_branch_with_progress(
+            &MergeRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                branch_name: "feature/hook-progress".to_string(),
+                no_ff: Some(true),
+                ff_only: None,
+                message: None,
+            },
+            false,
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("clean merge");
+
+    assert!(matches!(
+        result,
+        GitHookAttemptResult::Completed { ref result, hook_warning: None, .. } if result.success
+    ));
+    let events = events.lock().expect("event lock");
+    for expected_hook in [
+        "pre-merge-commit",
+        "prepare-commit-msg",
+        "commit-msg",
+        "post-merge",
+    ] {
+        assert!(events.iter().any(|event| matches!(
+            event,
+            CommitProgressEvent::HookStarted { hook_name } if hook_name == expected_hook
+        )));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn fast_forward_pull_reports_post_merge_failure_after_updating_head() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = clone_test_remote(&remote);
+    write_file(peer.path(), "remote.txt", "remote change");
+    git(peer.path(), &["add", "remote.txt"]);
+    git(peer.path(), &["commit", "-m", "remote change"]);
+    git(peer.path(), &["push", "origin", "main"]);
+    git(local.path(), &["fetch", "origin"]);
+    install_hook(
+        local.path(),
+        "post-merge",
+        "#!/bin/sh\necho post-merge warning >&2\nexit 1\n",
+    );
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+
+    let result = handler()
+        .pull_with_strategy_with_progress(
+            &PullStrategyRequest {
+                repo_path: local.path().to_string_lossy().into_owned(),
+                strategy: PullStrategy::FfOnly,
+            },
+            false,
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("fast-forward pull result");
+
+    assert!(matches!(
+        result,
+        GitHookAttemptResult::Completed { hook_warning: Some(ref warning), .. }
+            if warning.hook_name == "post-merge"
+    ));
+    assert_eq!(head_hash(local.path()), head_hash(peer.path()));
+    assert!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .any(|event| matches!(
+                event,
+                CommitProgressEvent::HookStarted { hook_name } if hook_name == "post-merge"
+            ))
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn merge_pull_rejection_rolls_back_before_bypass_retry() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = clone_test_remote(&remote);
+    write_file(local.path(), "local.txt", "local change");
+    git(local.path(), &["add", "local.txt"]);
+    git(local.path(), &["commit", "-m", "local change"]);
+    write_file(peer.path(), "remote.txt", "remote change");
+    git(peer.path(), &["add", "remote.txt"]);
+    git(peer.path(), &["commit", "-m", "remote change"]);
+    git(peer.path(), &["push", "origin", "main"]);
+    git(local.path(), &["fetch", "origin"]);
+    install_hook(
+        local.path(),
+        "pre-merge-commit",
+        "#!/bin/sh\necho pull merge rejected >&2\nexit 1\n",
+    );
+    let head_before = head_hash(local.path());
+    let request = PullStrategyRequest {
+        repo_path: local.path().to_string_lossy().into_owned(),
+        strategy: PullStrategy::Merge,
+    };
+
+    let rejected = handler()
+        .pull_with_strategy_with_progress(&request, false, Arc::new(|_| {}))
+        .expect("pull merge rejection");
+    assert!(matches!(
+        rejected,
+        GitHookAttemptResult::HookRejected {
+            bypass_supported: true,
+            ..
+        }
+    ));
+    assert_eq!(head_hash(local.path()), head_before);
+    assert!(!local.path().join(".git/MERGE_HEAD").exists());
+
+    let bypassed = handler()
+        .pull_with_strategy_with_progress(&request, true, Arc::new(|_| {}))
+        .expect("pull merge bypass");
+    assert!(matches!(bypassed, GitHookAttemptResult::Completed { .. }));
+    assert_ne!(head_hash(local.path()), head_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn merge_hook_rollback_failure_reports_both_failures() {
+    let dir = init_repo();
+    git(dir.path(), &["switch", "-c", "feature/rollback-failure"]);
+    write_file(dir.path(), "feature.txt", "feature change");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature change"]);
+    git(dir.path(), &["switch", "main"]);
+    install_hook(
+        dir.path(),
+        "pre-merge-commit",
+        "#!/bin/sh\ntouch .git/index.lock\necho merge hook rejected >&2\nexit 1\n",
+    );
+
+    let error = handler()
+        .merge_branch_with_progress(
+            &MergeRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                branch_name: "feature/rollback-failure".to_string(),
+                no_ff: Some(true),
+                ff_only: None,
+                message: None,
+            },
+            false,
+            Arc::new(|_| {}),
+        )
+        .expect_err("rollback should fail while the index is locked");
+
+    let error_message = error.to_string();
+    assert!(error_message.contains("GITMUN_MERGE_HOOK_ROLLBACK_FAILED"));
+    assert!(error_message.contains("pre-merge-commit"));
+    assert!(dir.path().join(".git/MERGE_HEAD").exists());
+    fs::remove_file(dir.path().join(".git/index.lock")).expect("remove index lock");
+}
+
+#[cfg(unix)]
+#[test]
+fn pre_rebase_rejects_pull_without_changing_head_or_offering_bypass() {
+    let (remote, local) = init_remote_with_clone();
+    let peer = clone_test_remote(&remote);
+    write_file(local.path(), "local.txt", "local change");
+    git(local.path(), &["add", "local.txt"]);
+    git(local.path(), &["commit", "-m", "local change"]);
+    write_file(peer.path(), "remote.txt", "remote change");
+    git(peer.path(), &["add", "remote.txt"]);
+    git(peer.path(), &["commit", "-m", "remote change"]);
+    git(peer.path(), &["push", "origin", "main"]);
+    git(local.path(), &["fetch", "origin"]);
+    install_hook(
+        local.path(),
+        "pre-rebase",
+        "#!/bin/sh\necho rebase rejected >&2\nexit 1\n",
+    );
+    let head_before = head_hash(local.path());
+
+    let rejected = handler()
+        .pull_with_strategy_with_progress(
+            &PullStrategyRequest {
+                repo_path: local.path().to_string_lossy().into_owned(),
+                strategy: PullStrategy::Rebase,
+            },
+            false,
+            Arc::new(|_| {}),
+        )
+        .expect("pre-rebase rejection");
+
+    assert!(matches!(
+        rejected,
+        GitHookAttemptResult::HookRejected {
+            ref hook_name,
+            bypass_supported: false,
+            ..
+        } if hook_name == "pre-rebase"
+    ));
+    assert_eq!(head_hash(local.path()), head_before);
+    assert!(!local.path().join(".git/rebase-merge").exists());
+    assert!(!local.path().join(".git/rebase-apply").exists());
+}
+
+#[cfg(unix)]
+#[test]
+fn rebase_reports_post_rewrite_failure_after_rewriting_history() {
+    let dir = init_repo();
+    git(dir.path(), &["switch", "-c", "feature/rebase-hook"]);
+    write_file(dir.path(), "feature.txt", "feature change");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature change"]);
+    let head_before = head_hash(dir.path());
+    git(dir.path(), &["switch", "main"]);
+    write_file(dir.path(), "main.txt", "main change");
+    git(dir.path(), &["add", "main.txt"]);
+    git(dir.path(), &["commit", "-m", "main change"]);
+    git(dir.path(), &["switch", "feature/rebase-hook"]);
+    install_hook(
+        dir.path(),
+        "post-rewrite",
+        "#!/bin/sh\necho post-rewrite warning >&2\nexit 1\n",
+    );
+
+    let result = handler()
+        .rebase_start_with_progress(
+            &RebaseRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                onto: "main".to_string(),
+            },
+            Arc::new(|_| {}),
+        )
+        .expect("rebase result");
+
+    assert!(matches!(
+        result,
+        GitHookAttemptResult::Completed { hook_warning: Some(ref warning), ref result, .. }
+            if warning.hook_name == "post-rewrite" && result.success
+    ));
+    assert_ne!(head_hash(dir.path()), head_before);
+}
+
+#[cfg(unix)]
+#[test]
+fn successful_rebase_emits_pre_rebase_and_post_rewrite_progress() {
+    let dir = init_repo();
+    git(dir.path(), &["switch", "-c", "feature/rebase-progress"]);
+    write_file(dir.path(), "feature.txt", "feature change");
+    git(dir.path(), &["add", "feature.txt"]);
+    git(dir.path(), &["commit", "-m", "feature change"]);
+    git(dir.path(), &["switch", "main"]);
+    write_file(dir.path(), "main.txt", "main change");
+    git(dir.path(), &["add", "main.txt"]);
+    git(dir.path(), &["commit", "-m", "main change"]);
+    git(dir.path(), &["switch", "feature/rebase-progress"]);
+    install_hook(dir.path(), "pre-rebase", "#!/bin/sh\nexit 0\n");
+    install_hook(dir.path(), "post-rewrite", "#!/bin/sh\nexit 0\n");
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+
+    let result = handler()
+        .rebase_start_with_progress(
+            &RebaseRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                onto: "main".to_string(),
+            },
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("successful rebase");
+
+    assert!(matches!(
+        result,
+        GitHookAttemptResult::Completed { ref result, hook_warning: None, .. } if result.success
+    ));
+    let events = events.lock().expect("event lock");
+    for expected_hook in ["pre-rebase", "post-rewrite"] {
+        assert!(events.iter().any(|event| matches!(
+            event,
+            CommitProgressEvent::HookStarted { hook_name } if hook_name == expected_hook
+        )));
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn rebase_continue_preserves_conflict_state_and_reports_final_post_rewrite() {
+    let dir = init_repo();
+    write_file(dir.path(), "shared.txt", "base");
+    git(dir.path(), &["add", "shared.txt"]);
+    git(dir.path(), &["commit", "-m", "shared base"]);
+    git(dir.path(), &["switch", "-c", "feature/rebase-conflict"]);
+    write_file(dir.path(), "shared.txt", "feature");
+    git(dir.path(), &["add", "shared.txt"]);
+    git(dir.path(), &["commit", "-m", "feature change"]);
+    git(dir.path(), &["switch", "main"]);
+    write_file(dir.path(), "shared.txt", "main");
+    git(dir.path(), &["add", "shared.txt"]);
+    git(dir.path(), &["commit", "-m", "main change"]);
+    git(dir.path(), &["switch", "feature/rebase-conflict"]);
+    install_hook(dir.path(), "post-rewrite", "#!/bin/sh\nexit 0\n");
+
+    let started = handler()
+        .rebase_start_with_progress(
+            &RebaseRequest {
+                repo_path: dir.path().to_string_lossy().into_owned(),
+                onto: "main".to_string(),
+            },
+            Arc::new(|_| {}),
+        )
+        .expect("start conflicting rebase");
+    assert!(matches!(
+        started,
+        GitHookAttemptResult::Completed { ref result, .. }
+            if result.has_conflicts && result.rebase_in_progress
+    ));
+
+    write_file(dir.path(), "shared.txt", "resolved");
+    git(dir.path(), &["add", "shared.txt"]);
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let recorded_events = Arc::clone(&events);
+    let continued = handler()
+        .rebase_continue_with_progress(
+            &repo_request(&dir),
+            Arc::new(move |event| {
+                recorded_events.lock().expect("event lock").push(event);
+            }),
+        )
+        .expect("continue rebase");
+
+    assert!(matches!(
+        continued,
+        GitHookAttemptResult::Completed { ref result, hook_warning: None, .. }
+            if result.success && !result.has_conflicts && !result.rebase_in_progress
+    ));
+    assert!(
+        events
+            .lock()
+            .expect("event lock")
+            .iter()
+            .any(|event| matches!(
+                event,
+                CommitProgressEvent::HookStarted { hook_name } if hook_name == "post-rewrite"
+            ))
     );
 }
 

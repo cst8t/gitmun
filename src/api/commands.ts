@@ -310,16 +310,25 @@ export function fetchRemote(repoPath: string, remote?: string): Promise<Operatio
     return invoke<OperationResult>("fetch_remote", {request: {repoPath, remote}});
 }
 
-export function pullChanges(repoPath: string): Promise<OperationResult> {
-    return invoke<OperationResult>("pull_changes", {request: {repoPath}});
+export function pullChanges(
+    repoPath: string,
+    onProgress: Channel<GitHookProgressEvent>,
+    skipHooks = false,
+): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("pull_changes", {request: {repoPath}, onProgress, skipHooks});
 }
 
 export function analyzePull(repoPath: string): Promise<PullAnalysis> {
     return invoke<PullAnalysis>("analyze_pull", {request: {repoPath}});
 }
 
-export function pullWithStrategy(repoPath: string, strategy: PullStrategy): Promise<OperationResult> {
-    return invoke<OperationResult>("pull_with_strategy", {request: {repoPath, strategy}});
+export function pullWithStrategy(
+    repoPath: string,
+    strategy: PullStrategy,
+    onProgress: Channel<GitHookProgressEvent>,
+    skipHooks = false,
+): Promise<GitHookAttemptResult<OperationResult>> {
+    return invoke<GitHookAttemptResult<OperationResult>>("pull_with_strategy", {request: {repoPath, strategy}, onProgress, skipHooks});
 }
 
 export function pushChanges(request: PushRequest, onProgress: Channel<GitHookProgressEvent>, skipHooks = false): Promise<GitHookAttemptResult<PushResult>> {
@@ -358,10 +367,14 @@ export function stashDrop(repoPath: string, stashIndex: number): Promise<Operati
 export function mergeBranch(
     repoPath: string,
     branchName: string,
-    options?: { noFf?: boolean; ffOnly?: boolean; message?: string },
-): Promise<MergeResult> {
-    return invoke<MergeResult>("merge_branch", {
+    options: { noFf?: boolean; ffOnly?: boolean; message?: string } | undefined,
+    onProgress: Channel<GitHookProgressEvent>,
+    skipHooks = false,
+): Promise<GitHookAttemptResult<MergeResult>> {
+    return invoke<GitHookAttemptResult<MergeResult>>("merge_branch", {
         request: {repoPath, branchName, ...options},
+        onProgress,
+        skipHooks,
     });
 }
 
@@ -369,12 +382,18 @@ export function mergeAbort(repoPath: string): Promise<OperationResult> {
     return invoke<OperationResult>("merge_abort", {request: {repoPath}});
 }
 
-export function rebaseStart(request: RebaseRequest): Promise<RebaseResult> {
-    return invoke<RebaseResult>("rebase_start", {request});
+export function rebaseStart(
+    request: RebaseRequest,
+    onProgress: Channel<GitHookProgressEvent>,
+): Promise<GitHookAttemptResult<RebaseResult>> {
+    return invoke<GitHookAttemptResult<RebaseResult>>("rebase_start", {request, onProgress});
 }
 
-export function rebaseContinue(repoPath: string): Promise<RebaseResult> {
-    return invoke<RebaseResult>("rebase_continue", {request: {repoPath}});
+export function rebaseContinue(
+    repoPath: string,
+    onProgress: Channel<GitHookProgressEvent>,
+): Promise<GitHookAttemptResult<RebaseResult>> {
+    return invoke<GitHookAttemptResult<RebaseResult>>("rebase_continue", {request: {repoPath}, onProgress});
 }
 
 export function rebaseAbort(repoPath: string): Promise<OperationResult> {

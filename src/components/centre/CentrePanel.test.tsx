@@ -433,6 +433,52 @@ describe("CentrePanel hook feedback", () => {
     expect(onBypass).toHaveBeenCalledOnce();
   });
 
+  it("offers the pull bypass action when the backend permits it", () => {
+    renderCentrePanel({
+      hookRejection: {
+        operation: "pull",
+        hookName: "pre-merge-commit",
+        exitStatus: 1,
+        output: null,
+        outputTruncated: false,
+        bypassSupported: true,
+      },
+    });
+
+    expect(screen.getByRole("button", {name: "Pull without hooks"})).toBeInTheDocument();
+  });
+
+  it("offers the merge bypass action when the backend permits it", () => {
+    renderCentrePanel({
+      hookRejection: {
+        operation: "merge",
+        hookName: "commit-msg",
+        exitStatus: 1,
+        output: null,
+        outputTruncated: false,
+        bypassSupported: true,
+      },
+    });
+
+    expect(screen.getByRole("button", {name: "Merge without hooks"})).toBeInTheDocument();
+  });
+
+  it("does not offer a bypass for a rejected rebase hook", () => {
+    renderCentrePanel({
+      hookRejection: {
+        operation: "rebase",
+        hookName: "pre-rebase",
+        exitStatus: 1,
+        output: null,
+        outputTruncated: false,
+        bypassSupported: false,
+      },
+    });
+
+    expect(screen.getByRole("button", {name: "Close"})).toBeInTheDocument();
+    expect(screen.queryByRole("button", {name: /without hooks/i})).not.toBeInTheDocument();
+  });
+
   it("reports checkout completion with a dismissible warning", () => {
     const onDismiss = vi.fn();
     renderCentrePanel({

@@ -129,7 +129,7 @@ type CentrePanelProps = {
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
   hookProgress?: GitHookProgressState | null;
-  hookRejection?: (GitHookFailure & {operation: "commit" | "push"}) | null;
+  hookRejection?: (GitHookFailure & {operation: GitHookProgressState["operation"]}) | null;
   onHookRejectionClose?: () => void;
   onHookRejectionBypass?: () => void;
   isCommitting: boolean;
@@ -159,7 +159,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
     return () => window.clearInterval(timer);
   }, [progress.startedAt]);
   const title = progress.phase === "warning"
-    ? t("gitHooks.checkoutWarningTitle")
+    ? t("gitHooks.warningTitle", {operation: t(`gitHooks.operations.${progress.operation}`)})
     : progress.phase === "awaitingDecision"
       ? t("gitHooks.failedTitle", {operation: t(`gitHooks.operations.${progress.operation}`)})
       : progress.hookName
@@ -170,7 +170,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
       {progress.phase === "running" ? <div className="staging__operation-spinner" aria-hidden="true" /> : <div className="staging__operation-failed" aria-hidden="true">!</div>}
       <div className="staging__operation-copy">
         <div className="staging__operation-title">{title}</div>
-        <div className="staging__operation-message">{progress.phase === "running" ? t("gitHooks.elapsed", {seconds: elapsedSeconds}) : t(progress.phase === "warning" ? "gitHooks.checkoutWarningMessage" : "gitHooks.reviewFailure")}</div>
+        <div className="staging__operation-message">{progress.phase === "running" ? t("gitHooks.elapsed", {seconds: elapsedSeconds}) : progress.phase === "warning" ? t("gitHooks.warningMessage", {hook: progress.hookName}) : t("gitHooks.reviewFailure")}</div>
       </div>
       {progress.output && <button type="button" className="staging__operation-cancel" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{t(expanded ? "gitHooks.hideOutput" : "gitHooks.viewOutput")}</button>}
       {progress.phase === "warning" && <button type="button" className="staging__operation-cancel" onClick={onDismiss}>{t("gitHooks.dismiss")}</button>}
@@ -179,7 +179,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
   </div>;
 }
 
-function HookFailureDialog({failure, onClose, onBypass}: {failure: GitHookFailure & {operation: "commit" | "push"}; onClose: () => void; onBypass: () => void}) {
+function HookFailureDialog({failure, onClose, onBypass}: {failure: GitHookFailure & {operation: GitHookProgressState["operation"]}; onClose: () => void; onBypass: () => void}) {
   const {t} = useTranslation("centre");
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => { closeButtonRef.current?.focus(); }, []);
