@@ -1,6 +1,7 @@
 mod conditional;
 mod forgejo;
 mod github;
+mod gitlab;
 mod libravatar;
 mod provider;
 
@@ -10,6 +11,7 @@ pub use provider::AvatarProvider;
 use crate::git::types::AvatarProviderMode;
 use forgejo::ForgejoProvider;
 use github::GitHubProvider;
+use gitlab::GitLabProvider;
 use libravatar::LibravatarProvider;
 use std::collections::HashMap;
 use std::sync::{Mutex, MutexGuard};
@@ -48,9 +50,7 @@ impl AvatarService {
             conditional_providers: vec![
                 Box::new(GitHubProvider::new()),
                 Box::new(ForgejoProvider::new()),
-                // Add further platform providers here, e.g.:
-                // Box::new(GitLabProvider::new()),
-                // Box::new(BitbucketProvider::new()),
+                Box::new(GitLabProvider::new()),
             ],
             try_platform_first: Mutex::new(try_platform_first),
             cache: Mutex::new(HashMap::new()),
@@ -93,8 +93,8 @@ impl AvatarService {
             let conditional_result = self
                 .conditional_providers
                 .iter()
-                .find(|p| p.applies_to(repo_path))
-                .and_then(|p| p.fetch(&key_email, repo_path));
+                .filter(|p| p.applies_to(repo_path))
+                .find_map(|p| p.fetch(&key_email, repo_path));
             conditional_result.or_else(|| self.fetch_from_provider(&key_email))
         } else {
             self.fetch_from_provider(&key_email)
@@ -109,5 +109,40 @@ impl AvatarService {
     fn fetch_from_provider(&self, email: &str) -> Option<String> {
         let provider = lock_or_recover(&self.provider, "provider");
         provider.as_ref().and_then(|p| p.fetch(email))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct PlatformAvatar(Option<&'static str>);
+
+    impl ConditionalProvider for PlatformAvatar {
+        fn applies_to(&self, _repo_path: &str) -> bool {
+            true
+        }
+
+        fn fetch(&self, _email: &str, _repo_path: &str) -> Option<String> {
+            self.0.map(str::to_string)
+        }
+    }
+
+    #[test]
+    fn tries_next_platform_when_first_has_no_avatar() {
+        let mut service = AvatarService::new(AvatarProviderMode::Off, true);
+        service.conditional_providers = vec![
+            Box::new(PlatformAvatar(None)),
+            Box::new(PlatformAvatar(Some("data:image/png;base64,YXZhdGFy"))),
+        ];
+        assert_eq!(
+            service.fetch("author@example.com", "/tmp/avatar-repository"),
+            Some("data:image/png;base64,YXZhdGFy".to_string())
+        );
+        service.set_try_platform_first(false);
+        assert_eq!(
+            service.fetch("author@example.com", "/tmp/avatar-repository"),
+            None
+        );
     }
 }
