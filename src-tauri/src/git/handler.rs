@@ -271,12 +271,6 @@ impl GitService {
         })
     }
 
-    pub fn set_show_commit_graph_button(&self, show_commit_graph_button: bool) -> Settings {
-        self.update_settings(|settings| {
-            settings.show_commit_graph_button = show_commit_graph_button;
-        })
-    }
-
     pub fn set_enable_local_copy(&self, enable_local_copy: bool) -> Settings {
         self.update_settings(|settings| {
             settings.enable_local_copy = enable_local_copy;
@@ -670,6 +664,54 @@ impl GitService {
             .push_changes_with_progress(&request, skip_hooks, on_progress)
     }
 
+    pub fn pull_changes_with_progress(
+        &self,
+        request: RepoRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .pull_changes_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn pull_with_strategy_with_progress(
+        &self,
+        request: PullStrategyRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<OperationResult>> {
+        self.cli_handler
+            .pull_with_strategy_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn merge_branch_with_progress(
+        &self,
+        request: MergeRequest,
+        skip_hooks: bool,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<MergeResult>> {
+        self.cli_handler
+            .merge_branch_with_progress(&request, skip_hooks, on_progress)
+    }
+
+    pub fn rebase_start_with_progress(
+        &self,
+        request: RebaseRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        self.cli_handler
+            .rebase_start_with_progress(&request, on_progress)
+    }
+
+    pub fn rebase_continue_with_progress(
+        &self,
+        request: RepoRequest,
+        on_progress: Arc<dyn Fn(CommitProgressEvent) + Send + Sync>,
+    ) -> GitResult<GitHookAttemptResult<RebaseResult>> {
+        self.cli_handler
+            .rebase_continue_with_progress(&request, on_progress)
+    }
+
     pub fn switch_branch_with_progress(
         &self,
         request: BranchRequest,
@@ -818,16 +860,6 @@ impl GitService {
 #[cfg(test)]
 mod tests {
     use super::GitService;
-
-    #[test]
-    fn set_show_commit_graph_button_updates_settings() {
-        let service = GitService::new();
-
-        let settings = service.set_show_commit_graph_button(true);
-
-        assert!(settings.show_commit_graph_button);
-        assert!(service.get_settings().show_commit_graph_button);
-    }
 
     #[test]
     fn set_enable_local_copy_updates_settings() {

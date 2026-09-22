@@ -182,7 +182,6 @@ const settingsPayload: Settings = {
   uiTextScale: 1,
   wrapDiffLines: false,
   rowStriping: "Off",
-  showCommitGraphButton: false,
   enableLocalCopy: false,
   persistentErrorToasts: false,
   errorToastClearDelayMs: 5000,

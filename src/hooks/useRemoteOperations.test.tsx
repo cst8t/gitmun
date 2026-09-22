@@ -45,6 +45,7 @@ describe("useRemoteOperations", () => {
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
       pushChanges: mocks.pushChanges,
+      pullWithStrategy: mocks.pullWithStrategy,
     }));
 
     await act(async () => {
@@ -75,6 +76,7 @@ describe("useRemoteOperations", () => {
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
       pushChanges: mocks.pushChanges,
+      pullWithStrategy: mocks.pullWithStrategy,
     }));
 
     await act(async () => {
@@ -101,6 +103,7 @@ describe("useRemoteOperations", () => {
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
       pushChanges: mocks.pushChanges,
+      pullWithStrategy: mocks.pullWithStrategy,
     }));
 
     let autoFetchPromise!: Promise<void>;
@@ -143,6 +146,7 @@ describe("useRemoteOperations", () => {
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
       pushChanges: mocks.pushChanges,
+      pullWithStrategy: mocks.pullWithStrategy,
     }));
 
     await act(async () => {
@@ -173,11 +177,13 @@ describe("useRemoteOperations", () => {
       onForcePushComplete: vi.fn(),
       onFetchAttemptComplete,
       pushChanges: mocks.pushChanges,
+      pullWithStrategy: mocks.pullWithStrategy,
     }));
 
     await act(async () => {
       await result.current.pull();
     });
+    expect(mocks.pullWithStrategy).toHaveBeenCalledWith("ff-only");
     expect(onFetchAttemptComplete).toHaveBeenCalledWith("/repo");
 
     onFetchAttemptComplete.mockClear();

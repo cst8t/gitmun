@@ -146,6 +146,9 @@
     "forceDeleteBranchFailed": "Force delete branch failed: {{message}}",
     "mergeAbortFailed": "Merge abort failed: {{message}}",
     "mergeFailed": "Merge failed: {{message}}",
+    "hookRejected": "{{hook}} rejected the {{operation}}.",
+    "hookWarning": "{{operation}} completed, but the {{hook}} hook failed.",
+    "hooksSkipped": "{{operation}} ran without verification hooks.",
     "exportPatchFailed": "Export patch failed: {{message}}",
     "importPatchFailed": "Import patch failed: {{message}}",
     "noPatchChanges": "No changes available for patch export",
@@ -238,6 +241,9 @@
     "fetchComplete": "Fetch complete",
     "fetchedFrom": "Fetched from {{remote}}",
     "integrationComplete": "Integration complete. Push your branch to update the remote.",
+    "hookWarning": "{{operation}} completed with a hook warning",
+    "mergeHookRollbackFailed": "The merge hook failed and Gitmun could not roll back the merge. Review the repository state before continuing.",
+    "mergeHookRollbackIncomplete": "The merge hook failed and Gitmun could not confirm that the merge was rolled back. Review the repository state before continuing.",
     "mergeConflicts_one": "Merge conflict in {{count}} file - resolve in the Changes tab",
     "mergeConflicts_other": "Merge conflicts in {{count}} files - resolve in the Changes tab",
     "mergeBlockedByChanges": "Commit or stash changes before merging",
@@ -278,6 +284,12 @@
     "unstagedHunk": "Unstaged hunk",
     "upstreamChanged": "Upstream changed",
     "upstreamRepaired": "Upstream repaired"
+  },
+  "hookOperationNames": {
+    "merge": "merge",
+    "pull": "pull",
+    "push": "push",
+    "rebase": "rebase"
   },
   "patch": {
     "errors": {

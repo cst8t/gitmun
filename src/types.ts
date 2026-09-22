@@ -71,7 +71,6 @@ export type Settings = {
     uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
     rowStriping: RowStriping;
-    showCommitGraphButton: boolean;
     enableLocalCopy: boolean;
     persistentErrorToasts: boolean;
     errorToastClearDelayMs: number;
@@ -264,7 +263,7 @@ export type GitHookAttemptResult<T> =
     | { status: "completed"; result: T; hookWarning: GitHookFailure | null; outputTruncated: boolean }
     | ({ status: "hookRejected" } & GitHookFailure);
 
-export type GitHookOperation = "commit" | "push" | "checkout";
+export type GitHookOperation = "commit" | "push" | "checkout" | "pull" | "merge" | "rebase";
 
 export type GitHookProgressState = {
     operation: GitHookOperation;

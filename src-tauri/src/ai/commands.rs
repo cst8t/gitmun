@@ -1915,7 +1915,7 @@ fn build_commit_context(
     if repository_operation(repo_path)? != workflow.expected_repository_operation() {
         return Err(AiError::new("operationInProgress"));
     }
-    validate_commit_control(existing_message, 4096)?;
+    validate_existing_commit_message(existing_message)?;
     let paths = staged_paths(repo_path)?;
     if paths.is_empty() {
         return Err(AiError::new("noStagedChanges"));
@@ -2466,6 +2466,17 @@ fn validate_commit_control(value: &str, maximum_length: usize) -> Result<(), AiE
     Ok(())
 }
 
+fn validate_existing_commit_message(message: &str) -> Result<(), AiError> {
+    if message.len() > 4096
+        || message
+            .chars()
+            .any(|character| character.is_control() && !matches!(character, '\t' | '\n' | '\r'))
+    {
+        return Err(AiError::new("invalidCommitControl"));
+    }
+    Ok(())
+}
+
 fn commit_system_prompt(
     configuration: &EffectiveAiConfiguration,
     request: &GenerateAiCommitMessagesRequest,
@@ -2475,7 +2486,7 @@ fn commit_system_prompt(
     validate_commit_control(&request.language, 64)?;
     validate_commit_control(&request.issue_key, 64)?;
     validate_commit_control(&request.additional_instruction, 1000)?;
-    validate_commit_control(&request.existing_message, 4096)?;
+    validate_existing_commit_message(&request.existing_message)?;
     let mut prompt = configuration.commit_message_prompt.clone();
     if request.subject_limit > 0 {
         prompt.push_str(&format!(
@@ -4536,6 +4547,64 @@ mod tests {
             "subject\n\nbody"
         );
         assert!(validate_commit_message("x".repeat(73), 72).is_err());
+    }
+
+    #[test]
+    fn commit_existing_message_retains_length_and_control_limits() {
+        assert!(validate_existing_commit_message(&"x".repeat(4096)).is_ok());
+        for message in [
+            "x".repeat(4097),
+            "Subject\0body".to_string(),
+            "Subject\u{1b}body".to_string(),
+        ] {
+            assert_eq!(
+                validate_existing_commit_message(&message).unwrap_err().code,
+                "invalidCommitControl"
+            );
+        }
+        assert_eq!(
+            validate_commit_control("scope\nvalue", 64)
+                .unwrap_err()
+                .code,
+            "invalidCommitControl"
+        );
+    }
+
+    #[test]
+    fn commit_existing_message_accepts_line_breaks_in_preview_and_generation() {
+        let repository = tempfile::tempdir().unwrap();
+        run_git(repository.path(), &["init", "-q"]);
+        std::fs::write(repository.path().join("notes.txt"), "Updated notes\n").unwrap();
+        run_git(repository.path(), &["add", "notes.txt"]);
+        let configuration =
+            provider_configuration(AiProvider::OpenAi, "https://api.openai.com/v1".to_string());
+
+        for message in [
+            "Existing subject\n\nExisting body\n\tIndented detail",
+            "Existing subject\r\n\r\nExisting body",
+        ] {
+            let context = build_commit_context(
+                repository.path().to_str().unwrap(),
+                72,
+                false,
+                &[],
+                AiCommitWorkflow::Normal,
+                message,
+            )
+            .unwrap();
+            assert_eq!(context.existing_message, message);
+            assert!(render_commit_context(&context).contains(message));
+
+            let request: GenerateAiCommitMessagesRequest = serde_json::from_value(json!({
+                "repoPath": repository.path().to_str().unwrap(),
+                "subjectLimit": 72,
+                "operationId": "replacement-test",
+                "candidateCount": 1,
+                "existingMessage": message
+            }))
+            .unwrap();
+            assert!(commit_system_prompt(&configuration, &request).is_ok());
+        }
     }
 
     #[test]

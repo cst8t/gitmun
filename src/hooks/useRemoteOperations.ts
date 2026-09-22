@@ -1,8 +1,10 @@
 import {useCallback, useState} from "react";
+import type {TFunction} from "i18next";
 import {useTranslation} from "react-i18next";
 import * as api from "../api/commands";
 import type {
   BranchInfo,
+  OperationResult,
   PullAnalysis,
   PullStrategy,
   PushRejectionAnalysis,
@@ -15,6 +17,15 @@ import {appendResultLog} from "../utils/resultLog";
 import type {ToastType} from "./useToast";
 
 const AUTO_FETCH_TIMEOUT_MS = 90_000;
+const MERGE_HOOK_ROLLBACK_FAILED = "GITMUN_MERGE_HOOK_ROLLBACK_FAILED";
+const MERGE_HOOK_ROLLBACK_INCOMPLETE = "GITMUN_MERGE_HOOK_ROLLBACK_INCOMPLETE";
+
+function localiseMergeHookRollbackError(error: unknown, t: TFunction<"projectView">): string {
+  const message = String(error);
+  if (message.includes(MERGE_HOOK_ROLLBACK_FAILED)) return t("toast.mergeHookRollbackFailed");
+  if (message.includes(MERGE_HOOK_ROLLBACK_INCOMPLETE)) return t("toast.mergeHookRollbackIncomplete");
+  return message;
+}
 
 type UpstreamDialogMode = "publish" | "repair" | "change";
 
@@ -30,6 +41,7 @@ type UseRemoteOperationsOptions = {
   onForcePushComplete: () => void;
   onFetchAttemptComplete: (repoPath: string) => void;
   pushChanges: (request: PushRequest) => Promise<PushResult | null>;
+  pullWithStrategy: (strategy: PullStrategy) => Promise<Pick<OperationResult, "message" | "backendUsed"> | null>;
 };
 
 export function buildPushRequestForCurrentBranch(
@@ -63,6 +75,7 @@ export function useRemoteOperations({
   onForcePushComplete,
   onFetchAttemptComplete,
   pushChanges,
+  pullWithStrategy,
 }: UseRemoteOperationsOptions) {
   const {t} = useTranslation("projectView");
   const {t: tGitAdvice} = useTranslation("gitAdvice");
@@ -134,7 +147,8 @@ export function useRemoteOperations({
     if (!repoPath || remoteOp) return;
     setRemoteOp("pull");
     try {
-      const result = await api.pullWithStrategy(repoPath, strategy);
+      const result = await pullWithStrategy(strategy);
+      if (!result) return;
       const conflictStarted = /conflict resolution flow|needs conflict resolution/i.test(result.message);
       if (conflictStarted) {
         showToast(result.message, "info");
@@ -148,13 +162,15 @@ export function useRemoteOperations({
       }
       await refreshAll();
     } catch (error) {
-      showToast(String(error), "error");
-      appendResultLog("error", t("log.pullFailed", {message: String(error)}), "unknown");
+      const message = String(error);
+      await refreshAll().catch(() => undefined);
+      showToast(localiseMergeHookRollbackError(error, t), "error");
+      appendResultLog("error", t("log.pullFailed", {message}), "unknown");
     } finally {
       onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [onFetchAttemptComplete, pullWithStrategy, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const startPullFlow = useCallback(async () => {
     if (!repoPath || remoteOp) return;

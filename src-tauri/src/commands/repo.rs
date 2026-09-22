@@ -2478,10 +2478,18 @@ pub fn get_repo_diff_tool(
 #[tauri::command]
 pub async fn pull_changes(
     request: RepoRequest,
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<OperationResult, String> {
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        app.state::<AppState>().git_service.pull_changes(request)
+        app.state::<AppState>()
+            .git_service
+            .pull_changes_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?
@@ -2502,12 +2510,18 @@ pub fn analyze_pull(
 #[tauri::command]
 pub async fn pull_with_strategy(
     request: PullStrategyRequest,
+    skip_hooks: bool,
+    on_progress: tauri::ipc::Channel<CommitProgressEvent>,
     app: tauri::AppHandle,
-) -> Result<OperationResult, String> {
+) -> Result<GitHookAttemptResult<OperationResult>, String> {
     tauri::async_runtime::spawn_blocking(move || {
         app.state::<AppState>()
             .git_service
-            .pull_with_strategy(request)
+            .pull_with_strategy_with_progress(
+                request,
+                skip_hooks,
+                Arc::new(move |event| drop(on_progress.send(event))),
+            )
     })
     .await
     .map_err(|e| e.to_string())?

@@ -70,7 +70,6 @@ type CentrePanelProps = {
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
-  showCommitGraphButton: boolean;
   onCommitGraphVisibilityChange?: (visible: boolean) => void;
   onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
@@ -129,7 +128,7 @@ type CentrePanelProps = {
   stagingOperation: StagingOperation | null;
   operationLock: LongRunningOperation | null;
   hookProgress?: GitHookProgressState | null;
-  hookRejection?: (GitHookFailure & {operation: "commit" | "push"}) | null;
+  hookRejection?: (GitHookFailure & {operation: GitHookProgressState["operation"]}) | null;
   onHookRejectionClose?: () => void;
   onHookRejectionBypass?: () => void;
   isCommitting: boolean;
@@ -159,7 +158,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
     return () => window.clearInterval(timer);
   }, [progress.startedAt]);
   const title = progress.phase === "warning"
-    ? t("gitHooks.checkoutWarningTitle")
+    ? t("gitHooks.warningTitle", {operation: t(`gitHooks.operations.${progress.operation}`)})
     : progress.phase === "awaitingDecision"
       ? t("gitHooks.failedTitle", {operation: t(`gitHooks.operations.${progress.operation}`)})
       : progress.hookName
@@ -170,7 +169,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
       {progress.phase === "running" ? <div className="staging__operation-spinner" aria-hidden="true" /> : <div className="staging__operation-failed" aria-hidden="true">!</div>}
       <div className="staging__operation-copy">
         <div className="staging__operation-title">{title}</div>
-        <div className="staging__operation-message">{progress.phase === "running" ? t("gitHooks.elapsed", {seconds: elapsedSeconds}) : t(progress.phase === "warning" ? "gitHooks.checkoutWarningMessage" : "gitHooks.reviewFailure")}</div>
+        <div className="staging__operation-message">{progress.phase === "running" ? t("gitHooks.elapsed", {seconds: elapsedSeconds}) : progress.phase === "warning" ? t("gitHooks.warningMessage", {hook: progress.hookName}) : t("gitHooks.reviewFailure")}</div>
       </div>
       {progress.output && <button type="button" className="staging__operation-cancel" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>{t(expanded ? "gitHooks.hideOutput" : "gitHooks.viewOutput")}</button>}
       {progress.phase === "warning" && <button type="button" className="staging__operation-cancel" onClick={onDismiss}>{t("gitHooks.dismiss")}</button>}
@@ -179,7 +178,7 @@ function HookProgressBanner({progress, onDismiss}: {progress: GitHookProgressSta
   </div>;
 }
 
-function HookFailureDialog({failure, onClose, onBypass}: {failure: GitHookFailure & {operation: "commit" | "push"}; onClose: () => void; onBypass: () => void}) {
+function HookFailureDialog({failure, onClose, onBypass}: {failure: GitHookFailure & {operation: GitHookProgressState["operation"]}; onClose: () => void; onBypass: () => void}) {
   const {t} = useTranslation("centre");
   const closeButtonRef = React.useRef<HTMLButtonElement>(null);
   React.useEffect(() => { closeButtonRef.current?.focus(); }, []);
@@ -273,8 +272,7 @@ function getOperationContent(
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
   const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
-  const preferredShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
-  const effectiveShowCommitGraph = preferredShowCommitGraph && !props.searching;
+  const effectiveShowCommitGraph = showCommitGraph && !props.searching;
   const tab = props.activeTab;
   const operationContent = getOperationContent(props.operationLock, t);
   const operationFeedback = useDelayedOperationFeedback(props.operationLock);
@@ -286,8 +284,8 @@ export function CentrePanel(props: CentrePanelProps) {
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
 
   React.useEffect(() => {
-    props.onCommitGraphVisibilityChange?.(preferredShowCommitGraph);
-  }, [preferredShowCommitGraph, props.onCommitGraphVisibilityChange]);
+    props.onCommitGraphVisibilityChange?.(showCommitGraph);
+  }, [showCommitGraph, props.onCommitGraphVisibilityChange]);
 
   const handleToggleCommitGraph = () => {
     setShowCommitGraph(previous => {
@@ -370,19 +368,17 @@ export function CentrePanel(props: CentrePanelProps) {
         <div className="centre__tabs-spacer" />
         {tab === "log" && (
           <div className="centre__tabs-actions">
-            {props.showCommitGraphButton && (
-              <button
-                type="button"
-                className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
-                title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-                aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-                aria-pressed={showCommitGraph}
-                disabled={props.searching}
-                onClick={handleToggleCommitGraph}
-              >
-                <BranchIcon size={15} />
-              </button>
-            )}
+            <button
+              type="button"
+              className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
+              title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-pressed={showCommitGraph}
+              disabled={props.searching}
+              onClick={handleToggleCommitGraph}
+            >
+              <BranchIcon size={15} />
+            </button>
             <div className="log-view__scope-actions" role="group" aria-label={t("log.commitLogScope")}>
               <button
                 type="button"
