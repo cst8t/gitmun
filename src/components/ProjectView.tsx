@@ -457,7 +457,6 @@ export function ProjectView({
   const [rebasedBranchAwaitingPush, setRebasedBranchAwaitingPush] = useState<string | null>(null);
   const [wrapDiffLines, setWrapDiffLines] = useState(false);
   const [rowStriping, setRowStriping] = useState<RowStriping>("Off");
-  const [showCommitGraphButton, setShowCommitGraphButton] = useState(false);
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
   const [showAiWriting, setShowAiWriting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -519,7 +518,7 @@ export function ProjectView({
     loadMoreError: logLoadMoreError,
     pageSize: logPageSize,
     refresh: refreshLog,
-  } = useGitLog(repoPath, logScope, windowFocused, showCommitGraphButton && showCommitGraph);
+  } = useGitLog(repoPath, logScope, windowFocused, showCommitGraph);
   const searching = deferredSearchQuery.length > 0;
   const visibleCommits = useMemo(() => {
     if (!searching) return commits;
@@ -704,7 +703,6 @@ export function ProjectView({
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
           setRowStriping(settings.rowStriping ?? "Off");
-          setShowCommitGraphButton(settings.showCommitGraphButton ?? false);
         }
       })
       .catch(() => {
@@ -714,7 +712,6 @@ export function ProjectView({
           setPushFollowTags(false);
           setWrapDiffLines(false);
           setRowStriping("Off");
-          setShowCommitGraphButton(false);
         }
       });
 
@@ -2583,7 +2580,6 @@ export function ProjectView({
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   rowStriping={rowStriping}
-                  showCommitGraphButton={showCommitGraphButton}
                   onCommitGraphVisibilityChange={handleCommitGraphVisibilityChange}
                   onLogScopeChange={setLogScope}
                   detachedHead={status?.detachedHead ?? false}

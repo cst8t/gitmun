@@ -71,7 +71,6 @@ export type Settings = {
     uiTextScale: UiTextScale;
     wrapDiffLines: boolean;
     rowStriping: RowStriping;
-    showCommitGraphButton: boolean;
     enableLocalCopy: boolean;
     persistentErrorToasts: boolean;
     errorToastClearDelayMs: number;

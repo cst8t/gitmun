@@ -233,16 +233,6 @@ pub fn set_row_striping(row_striping: RowStriping, state: tauri::State<'_, AppSt
 }
 
 #[tauri::command]
-pub fn set_show_commit_graph_button(
-    show_commit_graph_button: bool,
-    state: tauri::State<'_, AppState>,
-) -> Settings {
-    state
-        .git_service
-        .set_show_commit_graph_button(show_commit_graph_button)
-}
-
-#[tauri::command]
 pub fn set_enable_local_copy(
     enable_local_copy: bool,
     state: tauri::State<'_, AppState>,

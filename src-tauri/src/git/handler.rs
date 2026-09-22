@@ -271,12 +271,6 @@ impl GitService {
         })
     }
 
-    pub fn set_show_commit_graph_button(&self, show_commit_graph_button: bool) -> Settings {
-        self.update_settings(|settings| {
-            settings.show_commit_graph_button = show_commit_graph_button;
-        })
-    }
-
     pub fn set_enable_local_copy(&self, enable_local_copy: bool) -> Settings {
         self.update_settings(|settings| {
             settings.enable_local_copy = enable_local_copy;
@@ -866,16 +860,6 @@ impl GitService {
 #[cfg(test)]
 mod tests {
     use super::GitService;
-
-    #[test]
-    fn set_show_commit_graph_button_updates_settings() {
-        let service = GitService::new();
-
-        let settings = service.set_show_commit_graph_button(true);
-
-        assert!(settings.show_commit_graph_button);
-        assert!(service.get_settings().show_commit_graph_button);
-    }
 
     #[test]
     fn set_enable_local_copy_updates_settings() {

@@ -70,7 +70,6 @@ type CentrePanelProps = {
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
-  showCommitGraphButton: boolean;
   onCommitGraphVisibilityChange?: (visible: boolean) => void;
   onLogScopeChange: (scope: CommitLogScope) => void;
   detachedHead: boolean;
@@ -273,8 +272,7 @@ function getOperationContent(
 export function CentrePanel(props: CentrePanelProps) {
   const { t } = useTranslation("centre");
   const [showCommitGraph, setShowCommitGraph] = React.useState(readShowCommitGraphPreference);
-  const preferredShowCommitGraph = props.showCommitGraphButton && showCommitGraph;
-  const effectiveShowCommitGraph = preferredShowCommitGraph && !props.searching;
+  const effectiveShowCommitGraph = showCommitGraph && !props.searching;
   const tab = props.activeTab;
   const operationContent = getOperationContent(props.operationLock, t);
   const operationFeedback = useDelayedOperationFeedback(props.operationLock);
@@ -286,8 +284,8 @@ export function CentrePanel(props: CentrePanelProps) {
   const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
 
   React.useEffect(() => {
-    props.onCommitGraphVisibilityChange?.(preferredShowCommitGraph);
-  }, [preferredShowCommitGraph, props.onCommitGraphVisibilityChange]);
+    props.onCommitGraphVisibilityChange?.(showCommitGraph);
+  }, [showCommitGraph, props.onCommitGraphVisibilityChange]);
 
   const handleToggleCommitGraph = () => {
     setShowCommitGraph(previous => {
@@ -370,19 +368,17 @@ export function CentrePanel(props: CentrePanelProps) {
         <div className="centre__tabs-spacer" />
         {tab === "log" && (
           <div className="centre__tabs-actions">
-            {props.showCommitGraphButton && (
-              <button
-                type="button"
-                className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
-                title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-                aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
-                aria-pressed={showCommitGraph}
-                disabled={props.searching}
-                onClick={handleToggleCommitGraph}
-              >
-                <BranchIcon size={15} />
-              </button>
-            )}
+            <button
+              type="button"
+              className={`log-view__toolbar-toggle ${showCommitGraph ? "log-view__toolbar-toggle--active" : ""}`}
+              title={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-label={showCommitGraph ? t("log.hideCommitGraph") : t("log.showCommitGraph")}
+              aria-pressed={showCommitGraph}
+              disabled={props.searching}
+              onClick={handleToggleCommitGraph}
+            >
+              <BranchIcon size={15} />
+            </button>
             <div className="log-view__scope-actions" role="group" aria-label={t("log.commitLogScope")}>
               <button
                 type="button"

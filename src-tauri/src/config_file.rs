@@ -554,7 +554,6 @@ mod tests {
         assert!(toml_text.contains("# Backend used for Git operations"));
         assert!(toml_text.contains("backendMode = \"Default\""));
         assert!(toml_text.contains("uiTextScale = 1.0"));
-        assert!(toml_text.contains("showCommitGraphButton = false"));
         assert!(toml_text.contains("errorToastClearDelayMs = 8000"));
         assert!(toml_text.contains("commitMessageRecommendedLength = 72"));
         assert!(!toml_text.contains("enableUpdateWithMSStoreFlow"));
@@ -632,10 +631,9 @@ mod tests {
         );
         assert!(updated.contains("uiTextScale = 1.0"));
         assert!(
-            updated.contains("# Experimental: show the commit graph toolbar button."),
+            updated.contains("# Experimental: enable Local Copy in the Clone window and CLI."),
             "missing key gained its template comment"
         );
-        assert!(updated.contains("showCommitGraphButton = false"));
         assert!(updated.contains("enableLocalCopy = false"));
         assert!(updated.contains("# Maximum context sent in each AI commit-message request"));
         assert!(updated.contains("commitContextLimitKib = 24"));
@@ -650,13 +648,6 @@ mod tests {
         assert!(updated.contains("# Instructions used to resolve conflicts."));
         assert!(updated.contains("conflictResolutionPrompt = "));
         assert!(!updated.contains("enableUpdateWithMSStoreFlow"));
-    }
-
-    #[test]
-    fn missing_commit_graph_button_defaults_to_false() {
-        let settings: Settings = toml::from_str("backendMode = \"Default\"\n").unwrap();
-
-        assert!(!settings.show_commit_graph_button);
     }
 
     #[test]
@@ -678,20 +669,6 @@ mod tests {
 
         let updated = std::fs::read_to_string(&toml_path).unwrap();
         assert!(updated.contains("enableLocalCopy = true"));
-    }
-
-    #[test]
-    fn persist_writes_commit_graph_button() {
-        let dir = TempDir::new().unwrap();
-        let toml_path = dir.path().join("config.toml");
-
-        let mut settings = Settings::default();
-        settings.show_commit_graph_button = true;
-
-        persist(&toml_path, &settings).unwrap();
-
-        let updated = std::fs::read_to_string(&toml_path).unwrap();
-        assert!(updated.contains("showCommitGraphButton = true"));
     }
 
     #[test]
