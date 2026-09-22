@@ -17,7 +17,7 @@ impl GitLabProvider {
         }
     }
 
-    fn remote_base_url(remote: &str) -> Option<Url> {
+    fn remote_project(remote: &str) -> Option<(Url, String)> {
         let mut url = if remote.contains("://") {
             Url::parse(remote).ok()?
         } else {
@@ -27,6 +27,14 @@ impl GitLabProvider {
             }
             Url::parse(&format!("ssh://{authority}/{path}")).ok()?
         };
+        let project = url
+            .path()
+            .trim_start_matches('/')
+            .trim_end_matches(".git")
+            .to_string();
+        if project.is_empty() {
+            return None;
+        }
         match url.scheme() {
             "http" | "https" => {}
             "ssh" => {
@@ -42,10 +50,10 @@ impl GitLabProvider {
         url.set_path("/");
         url.set_query(None);
         url.set_fragment(None);
-        Some(url)
+        Some((url, project))
     }
 
-    fn base_urls(repo_path: &str) -> Vec<Url> {
+    fn remote_projects(repo_path: &str) -> Vec<(Url, String)> {
         let Ok(output) = crate::configured_git_command()
             .args([
                 "-C",
@@ -64,7 +72,7 @@ impl GitLabProvider {
         let mut bases = Vec::new();
         for line in String::from_utf8_lossy(&output.stdout).lines() {
             if let Some((_, remote)) = line.split_once(' ') {
-                if let Some(base) = Self::remote_base_url(remote.trim()) {
+                if let Some(base) = Self::remote_project(remote.trim()) {
                     if !bases.contains(&base) {
                         bases.push(base);
                     }
@@ -88,7 +96,63 @@ impl GitLabProvider {
             .error_for_status()
             .ok()?;
         let body: serde_json::Value = response.json().ok()?;
-        let raw = body.get("avatar_url")?.as_str()?.trim();
+        self.download_avatar(body.get("avatar_url")?.as_str()?, base)
+    }
+
+    fn find_author_commit(email: &str, repo_path: &str) -> Option<String> {
+        let output = crate::configured_git_command()
+            .args([
+                "-C",
+                repo_path,
+                "log",
+                "--all",
+                "-n",
+                "1",
+                "--format=%H%x1f%ae",
+                "--fixed-strings",
+                "--regexp-ignore-case",
+                &format!("--author=<{email}>"),
+            ])
+            .output()
+            .ok()?;
+        if !output.status.success() {
+            return None;
+        }
+        let text = String::from_utf8(output.stdout).ok()?;
+        let (sha, author_email) = text.trim().split_once('\u{1f}')?;
+        author_email
+            .eq_ignore_ascii_case(email)
+            .then(|| sha.to_string())
+    }
+
+    fn fetch_commit_author(
+        &self,
+        email: &str,
+        sha: &str,
+        base: &Url,
+        project: &str,
+    ) -> Option<String> {
+        let response = self.client.get(base.join("api/graphql").ok()?)
+            .query(&[
+                ("query", "query($project: ID!, $sha: String!) { project(fullPath: $project) { repository { commit(ref: $sha) { sha authorEmail author { avatarUrl } } } } }".to_string()),
+                ("variables", serde_json::json!({"project": project, "sha": sha}).to_string()),
+            ])
+            .send().ok()?.error_for_status().ok()?;
+        let body: serde_json::Value = response.json().ok()?;
+        let commit = body.pointer("/data/project/repository/commit")?;
+        if commit.get("sha")?.as_str()? != sha
+            || !commit
+                .get("authorEmail")?
+                .as_str()?
+                .eq_ignore_ascii_case(email)
+        {
+            return None;
+        }
+        self.download_avatar(commit.pointer("/author/avatarUrl")?.as_str()?, base)
+    }
+
+    fn download_avatar(&self, raw: &str, base: &Url) -> Option<String> {
+        let raw = raw.trim();
         if raw.is_empty() {
             return None;
         }
@@ -128,13 +192,23 @@ impl GitLabProvider {
 
 impl ConditionalProvider for GitLabProvider {
     fn applies_to(&self, repo_path: &str) -> bool {
-        !Self::base_urls(repo_path).is_empty()
+        !Self::remote_projects(repo_path).is_empty()
     }
 
     fn fetch(&self, email: &str, repo_path: &str) -> Option<String> {
-        Self::base_urls(repo_path)
+        let projects = Self::remote_projects(repo_path);
+        // The email endpoint only matches public emails; commits can identify other verified emails.
+        if let Some(sha) = Self::find_author_commit(email, repo_path) {
+            if let Some(avatar) = projects
+                .iter()
+                .find_map(|(base, project)| self.fetch_commit_author(email, &sha, base, project))
+            {
+                return Some(avatar);
+            }
+        }
+        projects
             .iter()
-            .find_map(|base| self.fetch_from_instance(email, base))
+            .find_map(|(base, _)| self.fetch_from_instance(email, base))
     }
 }
 
@@ -165,7 +239,7 @@ mod tests {
             ),
         ] {
             assert_eq!(
-                GitLabProvider::remote_base_url(remote).unwrap().as_str(),
+                GitLabProvider::remote_project(remote).unwrap().0.as_str(),
                 expected
             );
         }
@@ -176,15 +250,12 @@ mod tests {
             "C:\\repo",
             "git://code.example.org/repo",
         ] {
-            assert!(
-                GitLabProvider::remote_base_url(remote).is_none(),
-                "{remote}"
-            );
+            assert!(GitLabProvider::remote_project(remote).is_none(), "{remote}");
         }
     }
 
     #[test]
-    fn reads_remotes_through_a_git_directory_file_and_deduplicates_hosts() {
+    fn reads_projects_through_a_git_directory_file() {
         let directory = tempfile::tempdir().unwrap();
         let repository = directory.path().join("repository");
         let git_directory = directory.path().join("git-directory");
@@ -204,12 +275,199 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            GitLabProvider::base_urls(repository.to_str().unwrap()),
+            GitLabProvider::remote_projects(repository.to_str().unwrap()),
             vec![
-                Url::parse("https://code.example.org/").unwrap(),
-                Url::parse("https://mirror.example.org/").unwrap(),
+                (
+                    Url::parse("https://code.example.org/").unwrap(),
+                    "team/repo".to_string()
+                ),
+                (
+                    Url::parse("https://code.example.org/").unwrap(),
+                    "team/upstream".to_string()
+                ),
+                (
+                    Url::parse("https://mirror.example.org/").unwrap(),
+                    "team/repo".to_string()
+                ),
             ]
         );
+    }
+
+    #[test]
+    fn prefers_commit_account_avatar_and_falls_back_when_unavailable() {
+        for outcome in [
+            "account",
+            "no account",
+            "wrong email",
+            "wrong sha",
+            "errors",
+            "forbidden",
+        ] {
+            let repository = tempfile::tempdir().unwrap();
+            for args in [
+                vec!["init"],
+                vec![
+                    "-c",
+                    "user.name=Example Author",
+                    "-c",
+                    "user.email=author+git@example.com",
+                    "-c",
+                    "commit.gpgsign=false",
+                    "commit",
+                    "--allow-empty",
+                    "-m",
+                    "Avatar fixture",
+                ],
+            ] {
+                assert!(
+                    crate::configured_git_command()
+                        .arg("-C")
+                        .arg(repository.path())
+                        .args(args)
+                        .output()
+                        .unwrap()
+                        .status
+                        .success()
+                );
+            }
+            let sha = GitLabProvider::find_author_commit(
+                "author+git@example.com",
+                repository.path().to_str().unwrap(),
+            )
+            .unwrap();
+            assert!(
+                GitLabProvider::find_author_commit(
+                    "git@example.com",
+                    repository.path().to_str().unwrap()
+                )
+                .is_none()
+            );
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let base = format!("http://{}/", listener.local_addr().unwrap());
+            assert!(
+                crate::configured_git_command()
+                    .arg("-C")
+                    .arg(repository.path())
+                    .args([
+                        "remote",
+                        "add",
+                        "origin",
+                        &format!("{base}team/subgroup/repo.git")
+                    ])
+                    .output()
+                    .unwrap()
+                    .status
+                    .success()
+            );
+            let server = std::thread::spawn(move || {
+                let mut commit = serde_json::json!({
+                    "sha": sha, "authorEmail": "author+git@example.com",
+                    "author": {"avatarUrl": "/uploads/local.png"}
+                });
+                match outcome {
+                    "no account" => commit["author"] = serde_json::Value::Null,
+                    "wrong email" => commit["authorEmail"] = "other@example.com".into(),
+                    "wrong sha" => commit["sha"] = "different".into(),
+                    _ => {}
+                }
+                let body = if outcome == "errors" {
+                    serde_json::json!({"errors": [{"message": "Unavailable"}]})
+                } else {
+                    serde_json::json!({"data": {"project": {"repository": {"commit": commit}}}})
+                };
+                let mut responses = vec![("/api/graphql", "application/json", body.to_string())];
+                if outcome != "account" {
+                    responses.push((
+                        "/api/v4/avatar",
+                        "application/json",
+                        r#"{"avatar_url":"/fallback.png"}"#.to_string(),
+                    ));
+                }
+                responses.push((
+                    if outcome == "account" {
+                        "/uploads/local.png"
+                    } else {
+                        "/fallback.png"
+                    },
+                    "image/png",
+                    outcome.to_string(),
+                ));
+                for (path, content_type, body) in responses {
+                    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(
+                                    std::time::Instant::now() < deadline,
+                                    "Missing request for {path}"
+                                );
+                                std::thread::sleep(std::time::Duration::from_millis(10));
+                            }
+                            Err(error) => panic!("{error}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(5)))
+                        .unwrap();
+                    let mut reader = BufReader::new(stream.try_clone().unwrap());
+                    let mut request = String::new();
+                    reader.read_line(&mut request).unwrap();
+                    let url = Url::parse(&format!(
+                        "http://localhost{}",
+                        request.split_whitespace().nth(1).unwrap()
+                    ))
+                    .unwrap();
+                    assert_eq!(url.path(), path);
+                    if path == "/api/graphql" {
+                        let variables = url
+                            .query_pairs()
+                            .find(|(key, _)| key == "variables")
+                            .unwrap()
+                            .1
+                            .into_owned();
+                        let variables: serde_json::Value =
+                            serde_json::from_str(&variables).unwrap();
+                        assert_eq!(
+                            variables,
+                            serde_json::json!({"project": "team/subgroup/repo", "sha": sha})
+                        );
+                    }
+                    loop {
+                        let mut header = String::new();
+                        reader.read_line(&mut header).unwrap();
+                        if header == "\r\n" || header.is_empty() {
+                            break;
+                        }
+                    }
+                    let status = if outcome == "forbidden" && path == "/api/graphql" {
+                        "403 Forbidden"
+                    } else {
+                        "200 OK"
+                    };
+                    write!(stream, "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+                }
+            });
+            let provider = GitLabProvider {
+                client: reqwest::blocking::Client::builder()
+                    .no_proxy()
+                    .timeout(std::time::Duration::from_secs(5))
+                    .build()
+                    .unwrap(),
+            };
+            assert_eq!(
+                provider.fetch(
+                    "author+git@example.com",
+                    repository.path().to_str().unwrap()
+                ),
+                Some(format!(
+                    "data:image/png;base64,{}",
+                    STANDARD.encode(outcome)
+                ))
+            );
+            server.join().unwrap();
+        }
     }
 
     #[test]
