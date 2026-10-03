@@ -900,12 +900,14 @@ pub fn conflict_accept_ours(
 }
 
 #[tauri::command]
-pub fn open_merge_tool(
+pub async fn open_merge_tool(
     request: FileRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .open_merge_tool(request)
-        .map_err(|error| error.to_string())
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>().git_service.open_merge_tool(request)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
