@@ -1046,8 +1046,16 @@ pub enum SignatureStatus {
     /// gpgsig header present but we have not attempted verification yet
     /// (fast path from gix - no subprocess cost).
     Signed,
-    /// Signature cryptographically valid (G / U / X / Y / R from git %G?).
+    /// Signature cryptographically valid (G from git %G?).
     Verified,
+    /// Signature valid, but trust in the signer's identity is unknown (U).
+    UnknownTrust,
+    /// Signature cryptographically valid but expired (X).
+    ExpiredSignature,
+    /// Signature valid, but the signing key has expired (Y).
+    ExpiredKey,
+    /// Signature valid, but the signing key has been revoked (R).
+    RevokedKey,
     /// Signature present but key is not in the local keyring (E).
     UnknownKey,
     /// Signature is cryptographically bad (B).

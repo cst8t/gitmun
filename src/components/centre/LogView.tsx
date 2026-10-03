@@ -52,6 +52,7 @@ function formatFingerprint(fingerprint: string): string {
 }
 
 type SigPopoverData = {
+  hash: string;
   rect: DOMRect;
   status: SignatureStatus;
   signer: string | null;
@@ -61,11 +62,13 @@ type SigPopoverData = {
 };
 
 function ShieldIcon({ status }: { status: SignatureStatus }) {
+  const warning = warningSignatureStatus(status);
   return (
     <svg className="log-view__sig-icon" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 1L2 3.5v4C2 11 4.5 14 8 15c3.5-1 6-4 6-7.5v-4L8 1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" fill="none" />
       {status === "verified" && <path d="M5.5 8l2 2 3-3" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />}
       {status === "bad" && <path d="M6 6l4 4M10 6l-4 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />}
+      {warning && <path d="M8 4.75v4.25M8 11.5h.01" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />}
     </svg>
   );
 }
@@ -158,7 +161,7 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
   }, [keyType, repoPath, status]);
 
   const handleAddAllowedSigner = async () => {
-    if (!repoPath || !repairStatus) return;
+    if (!repoPath || status !== "unknownKey" || keyType !== "ssh" || !repairStatus) return;
     setRepairLoading(true);
     try {
       await addSshSigningKeyToAllowedSigners(repoPath, repairStatus.scope);
@@ -177,16 +180,25 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
 
   const heading =
     status === "verified" ? t("log.signedVerified") :
-    status === "bad"      ? t("log.signedBad") :
+    status === "unknownTrust" ? t("log.signatureValid") :
+    status === "expiredSignature" ? t("log.expiredSignature") :
+    status === "expiredKey" ? t("log.expiredKey") :
+    status === "revokedKey" ? t("log.revokedKey") :
+    status === "bad" ? t("log.signedBad") :
     status === "unknownKey" ? t("log.signedUnknownKey") :
-                            t("log.signedUnverified");
-  const explanation = status === "unknownKey" && keyType === "ssh"
-    ? repairStatus?.status.reason === "missingAllowedSignersFile"
-      ? t("log.sshAllowedSignersMissing")
-      : t("log.sshAllowedSignersUntrusted")
-    : null;
+    t("log.signedUnverified");
+  const explanation =
+    status === "unknownTrust" ? t("log.unknownTrustExplanation") :
+    status === "expiredSignature" ? t("log.expiredSignatureExplanation") :
+    status === "expiredKey" ? t("log.expiredKeyExplanation") :
+    status === "revokedKey" ? t("log.revokedKeyExplanation") :
+    status === "unknownKey" && keyType === "ssh"
+      ? repairStatus?.status.reason === "missingAllowedSignersFile"
+        ? t("log.sshAllowedSignersMissing")
+        : t("log.sshAllowedSignersUntrusted")
+      : null;
 
-  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
+  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : warningSignatureStatus(status) ? "warning" : "unknown";
 
   return (
     <div ref={ref} className={`sig-popover sig-popover--${mod}`} role="dialog" aria-modal="false">
@@ -226,7 +238,7 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
         <span className="sig-popover__label">{t("log.date")}</span>
         <span className="sig-popover__value">{new Date(date).toLocaleString()}</span>
       </div>
-      {repairStatus && (
+      {status === "unknownKey" && keyType === "ssh" && repairStatus && (
         <button
           type="button"
           className="sig-popover__repair"
@@ -243,8 +255,15 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
 function SignatureBadge({ status, onOpen }: { status: SignatureStatus; onOpen: (rect: DOMRect) => void }) {
   const { t } = useTranslation("centre");
   if (status === "none") return null;
-  const label = status === "verified" ? t("log.verified") : status === "bad" ? t("log.badSignature") : t("log.signed");
-  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : "unknown";
+  const label =
+    status === "verified" ? t("log.verified") :
+    status === "unknownTrust" ? t("log.signatureValid") :
+    status === "expiredSignature" ? t("log.expiredSignature") :
+    status === "expiredKey" ? t("log.expiredKey") :
+    status === "revokedKey" ? t("log.revokedKey") :
+    status === "bad" ? t("log.badSignature") :
+    t("log.signed");
+  const mod = status === "verified" ? "verified" : status === "bad" ? "bad" : warningSignatureStatus(status) ? "warning" : "unknown";
   return (
     <button
       className={`log-view__sig-badge log-view__sig-badge--${mod}`}
@@ -277,7 +296,7 @@ type CommitRowProps = {
   onHoverCommit: (hash: string | null) => void;
   onVisibleSignedCommit: (index: number) => void;
   onContextMenu: (hash: string, index: number, x: number, y: number) => void;
-  onBadgeClick: (rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
+  onBadgeClick: (hash: string, rect: DOMRect, status: SignatureStatus, signer: string | null, fingerprint: string | null, keyType: string | null, date: string) => void;
 };
 
 const MAX_VISIBLE_REF_CHIPS = 4;
@@ -495,7 +514,7 @@ const CommitRow = React.memo(function CommitRow({
           )}
           <SignatureBadge
             status={effectiveSigStatus}
-            onOpen={rect => onBadgeClick(rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
+            onOpen={rect => onBadgeClick(c.hash, rect, effectiveSigStatus, signer ?? null, fingerprint ?? null, c.keyType, c.date)}
           />
           <span className="log-view__author">{c.author}</span>
           <span className="log-view__time">{relativeTime(c.date, t)}</span>
@@ -574,7 +593,7 @@ function formatCommitDetails(commits: CommitHistoryItem[]): string {
   ].join("\n")).join("\n\n");
 }
 
-type VerificationStage = "idle" | "queued" | "verifying" | "verified" | "bad" | "unknownKey" | "failed";
+type VerificationStage = "idle" | "queued" | "verifying" | "verified" | "unknownTrust" | "expiredSignature" | "expiredKey" | "revokedKey" | "bad" | "unknownKey" | "failed";
 
 type VerificationEntry = {
   stage: VerificationStage;
@@ -597,8 +616,23 @@ function isInteractiveTarget(target: EventTarget | null): boolean {
 }
 
 function concreteSignatureStatus(status: SignatureStatus): Exclude<SignatureStatus, "none" | "signed"> | null {
-  if (status === "verified" || status === "bad" || status === "unknownKey") return status;
+  if (
+    status === "verified"
+    || status === "unknownTrust"
+    || status === "expiredSignature"
+    || status === "expiredKey"
+    || status === "revokedKey"
+    || status === "bad"
+    || status === "unknownKey"
+  ) return status;
   return null;
+}
+
+function warningSignatureStatus(status: SignatureStatus): boolean {
+  return status === "unknownTrust"
+    || status === "expiredSignature"
+    || status === "expiredKey"
+    || status === "revokedKey";
 }
 
 function signatureSettingsChanged(previous: Settings | null, next: Settings | null): boolean {
@@ -1111,9 +1145,6 @@ export function LogView({
       }
       if (cancelled) return;
       const fn = await listen<Settings>("settings-updated", (event) => {
-        if (signatureSettingsChanged(lastSettingsRef.current, event.payload)) {
-          verifyVisibleSignedCommits(visibleRangeRef.current.startIndex, visibleRangeRef.current.endIndex, true);
-        }
         lastSettingsRef.current = event.payload;
         generationRef.current++;
         queueRef.current = [];
@@ -1286,6 +1317,17 @@ export function LogView({
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
   };
+  const popoverVerification = sigPopover && repoPath
+    ? verificationEntries[verificationKey(repoPath, sigPopover.hash)]
+    : undefined;
+  const visibleSigPopover = sigPopover && popoverVerification?.visibleStatus
+    ? {
+      ...sigPopover,
+      status: popoverVerification.visibleStatus,
+      signer: popoverVerification.signer,
+      fingerprint: popoverVerification.fingerprint,
+    }
+    : sigPopover;
 
   return (
     <div
@@ -1333,8 +1375,8 @@ export function LogView({
               onHoverCommit={handleHoverCommit}
               onVisibleSignedCommit={handleVisibleSignedCommit}
               onContextMenu={handleCommitContextMenu}
-              onBadgeClick={(rect, status, signer, fp, keyType, date) =>
-                setSigPopover({ rect, status, signer, fingerprint: fp, keyType, date })
+              onBadgeClick={(hash, rect, status, signer, fp, keyType, date) =>
+                setSigPopover({ hash, rect, status, signer, fingerprint: fp, keyType, date })
               }
             />
           );
@@ -1377,7 +1419,7 @@ export function LogView({
           </div>
         </div>
       )}
-      {sigPopover && <SignaturePopover data={sigPopover} repoPath={repoPath} onClose={handleCloseSigPopover} />}
+      {visibleSigPopover && <SignaturePopover data={visibleSigPopover} repoPath={repoPath} onClose={handleCloseSigPopover} />}
       {commitMenu && commitMenuCommits.length > 0 && (
         <ContextMenu
           x={commitMenu.x}

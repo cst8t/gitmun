@@ -7,6 +7,7 @@ import "../../i18n";
 import { LogView } from "./LogView";
 import {
   addSshSigningKeyToAllowedSigners,
+  getSettings,
   getSshAllowedSignerStatus,
   verifyCommits,
 } from "../../api/commands";
@@ -56,6 +57,7 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 
 vi.mock("../../api/commands", () => ({
   addSshSigningKeyToAllowedSigners: vi.fn(async () => ({ message: "Added", backendUsed: "git-cli" })),
+  getSettings: vi.fn(async () => settingsPayload),
   getSshAllowedSignerStatus: vi.fn(async () => ({
     setupNeeded: false,
     targetPath: null,
@@ -71,6 +73,7 @@ vi.mock("../../api/commands", () => ({
 }));
 
 const mockAddSshSigningKeyToAllowedSigners = vi.mocked(addSshSigningKeyToAllowedSigners);
+const mockGetSettings = vi.mocked(getSettings);
 const mockGetSshAllowedSignerStatus = vi.mocked(getSshAllowedSignerStatus);
 const mockVerifyCommits = vi.mocked(verifyCommits);
 
@@ -344,6 +347,8 @@ describe("LogView commit selection", () => {
     virtuosoCallbacksEnabled.current = true;
     mockAddSshSigningKeyToAllowedSigners.mockReset();
     mockAddSshSigningKeyToAllowedSigners.mockResolvedValue({ message: "Added", backendUsed: "git-cli" });
+    mockGetSettings.mockReset();
+    mockGetSettings.mockResolvedValue(settingsPayload);
     mockGetSshAllowedSignerStatus.mockReset();
     mockGetSshAllowedSignerStatus.mockResolvedValue({
       setupNeeded: false,
@@ -893,6 +898,36 @@ describe("LogView commit selection", () => {
     expect(await screen.findByText("Verified")).toBeInTheDocument();
   });
 
+  it.each([
+    ["unknownTrust", "Signature valid", "The cryptographic signature is valid, but the signer's identity trust is unknown."],
+    ["expiredSignature", "Expired signature", "The cryptographic signature is valid, but the signature has expired."],
+    ["expiredKey", "Expired key", "The cryptographic signature is valid, but the signing key has expired."],
+    ["revokedKey", "Revoked key", "The cryptographic signature is valid, but the signing key has been revoked."],
+  ] as const)("displays %s as an amber warning and retains its signature details", async (status, label, explanation) => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "gpg" });
+    mockVerifyCommits.mockResolvedValue([{
+      hash: signedCommit.hash,
+      status,
+      signer: "Test Signer",
+      fingerprint: "SHA256:test",
+    }]);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    const badge = await screen.findByRole("button", { name: label });
+    expect(badge).toHaveClass("log-view__sig-badge--warning");
+    expect(badge.querySelector('path[d="M8 4.75v4.25M8 11.5h.01"]')).toBeInTheDocument();
+
+    fireEvent.click(badge);
+    expect(screen.getByText(explanation)).toBeInTheDocument();
+    expect(screen.getByRole("dialog")).toHaveClass("sig-popover--warning");
+    fireEvent.click(screen.getByRole("button", { name: "Copy signer" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy fingerprint" }));
+
+    expect(writeText).toHaveBeenCalledWith("Test Signer");
+    expect(writeText).toHaveBeenCalledWith("SHA256:test");
+  });
+
   it("upgrades signed commits when the graph is hidden", async () => {
     const signedCommit = commit(1, { signatureStatus: "signed" });
     mockVerifyCommits.mockResolvedValue([
@@ -933,6 +968,71 @@ describe("LogView commit selection", () => {
 
     expect(screen.getByText("Verified")).toBeInTheDocument();
     expect(mockVerifyCommits).toHaveBeenCalledTimes(1);
+  });
+
+  it("revalidates once for the paired settings save events", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "gpg" });
+    const secondVerification = deferred<Awaited<ReturnType<typeof verifyCommits>>>();
+    const result = [{ hash: signedCommit.hash, status: "verified" as const, signer: "Test Signer", fingerprint: "ABC123" }];
+    mockVerifyCommits.mockResolvedValueOnce(result)
+      .mockReturnValueOnce(secondVerification.promise)
+      .mockResolvedValue(result);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    await screen.findByText("Verified");
+    await waitForSignatureSettingsListener();
+    await waitFor(() => expect(eventListeners.get("settings-updated")?.length).toBe(1));
+
+    await act(async () => {
+      emitEvent("settings-updated", { ...settingsPayload, gpgKeyserverVerificationEnabled: true });
+      await Promise.resolve();
+      emitEvent("signature-settings-updated");
+    });
+    expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      secondVerification.resolve(result);
+      await secondVerification.promise;
+    });
+    expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
+    expect(screen.getByText("Verified")).toBeInTheDocument();
+  });
+
+  it("queues one settings refresh behind an active verification", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "gpg" });
+    const firstVerification = deferred<Awaited<ReturnType<typeof verifyCommits>>>();
+    const secondVerification = deferred<Awaited<ReturnType<typeof verifyCommits>>>();
+    const result = [{ hash: signedCommit.hash, status: "verified" as const, signer: "Test Signer", fingerprint: "ABC123" }];
+    mockVerifyCommits.mockReturnValueOnce(firstVerification.promise)
+      .mockReturnValueOnce(secondVerification.promise)
+      .mockResolvedValue(result);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    await waitFor(() => expect(mockVerifyCommits).toHaveBeenCalledTimes(1));
+    await waitForSignatureSettingsListener();
+    await waitFor(() => expect(eventListeners.get("settings-updated")?.length).toBe(1));
+
+    await act(async () => {
+      emitEvent("settings-updated", { ...settingsPayload, gpgKeyserverVerificationEnabled: true });
+      await Promise.resolve();
+      emitEvent("signature-settings-updated");
+    });
+    expect(mockVerifyCommits).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      firstVerification.resolve(result);
+      await firstVerification.promise;
+    });
+    expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
+    expect(mockVerifyCommits).toHaveBeenLastCalledWith("/repo", [signedCommit.hash]);
+
+    await act(async () => {
+      secondVerification.resolve(result);
+      await secondVerification.promise;
+    });
+    expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
   });
 
   it("verifies signed commits again after signature settings change", async () => {
@@ -1149,6 +1249,69 @@ describe("LogView commit selection", () => {
     expect(screen.queryByText("Signed")).not.toBeInTheDocument();
   });
 
+  it("replaces a verified signature with a newer warning result", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed" });
+    mockVerifyCommits
+      .mockResolvedValueOnce([{
+        hash: signedCommit.hash,
+        status: "verified",
+        signer: "Test Signer",
+        fingerprint: "SHA256:test",
+      }])
+      .mockResolvedValueOnce([{
+        hash: signedCommit.hash,
+        status: "revokedKey",
+        signer: "Test Signer",
+        fingerprint: "SHA256:test",
+      }]);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    expect(await screen.findByText("Verified")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Verified" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("This commit was signed with a verified signature.");
+    await waitForSignatureSettingsListener();
+    act(() => {
+      emitEvent("signature-settings-updated");
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("Revoked key"));
+    expect(screen.getByRole("dialog")).toHaveTextContent("The cryptographic signature is valid, but the signing key has been revoked.");
+    expect(screen.queryByText("Verified")).not.toBeInTheDocument();
+  });
+
+  it.each(["rejection", "missing result"] as const)("keeps a warning visible when a revalidation returns %s", async outcome => {
+    const signedCommit = commit(1, { signatureStatus: "signed" });
+    mockVerifyCommits.mockResolvedValueOnce([{
+      hash: signedCommit.hash,
+      status: "unknownTrust",
+      signer: "Test Signer",
+      fingerprint: "SHA256:test",
+    }]);
+    const revalidation = deferred<Awaited<ReturnType<typeof verifyCommits>>>();
+    mockVerifyCommits.mockReturnValueOnce(revalidation.promise);
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    expect(await screen.findByText("Signature valid")).toBeInTheDocument();
+    await waitForSignatureSettingsListener();
+    act(() => {
+      emitEvent("signature-settings-updated");
+    });
+
+    await waitFor(() => expect(mockVerifyCommits).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      if (outcome === "rejection") {
+        revalidation.reject(new Error("verification failed"));
+      } else {
+        revalidation.resolve([]);
+      }
+      await revalidation.promise.catch(() => {});
+    });
+    expect(screen.getByRole("button", { name: "Signature valid" })).toHaveClass("log-view__sig-badge--warning");
+    expect(screen.queryByText("Signed")).not.toBeInTheDocument();
+  });
+
   it("caps visible verification batches at twenty commits", async () => {
     const signedCommits = Array.from({ length: 25 }, (_, index) => (
       commit(index + 1, {
@@ -1242,6 +1405,35 @@ describe("LogView commit selection", () => {
       expect(mockAddSshSigningKeyToAllowedSigners).toHaveBeenCalledWith("/repo", "Local");
       expect(mockVerifyCommits).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("removes SSH repair when an open popover receives a warning result", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "ssh" });
+    const metadata = { hash: signedCommit.hash, signer: "test@gitmun.test", fingerprint: "SHA256:test" };
+    mockVerifyCommits.mockResolvedValueOnce([{ ...metadata, status: "unknownKey" }])
+      .mockResolvedValueOnce([{ ...metadata, status: "revokedKey" }]);
+    mockGetSshAllowedSignerStatus.mockResolvedValue({
+      setupNeeded: true,
+      targetPath: "/repo/.git/gitmun_allowed_signers",
+      blockingReason: null,
+      allowedSignersConfigured: false,
+      allowedSignersExists: false,
+      signingKeyPresent: true,
+      signingKeyTrusted: false,
+      resolvedPublicKeyFingerprint: null,
+      reason: "untrustedSigningKey",
+    });
+
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Signed" }));
+    await screen.findByRole("button", { name: "Add my SSH signing key" });
+    await waitForSignatureSettingsListener();
+    act(() => emitEvent("signature-settings-updated"));
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toHaveTextContent("Revoked key"));
+    expect(screen.queryByRole("button", { name: "Add my SSH signing key" })).not.toBeInTheDocument();
+    expect(mockAddSshSigningKeyToAllowedSigners).not.toHaveBeenCalled();
   });
 
   it("does not offer arbitrary SSH commit trust without configured key material", async () => {

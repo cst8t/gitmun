@@ -1199,12 +1199,20 @@
   cursor: pointer;
   background: none;
   font-family: var(--font-ui);
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .log-view__sig-badge--verified {
   color: var(--green);
   background: var(--green-dim);
   border-color: var(--diff-add-border);
+}
+
+.log-view__sig-badge--warning {
+  color: var(--yellow);
+  background: color-mix(in srgb, var(--yellow) 12%, transparent);
+  border-color: color-mix(in srgb, var(--yellow) 35%, transparent);
 }
 
 .log-view__sig-badge--unknown {
@@ -1300,6 +1308,7 @@
 }
 
 .sig-popover--verified { border-top: 2px solid var(--green); }
+.sig-popover--warning { border-top: 2px solid var(--yellow); }
 .sig-popover--bad { border-top: 2px solid var(--red); }
 .sig-popover--unknown { border-top: 2px solid var(--border); }
 
@@ -1333,6 +1342,7 @@
 }
 
 .sig-popover--verified .sig-popover__header { color: var(--green); }
+.sig-popover--warning .sig-popover__header { color: var(--yellow); }
 .sig-popover--bad .sig-popover__header { color: var(--red); }
 
 .sig-popover__header .log-view__sig-icon {

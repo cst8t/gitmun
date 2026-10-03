@@ -235,7 +235,10 @@ fn verify_commit_signatures(
 
     let retry_results = verify_with_git(repo_path, &retry_hashes, runner)?;
     for retry_result in retry_results {
-        if retry_result.status != SignatureStatus::Verified {
+        if matches!(
+            retry_result.status,
+            SignatureStatus::None | SignatureStatus::Signed
+        ) {
             continue;
         }
         if let Some(result) = results
@@ -324,9 +327,13 @@ fn parse_verification_output(stdout: &str, requested_hashes: &[String]) -> Vec<C
         };
 
         let status = match sig_char {
-            "G" | "X" | "Y" | "R" => SignatureStatus::Verified,
+            "G" => SignatureStatus::Verified,
+            "U" => SignatureStatus::UnknownTrust,
+            "X" => SignatureStatus::ExpiredSignature,
+            "Y" => SignatureStatus::ExpiredKey,
+            "R" => SignatureStatus::RevokedKey,
             "B" => SignatureStatus::Bad,
-            "U" | "E" => SignatureStatus::UnknownKey,
+            "E" => SignatureStatus::UnknownKey,
             _ => SignatureStatus::None,
         };
         let signer = if signer_raw.is_empty() {
@@ -536,31 +543,30 @@ mod tests {
     }
 
     #[test]
-    fn maps_existing_verification_statuses() {
-        let output = [
-            "a\x1fG\x1fAlice\x1fFINGERPRINT\x1fKEY",
-            "b\x1fB\x1fBob\x1f\x1fBADKEY",
-            "c\x1fE\x1fCarol\x1f\x1fUNKNOWNKEY",
-            "d\x1fN\x1f\x1f\x1f",
-        ]
-        .join("\n");
-        let results = parse_verification_output(
-            &output,
-            &[
-                "a".to_string(),
-                "b".to_string(),
-                "c".to_string(),
-                "d".to_string(),
-            ],
-        );
+    fn maps_and_serialises_all_verification_statuses() {
+        for (signature_status, expected_status, serialised_status) in [
+            ("G", SignatureStatus::Verified, "verified"),
+            ("U", SignatureStatus::UnknownTrust, "unknownTrust"),
+            ("X", SignatureStatus::ExpiredSignature, "expiredSignature"),
+            ("Y", SignatureStatus::ExpiredKey, "expiredKey"),
+            ("R", SignatureStatus::RevokedKey, "revokedKey"),
+            ("B", SignatureStatus::Bad, "bad"),
+            ("E", SignatureStatus::UnknownKey, "unknownKey"),
+            ("N", SignatureStatus::None, "none"),
+        ] {
+            let output = format!("a\x1f{signature_status}\x1fAlice\x1fFINGERPRINT\x1fKEY");
+            let results = parse_verification_output(&output, &["a".to_string()]);
 
-        assert_eq!(results[0].status, SignatureStatus::Verified);
-        assert_eq!(results[0].fingerprint.as_deref(), Some("FINGERPRINT"));
-        assert_eq!(results[1].status, SignatureStatus::Bad);
-        assert_eq!(results[1].fingerprint.as_deref(), Some("BADKEY"));
-        assert_eq!(results[2].status, SignatureStatus::UnknownKey);
-        assert_eq!(results[2].fingerprint.as_deref(), Some("UNKNOWNKEY"));
-        assert_eq!(results[3].status, SignatureStatus::None);
+            assert_eq!(results[0].status, expected_status);
+            assert_eq!(results[0].fingerprint.as_deref(), Some("FINGERPRINT"));
+            assert_eq!(
+                serde_json::to_value(&results[0]).expect("verification should serialise")["status"],
+                serialised_status
+            );
+        }
+
+        let results = parse_verification_output("a\x1fE\x1f\x1f\x1fUNKNOWNKEY", &["a".to_string()]);
+        assert_eq!(results[0].fingerprint.as_deref(), Some("UNKNOWNKEY"));
     }
 
     #[test]
@@ -573,6 +579,73 @@ mod tests {
         assert_eq!(results[0].status, SignatureStatus::UnknownKey);
         assert!(runner.fetched_keys.borrow().is_empty());
         assert_eq!(runner.verified_hashes.borrow().len(), 1);
+    }
+
+    #[test]
+    fn warning_signatures_do_not_fetch_gpg_keys() {
+        for (signature_status, expected_status) in [
+            ("U", SignatureStatus::UnknownTrust),
+            ("X", SignatureStatus::ExpiredSignature),
+            ("Y", SignatureStatus::ExpiredKey),
+            ("R", SignatureStatus::RevokedKey),
+        ] {
+            for enabled in [false, true] {
+                let output = format!("a\x1f{signature_status}\x1fAlice\x1fFINGERPRINT\x1fKEY");
+                let runner = FakeRunner::new(vec![&output]).with_key_type("a", "gpg");
+                let results =
+                    verify_commit_signatures("/repo", &["a".to_string()], enabled, &runner)
+                        .expect("verification should complete");
+
+                assert_eq!(results[0].status, expected_status);
+                assert_eq!(results[0].signer.as_deref(), Some("Alice"));
+                assert_eq!(results[0].fingerprint.as_deref(), Some("FINGERPRINT"));
+                assert!(runner.fetched_keys.borrow().is_empty());
+                assert_eq!(runner.verified_hashes.borrow().len(), 1);
+            }
+        }
+    }
+
+    #[test]
+    fn fetched_gpg_key_retry_applies_status_and_metadata() {
+        for (signature_status, expected_status) in [
+            ("G", SignatureStatus::Verified),
+            ("U", SignatureStatus::UnknownTrust),
+            ("X", SignatureStatus::ExpiredSignature),
+            ("Y", SignatureStatus::ExpiredKey),
+            ("R", SignatureStatus::RevokedKey),
+            ("B", SignatureStatus::Bad),
+            ("E", SignatureStatus::UnknownKey),
+        ] {
+            let retry_output = format!("a\x1f{signature_status}\x1fAlice\x1fFINGERPRINT\x1fABC123");
+            let runner = FakeRunner::new(vec!["a\x1fE\x1f\x1f\x1fABC123", &retry_output])
+                .with_key_type("a", "gpg")
+                .with_global_gpg_program("gpg");
+            let results = verify_commit_signatures("/repo", &["a".to_string()], true, &runner)
+                .expect("verification should complete");
+
+            assert_eq!(results[0].status, expected_status);
+            assert_eq!(results[0].signer.as_deref(), Some("Alice"));
+            assert_eq!(results[0].fingerprint.as_deref(), Some("FINGERPRINT"));
+            assert_eq!(
+                runner.fetched_keys.borrow().as_slice(),
+                &["gpg ABC123".to_string()]
+            );
+            assert_eq!(runner.verified_hashes.borrow().len(), 2);
+        }
+    }
+
+    #[test]
+    fn missing_retry_row_preserves_initial_verification_result() {
+        let runner =
+            FakeRunner::new(vec!["a\x1fE\x1f\x1f\x1fABC123", ""]).with_key_type("a", "gpg");
+        let results = verify_commit_signatures("/repo", &["a".to_string()], true, &runner)
+            .expect("verification should complete");
+
+        assert_eq!(results[0].status, SignatureStatus::UnknownKey);
+        assert_eq!(results[0].signer, None);
+        assert_eq!(results[0].fingerprint.as_deref(), Some("ABC123"));
+        assert_eq!(runner.fetched_keys.borrow().len(), 1);
+        assert_eq!(runner.verified_hashes.borrow().len(), 2);
     }
 
     #[test]
