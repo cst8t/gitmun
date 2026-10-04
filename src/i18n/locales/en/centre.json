@@ -99,6 +99,7 @@
     "commitRefs": "Commit refs",
     "copyCommitHash": "Copy Commit Hash",
     "copyDetails": "Copy Details",
+    "copied": "Copied",
     "copyFingerprint": "Copy fingerprint",
     "copyShortHash": "Copy Short Hash",
     "copySigner": "Copy signer",

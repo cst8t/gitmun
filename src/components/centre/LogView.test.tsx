@@ -923,6 +923,7 @@ describe("LogView commit selection", () => {
     expect(screen.getByRole("dialog")).toHaveClass("sig-popover--warning");
     fireEvent.click(screen.getByRole("button", { name: "Copy signer" }));
     fireEvent.click(screen.getByRole("button", { name: "Copy fingerprint" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Copied" })).toHaveLength(2));
 
     expect(writeText).toHaveBeenCalledWith("Test Signer");
     expect(writeText).toHaveBeenCalledWith("SHA256:test");
@@ -1470,10 +1471,73 @@ describe("LogView commit selection", () => {
     expect((await screen.findByRole("button", { name: "Close" })).querySelector("svg")).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "Copy signer" }));
     fireEvent.click(screen.getByRole("button", { name: "Copy fingerprint" }));
+    await waitFor(() => expect(screen.getAllByRole("button", { name: "Copied" })).toHaveLength(2));
 
     expect(writeText).toHaveBeenCalledWith("test@gitmun.test");
     expect(writeText).toHaveBeenCalledWith("SHA256:test");
     expect(mockAddSshSigningKeyToAllowedSigners).not.toHaveBeenCalled();
+  });
+
+  it("shows independent copy feedback briefly and restarts it on another copy", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "gpg" });
+    mockVerifyCommits.mockResolvedValue([{
+      hash: signedCommit.hash,
+      status: "verified",
+      signer: "test@gitmun.test",
+      fingerprint: "ABC123",
+    }]);
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+    fireEvent.click(await screen.findByRole("button", { name: "Verified" }));
+    const signerButton = screen.getByRole("button", { name: "Copy signer" });
+    const fingerprintButton = screen.getByRole("button", { name: "Copy fingerprint" });
+
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(signerButton);
+      await act(async () => { await Promise.resolve(); });
+      expect(signerButton).toHaveTextContent("Copied");
+      expect(fingerprintButton).toHaveTextContent("Copy fingerprint");
+
+      act(() => vi.advanceTimersByTime(600));
+      fireEvent.click(fingerprintButton);
+      await act(async () => { await Promise.resolve(); });
+      expect(fingerprintButton).toHaveTextContent("Copied");
+
+      act(() => vi.advanceTimersByTime(600));
+      expect(signerButton).toHaveTextContent("Copy signer");
+      expect(fingerprintButton).toHaveTextContent("Copied");
+      fireEvent.click(fingerprintButton);
+      await act(async () => { await Promise.resolve(); });
+      act(() => vi.advanceTimersByTime(1199));
+      expect(fingerprintButton).toHaveTextContent("Copied");
+      act(() => vi.advanceTimersByTime(1));
+      expect(fingerprintButton).toHaveTextContent("Copy fingerprint");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not show copied feedback before a copy succeeds or when it fails", async () => {
+    const signedCommit = commit(1, { signatureStatus: "signed", keyType: "gpg" });
+    mockVerifyCommits.mockResolvedValue([{
+      hash: signedCommit.hash,
+      status: "verified",
+      signer: "test@gitmun.test",
+      fingerprint: "ABC123",
+    }]);
+    const clipboardWrite = deferred<void>();
+    writeText.mockReturnValueOnce(clipboardWrite.promise);
+    renderLog({ repoPath: "/repo", commits: [signedCommit] });
+    fireEvent.click(await screen.findByRole("button", { name: "Verified" }));
+    fireEvent.click(screen.getByRole("button", { name: "Copy signer" }));
+    expect(screen.queryByRole("button", { name: "Copied" })).not.toBeInTheDocument();
+
+    await act(async () => {
+      clipboardWrite.reject(new Error("clipboard unavailable"));
+      await clipboardWrite.promise.catch(() => {});
+    });
+    expect(screen.getByRole("button", { name: "Copy signer" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copied" })).not.toBeInTheDocument();
   });
 
   it("ignores verification results from an older repo generation", async () => {

@@ -73,9 +73,29 @@ function ShieldIcon({ status }: { status: SignatureStatus }) {
   );
 }
 
-function copyValue(value: string | null) {
-  if (!value) return;
-  navigator.clipboard?.writeText(value).catch(() => {});
+function SignatureCopyButton({ value, label }: { value: string; label: string }) {
+  const { t } = useTranslation("centre");
+  const [copyCount, setCopyCount] = useState(0);
+
+  useEffect(() => {
+    if (copyCount === 0) return;
+    const timer = setTimeout(() => setCopyCount(0), 1200);
+    return () => clearTimeout(timer);
+  }, [copyCount]);
+
+  const handleCopy = async () => {
+    if (!navigator.clipboard) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopyCount(count => count + 1);
+    } catch {}
+  };
+
+  return (
+    <button type="button" className="sig-popover__copy" onClick={handleCopy} aria-live="polite">
+      {copyCount > 0 ? t("log.copied") : label}
+    </button>
+  );
 }
 
 function repairableStatus(status: SshAllowedSignerStatus | null): boolean {
@@ -215,7 +235,7 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
           <span className="sig-popover__label">{t("log.signer")}</span>
           <span className="sig-popover__value sig-popover__value-with-action">
             {signer}
-            <button type="button" className="sig-popover__copy" onClick={() => copyValue(signer)}>{t("log.copySigner")}</button>
+            <SignatureCopyButton value={signer} label={t("log.copySigner")} />
           </span>
         </div>
       )}
@@ -230,7 +250,7 @@ function SignaturePopover({ data, repoPath, onClose }: { data: SigPopoverData; r
           <span className="sig-popover__label">{t("log.fingerprint")}</span>
           <span className="sig-popover__value sig-popover__value--mono sig-popover__value-with-action">
             {formatFingerprint(fingerprint)}
-            <button type="button" className="sig-popover__copy" onClick={() => copyValue(fingerprint)}>{t("log.copyFingerprint")}</button>
+            <SignatureCopyButton value={fingerprint} label={t("log.copyFingerprint")} />
           </span>
         </div>
       )}
