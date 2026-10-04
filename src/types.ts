@@ -589,7 +589,16 @@ export type NumstatResult = {
     deletions: number;
 };
 
-export type SignatureStatus = "none" | "signed" | "verified" | "unknownKey" | "bad";
+export type SignatureStatus =
+    | "none"
+    | "signed"
+    | "verified"
+    | "unknownTrust"
+    | "expiredSignature"
+    | "expiredKey"
+    | "revokedKey"
+    | "unknownKey"
+    | "bad";
 
 export type CommitRefKind = "localBranch" | "remoteBranch" | "tag";
 

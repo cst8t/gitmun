@@ -6406,7 +6406,7 @@ impl GitOperationHandler for CliGitHandler {
                 &overrides,
                 &args,
                 Some(&repo_path),
-                &[1],
+                &[],
             ),
             &tool_name,
         )?;

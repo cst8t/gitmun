@@ -155,6 +155,68 @@ fn handler() -> CliGitHandler {
     CliGitHandler
 }
 
+fn repo_with_merge_tool_conflict(tool_command: &str) -> TempDir {
+    let dir = init_repo();
+    write_file(dir.path(), "report conflict.txt", "base\n");
+    git(dir.path(), &["add", "report conflict.txt"]);
+    git(dir.path(), &["commit", "-m", "base report"]);
+    git(dir.path(), &["switch", "-c", "report-update"]);
+    write_file(dir.path(), "report conflict.txt", "remote\n");
+    git(dir.path(), &["commit", "-am", "remote report"]);
+    git(dir.path(), &["switch", "main"]);
+    write_file(dir.path(), "report conflict.txt", "local\n");
+    git(dir.path(), &["commit", "-am", "local report"]);
+    let merge = Command::new("git")
+        .args(["merge", "--no-edit", "report-update"])
+        .current_dir(dir.path())
+        .output()
+        .expect("create merge conflict");
+    assert_eq!(merge.status.code(), Some(1));
+    assert!(!git_stdout(dir.path(), &["ls-files", "-u"]).is_empty());
+    git(dir.path(), &["config", "merge.tool", "gitmun-test"]);
+    git(
+        dir.path(),
+        &["config", "mergetool.gitmun-test.cmd", tool_command],
+    );
+    git(
+        dir.path(),
+        &["config", "mergetool.gitmun-test.trustExitCode", "true"],
+    );
+    dir
+}
+
+#[test]
+fn open_merge_tool_reports_failure_and_preserves_conflict() {
+    let dir = repo_with_merge_tool_conflict("echo merge-tool-launch-failed >&2; exit 1");
+    let content_before = read_file(dir.path(), "report conflict.txt");
+    let index_before = git_stdout(dir.path(), &["ls-files", "-u"]);
+
+    let error = handler()
+        .open_merge_tool(&file_request(&dir, "report conflict.txt"))
+        .expect_err("merge tool failure must reach the caller");
+
+    assert!(error.to_string().contains("merge-tool-launch-failed"));
+    assert_eq!(read_file(dir.path(), "report conflict.txt"), content_before);
+    assert_eq!(git_stdout(dir.path(), &["ls-files", "-u"]), index_before);
+}
+
+#[test]
+fn open_merge_tool_resolves_file_with_spaces_and_stages_result() {
+    let dir = repo_with_merge_tool_conflict("cp \"$REMOTE\" \"$MERGED\"");
+
+    handler()
+        .open_merge_tool(&file_request(&dir, "report conflict.txt"))
+        .expect("open merge tool");
+
+    assert_eq!(read_file(dir.path(), "report conflict.txt"), "remote\n");
+    assert!(git_stdout(dir.path(), &["ls-files", "-u"]).is_empty());
+    assert_eq!(
+        git_stdout(dir.path(), &["show", ":report conflict.txt"]),
+        "remote"
+    );
+    assert!(!dir.path().join("report conflict.txt.orig").exists());
+}
+
 fn gix_handler() -> GixGitHandler {
     GixGitHandler::new()
 }
