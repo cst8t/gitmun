@@ -807,7 +807,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $release = gh release view --repo git-for-windows/git --json assets,body,tagName |
+          $mingitTag = "v2.55.0.windows.5"
+          $release = gh release view $mingitTag --repo git-for-windows/git --json assets,body,tagName |
             ConvertFrom-Json
 
           $asset = $release.assets |
@@ -815,7 +816,7 @@ jobs:
             Select-Object -First 1
 
           if ($null -eq $asset) {
-            throw "Could not find a 64-bit MinGit zip in the latest Git for Windows release."
+            throw "Could not find a 64-bit MinGit zip in Git for Windows release $mingitTag."
           }
 
           $checksumPattern = "^$([regex]::Escape($asset.name))(?:\s+|\s*\|\s*)([0-9a-fA-F]{64})$"
@@ -835,7 +836,7 @@ jobs:
           Remove-Item $archivePath -Force -ErrorAction SilentlyContinue
           Remove-Item $mingitPath -Recurse -Force -ErrorAction SilentlyContinue
 
-          gh release download `
+          gh release download $mingitTag `
             --repo git-for-windows/git `
             --pattern $asset.name `
             --dir "packaging/msix" `
