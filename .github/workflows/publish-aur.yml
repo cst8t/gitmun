@@ -153,10 +153,7 @@ jobs:
 
   winget:
     name: Update WinGet manifest
-    runs-on: windows-latest
-    defaults:
-      run:
-        shell: bash
+    runs-on: ubuntu-22.04
 
     steps:
       - name: Resolve release tag
@@ -203,24 +200,70 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         with:
+          komac-version: 2.17.1
           custom-fork-owner: ${{ github.repository_owner }}
           args: sync
 
       - name: Generate WinGet manifests
-        uses: michidk/run-komac@v2
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
-        with:
-          custom-fork-owner: ${{ github.repository_owner }}
-          custom-tool: Gitmun package manager workflow
-          custom-tool-url: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/publish-aur.yml
-          args: >-
-            update cst8t.gitmun
-            --version ${PACKAGE_VERSION}
-            --urls ${NSIS_URL} ${MSI_URL}
-            --release-notes-url ${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}
-            --dry-run
-            --output ./winget-manifests
+          KOMAC_CREATED_WITH: Gitmun package manager workflow
+          KOMAC_CREATED_WITH_URL: ${{ github.server_url }}/${{ github.repository }}/actions/workflows/publish-aur.yml
+          NO_COLOR: "1"
+        run: |
+          set -euo pipefail
+
+          # Komac 2.17.1 returns before writing --output in dry-run mode.
+          # Capture its manifests without prompting or submitting before cleanup.
+          komac update cst8t.gitmun \
+            --version "${PACKAGE_VERSION}" \
+            --urls "${NSIS_URL}" "${MSI_URL}" \
+            --release-notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}" \
+            --dry-run > "${RUNNER_TEMP}/winget-manifests.txt"
+
+          python3 - <<'PY'
+          import os
+          import re
+          from pathlib import Path
+
+          raw = (Path(os.environ["RUNNER_TEMP"]) / "winget-manifests.txt").read_text()
+          # Each manifest starts with Komac's generated comment; ignore its status line.
+          documents = re.split(r"(?m)(?=^# Created with )", raw)[1:]
+          manifests = {}
+          types = set()
+          for document in documents:
+              def field(name):
+                  match = re.search(rf"(?m)^{name}: ([^\r\n]+)$", document)
+                  if not match:
+                      raise SystemExit(f"Missing {name} in Komac output")
+                  return match[1]
+
+              if field("PackageIdentifier") != "cst8t.gitmun" or field("PackageVersion") != os.environ["PACKAGE_VERSION"]:
+                  raise SystemExit("Unexpected package or version in Komac output")
+              kind = field("ManifestType")
+              if kind in ("defaultLocale", "locale"):
+                  locale = field("PackageLocale")
+                  if not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", locale):
+                      raise SystemExit(f"Invalid package locale: {locale}")
+                  suffix = f".locale.{locale}"
+              elif kind in ("installer", "version"):
+                  suffix = ".installer" if kind == "installer" else ""
+              else:
+                  raise SystemExit(f"Unexpected manifest type: {kind}")
+              filename = f"cst8t.gitmun{suffix}.yaml"
+              if filename in manifests:
+                  raise SystemExit(f"Duplicate manifest: {filename}")
+              manifests[filename] = document
+              types.add(kind)
+
+          if not {"installer", "defaultLocale", "version"} <= types:
+              raise SystemExit("Komac did not produce the required WinGet manifests")
+          output = Path("winget-manifests")
+          output.mkdir()
+          for filename, document in manifests.items():
+              (output / filename).write_text(document)
+          print(f"Saved {len(manifests)} WinGet manifests to {output}")
+          PY
 
       - name: Remove InstallerLocale from manifests
         run: |
@@ -232,6 +275,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         with:
+          komac-version: 2.17.1
           custom-fork-owner: ${{ github.repository_owner }}
           args: >-
             submit ./winget-manifests
