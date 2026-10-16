@@ -153,7 +153,10 @@ jobs:
 
   winget:
     name: Update WinGet manifest
-    runs-on: ubuntu-22.04
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
 
     steps:
       - name: Resolve release tag
@@ -216,7 +219,6 @@ jobs:
             --version ${PACKAGE_VERSION}
             --urls ${NSIS_URL} ${MSI_URL}
             --release-notes-url ${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}
-            --dry-run
             --output ./winget-manifests
 
       - name: Remove InstallerLocale from manifests
