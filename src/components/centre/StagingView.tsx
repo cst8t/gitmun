@@ -13,6 +13,8 @@ import type {
   OperationFeedbackContent,
   RowStriping,
   StagingOperation,
+  SubmoduleOperationState,
+  SubmoduleRemotePreview,
   SubmoduleStatus,
   UnversionedItem,
 } from "../../types";
@@ -47,6 +49,15 @@ type StagingViewProps = {
   onSubmoduleFetch: (path: string) => void;
   onSubmodulePull: (path: string) => void;
   onSubmoduleOpen: (path: string) => void;
+  submoduleOperations?: Record<string, SubmoduleOperationState>;
+  submoduleBusy?: boolean;
+  recursiveSubmodules?: boolean;
+  onRecursiveSubmodulesChange?: (recursive: boolean) => void;
+  onSubmodulePrepareRemote?: (path: string) => void;
+  onSubmoduleApplyRemote?: (path: string, recursive: boolean) => void;
+  remoteUpdatePreview?: SubmoduleRemotePreview | null;
+  onRemoteUpdatePreviewClose?: () => void;
+  onDismissSubmoduleFeedback?: (path: string) => void;
   onStageFile: (path: string) => void;
   onStageFiles: (paths: string[]) => void;
   onUnstageFile: (path: string) => void;
@@ -328,7 +339,56 @@ type SubmoduleRowProps = {
   onFetch: () => void;
   onPull: () => void;
   onOpen: () => void;
+  onPrepareRemote?: () => void;
+  operation?: SubmoduleOperationState;
+  busy: boolean;
+  onDismissFeedback?: () => void;
 };
+
+function SubmoduleOperationFeedback({
+  operation,
+  fallback,
+  onDismiss,
+}: {
+  operation: SubmoduleOperationState;
+  fallback: string | null;
+  onDismiss?: () => void;
+}) {
+  const { t } = useTranslation("centre");
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [expanded, setExpanded] = useState(false);
+  const running = operation.phase === "running" || operation.phase === "refreshing";
+
+  useEffect(() => {
+    if (!running) return;
+    const update = () => setElapsedSeconds(Math.max(0, Math.floor((Date.now() - operation.startedAt) / 1000)));
+    update();
+    const interval = window.setInterval(update, 1000);
+    return () => window.clearInterval(interval);
+  }, [operation.startedAt, running]);
+
+  return (
+    <div
+      className={`submodule-row__feedback submodule-row__feedback--${operation.phase}`}
+      role="status"
+      aria-live="polite"
+      onClick={event => event.stopPropagation()}
+    >
+      {running && <span className="staging__operation-spinner" aria-hidden="true" />}
+      <span>{operation.message ?? fallback}</span>
+      {running && <span>{t("staging.submoduleElapsed", {seconds: elapsedSeconds})}</span>}
+      {operation.phase === "error" && operation.error && (
+        <button type="button" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
+          {t(expanded ? "staging.hideDiagnostic" : "staging.showDiagnostic")}
+        </button>
+      )}
+      {operation.phase === "error" && onDismiss && (
+        <button type="button" onClick={onDismiss}>{t("actions.dismiss", {ns: "common"})}</button>
+      )}
+      {expanded && operation.error && <pre className="submodule-row__diagnostic">{operation.error}</pre>}
+    </div>
+  );
+}
 
 function SubmoduleRow({
   submodule,
@@ -341,14 +401,39 @@ function SubmoduleRow({
   onFetch,
   onPull,
   onOpen,
+  onPrepareRemote,
+  operation,
+  busy,
+  onDismissFeedback,
 }: SubmoduleRowProps) {
   const { t } = useTranslation("centre");
-  const canInit = !submodule.initialised || submodule.state === "missing" || submodule.state === "uninitialised";
-  const canUpdate = submodule.initialised && submodule.state !== "missing";
-  const canSync = submodule.syncRequired;
-  const canFetch = submodule.initialised;
-  const canPull = submodule.initialised && !submodule.dirty && !!submodule.currentBranch;
+  const configured = Boolean(submodule.configuredUrl);
+  const conflicted = submodule.state === "conflict";
+  const canInit = configured && (!submodule.initialised || submodule.state === "missing" || submodule.state === "uninitialised");
+  const canUpdate = configured && submodule.initialised && submodule.state !== "missing" && !submodule.dirty && !conflicted;
+  const canSync = configured && submodule.syncRequired;
+  const canFetch = configured && submodule.initialised;
+  const canPull = configured && submodule.initialised && !submodule.dirty && !conflicted && !!submodule.currentBranch && !!submodule.upstreamBranch;
   const canOpen = submodule.initialised;
+  const unavailable = (key: string) => t(`staging.submoduleUnavailable.${key}`);
+  const pullReason = !configured
+    ? unavailable("unconfigured")
+    : submodule.dirty
+      ? unavailable("dirty")
+      : conflicted
+        ? unavailable("conflict")
+        : !submodule.currentBranch
+          ? unavailable("detached")
+          : !submodule.upstreamBranch
+            ? unavailable("noUpstream")
+            : unavailable("pull");
+  const actionLabel = operation?.phase === "running" || operation?.phase === "refreshing"
+    ? t(`staging.submoduleAction.${operation.action}`)
+    : null;
+  const disabledReason = (available: boolean, reason: string) => available ? undefined : reason;
+  const buttonLabel = (action: SubmoduleOperationState["action"], fallback: string) => operation?.action === action && actionLabel
+    ? <><span className="submodule-row__button-spinner staging__operation-spinner" aria-hidden="true" />{actionLabel}</>
+    : fallback;
   const stripingClass = striped ? ` submodule-row--striped-${striped.toLowerCase()}` : "";
 
   return (
@@ -372,15 +457,88 @@ function SubmoduleRow({
         {submodule.configuredUrl && <span title={submodule.configuredUrl}>{submodule.configuredUrl}</span>}
       </div>
       <div className="submodule-row__actions" onClick={e => e.stopPropagation()}>
-        {canInit && <button onClick={onInit}>{t("actions.init", {ns: "common"})}</button>}
-        {canUpdate && <button onClick={onUpdate}>{t("actions.update", {ns: "common"})}</button>}
-        {canSync && <button onClick={onSync}>{t("staging.syncUrl")}</button>}
-        {canFetch && <button onClick={onFetch}>{t("actions.fetch", {ns: "common"})}</button>}
-        {canPull && <button onClick={onPull}>{t("actions.pull", {ns: "common"})}</button>}
-        {canOpen && <button onClick={onOpen}>{t("actions.open", {ns: "common"})}</button>}
+        <button type="button" disabled={busy || !canInit} title={disabledReason(canInit, configured ? unavailable("initialise") : unavailable("unconfigured"))} onClick={onInit}>{buttonLabel("initialise", t("actions.initialise", {ns: "common"}))}</button>
+        <button type="button" disabled={busy || !canUpdate} title={canUpdate ? t("staging.checkoutRecordedHint") : disabledReason(false, submodule.dirty ? unavailable("dirty") : conflicted ? unavailable("conflict") : unavailable("checkout"))} onClick={onUpdate}>{buttonLabel("checkout", t("staging.checkoutRecorded"))}</button>
+        <button type="button" disabled={busy || !canUpdate || !onPrepareRemote} title={canUpdate && onPrepareRemote ? t("staging.updateFromRemoteHint") : disabledReason(false, submodule.dirty ? unavailable("dirty") : unavailable("remote"))} onClick={onPrepareRemote}>{buttonLabel("prepareRemote", t("staging.updateFromRemote"))}</button>
+        <button type="button" disabled={busy || !canSync} title={disabledReason(canSync, configured ? unavailable("sync") : unavailable("unconfigured"))} onClick={onSync}>{buttonLabel("sync", t("staging.syncUrl"))}</button>
+        <button type="button" disabled={busy || !canFetch} title={disabledReason(canFetch, configured ? unavailable("fetch") : unavailable("unconfigured"))} onClick={onFetch}>{buttonLabel("fetch", t("actions.fetch", {ns: "common"}))}</button>
+        <button type="button" disabled={busy || !canPull} title={canPull ? t("staging.pullHint") : pullReason} onClick={onPull}>{buttonLabel("pull", t("actions.pull", {ns: "common"}))}</button>
+        <button type="button" disabled={busy || !canOpen} title={disabledReason(canOpen, unavailable("open"))} onClick={onOpen}>{buttonLabel("open", t("actions.open", {ns: "common"}))}</button>
       </div>
+      {operation && <SubmoduleOperationFeedback operation={operation} fallback={actionLabel} onDismiss={onDismissFeedback} />}
     </div>
   );
+}
+
+function RemoteUpdatePreviewDialog({
+  preview,
+  busy,
+  recursive,
+  onRecursiveChange,
+  operation,
+  onApply,
+  onClose,
+}: {
+  preview: NonNullable<StagingViewProps["remoteUpdatePreview"]>;
+  busy: boolean;
+  recursive: boolean;
+  onRecursiveChange: (recursive: boolean) => void;
+  operation?: SubmoduleOperationState;
+  onApply: () => void;
+  onClose: () => void;
+}) {
+  const { t } = useTranslation("centre");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    dialogRef.current?.focus();
+    return () => previousFocus?.focus();
+  }, []);
+  return <>
+    <div className="dialog-backdrop" />
+    <div ref={dialogRef} className="dialog submodule-update-dialog" role="dialog" aria-modal="true" aria-labelledby="submodule-update-dialog-title" tabIndex={-1} onKeyDown={event => {
+      if (event.key === "Escape") {
+        event.stopPropagation();
+        if (!busy) onClose();
+      }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>("button:not(:disabled), input:not(:disabled)") ?? []);
+      const first = controls[0];
+      const last = controls[controls.length - 1];
+      if (!first) { event.preventDefault(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === dialogRef.current)) {
+        event.preventDefault(); last.focus();
+      } else if (!event.shiftKey && (document.activeElement === last || document.activeElement === dialogRef.current)) {
+        event.preventDefault(); first.focus();
+      }
+    }}>
+      <div id="submodule-update-dialog-title" className="dialog__title">{t("staging.remotePreviewTitle")}</div>
+      <p className="submodule-update-dialog__description">{t("staging.remotePreviewDescription", {path: preview.path})}</p>
+      <dl className="submodule-update-dialog__details">
+        <div><dt>{t("staging.remote")}</dt><dd>{preview.remote}</dd></div>
+        <div><dt>{t("staging.branch")}</dt><dd>{preview.branch}</dd></div>
+        <div><dt>{t("staging.currentCommit")}</dt><dd>{shortHash(preview.currentCommit)}</dd></div>
+        <div><dt>{t("staging.targetCommit")}</dt><dd>{shortHash(preview.targetCommit)}</dd></div>
+      </dl>
+      {preview.alreadyCheckedOut && <p className="submodule-update-dialog__notice">{t("staging.alreadyAtRemoteCommit")}</p>}
+      {preview.willDetachHead && !preview.alreadyCheckedOut && <p className="submodule-update-dialog__notice">{t("staging.remoteUpdateDetaches")}</p>}
+      <label className="staging__submodule-recursive submodule-update-dialog__nested">
+        <input
+          type="checkbox"
+          checked={recursive}
+          disabled={busy}
+          onChange={event => onRecursiveChange(event.target.checked)}
+        />
+        {t("staging.includeNested")}
+      </label>
+      <p className="submodule-update-dialog__description">{t("staging.remoteNestedFollowsRecorded")}</p>
+      {operation && <SubmoduleOperationFeedback operation={operation} fallback={null} />}
+      <div className="dialog__actions">
+        <button type="button" className="dialog__btn dialog__btn--cancel" disabled={busy} onClick={onClose}>{t("actions.cancel", {ns: "common"})}</button>
+        <button type="button" className="dialog__btn dialog__btn--confirm" disabled={busy} onClick={onApply}>{busy ? <><span className="staging__operation-spinner" aria-hidden="true" />{t("staging.submoduleAction.applyRemote")}</> : t("staging.applyRemoteUpdate")}</button>
+      </div>
+    </div>
+  </>;
 }
 
 type DirectoryRowProps = {
@@ -482,6 +640,9 @@ export function StagingView({
   stagingOperation, inlineOperation, commitProgress, hookRejection, onHookRejectionClose, onHookRejectionBypass, isCommitting, lastCommitMessage, rowStriping, aiEnabled, aiConfigured, aiResolvingPath,
   aiConflictOperationId, aiConflictBatchProgress, aiConflictBatchFailure,
   onSkipAiConflictBatchFailure, onStopAiConflictBatchFailure,
+  submoduleOperations = {}, submoduleBusy = false, recursiveSubmodules = true, onRecursiveSubmodulesChange,
+  onSubmodulePrepareRemote, onSubmoduleApplyRemote, remoteUpdatePreview, onRemoteUpdatePreviewClose,
+  onDismissSubmoduleFeedback,
 }: StagingViewProps) {
   const { t } = useTranslation("centre");
   const [numstatCache, setNumstatCache] = useState<Record<string, CachedNumstat>>({});
@@ -574,7 +735,7 @@ export function StagingView({
       ...unstagedFiles.map(file => ({ file, staged: false })),
     ]
       .filter(({ file, staged }) => {
-        if (file.additions != null || file.deletions != null) return false;
+        if (file.kind === "submodule" || file.additions != null || file.deletions != null) return false;
         const key = cacheKey(file.path, staged);
         if (loading[key]) return false;
         const cached = cache[key];
@@ -649,6 +810,8 @@ export function StagingView({
     () => mergedStaged.filter(f => selectedStaged[f.path]).map(f => f.path),
     [mergedStaged, selectedStaged],
   );
+  const discardablePaths = allUnstaged.filter(file => file.kind !== "submodule").map(file => file.path);
+  const selectedDiscardablePaths = discardablePaths.filter(path => selectedUnstaged[path]);
   const stagedTree = useMemo(() => buildFileTree(mergedStaged), [mergedStaged]);
   const unstagedTree = useMemo(() => buildFileTree(allUnstaged), [allUnstaged]);
   const stagedTreeRows = useMemo(
@@ -659,7 +822,7 @@ export function StagingView({
     () => visibleFileTreeRows(unstagedTree, expandedFolders, allUnstaged.length, (path) => folderStateKey("unstaged", path)),
     [unstagedTree, expandedFolders, allUnstaged.length],
   );
-  const stagingBusy = stagingOperation != null || aiResolvingPath !== null;
+  const stagingBusy = stagingOperation != null || submoduleBusy || aiResolvingPath !== null;
   const inlineOperationIsCommit = inlineOperation?.kind === "commit" || inlineOperation?.kind === "commitAndPush";
 
   const toggleUnstaged = (path: string) => {
@@ -736,6 +899,7 @@ export function StagingView({
     }
 
     const f = row.node.file;
+    const isSubmoduleGitlink = f.kind === "submodule";
     return (
       <div key={`${section}:${f.path}`} className="staging__row-anim">
         <FileRow
@@ -750,13 +914,14 @@ export function StagingView({
           depth={row.depth}
           onToggleChecked={() => isStaged ? toggleStaged(f.path) : toggleUnstaged(f.path)}
           onSelect={() => onFileSelect(f.path, isStaged)}
-          onDoubleClick={() => {
+          onDoubleClick={isSubmoduleGitlink ? undefined : () => {
             if (!aiResolvingPath) onExternalDiff(f.path, isStaged);
           }}
           onStage={isStaged ? undefined : () => onStageFile(f.path)}
           onUnstage={isStaged ? () => onUnstageFile(f.path) : undefined}
-          onDiscard={isStaged ? undefined : () => onDiscardFile(f.path)}
+          onDiscard={isStaged || isSubmoduleGitlink ? undefined : () => onDiscardFile(f.path)}
           actionDisabled={stagingBusy}
+          submoduleOperation={isSubmoduleGitlink ? submoduleOperations[f.path] : undefined}
         />
       </div>
     );
@@ -831,6 +996,15 @@ export function StagingView({
             <span className="staging__section-label">
               {t("staging.submodules")} {"\u00B7"} {submodules.length}
             </span>
+            <label className="staging__submodule-recursive">
+              <input
+                type="checkbox"
+                checked={recursiveSubmodules}
+                disabled={submoduleBusy}
+                onChange={event => onRecursiveSubmodulesChange?.(event.target.checked)}
+              />
+              {t("staging.includeNested")}
+            </label>
           </div>
         </div>
       );
@@ -890,15 +1064,15 @@ export function StagingView({
                 <>
                   <button
                     className="staging__section-action staging__section-action--danger"
-                    onClick={() => onDiscardFiles(selectedUnstagedPaths)}
-                    disabled={selectedUnstagedPaths.length === 0 || stagingBusy}
+                    onClick={() => onDiscardFiles(selectedDiscardablePaths)}
+                    disabled={selectedDiscardablePaths.length === 0 || stagingBusy}
                   >
                     {t("staging.revertSelected")}
                   </button>
                   <button
                     className="staging__section-action staging__section-action--danger"
-                    onClick={() => onDiscardAll(allUnstaged.map(f => f.path))}
-                    disabled={stagingBusy}
+                    onClick={() => onDiscardAll(discardablePaths)}
+                    disabled={discardablePaths.length === 0 || stagingBusy}
                   >
                     {t("staging.revertAll")}
                   </button>
@@ -1023,6 +1197,10 @@ export function StagingView({
                 onFetch={() => onSubmoduleFetch(row.submodule.path)}
                 onPull={() => onSubmodulePull(row.submodule.path)}
                 onOpen={() => onSubmoduleOpen(row.submodule.path)}
+                onPrepareRemote={onSubmodulePrepareRemote ? () => onSubmodulePrepareRemote(row.submodule.path) : undefined}
+                operation={submoduleOperations[row.submodule.path]}
+                busy={submoduleBusy}
+                onDismissFeedback={onDismissSubmoduleFeedback ? () => onDismissSubmoduleFeedback(row.submodule.path) : undefined}
               />
             </div>
           </div>
@@ -1078,6 +1256,7 @@ export function StagingView({
         onSelectAction={onSelectCommitAction}
         onCommit={onCommit}
         isCommitting={isCommitting}
+        operationBusy={submoduleBusy}
         lastCommitMessage={lastCommitMessage}
         mergeMessage={mergeMessage}
         mergeInProgress={mergeInProgress}
@@ -1092,6 +1271,17 @@ export function StagingView({
           rejection={hookRejection}
           onClose={onHookRejectionClose ?? (() => {})}
           onBypass={onHookRejectionBypass ?? (() => {})}
+        />
+      )}
+      {remoteUpdatePreview && onSubmoduleApplyRemote && (
+        <RemoteUpdatePreviewDialog
+          preview={remoteUpdatePreview}
+          busy={submoduleBusy}
+          recursive={recursiveSubmodules}
+          operation={submoduleOperations[remoteUpdatePreview.path]}
+          onRecursiveChange={onRecursiveSubmodulesChange ?? (() => {})}
+          onApply={() => onSubmoduleApplyRemote(remoteUpdatePreview.path, recursiveSubmodules)}
+          onClose={onRemoteUpdatePreviewClose ?? (() => {})}
         />
       )}
     </div>

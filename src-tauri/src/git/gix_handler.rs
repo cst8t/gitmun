@@ -13,14 +13,15 @@ use super::types::{
     CommitRefDecoration, CommitRefKind, CommitRequest, ConflictFileItem, CreateBranchRequest,
     CreateTagRequest, DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest,
     DeleteTagRequest, DiffRequest, ExportCommitPatchRequest, ExportPatchRequest,
-    ExternalDiffRequest, FetchRequest, FileDiff, FileRequest, FileStatusItem, GitIdentity,
+    ExternalDiffRequest, FetchRequest, FileDiff, FileEntryKind, FileRequest, FileStatusItem, GitIdentity,
     HunkStageRequest, IdentityRequest, ImportPatchRequest, MergeRequest, MergeResult,
     NumstatRequest, NumstatResult, OperationResult, PruneRemoteRequest, PullAnalysis,
     PullStrategyRequest, PushRequest, PushResult, PushTagRequest, RebaseRequest, RebaseResult,
     RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest, RepoRequest,
     RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest,
     SetRemoteUrlRequest, SignatureStatus, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, UpstreamStatus,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SubmoduleRemotePreview, TagInfo, UpstreamStatus,
 };
 
 pub struct GixGitHandler {
@@ -898,6 +899,7 @@ impl GixGitHandler {
                 status: status.to_string(),
                 additions: None,
                 deletions: None,
+                kind: FileEntryKind::File,
             })
             .collect();
         changed_files.sort_by(|left, right| left.path.cmp(&right.path));
@@ -909,6 +911,7 @@ impl GixGitHandler {
                 status: status.to_string(),
                 additions: None,
                 deletions: None,
+                kind: FileEntryKind::File,
             })
             .collect();
         staged_files.sort_by(|left, right| left.path.cmp(&right.path));
@@ -1336,6 +1339,22 @@ impl GitOperationHandler for GixGitHandler {
         self.cli_fallback
             .submodule_update(request)
             .map(Self::with_cli_fallback_backend)
+    }
+
+    fn submodule_prepare_update(
+        &self,
+        request: &SubmoduleActionRequest,
+    ) -> GitResult<SubmoduleRemotePreview> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.submodule_prepare_update(request)
+    }
+
+    fn submodule_apply_update(
+        &self,
+        request: &SubmoduleApplyRequest,
+    ) -> GitResult<OperationResult> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.submodule_apply_update(request)
     }
 
     fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {

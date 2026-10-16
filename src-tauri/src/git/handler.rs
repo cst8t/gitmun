@@ -18,7 +18,8 @@ use super::types::{
     RebaseResult, RemoteInfo, RemoveRemoteRequest, RenameBranchRequest, RenameRemoteRequest,
     RepoRequest, RepoStatus, ResetRequest, RevertCommitRequest, SetBranchUpstreamRequest,
     SetIdentityRequest, SetRemoteUrlRequest, Settings, SshAllowedSignerStatus, StageFilesRequest,
-    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, TagInfo, ThemeMode,
+    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SubmoduleRemotePreview, TagInfo, ThemeMode,
 };
 
 pub trait GitOperationHandler: Send + Sync {
@@ -66,6 +67,14 @@ pub trait GitOperationHandler: Send + Sync {
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult>;
     fn submodule_init(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
     fn submodule_update(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
+    fn submodule_prepare_update(
+        &self,
+        request: &SubmoduleActionRequest,
+    ) -> GitResult<SubmoduleRemotePreview>;
+    fn submodule_apply_update(
+        &self,
+        request: &SubmoduleApplyRequest,
+    ) -> GitResult<OperationResult>;
     fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
     fn submodule_fetch(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
     fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
@@ -777,6 +786,8 @@ impl GitService {
         fn discard_file(request: FileRequest) -> GitResult<OperationResult>;
         fn submodule_init(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
         fn submodule_update(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
+        fn submodule_prepare_update(request: SubmoduleActionRequest) -> GitResult<SubmoduleRemotePreview>;
+        fn submodule_apply_update(request: SubmoduleApplyRequest) -> GitResult<OperationResult>;
         fn submodule_sync(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
         fn submodule_fetch(request: SubmoduleActionRequest) -> GitResult<OperationResult>;
         fn submodule_pull(request: SubmoduleActionRequest) -> GitResult<OperationResult>;

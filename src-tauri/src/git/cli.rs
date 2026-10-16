@@ -20,7 +20,7 @@ use super::types::{
     DeleteBranchRequest, DeleteRemoteBranchRequest, DeleteRemoteTagRequest, DeleteTagRequest,
     DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
-    FetchRequest, FileDiff, FileRequest, FileStatusItem, GitHookAttemptResult, GitHookFailure,
+    FetchRequest, FileDiff, FileEntryKind, FileRequest, FileStatusItem, GitHookAttemptResult, GitHookFailure,
     GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest,
     LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
     PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState, PullStrategy,
@@ -29,7 +29,8 @@ use super::types::{
     RenameBranchRequest, RenameRemoteRequest, RepoRequest, RepoStatus, ResetMode, ResetRequest,
     RevertCommitRequest, SetBranchUpstreamRequest, SetIdentityRequest, SetRemoteUrlRequest,
     SignatureStatus, SshAllowedSignerReason, SshAllowedSignerStatus, StageFilesRequest, StashEntry,
-    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleState, SubmoduleStatus,
+    StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SubmoduleRemotePreview, SubmoduleState, SubmoduleStatus,
     TagInfo, UnversionedItem, UnversionedItemKind, UpstreamStatus,
 };
 
@@ -602,6 +603,88 @@ impl CliGitHandler {
             .filter(|value| !value.is_empty())
     }
 
+    fn default_remote_name(repo_path: &Path) -> String {
+        if let Some(branch) = Self::current_branch_name(repo_path) {
+            if branch != "HEAD" {
+                let key = format!("branch.{branch}.remote");
+                if let Some(remote) = Self::run_git_allow_exit_codes(
+                    &["config", "--get", key.as_str()],
+                    Some(repo_path),
+                    &[1],
+                )
+                .ok()
+                .map(|value| value.trim().to_string())
+                .filter(|value| !value.is_empty())
+                {
+                    return remote;
+                }
+            }
+        }
+        "origin".to_string()
+    }
+
+    fn superproject_base_url(repo_path: &Path) -> String {
+        let remote = Self::default_remote_name(repo_path);
+        Self::run_git_allow_exit_codes(
+            &["remote", "get-url", remote.as_str()],
+            Some(repo_path),
+            &[2],
+        )
+        .ok()
+        .map(|url| url.trim().trim_end_matches('/').to_string())
+        .filter(|url| !url.is_empty())
+        .unwrap_or_else(|| repo_path.to_string_lossy().trim_end_matches('/').to_string())
+    }
+
+    fn is_relative_submodule_url(url: &str) -> bool {
+        url == "." || url == ".." || url.starts_with("./") || url.starts_with("../")
+    }
+
+    fn chop_last_url_component(url: &mut String) -> bool {
+        let Some(index) = url.rfind(['/', ':']) else {
+            url.clear();
+            return false;
+        };
+        let separator = url.as_bytes()[index] as char;
+        url.truncate(index);
+        separator == ':'
+    }
+
+    fn join_relative_submodule_url(base_url: &str, configured_url: &str) -> String {
+        let mut base = base_url.trim_end_matches('/').to_string();
+        let mut rest = configured_url;
+        let mut colon_separator = false;
+        while let Some(next) = rest.strip_prefix("../") {
+            rest = next;
+            colon_separator = Self::chop_last_url_component(&mut base) || colon_separator;
+        }
+        if rest == ".." {
+            colon_separator = Self::chop_last_url_component(&mut base) || colon_separator;
+            rest = "";
+        }
+        while let Some(next) = rest.strip_prefix("./") {
+            rest = next;
+        }
+        if rest == "." {
+            rest = "";
+        }
+        let separator = if colon_separator { ":" } else { "/" };
+        if rest.is_empty() {
+            base
+        } else if base.is_empty() {
+            rest.to_string()
+        } else {
+            format!("{base}{separator}{rest}")
+        }
+    }
+
+    fn resolved_submodule_url(repo_path: &Path, configured_url: &str) -> String {
+        if !Self::is_relative_submodule_url(configured_url) {
+            return configured_url.to_string();
+        }
+        Self::join_relative_submodule_url(&Self::superproject_base_url(repo_path), configured_url)
+    }
+
     fn collect_configured_submodules(repo_path: &Path) -> GitResult<Vec<ConfiguredSubmodule>> {
         if !repo_path.join(".gitmodules").exists() {
             return Ok(vec![]);
@@ -680,16 +763,20 @@ impl CliGitHandler {
         Ok((repo_path, submodule))
     }
 
+    fn submodule_input_error(code: &str, message: impl std::fmt::Display) -> GitError {
+        GitError::InvalidInput(format!("{code}: {message}"))
+    }
+
     fn ensure_submodule_initialised(
         repo_path: &Path,
         submodule: &ConfiguredSubmodule,
     ) -> GitResult<PathBuf> {
         let submodule_path = repo_path.join(&submodule.path);
         if !submodule_path.join(".git").exists() {
-            return Err(GitError::InvalidInput(format!(
-                "Submodule {} is not initialised",
-                submodule.path
-            )));
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_UNINITIALISED",
+                format!("Submodule {} is not initialised", submodule.path),
+            ));
         }
         Ok(submodule_path)
     }
@@ -1437,14 +1524,42 @@ impl CliGitHandler {
             &[1],
         )
         .ok()?;
+        output.lines().find_map(|entry| {
+            let mut parts = entry.split_whitespace();
+            let mode = parts.next()?;
+            let commit = parts.next()?;
+            let stage = parts.next()?;
+            (mode == "160000" && stage == "0").then(|| commit.to_string())
+        })
+    }
+
+    fn submodule_head_commit(repo_path: &Path, path: &str) -> Option<String> {
+        let output = Self::run_git_allow_exit_codes(
+            &["ls-tree", "HEAD", "--", path],
+            Some(repo_path),
+            &[128],
+        )
+        .ok()?;
         let mut parts = output.split_whitespace();
         let mode = parts.next()?;
+        let _kind = parts.next()?;
         let commit = parts.next()?;
-        if mode == "160000" {
-            Some(commit.to_string())
-        } else {
-            None
+        (mode == "160000").then(|| commit.to_string())
+    }
+
+    fn is_gitlink_path(repo_path: &Path, path: &str) -> bool {
+        Self::submodule_index_commit(repo_path, path).is_some()
+            || Self::submodule_head_commit(repo_path, path).is_some()
+    }
+
+    fn reject_gitlink_file_operation(repo_path: &Path, path: &str) -> GitResult<()> {
+        if Self::is_gitlink_path(repo_path, path) {
+            return Err(GitError::InvalidInput(
+                "Submodule commit references cannot be edited, diffed, discarded, or hunk-staged as files"
+                    .to_string(),
+            ));
         }
+        Ok(())
     }
 
     fn submodule_status_prefix(repo_path: &Path, path: &str) -> Option<char> {
@@ -1508,21 +1623,94 @@ impl CliGitHandler {
         }
     }
 
+    fn collect_gitlink_paths(repo_path: &Path) -> HashSet<String> {
+        let mut paths = HashSet::new();
+        if let Ok(output) = Self::run_git_allow_exit_codes_without_optional_locks(
+            &[
+                "-c",
+                "core.quotepath=false",
+                "-c",
+                "submodule.recurse=false",
+                "ls-files",
+                "--stage",
+            ],
+            Some(repo_path),
+            &[1],
+        ) {
+            for line in output.lines() {
+                if !line.starts_with("160000 ") {
+                    continue;
+                }
+                if let Some(path) = line.split_once('\t').map(|(_, path)| path.trim()) {
+                    if !path.is_empty() {
+                        paths.insert(path.to_string());
+                    }
+                }
+            }
+        }
+        if let Ok(output) = Self::run_git_allow_exit_codes_without_optional_locks(
+            &[
+                "-c",
+                "core.quotepath=false",
+                "-c",
+                "submodule.recurse=false",
+                "ls-tree",
+                "-r",
+                "-z",
+                "HEAD",
+            ],
+            Some(repo_path),
+            &[1, 128],
+        ) {
+            for record in output.split('\0') {
+                if !record.starts_with("160000 ") {
+                    continue;
+                }
+                if let Some(path) = record.split_once('\t').map(|(_, path)| path.trim()) {
+                    if !path.is_empty() {
+                        paths.insert(path.to_string());
+                    }
+                }
+            }
+        }
+        paths
+    }
+
     pub(crate) fn collect_submodules_for_status(
         repo_path: &Path,
         dirty_submodule_paths: Option<&HashSet<String>>,
     ) -> Vec<SubmoduleStatus> {
-        let configured = Self::collect_configured_submodules(repo_path).unwrap_or_default();
+        let mut configured = Self::collect_configured_submodules(repo_path).unwrap_or_default();
+        let unmerged = Self::run_git(&["ls-files", "--unmerged", "-z"], Some(repo_path))
+            .unwrap_or_default();
+        let conflicted_paths: HashSet<&str> = unmerged
+            .split('\0')
+            .filter_map(|entry| entry.split_once('\t').map(|(_, path)| path))
+            .collect();
+        let known_paths: HashSet<String> = configured.iter().map(|submodule| submodule.path.clone()).collect();
+        for path in Self::collect_gitlink_paths(repo_path) {
+            if known_paths.contains(&path) {
+                continue;
+            }
+            configured.push(ConfiguredSubmodule {
+                name: path.clone(),
+                path,
+                configured_url: None,
+                branch: None,
+            });
+        }
+        configured.sort_by(|left, right| left.path.cmp(&right.path));
         configured
             .into_iter()
             .map(|submodule| {
                 let worktree_path = repo_path.join(&submodule.path);
                 let expected_commit = Self::submodule_index_commit(repo_path, &submodule.path);
+                let parent_head_commit = Self::submodule_head_commit(repo_path, &submodule.path);
                 let checked_out_commit =
                     Self::submodule_checked_out_commit(repo_path, &submodule.path);
                 let initialised = checked_out_commit.is_some();
                 let status_prefix = Self::submodule_status_prefix(repo_path, &submodule.path);
-                let conflict = status_prefix == Some('U');
+                let conflict = conflicted_paths.contains(submodule.path.as_str());
                 let uninitialised = status_prefix == Some('-')
                     || (!initialised && expected_commit.is_some() && status_prefix != Some('U'));
                 let missing = !worktree_path.exists() && !uninitialised;
@@ -1536,12 +1724,16 @@ impl CliGitHandler {
                         .zip(checked_out_commit.as_ref())
                         .map(|(expected, checked_out)| expected != checked_out)
                         .unwrap_or(false);
+                let staged_gitlink = !conflict && parent_head_commit != expected_commit;
+                let unstaged_gitlink = !conflict && initialised && expected_commit != checked_out_commit;
                 let local_url = Self::get_submodule_local_url(repo_path, &submodule.name);
                 let sync_required = submodule
                     .configured_url
                     .as_ref()
                     .zip(local_url.as_ref())
-                    .map(|(configured_url, local_url)| configured_url != local_url)
+                    .map(|(configured_url, local_url)| {
+                        Self::resolved_submodule_url(repo_path, configured_url) != *local_url
+                    })
                     .unwrap_or(false);
                 let state = Self::classify_submodule(
                     conflict,
@@ -1565,7 +1757,15 @@ impl CliGitHandler {
                     branch: submodule.branch,
                     current_branch,
                     expected_commit,
+                    parent_head_commit,
                     checked_out_commit,
+                    staged_gitlink,
+                    unstaged_gitlink,
+                    upstream_branch: if initialised {
+                        Self::upstream_branch_name(&worktree_path)
+                    } else {
+                        None
+                    },
                     initialised,
                     missing,
                     dirty,
@@ -1597,18 +1797,94 @@ impl CliGitHandler {
             return;
         }
 
-        status
-            .changed_files
-            .retain(|file| !Self::is_submodule_status_path(&file.path, &submodule_paths));
-        status
-            .staged_files
-            .retain(|file| !Self::is_submodule_status_path(&file.path, &submodule_paths));
+        let unstaged_gitlinks: HashSet<String> = status
+            .submodules
+            .iter()
+            .filter(|submodule| {
+                submodule.state != SubmoduleState::Conflict && submodule.unstaged_gitlink
+            })
+            .map(|submodule| submodule.path.clone())
+            .collect();
+        let staged_gitlinks: HashSet<String> = status
+            .submodules
+            .iter()
+            .filter(|submodule| {
+                submodule.state != SubmoduleState::Conflict && submodule.staged_gitlink
+            })
+            .map(|submodule| submodule.path.clone())
+            .collect();
+        status.changed_files.retain(|file| {
+            !Self::is_submodule_status_path(&file.path, &submodule_paths)
+                || unstaged_gitlinks.contains(&file.path)
+        });
+        status.staged_files.retain(|file| {
+            !Self::is_submodule_status_path(&file.path, &submodule_paths)
+                || staged_gitlinks.contains(&file.path)
+        });
+        Self::normalise_gitlink_entries(
+            &mut status.changed_files,
+            &status.submodules,
+            false,
+        );
+        Self::normalise_gitlink_entries(
+            &mut status.staged_files,
+            &status.submodules,
+            true,
+        );
         status
             .unversioned_files
             .retain(|path| !Self::is_submodule_status_path(path, &submodule_paths));
         status
             .unversioned_items
             .retain(|item| !Self::is_submodule_status_path(&item.path, &submodule_paths));
+    }
+
+    fn normalise_gitlink_entries(
+        files: &mut Vec<FileStatusItem>,
+        submodules: &[SubmoduleStatus],
+        staged: bool,
+    ) {
+        for submodule in submodules {
+            if submodule.state == SubmoduleState::Conflict
+                || if staged {
+                    !submodule.staged_gitlink
+                } else {
+                    !submodule.unstaged_gitlink
+                }
+            {
+                continue;
+            }
+
+            let (before, after) = if staged {
+                (&submodule.parent_head_commit, &submodule.expected_commit)
+            } else {
+                (&submodule.expected_commit, &submodule.checked_out_commit)
+            };
+            let status = Self::gitlink_status(before.as_deref(), after.as_deref());
+
+            if let Some(file) = files.iter_mut().find(|file| file.path == submodule.path) {
+                file.status = status;
+                file.kind = FileEntryKind::Submodule;
+            } else {
+                files.push(FileStatusItem {
+                    path: submodule.path.clone(),
+                    status,
+                    additions: None,
+                    deletions: None,
+                    kind: FileEntryKind::Submodule,
+                });
+            }
+        }
+        files.sort_by(|left, right| left.path.cmp(&right.path));
+    }
+
+    fn gitlink_status(before: Option<&str>, after: Option<&str>) -> String {
+        match (before, after) {
+            (None, Some(_)) => "A",
+            (Some(_), None) => "D",
+            _ => "M",
+        }
+        .to_string()
     }
 
     pub(crate) fn refresh_unversioned_items(status: &mut RepoStatus, repo_path: &Path) {
@@ -3470,6 +3746,197 @@ impl CliGitHandler {
             "Rebase continued",
         )
     }
+    fn remote_ref_snapshot(repo_path: &Path) -> String {
+        Self::run_git_allow_exit_codes(
+            &[
+                "for-each-ref",
+                "--format=%(objectname) %(refname)",
+                "refs/remotes",
+            ],
+            Some(repo_path),
+            &[0],
+        )
+        .unwrap_or_default()
+    }
+
+    fn reject_dirty_submodule(repo_path: &Path, path: &str, recursive: bool) -> GitResult<()> {
+        if Self::submodule_is_dirty(repo_path, path) {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_DIRTY",
+                format!("Submodule {path} has local changes"),
+            ));
+        }
+        if !recursive {
+            return Ok(());
+        }
+        let output = Self::run_git_allow_exit_codes(
+            &[
+                "submodule",
+                "foreach",
+                "--recursive",
+                "--quiet",
+                "git status --porcelain",
+            ],
+            Some(&repo_path.join(path)),
+            &[1, 128],
+        )?;
+        if output.trim().is_empty() {
+            return Ok(());
+        }
+        Err(Self::submodule_input_error(
+            "SUBMODULE_DIRTY",
+            format!("Submodule {path} or a nested submodule has local changes\n{output}"),
+        ))
+    }
+
+    fn submodule_configuration_token(
+        current_commit: Option<&str>,
+        index_commit: Option<&str>,
+        parent_head_commit: Option<&str>,
+        remote: &str,
+        branch: &str,
+        target_commit: &str,
+        local_url: &str,
+        configured_url: &str,
+        configured_branch: &str,
+        remote_url: &str,
+    ) -> String {
+        [
+            current_commit.unwrap_or(""),
+            index_commit.unwrap_or(""),
+            parent_head_commit.unwrap_or(""),
+            remote,
+            branch,
+            target_commit,
+            local_url,
+            configured_url,
+            configured_branch,
+            remote_url,
+        ]
+        .join("\u{1f}")
+    }
+
+    fn resolve_submodule_remote(
+        repo_path: &Path,
+        submodule: &ConfiguredSubmodule,
+        submodule_path: &Path,
+    ) -> GitResult<(String, String, String)> {
+        let remote = Self::default_remote_name(submodule_path);
+        let branch_key = format!("submodule.{}.branch", submodule.name);
+        let configured_branch = Self::run_git_allow_exit_codes(
+            &["config", "--get", branch_key.as_str()],
+            Some(repo_path),
+            &[1],
+        )
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .or(submodule.branch.clone());
+        let branch = match configured_branch.as_deref() {
+            Some(".") => Self::current_branch_name(repo_path).filter(|branch| branch != "HEAD").ok_or_else(|| {
+                Self::submodule_input_error(
+                    "SUBMODULE_REMOTE_UNAVAILABLE",
+                    "The parent repository is detached, so branch = . cannot be resolved",
+                )
+            })?,
+            Some(branch) => branch.to_string(),
+            None => {
+                let head_ref = format!("refs/remotes/{remote}/HEAD");
+                let symbolic = Self::run_git_allow_exit_codes(
+                    &["symbolic-ref", "--quiet", "--short", head_ref.as_str()],
+                    Some(submodule_path),
+                    &[1, 128],
+                )?;
+                symbolic
+                    .trim()
+                    .strip_prefix(&format!("{remote}/"))
+                    .filter(|value| !value.is_empty())
+                    .ok_or_else(|| {
+                        Self::submodule_input_error(
+                            "SUBMODULE_REMOTE_UNAVAILABLE",
+                            format!(
+                                "Cannot determine the default branch for submodule {} remote {remote}",
+                                submodule.path
+                            ),
+                        )
+                    })?
+                    .to_string()
+            }
+        };
+        let target_ref = format!("refs/remotes/{remote}/{branch}");
+        let target_commit = Self::run_git_allow_exit_codes(
+            &["rev-parse", "--verify", target_ref.as_str()],
+            Some(submodule_path),
+            &[128],
+        )
+        .map_err(|_| {
+            Self::submodule_input_error(
+                "SUBMODULE_REMOTE_UNAVAILABLE",
+                format!(
+                    "Remote branch {remote}/{branch} is unavailable for submodule {}",
+                    submodule.path
+                ),
+            )
+        })?
+        .trim()
+        .to_string();
+        if target_commit.is_empty() {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_REMOTE_UNAVAILABLE",
+                format!(
+                    "Remote branch {remote}/{branch} is unavailable for submodule {}",
+                    submodule.path
+                ),
+            ));
+        }
+        Ok((remote, branch, target_commit))
+    }
+
+    fn submodule_remote_preview(
+        repo_path: &Path,
+        submodule: &ConfiguredSubmodule,
+        recursive: bool,
+    ) -> GitResult<SubmoduleRemotePreview> {
+        let submodule_path = Self::ensure_submodule_initialised(repo_path, submodule)?;
+        let (remote, branch, target_commit) =
+            Self::resolve_submodule_remote(repo_path, submodule, &submodule_path)?;
+        let current_commit = Self::submodule_checked_out_commit(repo_path, &submodule.path);
+        let index_commit = Self::submodule_index_commit(repo_path, &submodule.path);
+        let parent_head_commit = Self::submodule_head_commit(repo_path, &submodule.path);
+        let local_url =
+            Self::get_submodule_local_url(repo_path, &submodule.name).unwrap_or_default();
+        let configured_url = submodule.configured_url.clone().unwrap_or_default();
+        let configured_branch = submodule.branch.clone().unwrap_or_default();
+        let remote_url = Self::run_git(
+            &["remote", "get-url", remote.as_str()], Some(&submodule_path),
+        )?;
+        Ok(SubmoduleRemotePreview {
+            repo_path: Self::path_to_string(repo_path),
+            path: submodule.path.clone(),
+            recursive,
+            remote: remote.clone(),
+            branch: branch.clone(),
+            already_checked_out: current_commit.as_deref() == Some(target_commit.as_str()),
+            will_detach_head: Self::submodule_current_branch(repo_path, &submodule.path).is_some(),
+            current_commit: current_commit.clone(),
+            index_commit: index_commit.clone(),
+            parent_head_commit: parent_head_commit.clone(),
+            target_commit: target_commit.clone(),
+            configuration_token: Self::submodule_configuration_token(
+                current_commit.as_deref(),
+                index_commit.as_deref(),
+                parent_head_commit.as_deref(),
+                &remote,
+                &branch,
+                &target_commit,
+                &local_url,
+                &configured_url,
+                &configured_branch,
+                remote_url.trim(),
+            ),
+        })
+    }
+
 }
 
 impl GitOperationHandler for CliGitHandler {
@@ -3759,6 +4226,7 @@ impl GitOperationHandler for CliGitHandler {
                 "Commit hash and file path are required".to_string(),
             ));
         }
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
 
         if Self::is_added_file_in_commit(&repo_path, commit_hash, file_path)? {
             let working_tree_file = repo_path.join(file_path);
@@ -3815,6 +4283,7 @@ impl GitOperationHandler for CliGitHandler {
         if file_path.is_empty() {
             return Err(GitError::InvalidInput("File path is required".to_string()));
         }
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
 
         if request.staged {
             let tool_name = Self::require_configured_diff_tool(&repo_path)?;
@@ -4285,6 +4754,7 @@ impl GitOperationHandler for CliGitHandler {
     fn get_diff(&self, request: &DiffRequest) -> GitResult<FileDiff> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
         let line_ending = Self::detect_line_ending(&repo_path, file_path, request.staged);
         let detected_file_type =
             Self::detect_file_type_label(&repo_path, file_path, request.staged);
@@ -4565,6 +5035,7 @@ impl GitOperationHandler for CliGitHandler {
     fn stage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
 
         // Get the full diff for the file
         let diff_output =
@@ -4607,6 +5078,7 @@ impl GitOperationHandler for CliGitHandler {
     fn unstage_hunk(&self, request: &HunkStageRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
 
         // Get the staged diff for the file.
         let diff_output = Self::run_git_without_optional_locks(
@@ -4647,6 +5119,7 @@ impl GitOperationHandler for CliGitHandler {
     fn discard_file(&self, request: &FileRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let file_path = request.file_path.trim();
+        Self::reject_gitlink_file_operation(&repo_path, file_path)?;
 
         // Check if the file is untracked
         let status_output = Self::run_git_without_optional_locks(
@@ -4698,18 +5171,20 @@ impl GitOperationHandler for CliGitHandler {
     fn submodule_init(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
         let (repo_path, submodule) = Self::validate_submodule_action(request)?;
         if submodule.configured_url.as_deref().unwrap_or("").is_empty() {
-            return Err(GitError::InvalidInput(format!(
-                "Submodule {} does not have a configured URL",
-                submodule.path
-            )));
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_REMOTE_UNAVAILABLE",
+                format!("Submodule {} does not have a configured URL", submodule.path),
+            ));
         }
 
-        let mut args = vec!["submodule", "update", "--init"];
+        let mut args = vec!["-c", "protocol.file.allow=always", "submodule", "update", "--init"];
         if request.recursive {
             args.push("--recursive");
         }
         args.extend(["--", submodule.path.as_str()]);
-        let output = Self::run_git(&args, Some(&repo_path))?;
+        let output = Self::run_git(&args, Some(&repo_path)).map_err(|error| {
+            Self::submodule_input_error("SUBMODULE_UPDATE_FAILED", error.to_string())
+        })?;
 
         Ok(Self::operation_result(
             format!("Initialised submodule {}", submodule.path),
@@ -4720,15 +5195,150 @@ impl GitOperationHandler for CliGitHandler {
 
     fn submodule_update(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
         let (repo_path, submodule) = Self::validate_submodule_action(request)?;
-        let mut args = vec!["submodule", "update"];
+        let submodule_path = repo_path.join(&submodule.path);
+        if !submodule_path.join(".git").exists() {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_UNINITIALISED",
+                format!("Submodule {} is not initialised", submodule.path),
+            ));
+        }
+        Self::reject_dirty_submodule(&repo_path, &submodule.path, request.recursive)?;
+        let index_commit = Self::submodule_index_commit(&repo_path, &submodule.path);
+        let checked_out = Self::submodule_checked_out_commit(&repo_path, &submodule.path);
+        if !request.recursive && index_commit.is_some() && index_commit == checked_out {
+            return Ok(Self::operation_result(
+                "alreadyAtRecordedCommit".to_string(),
+                String::new(),
+                &repo_path,
+            ));
+        }
+
+        let mut args = vec!["-c", "protocol.file.allow=always", "submodule", "update", "--checkout"];
         if request.recursive {
+            args.push("--init");
             args.push("--recursive");
         }
         args.extend(["--", submodule.path.as_str()]);
-        let output = Self::run_git(&args, Some(&repo_path))?;
-
+        let output = Self::run_git(&args, Some(&repo_path)).map_err(|error| {
+            Self::submodule_input_error("SUBMODULE_UPDATE_FAILED", error.to_string())
+        })?;
+        let checked_out = Self::submodule_checked_out_commit(&repo_path, &submodule.path);
+        let message = if output.trim().is_empty() && index_commit == checked_out {
+            "alreadyAtRecordedCommit"
+        } else {
+            "recordedCommitCheckedOut"
+        };
         Ok(Self::operation_result(
-            format!("Updated submodule {}", submodule.path),
+            message.to_string(),
+            output,
+            &repo_path,
+        ))
+    }
+
+    fn submodule_prepare_update(
+        &self,
+        request: &SubmoduleActionRequest,
+    ) -> GitResult<SubmoduleRemotePreview> {
+        let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
+        let before = Self::submodule_checked_out_commit(&repo_path, &submodule.path);
+        let index_before = Self::submodule_index_commit(&repo_path, &submodule.path);
+        let remote = Self::default_remote_name(&submodule_path);
+        Self::run_git(&["fetch", "--prune", remote.as_str()], Some(&submodule_path)).map_err(
+            |error| {
+                Self::submodule_input_error(
+                    "SUBMODULE_REMOTE_UNAVAILABLE",
+                    format!("Could not fetch submodule {}: {error}", submodule.path),
+                )
+            },
+        )?;
+        let preview = Self::submodule_remote_preview(&repo_path, &submodule, request.recursive)?;
+        if Self::submodule_checked_out_commit(&repo_path, &submodule.path) != before
+            || Self::submodule_index_commit(&repo_path, &submodule.path) != index_before
+        {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_STALE_PREVIEW",
+                "Preparing the remote update changed the submodule checkout",
+            ));
+        }
+        Ok(preview)
+    }
+
+    fn submodule_apply_update(
+        &self,
+        request: &SubmoduleApplyRequest,
+    ) -> GitResult<OperationResult> {
+        let preview_request = SubmoduleActionRequest {
+            repo_path: request.repo_path.clone(),
+            path: request.path.clone(),
+            recursive: request.recursive,
+        };
+        let (repo_path, submodule) = Self::validate_submodule_action(&preview_request)?;
+        let current = Self::submodule_remote_preview(&repo_path, &submodule, request.recursive)
+            .map_err(|error| {
+                Self::submodule_input_error(
+                    "SUBMODULE_STALE_PREVIEW",
+                    format!("Submodule update preview is stale; prepare the update again\n{error}"),
+                )
+            })?;
+        if current.remote != request.remote
+            || current.branch != request.branch
+            || current.target_commit != request.target_commit
+            || current.current_commit != request.current_commit
+            || current.index_commit != request.index_commit
+            || current.parent_head_commit != request.parent_head_commit
+            || current.configuration_token != request.configuration_token
+        {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_STALE_PREVIEW",
+                "Submodule update preview is stale; prepare the update again",
+            ));
+        }
+        Self::reject_dirty_submodule(&repo_path, &submodule.path, request.recursive)?;
+        let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
+        let mut output = if current.already_checked_out {
+            String::new()
+        } else {
+            Self::run_git(
+                &["checkout", "--detach", request.target_commit.as_str()],
+                Some(&submodule_path),
+            )?
+        };
+        if request.recursive {
+            let nested = Self::run_git(
+                &[
+                    "-c",
+                    "protocol.file.allow=always",
+                    "submodule",
+                    "update",
+                    "--init",
+                    "--recursive",
+                    "--checkout",
+                ],
+                Some(&submodule_path),
+            ).map_err(|error| {
+                Self::submodule_input_error("SUBMODULE_UPDATE_FAILED", error.to_string())
+            })?;
+            if !nested.trim().is_empty() {
+                if !output.is_empty() {
+                    output.push('\n');
+                }
+                output.push_str(&nested);
+            }
+        }
+        if Self::submodule_index_commit(&repo_path, &submodule.path) != request.index_commit {
+            return Err(Self::submodule_input_error(
+                "SUBMODULE_STALE_PREVIEW",
+                "Applying the update changed the parent index; prepare the update again",
+            ));
+        }
+        let message = if current.already_checked_out && output.trim().is_empty() {
+            "alreadyAtRemoteCommit"
+        } else {
+            "submoduleUpdated"
+        };
+        Ok(Self::operation_result(
+            message.to_string(),
             output,
             &repo_path,
         ))
@@ -4736,6 +5346,30 @@ impl GitOperationHandler for CliGitHandler {
 
     fn submodule_sync(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
         let (repo_path, submodule) = Self::validate_submodule_action(request)?;
+        let local_url = Self::get_submodule_local_url(&repo_path, &submodule.name);
+        let sync_required = submodule
+            .configured_url
+            .as_ref()
+            .zip(local_url.as_ref())
+            .map(|(configured_url, local_url)| {
+                Self::resolved_submodule_url(&repo_path, configured_url) != *local_url
+            })
+            .unwrap_or(false);
+        let nested_config_before = if request.recursive && repo_path.join(&submodule.path).join(".git").exists() {
+            Some(Self::run_git(
+                &["submodule", "foreach", "--recursive", "git config --local --list"],
+                Some(&repo_path.join(&submodule.path)),
+            )?)
+        } else {
+            None
+        };
+        if !sync_required && nested_config_before.is_none() {
+            return Ok(Self::operation_result(
+                "urlAlreadySynchronised".to_string(),
+                String::new(),
+                &repo_path,
+            ));
+        }
         let mut args = vec!["submodule", "sync"];
         if request.recursive {
             args.push("--recursive");
@@ -4743,8 +5377,15 @@ impl GitOperationHandler for CliGitHandler {
         args.extend(["--", submodule.path.as_str()]);
         let output = Self::run_git(&args, Some(&repo_path))?;
 
+        let nested_changed = match nested_config_before {
+            Some(before) => before != Self::run_git(
+                &["submodule", "foreach", "--recursive", "git config --local --list"],
+                Some(&repo_path.join(&submodule.path)),
+            )?,
+            None => false,
+        };
         Ok(Self::operation_result(
-            format!("Synced submodule {}", submodule.path),
+            if sync_required || nested_changed { "submoduleSynced" } else { "urlAlreadySynchronised" }.to_string(),
             output,
             &repo_path,
         ))
@@ -4753,7 +5394,15 @@ impl GitOperationHandler for CliGitHandler {
     fn submodule_fetch(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
         let (repo_path, submodule) = Self::validate_submodule_action(request)?;
         let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
-        let mut output = Self::run_git(&["fetch", "--prune"], Some(&submodule_path))?;
+        let before = Self::remote_ref_snapshot(&submodule_path);
+        let mut output = Self::run_git(&["fetch", "--prune"], Some(&submodule_path)).map_err(
+            |error| {
+                Self::submodule_input_error(
+                    "SUBMODULE_REMOTE_UNAVAILABLE",
+                    format!("Could not fetch submodule {}: {error}", submodule.path),
+                )
+            },
+        )?;
         if request.recursive {
             let nested = Self::run_git(
                 &["submodule", "foreach", "--recursive", "git fetch --prune"],
@@ -4766,9 +5415,15 @@ impl GitOperationHandler for CliGitHandler {
                 output.push_str(&nested);
             }
         }
+        let after = Self::remote_ref_snapshot(&submodule_path);
+        let message = if before == after {
+            "noNewCommitsFetched"
+        } else {
+            "submoduleFetched"
+        };
 
         Ok(Self::operation_result(
-            format!("Fetched submodule {}", submodule.path),
+            message.to_string(),
             output,
             &repo_path,
         ))
@@ -4777,38 +5432,29 @@ impl GitOperationHandler for CliGitHandler {
     fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult> {
         let (repo_path, submodule) = Self::validate_submodule_action(request)?;
         let submodule_path = Self::ensure_submodule_initialised(&repo_path, &submodule)?;
-        if Self::submodule_is_dirty(&repo_path, &submodule.path) {
-            return Err(GitError::InvalidInput(format!(
-                "Submodule {} has local changes; commit, stash, or discard them before pulling",
-                submodule.path
-            )));
-        }
-        let branch = Self::current_branch_name(&submodule_path).ok_or_else(|| {
-            GitError::InvalidInput(format!(
-                "Submodule {} is detached; checkout a branch before pulling",
-                submodule.path
-            ))
+        Self::reject_dirty_submodule(&repo_path, &submodule.path, false)?;
+        let branch = Self::current_branch_name(&submodule_path)
+            .filter(|branch| branch != "HEAD")
+            .ok_or_else(|| {
+            Self::submodule_input_error(
+                "SUBMODULE_DETACHED",
+                format!(
+                    "Submodule {} is detached; checkout a branch before pulling",
+                    submodule.path
+                ),
+            )
         })?;
         let upstream = Self::upstream_branch_name(&submodule_path).ok_or_else(|| {
-            GitError::InvalidInput(format!(
-                "Submodule {} branch {branch} has no upstream",
-                submodule.path
-            ))
+            Self::submodule_input_error(
+                "SUBMODULE_NO_UPSTREAM",
+                format!(
+                    "Submodule {} branch {branch} has no upstream",
+                    submodule.path
+                ),
+            )
         })?;
 
-        let mut output = Self::run_git(&["pull", "--ff-only"], Some(&submodule_path))?;
-        if request.recursive {
-            let nested = Self::run_git(
-                &["submodule", "update", "--init", "--recursive"],
-                Some(&submodule_path),
-            )?;
-            if !nested.trim().is_empty() {
-                if !output.is_empty() {
-                    output.push('\n');
-                }
-                output.push_str(&nested);
-            }
-        }
+        let output = Self::run_git(&["pull", "--ff-only"], Some(&submodule_path))?;
 
         Ok(Self::operation_result(
             format!("Pulled submodule {} from {}", submodule.path, upstream),
@@ -6749,6 +7395,7 @@ impl CliGitHandler {
                     status: status.clone(),
                     additions: None,
                     deletions: None,
+                    kind: FileEntryKind::File,
                 });
             }
 
@@ -6758,6 +7405,7 @@ impl CliGitHandler {
                     status,
                     additions: None,
                     deletions: None,
+                    kind: FileEntryKind::File,
                 });
             }
         }

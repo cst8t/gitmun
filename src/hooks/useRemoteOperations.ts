@@ -31,6 +31,7 @@ type UpstreamDialogMode = "publish" | "repair" | "change";
 
 type UseRemoteOperationsOptions = {
   repoPath: string | null;
+  isMutationBlocked?: () => boolean;
   currentBranchInfo: BranchInfo | null | undefined;
   remoteActionKind: RemoteActionKind;
   remoteActionTitle?: string;
@@ -65,6 +66,7 @@ export function buildPushRequestForCurrentBranch(
 
 export function useRemoteOperations({
   repoPath,
+  isMutationBlocked,
   currentBranchInfo,
   remoteActionKind,
   remoteActionTitle,
@@ -85,7 +87,7 @@ export function useRemoteOperations({
   const [upstreamDialogMode, setUpstreamDialogMode] = useState<UpstreamDialogMode | null>(null);
 
   const fetchRemote = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     setRemoteOp("fetch");
     try {
       const result = await api.fetchRemote(repoPath);
@@ -99,10 +101,10 @@ export function useRemoteOperations({
       onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [isMutationBlocked, onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const autoFetchRemote = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     setRemoteOp("fetch");
     const fetchPromise = api.fetchRemote(repoPath);
     let timeoutId: ReturnType<typeof setTimeout>;
@@ -124,10 +126,10 @@ export function useRemoteOperations({
       onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, t]);
+  }, [isMutationBlocked, onFetchAttemptComplete, repoPath, remoteOp, refreshAll, t]);
 
   const fetchSingleRemote = useCallback(async (remoteName: string) => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     setRemoteOp("fetch");
     try {
       const result = await api.fetchRemote(repoPath, remoteName);
@@ -141,10 +143,10 @@ export function useRemoteOperations({
       onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [isMutationBlocked, onFetchAttemptComplete, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const runPullWithStrategy = useCallback(async (strategy: PullStrategy) => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     setRemoteOp("pull");
     try {
       const result = await pullWithStrategy(strategy);
@@ -170,10 +172,10 @@ export function useRemoteOperations({
       onFetchAttemptComplete(repoPath);
       setRemoteOp(null);
     }
-  }, [onFetchAttemptComplete, pullWithStrategy, repoPath, remoteOp, refreshAll, showToast, t]);
+  }, [isMutationBlocked, onFetchAttemptComplete, pullWithStrategy, repoPath, remoteOp, refreshAll, showToast, t]);
 
   const startPullFlow = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     try {
       const analysis = await api.analyzePull(repoPath);
       setPushRejectionAnalysis(null);
@@ -203,7 +205,7 @@ export function useRemoteOperations({
       showToast(String(error), "error");
       appendResultLog("error", t("log.pullAnalysisFailed", {message: String(error)}), "unknown");
     }
-  }, [repoPath, remoteOp, runPullWithStrategy, showToast, t]);
+  }, [isMutationBlocked, repoPath, remoteOp, runPullWithStrategy, showToast, t]);
 
   const handlePushFailure = useCallback((result: PushResult) => {
     const display = buildPushFailureDisplay(result, tGitAdvice);
@@ -221,7 +223,7 @@ export function useRemoteOperations({
     successToast: string,
     failurePrefix: string,
   ) => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     setRemoteOp("push");
     try {
       const result = await pushChanges(request);
@@ -240,10 +242,10 @@ export function useRemoteOperations({
     } finally {
       setRemoteOp(null);
     }
-  }, [handlePushFailure, onForcePushComplete, pushChanges, refreshAll, remoteOp, repoPath, showToast, t]);
+  }, [isMutationBlocked, handlePushFailure, onForcePushComplete, pushChanges, refreshAll, remoteOp, repoPath, showToast, t]);
 
   const push = useCallback(async () => {
-    if (!repoPath || remoteOp) return;
+    if (!repoPath || remoteOp || isMutationBlocked?.()) return;
     if (remoteActionKind === "publish") {
       setPushRejectionAnalysis(null);
       setUpstreamDialogMode("publish");
@@ -263,7 +265,7 @@ export function useRemoteOperations({
       t("toast.pushComplete"),
       t("toast.pushFailed"),
     );
-  }, [currentBranchInfo, forceWithLeaseAfterRebase, pushFollowTags, remoteActionKind, remoteActionTitle, remoteOp, repoPath, runPushRequest, showToast, t]);
+  }, [isMutationBlocked, currentBranchInfo, forceWithLeaseAfterRebase, pushFollowTags, remoteActionKind, remoteActionTitle, remoteOp, repoPath, runPushRequest, showToast, t]);
 
   const confirmUpstream = useCallback(async (selection: {remote: string; remoteBranch: string}) => {
     if (!repoPath || !currentBranchInfo || !upstreamDialogMode) return;

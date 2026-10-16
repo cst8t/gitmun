@@ -175,6 +175,7 @@ type DiffPanelProps = {
   loading: boolean;
   selectedFile: string | null;
   selectedSubmodule: SubmoduleStatus | null;
+  selectedSubmoduleStaged?: boolean;
   selectedCommitHash: string | null;
   repoPath: string | null;
   commitFiles: CommitFileItem[];
@@ -200,6 +201,7 @@ export function DiffPanel({
   loading,
   selectedFile,
   selectedSubmodule,
+  selectedSubmoduleStaged,
   selectedCommitHash,
   repoPath,
   commitFiles,
@@ -515,9 +517,7 @@ export function DiffPanel({
                   {t(`submoduleState.${selectedSubmodule.state}`, {ns: "git"})}
                 </span>
                 <h2>{selectedSubmodule.path}</h2>
-                <p>
-                  This path is a separate Git repository. Gitmun shows it here as a submodule boundary, not as a normal parent-repo file diff.
-                </p>
+                <p>{t("submodule.description")}</p>
                 <dl>
                   <div>
                     <dt>{t("submodule.configuredUrl")}</dt>
@@ -536,12 +536,26 @@ export function DiffPanel({
                     <dd>{selectedSubmodule.currentBranch ?? t("submodule.detachedOrUnavailable")}</dd>
                   </div>
                   <div>
-                    <dt>{t("submodule.expectedCommit")}</dt>
+                    <dt>{t("submodule.parentHeadCommit")}</dt>
+                    <dd>{selectedSubmodule.parentHeadCommit ? compactHash(selectedSubmodule.parentHeadCommit) : t("generic.none", {ns: "common"})}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("submodule.indexCommit")}</dt>
                     <dd>{selectedSubmodule.expectedCommit ? compactHash(selectedSubmodule.expectedCommit) : t("generic.none", {ns: "common"})}</dd>
                   </div>
                   <div>
                     <dt>{t("submodule.checkedOutCommit")}</dt>
                     <dd>{selectedSubmodule.checkedOutCommit ? compactHash(selectedSubmodule.checkedOutCommit) : t("generic.none", {ns: "common"})}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("submodule.gitlinkState")}</dt>
+                    <dd>{selectedSubmoduleStaged ?? selectedSubmodule.stagedGitlink
+                      ? t("submodule.staged")
+                      : selectedSubmodule.unstagedGitlink ? t("submodule.unstaged") : t("generic.none", {ns: "common"})}</dd>
+                  </div>
+                  <div>
+                    <dt>{t("submodule.internalChanges")}</dt>
+                    <dd>{selectedSubmodule.dirty ? t("submodule.internalDirty") : t("submodule.internalClean")}</dd>
                   </div>
                 </dl>
               </div>

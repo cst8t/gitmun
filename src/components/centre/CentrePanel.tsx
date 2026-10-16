@@ -21,6 +21,8 @@ import type {
   OperationFeedbackContent,
   RowStriping,
   StagingOperation,
+  SubmoduleOperationState,
+  SubmoduleRemotePreview,
   SubmoduleStatus,
   UnversionedItem,
 } from "../../types";
@@ -96,6 +98,15 @@ type CentrePanelProps = {
   onSubmoduleFetch: (path: string) => void;
   onSubmodulePull: (path: string) => void;
   onSubmoduleOpen: (path: string) => void;
+  submoduleOperations: Record<string, SubmoduleOperationState>;
+  submoduleBusy: boolean;
+  recursiveSubmodules: boolean;
+  onRecursiveSubmodulesChange: (recursive: boolean) => void;
+  onSubmodulePrepareRemote: (path: string) => void;
+  onSubmoduleApplyRemote: (path: string, recursive: boolean) => void;
+  remoteUpdatePreview: SubmoduleRemotePreview | null;
+  onRemoteUpdatePreviewClose: () => void;
+  onDismissSubmoduleFeedback?: (path: string) => void;
   onStageFile: (path: string) => void;
   onStageFiles: (paths: string[]) => void;
   onUnstageFile: (path: string) => void;
@@ -266,6 +277,8 @@ function getOperationContent(
         title: t("operation.commitTitle"),
         message: t("operation.commitMessage"),
       };
+    case "submodule":
+      return null;
   }
 }
 
@@ -280,8 +293,7 @@ export function CentrePanel(props: CentrePanelProps) {
   const popupOperationContent = operationFeedback.showPopup && operationContent && !props.hookProgress
     ? { ...operationContent, message: t("operation.stillRunningMessage") }
     : null;
-  const submoduleChanges = props.submodules.filter(submodule => submodule.state !== "clean").length;
-  const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length + submoduleChanges;
+  const totalChanges = props.stagedFiles.length + props.unstagedFiles.length + props.unversionedFiles.length;
 
   React.useEffect(() => {
     props.onCommitGraphVisibilityChange?.(showCommitGraph);
@@ -433,6 +445,15 @@ export function CentrePanel(props: CentrePanelProps) {
           onSubmoduleFetch={props.onSubmoduleFetch}
           onSubmodulePull={props.onSubmodulePull}
           onSubmoduleOpen={props.onSubmoduleOpen}
+          submoduleOperations={props.submoduleOperations}
+          submoduleBusy={props.submoduleBusy}
+          recursiveSubmodules={props.recursiveSubmodules}
+          onRecursiveSubmodulesChange={props.onRecursiveSubmodulesChange}
+          onSubmodulePrepareRemote={props.onSubmodulePrepareRemote}
+          onSubmoduleApplyRemote={props.onSubmoduleApplyRemote}
+          remoteUpdatePreview={props.remoteUpdatePreview}
+          onRemoteUpdatePreviewClose={props.onRemoteUpdatePreviewClose}
+          onDismissSubmoduleFeedback={props.onDismissSubmoduleFeedback}
           onStageFile={props.onStageFile}
           onStageFiles={props.onStageFiles}
           onUnstageFile={props.onUnstageFile}

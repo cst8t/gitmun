@@ -18,7 +18,7 @@ export function useGitStatus(repoPath: string | null) {
     setError(null);
   }, [repoPath]);
 
-  const refresh = useCallback(async (options?: { silent?: boolean }) => {
+  const refresh = useCallback(async (options?: { silent?: boolean; throwOnError?: boolean }) => {
     const silent = options?.silent === true;
     if (!repoPath) {
       setStatus(null);
@@ -38,6 +38,7 @@ export function useGitStatus(repoPath: string | null) {
       if (currentRepoRef.current === repoPath && fetchId.current === myId) {
         setError(String(e));
       }
+      if (options?.throwOnError) throw e;
     } finally {
       isRunningRef.current = false;
       if (currentRepoRef.current === repoPath && fetchId.current === myId && !silent) {

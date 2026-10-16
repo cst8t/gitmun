@@ -20,6 +20,7 @@ type CommitBoxProps = {
   onSelectAction: (action: CommitPrimaryAction) => void;
   onCommit: (message: string, amend: boolean, action: CommitPrimaryAction) => boolean | Promise<boolean>;
   isCommitting: boolean;
+  operationBusy?: boolean;
   lastCommitMessage: string;
   mergeMessage?: string | null;
   mergeInProgress?: boolean;
@@ -116,6 +117,7 @@ export function CommitBox({
   onSelectAction,
   onCommit,
   isCommitting,
+  operationBusy = false,
   lastCommitMessage,
   mergeMessage,
   mergeInProgress,
@@ -299,7 +301,7 @@ export function CommitBox({
   const hasRecommendedLength = commitMessageRecommendedLength > 0;
   const subjectOverflow = hasRecommendedLength && subjectLength > commitMessageRecommendedLength;
   const actionDisabled =
-    stagedCount === 0 || trimmedSubject === "" || isCommitting || aiBusy || rebaseInProgress || cherryPickInProgress;
+    stagedCount === 0 || trimmedSubject === "" || isCommitting || operationBusy || aiBusy || rebaseInProgress || cherryPickInProgress;
 
   const handleAmendToggle = () => {
     if (aiBusy) return;
@@ -441,7 +443,7 @@ export function CommitBox({
             subjectLimit={commitMessageRecommendedLength}
             workflow={aiWorkflow}
             existingMessage={currentMessage}
-            disabled={isCommitting}
+            disabled={isCommitting || operationBusy}
             canUndo={aiUndoMessage !== null}
             onApplyMessage={handleApplyAiMessage}
             onUndo={handleUndoAiMessage}
@@ -492,8 +494,8 @@ export function CommitBox({
         {allowCommitAndPush && (
           <button
             type="button"
-            className={`commit-box__btn commit-box__btn--toggle ${isCommitting || aiBusy ? "commit-box__btn--disabled" : ""}`}
-            disabled={isCommitting || aiBusy}
+            className={`commit-box__btn commit-box__btn--toggle ${isCommitting || operationBusy || aiBusy ? "commit-box__btn--disabled" : ""}`}
+            disabled={isCommitting || operationBusy || aiBusy}
             onClick={() => setMenuOpen(open => !open)}
             aria-haspopup="menu"
             aria-expanded={menuOpen}

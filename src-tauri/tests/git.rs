@@ -12,11 +12,11 @@ use gitmun_lib::git::types::{
     BranchRequest, CommitAttemptResult, CommitDetailsRequest, CommitHistoryRequest, CommitLogScope,
     CommitProgressEvent, CommitRefKind, CommitRequest, CreateBranchRequest, DeleteBranchRequest,
     ExportCommitPatchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
-    FileRequest, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
+    FileRequest, FileEntryKind, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
     MergeRequest, PullStrategy, PullStrategyRequest, PushFailureKind, PushRequest, RebaseRequest,
     RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleState,
-    UnversionedItemKind,
+    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SubmoduleRemotePreview, SubmoduleState, UnversionedItemKind,
 };
 
 fn init_repo() -> TempDir {
@@ -342,6 +342,39 @@ fn push_request(repo: &TempDir) -> PushRequest {
         set_upstream: false,
         force_with_lease: false,
         push_follow_tags: false,
+    }
+}
+
+fn configure_submodule_identity(path: &Path) {
+    git(path, &["config", "user.email", "test@gitmun.test"]);
+    git(path, &["config", "user.name", "Gitmun Test"]);
+    git(path, &["config", "commit.gpgsign", "false"]);
+}
+
+fn advance_submodule(parent: &Path, content: &str) -> String {
+    let submodule_path = parent.join("deps/lib");
+    configure_submodule_identity(&submodule_path);
+    write_file(&submodule_path, "lib.txt", content);
+    git(&submodule_path, &["add", "lib.txt"]);
+    git(&submodule_path, &["commit", "-m", content]);
+    head_hash(&submodule_path)
+}
+
+fn apply_request(
+    preview: &SubmoduleRemotePreview,
+    recursive: bool,
+) -> SubmoduleApplyRequest {
+    SubmoduleApplyRequest {
+        repo_path: preview.repo_path.clone(),
+        path: preview.path.clone(),
+        recursive,
+        remote: preview.remote.clone(),
+        branch: preview.branch.clone(),
+        current_commit: preview.current_commit.clone(),
+        index_commit: preview.index_commit.clone(),
+        parent_head_commit: preview.parent_head_commit.clone(),
+        target_commit: preview.target_commit.clone(),
+        configuration_token: preview.configuration_token.clone(),
     }
 }
 
@@ -1299,14 +1332,29 @@ fn status_detects_uninitialised_submodule() {
         &["submodule", "deinit", "-f", "--", "deps/lib"],
     );
 
-    let status = handler()
-        .get_repo_status(&repo_request(&parent))
-        .expect("get_repo_status");
-
-    let submodule = &status.submodules[0];
-    assert_eq!(submodule.state, SubmoduleState::Uninitialised);
-    assert!(!submodule.initialised);
-    assert!(submodule.checked_out_commit.is_none());
+    for status in [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI get_repo_status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix get_repo_status"),
+    ] {
+        let submodule = &status.submodules[0];
+        assert_eq!(submodule.state, SubmoduleState::Uninitialised);
+        assert!(!submodule.initialised);
+        assert!(submodule.checked_out_commit.is_none());
+        assert!(!submodule.unstaged_gitlink);
+        assert!(!submodule.staged_gitlink);
+        assert!(status
+            .changed_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+        assert!(status
+            .staged_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+    }
 }
 
 #[test]
@@ -1385,12 +1433,12 @@ fn status_detects_out_of_sync_submodule() {
         assert!(submodule.out_of_sync);
         assert!(!submodule.dirty);
         assert_ne!(submodule.expected_commit, submodule.checked_out_commit);
-        assert!(
-            status
-                .changed_files
-                .iter()
-                .all(|file| file.path != "deps/lib")
-        );
+        assert!(status
+            .changed_files
+            .iter()
+            .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule));
+        assert!(status.submodules[0].unstaged_gitlink);
+        assert!(!status.submodules[0].staged_gitlink);
     }
 }
 
@@ -1518,6 +1566,801 @@ fn submodule_pull_rejects_dirty_submodule() {
         .expect_err("dirty submodule pull should fail");
 
     assert!(error.to_string().contains("local changes"));
+}
+
+#[test]
+fn submodule_gitlink_can_be_staged_committed_and_unstaged() {
+    let (parent, _submodule) = repo_with_submodule();
+    let advanced = advance_submodule(parent.path(), "v2");
+    let before = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status before stage");
+    assert!(before.submodules[0].unstaged_gitlink);
+    assert!(!before.submodules[0].staged_gitlink);
+    assert!(before
+        .changed_files
+        .iter()
+        .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule));
+
+    handler()
+        .stage_files(&StageFilesRequest {
+            repo_path: parent.path().to_str().unwrap().to_string(),
+            files: vec!["deps/lib".to_string()],
+        })
+        .expect("stage gitlink");
+    let staged = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status after stage");
+    assert!(staged.submodules[0].staged_gitlink);
+    assert!(!staged.submodules[0].unstaged_gitlink);
+    assert_eq!(staged.submodules[0].expected_commit.as_deref(), Some(advanced.as_str()));
+    assert!(staged
+        .staged_files
+        .iter()
+        .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule));
+    assert!(staged.changed_files.iter().all(|file| file.path != "deps/lib"));
+
+    write_file(&parent.path().join("deps/lib"), "local-only.txt", "dirty");
+    let dirty_staged = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status with internal dirt");
+    assert!(dirty_staged.submodules[0].dirty);
+    assert!(dirty_staged.submodules[0].staged_gitlink);
+    assert!(dirty_staged
+        .changed_files
+        .iter()
+        .all(|file| file.path != "deps/lib" && file.path != "deps/lib/local-only.txt"));
+    assert!(dirty_staged
+        .staged_files
+        .iter()
+        .all(|file| file.path != "deps/lib/local-only.txt"));
+
+    handler()
+        .unstage_files(&StageFilesRequest {
+            repo_path: parent.path().to_str().unwrap().to_string(),
+            files: vec!["deps/lib".to_string()],
+        })
+        .expect("unstage gitlink");
+    let unstaged = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status after unstage");
+    assert!(unstaged.submodules[0].unstaged_gitlink);
+    assert!(!unstaged.submodules[0].staged_gitlink);
+
+    handler()
+        .stage_all(&repo_request(&parent))
+        .expect("stage all");
+    let bulk = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status after stage all");
+    assert!(bulk.submodules[0].staged_gitlink);
+    assert!(bulk
+        .staged_files
+        .iter()
+        .all(|file| file.path != "deps/lib/local-only.txt"));
+
+    handler()
+        .commit_changes(&CommitRequest {
+            repo_path: parent.path().to_str().unwrap().to_string(),
+            message: "advance submodule".to_string(),
+            amend: None,
+            skip_hooks: false,
+        })
+        .expect("commit gitlink");
+    let committed = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status after commit");
+    assert!(!committed.submodules[0].staged_gitlink);
+    assert!(!committed.submodules[0].unstaged_gitlink);
+    assert!(committed.submodules[0].dirty);
+    assert!(committed.changed_files.iter().all(|file| file.path != "deps/lib"));
+    assert!(committed.staged_files.is_empty());
+}
+
+#[test]
+fn staged_gitlink_remains_staged_when_submodule_advances_again() {
+    let (parent, _submodule) = repo_with_submodule();
+    advance_submodule(parent.path(), "staged");
+    git(parent.path(), &["add", "deps/lib"]);
+    let advanced_again = advance_submodule(parent.path(), "advanced again");
+    let status = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status");
+    assert!(status.submodules[0].staged_gitlink);
+    assert!(status.submodules[0].unstaged_gitlink);
+    assert_ne!(
+        status.submodules[0].expected_commit.as_deref(),
+        Some(advanced_again.as_str())
+    );
+    assert_eq!(
+        status.submodules[0].checked_out_commit.as_deref(),
+        Some(advanced_again.as_str())
+    );
+}
+
+#[test]
+fn cli_and_gix_keep_gitlink_status_in_parity() {
+    let (parent, _submodule) = repo_with_submodule();
+
+    let assert_parity = |context: &str| {
+        let cli_status = handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI status");
+        let gix_status = gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix status");
+        let cli_submodule = cli_status
+            .submodules
+            .iter()
+            .find(|submodule| submodule.path == "deps/lib")
+            .expect("CLI submodule");
+        let gix_submodule = gix_status
+            .submodules
+            .iter()
+            .find(|submodule| submodule.path == "deps/lib")
+            .expect("gix submodule");
+
+        assert_eq!(
+            (
+                cli_submodule.staged_gitlink,
+                cli_submodule.unstaged_gitlink,
+                cli_submodule.dirty,
+                cli_submodule.expected_commit.as_deref(),
+                cli_submodule.checked_out_commit.as_deref(),
+            ),
+            (
+                gix_submodule.staged_gitlink,
+                gix_submodule.unstaged_gitlink,
+                gix_submodule.dirty,
+                gix_submodule.expected_commit.as_deref(),
+                gix_submodule.checked_out_commit.as_deref(),
+            ),
+            "{context}"
+        );
+        assert_eq!(
+            cli_status
+                .staged_files
+                .iter()
+                .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule),
+            gix_status
+                .staged_files
+                .iter()
+                .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule),
+            "{context}"
+        );
+        assert_eq!(
+            cli_status
+                .changed_files
+                .iter()
+                .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule),
+            gix_status
+                .changed_files
+                .iter()
+                .any(|file| file.path == "deps/lib" && file.kind == FileEntryKind::Submodule),
+            "{context}"
+        );
+    };
+
+    assert_parity("clean");
+    advance_submodule(parent.path(), "advanced");
+    assert_parity("advanced");
+    write_file(&parent.path().join("deps/lib"), "local-notes.txt", "dirty");
+    assert_parity("advanced and internally dirty");
+    fs::remove_file(parent.path().join("deps/lib/local-notes.txt")).expect("remove dirty file");
+    git(parent.path(), &["add", "deps/lib"]);
+    assert_parity("staged");
+    advance_submodule(parent.path(), "advanced again");
+    assert_parity("staged then advanced");
+}
+
+#[test]
+fn conflicted_gitlinks_stay_in_conflict_workflow() {
+    let (parent, _submodule) = repo_with_submodule();
+    let initial_commit = git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]);
+
+    git(parent.path(), &["switch", "-c", "submodule-topic"]);
+    advance_submodule(parent.path(), "topic commit");
+    git(parent.path(), &["add", "deps/lib"]);
+    git(parent.path(), &["commit", "-m", "advance topic submodule"]);
+
+    git(parent.path(), &["switch", "main"]);
+    git(
+        &parent.path().join("deps/lib"),
+        &["checkout", "--detach", initial_commit.as_str()],
+    );
+    advance_submodule(parent.path(), "main commit");
+    git(parent.path(), &["add", "deps/lib"]);
+    git(parent.path(), &["commit", "-m", "advance main submodule"]);
+
+    let merge = Command::new("git")
+        .args(["merge", "--no-edit", "submodule-topic"])
+        .current_dir(parent.path())
+        .output()
+        .expect("merge conflicting gitlinks");
+    assert_eq!(merge.status.code(), Some(1));
+
+    for status in [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix status"),
+    ] {
+        assert!(status
+            .conflicted_files
+            .iter()
+            .any(|file| file.path == "deps/lib"));
+        assert!(status
+            .staged_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+        assert!(status
+            .changed_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+    }
+}
+
+#[test]
+fn conflicted_gitlinks_without_gitmodules_stay_in_conflict_workflow() {
+    let (parent, _submodule) = repo_with_submodule();
+    let initial_commit = git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]);
+
+    fs::write(parent.path().join(".gitmodules"), "").expect("remove submodule metadata");
+    git(parent.path(), &["add", ".gitmodules"]);
+    git(parent.path(), &["commit", "-m", "remove submodule metadata"]);
+
+    git(parent.path(), &["switch", "-c", "submodule-topic"]);
+    advance_submodule(parent.path(), "topic commit");
+    git(parent.path(), &["add", "deps/lib"]);
+    git(parent.path(), &["commit", "-m", "advance topic submodule"]);
+
+    git(parent.path(), &["switch", "main"]);
+    git(
+        &parent.path().join("deps/lib"),
+        &["checkout", "--detach", initial_commit.as_str()],
+    );
+    advance_submodule(parent.path(), "main commit");
+    git(parent.path(), &["add", "deps/lib"]);
+    git(parent.path(), &["commit", "-m", "advance main submodule"]);
+
+    let merge = Command::new("git")
+        .args(["merge", "--no-edit", "submodule-topic"])
+        .current_dir(parent.path())
+        .output()
+        .expect("merge conflicting gitlinks");
+    assert_eq!(merge.status.code(), Some(1));
+
+    for status in [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix status"),
+    ] {
+        assert!(status
+            .conflicted_files
+            .iter()
+            .any(|file| file.path == "deps/lib"));
+        assert!(status
+            .staged_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+        assert!(status
+            .changed_files
+            .iter()
+            .all(|file| file.path != "deps/lib"));
+    }
+}
+
+#[test]
+fn status_keeps_gitlinks_without_gitmodules() {
+    let (parent, _submodule) = repo_with_submodule();
+    let recorded = git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]);
+    git(
+        parent.path(),
+        &["update-index", "--force-remove", "deps/lib"],
+    );
+    git(
+        parent.path(),
+        &[
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            &format!("160000,{recorded},vendor/extra"),
+        ],
+    );
+    fs::write(parent.path().join(".gitmodules"), "").expect("clear gitmodules");
+    git(parent.path(), &["add", ".gitmodules"]);
+
+    for status in [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI status"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix status"),
+    ] {
+        assert!(status.submodules.iter().any(|submodule| submodule.path == "vendor/extra"));
+        assert!(status.submodules.iter().any(|submodule| {
+            submodule.path == "deps/lib" && submodule.staged_gitlink
+        }));
+        assert!(status.staged_files.iter().any(|file| {
+            file.path == "vendor/extra" && file.kind == FileEntryKind::Submodule
+        }));
+        assert!(status.staged_files.iter().any(|file| {
+            file.path == "deps/lib" && file.kind == FileEntryKind::Submodule
+        }));
+        assert!(status.unversioned_files.iter().all(|path| {
+            !path.starts_with("deps/lib/") && !path.starts_with("vendor/extra/")
+        }));
+    }
+}
+
+#[test]
+fn relative_submodule_url_is_not_sync_required_until_it_changes() {
+    let (parent, _submodule) = repo_with_submodule();
+    git(
+        parent.path(),
+        &[
+            "remote",
+            "add",
+            "origin",
+            "https://example.test/group/parent.git",
+        ],
+    );
+    git(
+        parent.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.deps/lib.url",
+            "../lib.git",
+        ],
+    );
+    git(
+        parent.path(),
+        &[
+            "config",
+            "submodule.deps/lib.url",
+            "https://example.test/group/lib.git",
+        ],
+    );
+
+    let relative = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("relative status");
+    assert!(!relative.submodules[0].sync_required);
+
+    git(
+        parent.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.deps/lib.url",
+            "https://example.invalid/changed.git",
+        ],
+    );
+    let changed = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("changed status");
+    assert!(changed.submodules[0].sync_required);
+
+    git(
+        parent.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.deps/lib.url",
+            "https://example.test/absolute.git",
+        ],
+    );
+    git(
+        parent.path(),
+        &[
+            "config",
+            "submodule.deps/lib.url",
+            "https://example.test/absolute.git",
+        ],
+    );
+    let absolute = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("absolute status");
+    assert!(!absolute.submodules[0].sync_required);
+}
+
+#[test]
+fn recorded_checkout_returns_to_index_commit_and_rejects_dirty_work() {
+    let (parent, _submodule) = repo_with_submodule();
+    let recorded = git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]);
+    advance_submodule(parent.path(), "moved");
+    write_file(&parent.path().join("deps/lib"), "dirty.txt", "dirty");
+    let dirty = handler()
+        .submodule_update(&submodule_action_request(&parent, "deps/lib"))
+        .expect_err("dirty checkout");
+    assert!(dirty.to_string().contains("SUBMODULE_DIRTY"));
+    assert_ne!(
+        git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]),
+        recorded
+    );
+
+    fs::remove_file(parent.path().join("deps/lib/dirty.txt")).expect("remove dirty file");
+    let updated = handler()
+        .submodule_update(&submodule_action_request(&parent, "deps/lib"))
+        .expect("checkout recorded");
+    assert_eq!(
+        git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]),
+        recorded
+    );
+    assert!(git_stdout(&parent.path().join("deps/lib"), &["branch", "--show-current"]).is_empty());
+    assert_ne!(updated.message, "alreadyAtRecordedCommit");
+
+    let again = handler()
+        .submodule_update(&submodule_action_request(&parent, "deps/lib"))
+        .expect("already recorded");
+    assert_eq!(again.message, "alreadyAtRecordedCommit");
+}
+
+#[test]
+fn remote_update_previews_without_mutation_and_rejects_stale_apply() {
+    let (parent, source) = repo_with_submodule();
+    configure_submodule_identity(source.path());
+    write_file(source.path(), "lib.txt", "remote");
+    git(source.path(), &["add", "lib.txt"]);
+    git(source.path(), &["commit", "-m", "remote"]);
+    let remote_commit = head_hash(source.path());
+    let before = git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]);
+    let index_before = git_stdout(parent.path(), &["rev-parse", ":deps/lib"]);
+
+    let preview = handler()
+        .submodule_prepare_update(&submodule_action_request(&parent, "deps/lib"))
+        .expect("prepare");
+    assert_eq!(preview.target_commit, remote_commit);
+    assert_eq!(preview.current_commit.as_deref(), Some(before.as_str()));
+    assert_eq!(preview.index_commit.as_deref(), Some(index_before.as_str()));
+    assert!(!preview.already_checked_out);
+    assert_eq!(
+        git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]),
+        before
+    );
+    assert_eq!(git_stdout(parent.path(), &["rev-parse", ":deps/lib"]), index_before);
+
+    advance_submodule(parent.path(), "stale");
+    let stale = handler()
+        .submodule_apply_update(&apply_request(&preview, false))
+        .expect_err("stale preview");
+    assert!(stale.to_string().contains("SUBMODULE_STALE_PREVIEW"));
+
+    let fresh = handler()
+        .submodule_prepare_update(&submodule_action_request(&parent, "deps/lib"))
+        .expect("fresh preview");
+    write_file(&parent.path().join("deps/lib"), "blocked.txt", "blocked");
+    let dirty = handler()
+        .submodule_apply_update(&apply_request(&fresh, false))
+        .expect_err("dirty apply");
+    assert!(dirty.to_string().contains("SUBMODULE_DIRTY"));
+    fs::remove_file(parent.path().join("deps/lib/blocked.txt")).expect("clear dirty file");
+
+    let applied = handler()
+        .submodule_apply_update(&apply_request(&fresh, false))
+        .expect("apply");
+    assert_ne!(applied.message, "alreadyAtRemoteCommit");
+    assert_eq!(
+        git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]),
+        fresh.target_commit
+    );
+    assert_eq!(git_stdout(parent.path(), &["rev-parse", ":deps/lib"]), index_before);
+    let after = handler()
+        .get_repo_status(&repo_request(&parent))
+        .expect("status after apply");
+    assert!(after.submodules[0].unstaged_gitlink);
+    assert!(!after.submodules[0].staged_gitlink);
+}
+
+#[test]
+fn remote_update_resolves_configured_local_and_default_branches() {
+    let (parent, source) = repo_with_submodule();
+    git(source.path(), &["branch", "configured"]);
+    git(source.path(), &["branch", "override"]);
+    let request = submodule_action_request(&parent, "deps/lib");
+
+    git(
+        &parent.path().join("deps/lib"),
+        &["remote", "add", "aaa", "/definitely-missing-gitmun-remote"],
+    );
+    let tracking_remote = handler()
+        .submodule_prepare_update(&request)
+        .expect("tracking remote preview");
+    assert_eq!(tracking_remote.remote, "origin");
+
+    git(
+        parent.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.deps/lib.branch",
+            "configured",
+        ],
+    );
+    let configured = handler()
+        .submodule_prepare_update(&request)
+        .expect("configured branch preview");
+    assert_eq!(configured.branch, "configured");
+
+    git(
+        parent.path(),
+        &["config", "submodule.deps/lib.branch", "override"],
+    );
+    let overridden = handler()
+        .submodule_prepare_update(&request)
+        .expect("local override preview");
+    assert_eq!(overridden.branch, "override");
+
+    let stale = handler()
+        .submodule_apply_update(&apply_request(&configured, false))
+        .expect_err("configuration change must stale the preview");
+    assert!(stale.to_string().contains("SUBMODULE_STALE_PREVIEW"));
+
+    git(parent.path(), &["config", "submodule.deps/lib.branch", "."]);
+    let matching_parent = handler()
+        .submodule_prepare_update(&request)
+        .expect("branch equals parent preview");
+    assert_eq!(matching_parent.branch, "main");
+
+    git(
+        parent.path(),
+        &["config", "--unset", "submodule.deps/lib.branch"],
+    );
+    git(
+        parent.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "--unset",
+            "submodule.deps/lib.branch",
+        ],
+    );
+    let default_branch = handler()
+        .submodule_prepare_update(&request)
+        .expect("default branch preview");
+    assert_eq!(default_branch.branch, "main");
+
+    let remote_url_preview = handler()
+        .submodule_prepare_update(&request)
+        .expect("preview before changing the child remote URL");
+    git(
+        &parent.path().join("deps/lib"),
+        &[
+            "remote",
+            "set-url",
+            "origin",
+            "/definitely-missing-gitmun-reconfigured-remote",
+        ],
+    );
+    let stale_remote_url = handler()
+        .submodule_apply_update(&apply_request(&remote_url_preview, false))
+        .expect_err("child remote URL change must stale the preview");
+    assert!(stale_remote_url
+        .to_string()
+        .contains("SUBMODULE_STALE_PREVIEW"));
+
+    git(parent.path(), &["config", "submodule.deps/lib.branch", "."]);
+    git(parent.path(), &["checkout", "--detach"]);
+    let detached_parent = handler()
+        .submodule_prepare_update(&request)
+        .expect_err("branch equals parent must reject a detached parent");
+    assert!(detached_parent
+        .to_string()
+        .contains("SUBMODULE_REMOTE_UNAVAILABLE"));
+}
+
+#[test]
+fn pull_rejects_detached_head_and_missing_upstream() {
+    let (parent, _submodule) = repo_with_submodule();
+    let submodule_path = parent.path().join("deps/lib");
+    git(&submodule_path, &["checkout", "--detach"]);
+    let detached = handler()
+        .submodule_pull(&submodule_action_request(&parent, "deps/lib"))
+        .expect_err("detached pull");
+    assert!(detached.to_string().contains("SUBMODULE_DETACHED"));
+
+    git(&submodule_path, &["checkout", "-b", "local-only"]);
+    let missing = handler()
+        .submodule_pull(&submodule_action_request(&parent, "deps/lib"))
+        .expect_err("missing upstream");
+    assert!(missing.to_string().contains("SUBMODULE_NO_UPSTREAM"));
+}
+
+#[test]
+fn recursive_checkout_initialises_new_nested_submodule() {
+    let nested = init_submodule_source();
+    let child = init_repo();
+    git(
+        child.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            nested.path().to_str().unwrap(),
+            "nested/lib",
+        ],
+    );
+    git(child.path(), &["commit", "-m", "add nested"]);
+    let parent = init_repo();
+    git(
+        parent.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            child.path().to_str().unwrap(),
+            "deps/lib",
+        ],
+    );
+    git(parent.path(), &["commit", "-m", "add child"]);
+    git(parent.path(), &["config", "protocol.file.allow", "always"]);
+    git(
+        &parent.path().join("deps/lib"),
+        &["config", "protocol.file.allow", "always"],
+    );
+    assert!(!parent.path().join("deps/lib/nested/lib/.git").exists());
+
+    let mut non_recursive = submodule_action_request(&parent, "deps/lib");
+    non_recursive.recursive = false;
+    handler()
+        .submodule_update(&non_recursive)
+        .expect("non-recursive checkout");
+    assert!(!parent.path().join("deps/lib/nested/lib/.git").exists());
+
+    let mut recursive = non_recursive.clone();
+    recursive.recursive = true;
+    handler()
+        .submodule_update(&recursive)
+        .expect("recursive checkout");
+    assert!(parent.path().join("deps/lib/nested/lib/.git").exists());
+}
+
+#[test]
+fn recursive_sync_updates_nested_urls_when_parent_url_is_current() {
+    let nested = init_submodule_source();
+    let child = init_repo();
+    git(
+        child.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            nested.path().to_str().unwrap(),
+            "nested/lib",
+        ],
+    );
+    git(child.path(), &["commit", "-m", "add nested"]);
+    let parent = init_repo();
+    git(
+        parent.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            child.path().to_str().unwrap(),
+            "deps/lib",
+        ],
+    );
+    git(parent.path(), &["commit", "-m", "add child"]);
+    git(parent.path(), &["config", "protocol.file.allow", "always"]);
+
+    let mut request = submodule_action_request(&parent, "deps/lib");
+    request.recursive = true;
+    handler()
+        .submodule_update(&request)
+        .expect("initialise nested submodule");
+
+    let child_path = parent.path().join("deps/lib");
+    git(
+        &child_path,
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.nested/lib.url",
+            "https://example.invalid/nested.git",
+        ],
+    );
+    let before = git_stdout(
+        &child_path,
+        &["config", "--get", "submodule.nested/lib.url"],
+    );
+    assert_ne!(before, "https://example.invalid/nested.git");
+
+    let result = handler()
+        .submodule_sync(&request)
+        .expect("recursive sync");
+    assert_eq!(result.message, "submoduleSynced");
+    assert_eq!(
+        git_stdout(
+            &child_path,
+            &["config", "--get", "submodule.nested/lib.url"],
+        ),
+        "https://example.invalid/nested.git"
+    );
+}
+
+#[test]
+fn recursive_remote_update_refreshes_status_after_nested_initialisation_failure() {
+    let (parent, child_source) = repo_with_submodule();
+    let nested_source = init_submodule_source();
+    configure_submodule_identity(child_source.path());
+    git(
+        child_source.path(),
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            nested_source.path().to_str().unwrap(),
+            "nested/lib",
+        ],
+    );
+    git(
+        child_source.path(),
+        &[
+            "config",
+            "-f",
+            ".gitmodules",
+            "submodule.nested/lib.url",
+            "/definitely-missing-gitmun-nested-source",
+        ],
+    );
+    git(child_source.path(), &["add", ".gitmodules", "nested/lib"]);
+    git(child_source.path(), &["commit", "-m", "add unavailable nested module"]);
+    let target_commit = head_hash(child_source.path());
+
+    let mut request = submodule_action_request(&parent, "deps/lib");
+    request.recursive = true;
+    let preview = handler()
+        .submodule_prepare_update(&request)
+        .expect("prepare recursive update");
+    assert_eq!(preview.target_commit, target_commit);
+
+    let failure = handler()
+        .submodule_apply_update(&apply_request(&preview, true))
+        .expect_err("nested initialisation should fail");
+    assert!(failure.to_string().contains("SUBMODULE_UPDATE_FAILED"));
+    assert_eq!(
+        git_stdout(&parent.path().join("deps/lib"), &["rev-parse", "HEAD"]),
+        target_commit
+    );
+
+    for status in [
+        handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("CLI status after partial recursive update"),
+        gix_handler()
+            .get_repo_status(&repo_request(&parent))
+            .expect("gix status after partial recursive update"),
+    ] {
+        let submodule = status
+            .submodules
+            .iter()
+            .find(|submodule| submodule.path == "deps/lib")
+            .expect("parent submodule status");
+        assert_eq!(submodule.checked_out_commit.as_deref(), Some(target_commit.as_str()));
+        assert!(submodule.unstaged_gitlink);
+        assert!(status.changed_files.iter().any(|file| {
+            file.path == "deps/lib" && file.kind == FileEntryKind::Submodule
+        }));
+    }
 }
 
 #[test]

@@ -6,7 +6,7 @@ export type CommitDateMode = "AuthorDate" | "CommitterDate";
 export type CommitLogScope = "currentCheckout" | "allRefs";
 export type CommitPrimaryAction = "commit" | "commitAndPush";
 export type StagingOperationKind = "stage" | "stageAll" | "unstage" | "unstageAll";
-export type LongRunningOperationKind = StagingOperationKind | CommitPrimaryAction;
+export type LongRunningOperationKind = StagingOperationKind | CommitPrimaryAction | "submodule";
 
 export type StagingOperation = {
     kind: StagingOperationKind;
@@ -327,6 +327,39 @@ export type SubmoduleActionRequest = RepoRequest & {
     recursive?: boolean;
 };
 
+export type SubmoduleRemotePreview = {
+    path: string;
+    remote: string;
+    branch: string;
+    currentCommit: string | null;
+    targetCommit: string;
+    indexCommit: string | null;
+    parentHeadCommit: string | null;
+    alreadyCheckedOut: boolean;
+    willDetachHead: boolean;
+    recursive: boolean;
+    configurationToken: string;
+};
+
+export type SubmoduleApplyRequest = SubmoduleActionRequest & {
+    currentCommit: string | null;
+    targetCommit: string;
+    indexCommit: string | null;
+    parentHeadCommit: string | null;
+    remote: string;
+    branch: string;
+    configurationToken: string;
+};
+
+export type SubmoduleAction = "initialise" | "checkout" | "prepareRemote" | "applyRemote" | "sync" | "fetch" | "pull" | "open" | "stage" | "unstage";
+export type SubmoduleOperationState = {
+    action: SubmoduleAction;
+    phase: "running" | "refreshing" | "success" | "error";
+    message?: string;
+    error?: string;
+    startedAt: number;
+};
+
 export type CloneRequest = {
     repoUrl: string;
     destination: string;
@@ -474,7 +507,7 @@ export type FileStatusItem = {
     status: string;
     additions: number | null;
     deletions: number | null;
-    kind?: "file" | "directory";
+    kind?: "file" | "directory" | "submodule";
 };
 
 export type UnversionedItem = {
@@ -503,6 +536,10 @@ export type SubmoduleStatus = {
     localUrl: string | null;
     branch: string | null;
     currentBranch: string | null;
+    parentHeadCommit: string | null;
+    stagedGitlink: boolean;
+    unstagedGitlink: boolean;
+    upstreamBranch: string | null;
     expectedCommit: string | null;
     checkedOutCommit: string | null;
     initialised: boolean;

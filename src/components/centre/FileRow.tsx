@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { CheckIcon, FileIcon, StageArrowIcon, UnstageArrowIcon, DiscardIcon } from "../icons";
-import type { FileStatusItem } from "../../types";
+import type { FileStatusItem, SubmoduleOperationState } from "../../types";
 
 type FileRowProps = {
   file: FileStatusItem;
@@ -16,6 +16,7 @@ type FileRowProps = {
   onUnstage?: () => void;
   onDiscard?: () => void;
   actionDisabled?: boolean;
+  submoduleOperation?: SubmoduleOperationState;
   striped?: "Subtle" | "Strong";
   displayPath?: string;
   titlePath?: string;
@@ -43,6 +44,7 @@ export function FileRow({
   onUnstage,
   onDiscard,
   actionDisabled = false,
+  submoduleOperation,
   striped,
   displayPath,
   titlePath,
@@ -52,6 +54,9 @@ export function FileRow({
   const [hovered, setHovered] = useState(false);
   const statusKey = file.status.toLowerCase();
   const s = STATUS_MAP[statusKey] ?? STATUS_MAP.modified;
+  const isSubmodule = file.kind === "submodule";
+  const actionRunning = (submoduleOperation?.action === "stage" || submoduleOperation?.action === "unstage")
+    && (submoduleOperation.phase === "running" || submoduleOperation.phase === "refreshing");
   const stripingClass = striped ? ` file-row--striped-${striped.toLowerCase()}` : "";
 
   return (
@@ -79,23 +84,24 @@ export function FileRow({
       <span className="file-row__icon" style={{ color: isStaged ? "var(--green)" : "var(--text-muted)" }}>
         {isStaged ? <CheckIcon /> : <FileIcon />}
       </span>
-      <span className="file-row__badge" style={{ background: s.bg, color: s.text }}>{s.label}</span>
+      <span className="file-row__badge" style={{ background: s.bg, color: s.text }}>{isSubmodule ? "S" : s.label}</span>
       <span className="file-row__path">{displayPath ?? file.path}</span>
 
-      {hovered ? (
+      {hovered || actionRunning ? (
         <div className="file-row__actions" onClick={e => e.stopPropagation()}>
+          {actionRunning && <span role="status">{t(`staging.submoduleAction.${submoduleOperation.action}`)}</span>}
           {isStaged ? (
             <button className="file-row__action-btn file-row__action-btn--red" title={t("staging.unstageFile")} onClick={onUnstage} disabled={actionDisabled}>
-              <UnstageArrowIcon />
+              {actionRunning ? <span className="staging__operation-spinner" aria-hidden="true" /> : <UnstageArrowIcon />}
             </button>
           ) : (
             <>
               <button className="file-row__action-btn file-row__action-btn--accent" title={t("staging.stageFile")} onClick={onStage} disabled={actionDisabled}>
-                <StageArrowIcon />
+                {actionRunning ? <span className="staging__operation-spinner" aria-hidden="true" /> : <StageArrowIcon />}
               </button>
-              <button className="file-row__action-btn file-row__action-btn--red" title={t("confirmRevert.title")} onClick={onDiscard} disabled={actionDisabled}>
+              {onDiscard && <button className="file-row__action-btn file-row__action-btn--red" title={t("confirmRevert.title")} onClick={onDiscard} disabled={actionDisabled}>
                 <DiscardIcon />
-              </button>
+              </button>}
             </>
           )}
         </div>

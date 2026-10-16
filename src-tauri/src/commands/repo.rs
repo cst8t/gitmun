@@ -7,7 +7,8 @@ use crate::git::types::{
     LocalCopyProgressPhase, LocalCopyRequest, LocalCopyResult, LocalCopyWarning, NumstatRequest,
     NumstatResult, OperationResult, PullAnalysis, PullStrategyRequest, PushRequest, PushResult,
     RepoRequest, RepoStatus, SetIdentityRequest, SshAllowedSignerStatus, StageFilesRequest,
-    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest,
+    StashEntry, StashPushRequest, StashRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SubmoduleRemotePreview,
 };
 #[cfg(target_os = "linux")]
 use crate::git::types::{LINUX_TERMINAL_AUTO_ID, LINUX_TERMINAL_CUSTOM_ID};
@@ -2693,57 +2694,79 @@ pub fn discard_file(
 }
 
 #[tauri::command]
-pub fn submodule_init(
+pub async fn submodule_init(
     request: SubmoduleActionRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .submodule_init(request)
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_init(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn submodule_update(
+pub async fn submodule_update(
     request: SubmoduleActionRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .submodule_update(request)
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_update(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn submodule_sync(
+pub async fn submodule_prepare_update(
     request: SubmoduleActionRequest,
-    state: tauri::State<'_, AppState>,
-) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .submodule_sync(request)
+    app: tauri::AppHandle,
+) -> Result<SubmoduleRemotePreview, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_prepare_update(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn submodule_fetch(
-    request: SubmoduleActionRequest,
-    state: tauri::State<'_, AppState>,
+pub async fn submodule_apply_update(
+    request: SubmoduleApplyRequest,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .submodule_fetch(request)
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_apply_update(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
 }
 
 #[tauri::command]
-pub fn submodule_pull(
+pub async fn submodule_sync(
     request: SubmoduleActionRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .submodule_pull(request)
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_sync(request))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn submodule_fetch(
+    request: SubmoduleActionRequest,
+    app: tauri::AppHandle,
+) -> Result<OperationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_fetch(request))
+        .await
+        .map_err(|error| error.to_string())?
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn submodule_pull(
+    request: SubmoduleActionRequest,
+    app: tauri::AppHandle,
+) -> Result<OperationResult, String> {
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.submodule_pull(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
 }
 

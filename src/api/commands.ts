@@ -55,6 +55,8 @@ import type {
     Settings,
     StageFilesRequest,
     SubmoduleActionRequest,
+    SubmoduleRemotePreview,
+    SubmoduleApplyRequest,
     TagInfo,
     BackendMode,
     LinuxTerminalOption,
@@ -287,6 +289,14 @@ export function submoduleFetch(request: SubmoduleActionRequest): Promise<Operati
 
 export function submodulePull(request: SubmoduleActionRequest): Promise<OperationResult> {
     return invoke<OperationResult>("submodule_pull", {request});
+}
+
+export function submodulePrepareUpdate(request: SubmoduleActionRequest): Promise<SubmoduleRemotePreview> {
+    return invoke<SubmoduleRemotePreview>("submodule_prepare_update", {request});
+}
+
+export function submoduleApplyUpdate(request: SubmoduleApplyRequest): Promise<OperationResult> {
+    return invoke<OperationResult>("submodule_apply_update", {request});
 }
 
 export function commitChanges(

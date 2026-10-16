@@ -41,6 +41,7 @@ import { useGitIdentity } from "../hooks/useGitIdentity";
 import { useGitTags } from "../hooks/useGitTags";
 import { useGitRemotes } from "../hooks/useGitRemotes";
 import { useGitStashes } from "../hooks/useGitStashes";
+import { useSubmoduleOperations } from "../hooks/useSubmoduleOperations";
 import { useStagingOperations } from "../hooks/useStagingOperations";
 import { useProjectKeyboardShortcuts } from "../hooks/useProjectKeyboardShortcuts";
 import { useRemoteOperations } from "../hooks/useRemoteOperations";
@@ -280,7 +281,7 @@ export type ProjectViewProps = {
   recentRepoDisplayNames: Record<string, string>;
   identityOpen: boolean;
   onIdentityToggle: () => void;
-  onRepoSelect: (path: string) => void;
+  onRepoSelect: (path: string, reportFailure?: boolean) => void | Promise<void>;
   onRemoveRecentRepo: (path: string) => void;
   onOpenRepoLocation: (kind: RepoOpenLocationKind) => void;
   onOpenExistingClick: () => void;
@@ -310,7 +311,7 @@ export function EmptyRecentRepositories({
 }: {
   paths: string[];
   displayNames: Record<string, string>;
-  onRepoSelect: (path: string) => void;
+  onRepoSelect: (path: string, reportFailure?: boolean) => void | Promise<void>;
   onRemoveRecentRepo: (path: string) => void;
 }) {
   const {t} = useTranslation("projectView");
@@ -418,7 +419,7 @@ export function ProjectView({
   const [showNoDiffToolWarning, setShowNoDiffToolWarning] = useState(false);
   const { diff, loading: diffLoading } = useGitDiff(
     repoPath,
-    selectedSubmodulePath ? null : selectedFile,
+    selectedSubmodulePath || status?.submodules.some(module => module.path === selectedFile) ? null : selectedFile,
     selectedFileStaged,
     diffRefreshKey,
   );
@@ -546,7 +547,7 @@ export function ProjectView({
     ...selectedUnstagedPaths.map(path => ({ path, staged: false })),
   ];
   const submodules = status?.submodules ?? [];
-  const selectedSubmodule = submodules.find(submodule => submodule.path === selectedSubmodulePath) ?? null;
+  const selectedSubmodule = submodules.find(submodule => submodule.path === (selectedSubmodulePath ?? selectedFile)) ?? null;
   const conflictedFiles = status?.conflictedFiles ?? [];
   const mergeInProgress = status?.mergeInProgress ?? false;
   const mergeHeadBranch = status?.mergeHeadBranch ?? null;
@@ -859,6 +860,7 @@ export function ProjectView({
     cancelPushRejection: handlePushRejectionCancel,
   } = useRemoteOperations({
     repoPath,
+    isMutationBlocked: () => operationLockRef.current?.kind === "submodule",
     currentBranchInfo,
     remoteActionKind: remoteActionState.kind,
     remoteActionTitle,
@@ -977,7 +979,7 @@ export function ProjectView({
   }, [repoPath]);
 
   const startOperation = useCallback((kind: LongRunningOperationKind, count?: number) => {
-    if (operationLockRef.current) {
+    if (operationLockRef.current || remoteOp || hookProgress || isRebaseActionRunning || isCherryPickActionRunning || isRevertActionRunning) {
       return null;
     }
 
@@ -991,7 +993,7 @@ export function ProjectView({
     operationLockRef.current = operation;
     setOperationLock(operation);
     return operation;
-  }, []);
+  }, [remoteOp, hookProgress, isRebaseActionRunning, isCherryPickActionRunning, isRevertActionRunning]);
 
   const finishOperation = useCallback((operation: LongRunningOperation) => {
     if (operationLockRef.current?.id !== operation.id) {
@@ -1002,19 +1004,27 @@ export function ProjectView({
     setOperationLock(null);
   }, []);
 
+  const refreshSubmoduleStatus = useCallback(() => refreshStatus({throwOnError: true}), [refreshStatus]);
+  const startSubmoduleOperation = useCallback(() => startOperation("submodule"), [startOperation]);
+  const openSubmoduleRepository = useCallback((path: string) => onRepoSelect(path, true), [onRepoSelect]);
+  const submoduleOperations = useSubmoduleOperations({
+    repoPath, refreshStatus: refreshSubmoduleStatus, showToast,
+    startOperation: startSubmoduleOperation, finishOperation, openRepository: openSubmoduleRepository,
+  });
+
   const {
     revertPendingPaths,
-    stageFile: handleStageFile,
-    stageFiles: handleStageFiles,
-    unstageFile: handleUnstageFile,
-    unstageFiles: handleUnstageFiles,
+    stageFile: ordinaryStageFile,
+    stageFiles: ordinaryStageFiles,
+    unstageFile: ordinaryUnstageFile,
+    unstageFiles: ordinaryUnstageFiles,
     discardFile: handleDiscardFile,
     discardFiles: handleDiscardFiles,
     discardAll: handleDiscardAll,
     confirmDiscard: handleRevertConfirm,
     cancelDiscard: handleRevertCancel,
-    stageAll: handleStageAll,
-    unstageAll: handleUnstageAll,
+    stageAll: ordinaryStageAll,
+    unstageAll: ordinaryUnstageAll,
   } = useStagingOperations({
     repoPath,
     confirmRevert,
@@ -1024,6 +1034,22 @@ export function ProjectView({
     startOperation,
     finishOperation,
   });
+
+  const runGitlinkStaging = (paths: string[], action: "stage" | "unstage", task: () => Promise<StagingResult>) =>
+    submoduleOperations.run(paths.filter(path => submodules.some(module => module.path === path)), action, task);
+  type StagingResult = Awaited<ReturnType<typeof api.stageFiles>>;
+  const handleStageFiles = (paths: string[]) => paths.some(path => submodules.some(module => module.path === path))
+    ? runGitlinkStaging(paths, "stage", () => api.stageFiles(repoPath!, paths)) : ordinaryStageFiles(paths);
+  const handleStageFile = (path: string) => submodules.some(module => module.path === path)
+    ? runGitlinkStaging([path], "stage", () => api.stageFiles(repoPath!, [path])) : ordinaryStageFile(path);
+  const handleUnstageFiles = (paths: string[]) => paths.some(path => submodules.some(module => module.path === path))
+    ? runGitlinkStaging(paths, "unstage", () => api.unstageFiles(repoPath!, paths)) : ordinaryUnstageFiles(paths);
+  const handleUnstageFile = (path: string) => submodules.some(module => module.path === path)
+    ? runGitlinkStaging([path], "unstage", () => api.unstageFile(repoPath!, path)) : ordinaryUnstageFile(path);
+  const handleStageAll = () => submodules.some(module => module.unstagedGitlink)
+    ? runGitlinkStaging(submodules.filter(module => module.unstagedGitlink).map(module => module.path), "stage", () => api.stageAll(repoPath!)) : ordinaryStageAll();
+  const handleUnstageAll = () => submodules.some(module => module.stagedGitlink)
+    ? runGitlinkStaging(submodules.filter(module => module.stagedGitlink).map(module => module.path), "unstage", () => api.unstageAll(repoPath!)) : ordinaryUnstageAll();
 
   const handleFileSelect = useCallback((path: string, staged: boolean) => {
     setSelectedSubmodulePath(null);
@@ -1184,6 +1210,7 @@ export function ProjectView({
   }, [finishOperation, handlePush, runCommitRequest, startOperation]);
 
   const handleStash = useCallback(() => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (!hasWorkingTreeChanges) {
       showToast(t("toast.noLocalChangesToStash"), "info");
@@ -1197,6 +1224,7 @@ export function ProjectView({
     includeUntracked: boolean;
     paths: string[] | null;
   }) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     setShowStashDialog(false);
     try {
@@ -1215,6 +1243,7 @@ export function ProjectView({
   }, [repoPath, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashApply = useCallback(async (stashIndex: number) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || stashBusy) return;
     setStashBusy(true);
     try {
@@ -1227,6 +1256,7 @@ export function ProjectView({
   }, [repoPath, stashBusy, refreshStatus, showToast, t]);
 
   const handleStashPop = useCallback(async (stashIndex: number) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || stashBusy) return;
     setStashBusy(true);
     try {
@@ -1239,6 +1269,7 @@ export function ProjectView({
   }, [repoPath, stashBusy, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashDrop = useCallback(async (stash: StashEntry) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || stashBusy) return;
     const confirmed = await ask(buildStashDropPrompt(stash, t), {
       title: t("ask.dropStash.title"), kind: "warning", okLabel: t("actions.drop"), cancelLabel: t("actions.cancel"),
@@ -1255,7 +1286,7 @@ export function ProjectView({
   }, [repoPath, stashBusy, refreshStashes, showToast, t]);
 
   const handleHunkAction = useCallback(async (hunkIndex: number) => {
-    if (!repoPath || !selectedFile || hunkActionBusy) return;
+    if (!repoPath || !selectedFile || hunkActionBusy || selectedSubmodule || operationLockRef.current) return;
     setHunkActionBusy(true);
     try {
       if (selectedFileStaged) {
@@ -1280,7 +1311,7 @@ export function ProjectView({
   }, [repoPath, selectedCommitHash, showToast, t]);
 
   const handleCompareCurrentFile = useCallback(async () => {
-    if (!repoPath || !selectedFile) return;
+    if (!repoPath || !selectedFile || selectedSubmodule) return;
     try {
       const result = await api.openWorkingTreeDiff(repoPath, selectedFile, selectedFileStaged);
       showToast(result.message || t("toast.openedDiffFor", { file: getFileName(selectedFile) }));
@@ -1327,6 +1358,7 @@ export function ProjectView({
   }, [repoPath, hasWorkingTreeChanges, showToast, t]);
 
   const handleSwitchBranch = useCallback(async (branchName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (cherryPickInProgress) {
       showToast(t("toast.cannotSwitchDuringCherryPick"), "error");
@@ -1377,6 +1409,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleCreateBranch = useCallback(async (request: CreateBranchRequest) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     try {
       const result = await runCheckoutHookOperation(progress => api.createBranch(request, progress));
@@ -1390,6 +1423,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, runCheckoutHookOperation, showToast, t]);
 
   const handleDeleteBranch = useCallback(async (branchName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(t("ask.deleteBranch.message", { branch: branchName }), {
       title: t("ask.deleteBranch.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
@@ -1419,6 +1453,7 @@ export function ProjectView({
   }, []);
 
   const handleRenameBranchConfirm = useCallback(async (newName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !renamePendingBranch) return;
     const oldName = renamePendingBranch;
     setRenamePendingBranch(null);
@@ -1435,6 +1470,7 @@ export function ProjectView({
   }, [repoPath, renamePendingBranch, refreshAll, showToast, t]);
 
   const handleForceDeleteBranch = useCallback(async (branchName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(
       t("ask.forceDeleteBranch.message", { branch: branchName }),
@@ -1453,6 +1489,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleDeleteTag = useCallback(async (tagName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(t("ask.deleteTag.message", { tag: tagName }), {
       title: t("ask.deleteTag.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
@@ -1470,6 +1507,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleCreateTag = useCallback(async (tagName: string, message: string | null) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     setShowCreateTagDialog(false);
     setCreateTagTarget(null);
@@ -1485,6 +1523,7 @@ export function ProjectView({
   }, [repoPath, createTagTarget, refreshAll, showToast, t]);
 
   const handlePushTag = useCallback(async (tagName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const remote = remotes[0]?.name;
     if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
@@ -1500,6 +1539,7 @@ export function ProjectView({
   }, [repoPath, remotes, runPushHookOperation, showToast, t]);
 
   const handleDeleteRemoteTag = useCallback(async (tagName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const remote = remotes[0]?.name;
     if (!remote) { showToast(t("toast.noRemotesConfigured"), "error"); return; }
@@ -1529,6 +1569,7 @@ export function ProjectView({
   }, []);
 
   const handleCherryPickAtCommit = useCallback(async (commitHash: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (mergeInProgress) {
       showToast(t("toast.cannotCherryPickDuringMerge"), "error");
@@ -1574,6 +1615,7 @@ export function ProjectView({
   }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast, t]);
 
   const handleDeleteRemoteBranch = useCallback(async (remote: string, branch: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(t("ask.deleteRemoteBranch.message", { remote, branch }), {
       title: t("ask.deleteRemoteBranch.title"), kind: "warning", okLabel: t("actions.delete"), cancelLabel: t("actions.cancel"),
@@ -1592,6 +1634,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, runPushHookOperation, showToast, t]);
 
   const handleCheckoutRemoteBranch = useCallback(async (remoteBranchName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (cherryPickInProgress) {
       showToast(t("toast.cannotSwitchDuringCherryPick"), "error");
@@ -1653,6 +1696,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, rebaseInProgress, mergeInProgress, branches, handleSwitchBranch, refreshAll, refreshStatus, runCheckoutHookOperation, showToast, stashBeforeBranchSwitch, t]);
 
   const handleAddRemote = useCallback(async (name: string, url: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     setShowAddRemoteDialog(false);
     try {
@@ -1667,6 +1711,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleRemoveRemote = useCallback(async (remoteName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(
       t("ask.removeRemote.message", { remote: remoteName }),
@@ -1685,6 +1730,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleEditRemoteConfirm = useCallback(async (newName: string, newUrl: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !editingRemote) return;
     const remote = editingRemote;
     setEditingRemote(null);
@@ -1713,6 +1759,7 @@ export function ProjectView({
   }, [repoPath, editingRemote, refreshAll, showToast, t]);
 
   const handlePruneRemote = useCallback(async (remoteName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     try {
       const result = await api.pruneRemote({ repoPath, name: remoteName });
@@ -1726,6 +1773,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleExternalDiff = useCallback(async (path: string, staged: boolean) => {
+    if (status?.submodules.some(module => module.path === path)) return;
     if (!repoPath) return;
     try {
       const result = await api.openWorkingTreeDiff(repoPath, path, staged);
@@ -1734,6 +1782,7 @@ export function ProjectView({
   }, [repoPath, showToast, t]);
 
   const handleImportPatch = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const selected = await open({
       multiple: false,
@@ -1843,52 +1892,15 @@ export function ProjectView({
     }
   }, [repoPath, showToast, t]);
 
-  const runSubmoduleAction = useCallback(async (
-    path: string,
-    label: string,
-    action: (request: { repoPath: string; path: string; recursive?: boolean }) => Promise<{ message: string; backendUsed: ResultLogEntry["backend"] }>,
-  ) => {
-    if (!repoPath) return;
-    try {
-      const result = await action({ repoPath, path, recursive: false });
-      showToast(result.message, "success");
-      appendResultLog("success", result.message, result.backendUsed);
-      await refreshStatus();
-    } catch (e) {
-      showToast(String(e), "error");
-      appendResultLog("error", t("log.submoduleFailed", { action: label, message: String(e) }), "unknown");
-    }
-  }, [repoPath, refreshStatus, showToast, t]);
-
-  const handleSubmoduleInit = useCallback((path: string) => {
-    void runSubmoduleAction(path, t("submoduleActions.initialise"), api.submoduleInit);
-  }, [runSubmoduleAction, t]);
-
-  const handleSubmoduleUpdate = useCallback((path: string) => {
-    void runSubmoduleAction(path, t("submoduleActions.update"), api.submoduleUpdate);
-  }, [runSubmoduleAction, t]);
-
-  const handleSubmoduleSync = useCallback((path: string) => {
-    void runSubmoduleAction(path, t("submoduleActions.sync"), api.submoduleSync);
-  }, [runSubmoduleAction, t]);
-
-  const handleSubmoduleFetch = useCallback((path: string) => {
-    void runSubmoduleAction(path, t("submoduleActions.fetch"), api.submoduleFetch);
-  }, [runSubmoduleAction, t]);
-
-  const handleSubmodulePull = useCallback((path: string) => {
-    void runSubmoduleAction(path, t("submoduleActions.pull"), api.submodulePull);
-  }, [runSubmoduleAction, t]);
-
-  const handleSubmoduleOpen = useCallback((path: string) => {
-    if (!repoPath) return;
-    const separator = repoPath.includes("\\") ? "\\" : "/";
-    const base = repoPath.replace(/[\\/]+$/, "");
-    const submodulePath = `${base}${separator}${path.replace(/\//g, separator)}`;
-    onRepoSelect(submodulePath);
-  }, [repoPath, onRepoSelect]);
+  const handleSubmoduleInit = (path: string) => { void submoduleOperations.perform(path, "initialise"); };
+  const handleSubmoduleUpdate = (path: string) => { void submoduleOperations.perform(path, "checkout"); };
+  const handleSubmoduleSync = (path: string) => { void submoduleOperations.perform(path, "sync"); };
+  const handleSubmoduleFetch = (path: string) => { void submoduleOperations.perform(path, "fetch"); };
+  const handleSubmodulePull = (path: string) => { void submoduleOperations.perform(path, "pull"); };
+  const handleSubmoduleOpen = (path: string) => { void submoduleOperations.open(path); };
 
   const handleMergeBranch = useCallback((branchName: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (cherryPickInProgress) {
       showToast(t("toast.cannotMergeDuringCherryPick"), "error");
@@ -1906,6 +1918,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, rebaseInProgress, stagedFiles, unstagedFiles, unversionedFiles, showToast, t]);
 
   const handleRebaseBranch = useCallback(async (ontoBranch: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (cherryPickInProgress) {
       showToast(t("toast.cannotRebaseDuringCherryPick"), "error");
@@ -1958,6 +1971,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, mergeInProgress, rebaseInProgress, currentBranch, hasWorkingTreeChanges, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleRebaseContinue = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !rebaseInProgress) return;
     setIsRebaseActionRunning(true);
     try {
@@ -1985,6 +1999,7 @@ export function ProjectView({
   }, [repoPath, rebaseInProgress, currentBranch, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleRebaseAbort = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !rebaseInProgress) return;
     const confirmed = await ask(
       t("ask.abortRebase.message"),
@@ -2007,6 +2022,7 @@ export function ProjectView({
   }, [repoPath, rebaseInProgress, refreshAll, showToast, t]);
 
   const handleCherryPickContinue = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !cherryPickInProgress) return;
     setIsCherryPickActionRunning(true);
     try {
@@ -2029,6 +2045,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, refreshAll, showToast, t]);
 
   const handleCherryPickAbort = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !cherryPickInProgress) return;
     const confirmed = await ask(
       t("ask.abortCherryPick.message"),
@@ -2051,6 +2068,7 @@ export function ProjectView({
   }, [repoPath, cherryPickInProgress, refreshAll, showToast, t]);
 
   const handleRevertAtCommit = useCallback(async (commitHash: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     if (mergeInProgress) {
       showToast(t("toast.cannotRevertDuringMerge"), "error");
@@ -2100,6 +2118,7 @@ export function ProjectView({
   }, [repoPath, mergeInProgress, rebaseInProgress, cherryPickInProgress, revertInProgress, hasWorkingTreeChanges, currentBranch, refreshAll, showToast, t]);
 
   const handleRevertContinue = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !revertInProgress) return;
     setIsRevertActionRunning(true);
     try {
@@ -2122,6 +2141,7 @@ export function ProjectView({
   }, [repoPath, revertInProgress, refreshAll, showToast, t]);
 
   const handleRevertAbort = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !revertInProgress) return;
     const confirmed = await ask(
       t("ask.abortRevert.message"),
@@ -2144,6 +2164,7 @@ export function ProjectView({
   }, [repoPath, revertInProgress, refreshAll, showToast, t]);
 
   const handleResetToCommit = useCallback(async (commitHash: string, mode: "soft" | "mixed") => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const modeLabel = mode === "soft" ? t("ask.resetToCommit.softMode") : t("ask.resetToCommit.mixedMode");
     const modeDesc = mode === "soft"
@@ -2166,6 +2187,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleResetHead = useCallback(async (mode: Extract<ResetMode, "mixed" | "hard">) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(
       mode === "hard" ? t("ask.resetHead.hardMessage") : t("ask.resetHead.mixedMessage"),
@@ -2189,6 +2211,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleMergeConfirm = useCallback(async (strategy: MergeStrategy) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath || !mergePendingBranch) return;
     setMergePendingBranch(null);
     try {
@@ -2215,6 +2238,7 @@ export function ProjectView({
   }, [repoPath, mergePendingBranch, refreshAll, runBlockingHookOperation, showToast, t]);
 
   const handleMergeAbort = useCallback(async () => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     const confirmed = await ask(
       t("ask.abortMerge.message"),
@@ -2233,6 +2257,7 @@ export function ProjectView({
   }, [repoPath, refreshAll, showToast, t]);
 
   const handleConflictAcceptTheirs = useCallback(async (path: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     try {
       const result = await api.conflictAcceptTheirs(repoPath, path);
@@ -2246,6 +2271,7 @@ export function ProjectView({
   }, [repoPath, refreshStatus, showToast, t]);
 
   const handleConflictAcceptOurs = useCallback(async (path: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     try {
       const result = await api.conflictAcceptOurs(repoPath, path);
@@ -2259,6 +2285,7 @@ export function ProjectView({
   }, [repoPath, refreshStatus, showToast, t]);
 
   const handleOpenMergeTool = useCallback(async (path: string) => {
+    if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
     try {
       await api.openMergeTool(repoPath, path);
@@ -2465,6 +2492,7 @@ export function ProjectView({
           onExportPatch={handleExportPatch}
           selectedPatchExportEnabled={selectedPatchFiles.length > 0}
           remoteOp={remoteOp}
+          mutationBusy={submoduleOperations.busy}
           identityOpen={identityOpen}
           aiEnabled={aiEnabled}
           aiConfigured={aiConfigured}
@@ -2477,7 +2505,7 @@ export function ProjectView({
               {!leftPaneCollapsed && (
                 <>
                   <div className="app__pane app__pane--left" style={{ width: leftPaneWidth }}>
-                    <div className="app__pane app__pane--left-content">
+                    <div className="app__pane app__pane--left-content" inert={submoduleOperations.busy}>
                       <Sidebar
                         branches={branches}
                         tags={tags}
@@ -2601,6 +2629,15 @@ export function ProjectView({
                   onSelectedUnstagedFilesChange={setSelectedUnstagedFiles}
                   onFileSelect={handleFileSelect}
                   onSubmoduleSelect={handleSubmoduleSelect}
+                  recursiveSubmodules={submoduleOperations.recursive}
+                  onRecursiveSubmodulesChange={submoduleOperations.setRecursive}
+                  submoduleOperations={submoduleOperations.states}
+                  onDismissSubmoduleFeedback={submoduleOperations.dismiss}
+                  submoduleBusy={submoduleOperations.busy || Boolean(operationLock) || Boolean(remoteOp)}
+                  onSubmodulePrepareRemote={submoduleOperations.prepare}
+                  onSubmoduleApplyRemote={submoduleOperations.apply}
+                  remoteUpdatePreview={submoduleOperations.preview}
+                  onRemoteUpdatePreviewClose={submoduleOperations.closePreview}
                   onSubmoduleInit={handleSubmoduleInit}
                   onSubmoduleUpdate={handleSubmoduleUpdate}
                   onSubmoduleSync={handleSubmoduleSync}
@@ -2677,6 +2714,7 @@ export function ProjectView({
                   loading={diffLoading}
                   selectedFile={selectedFile}
                   selectedSubmodule={selectedSubmodule}
+                  selectedSubmoduleStaged={selectedFile !== null && selectedFileStaged}
                   selectedCommitHash={selectedCommitHash}
                   repoPath={repoPath}
                   commitFiles={commitFiles}
