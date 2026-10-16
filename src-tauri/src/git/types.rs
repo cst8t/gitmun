@@ -646,6 +646,42 @@ pub struct SubmoduleActionRequest {
     pub recursive: bool,
 }
 
+/// A fetched, immutable proposal for advancing one submodule.  Applying it
+/// requires all of these values to still describe the repository.
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleRemotePreview {
+    pub repo_path: String,
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+    pub remote: String,
+    pub branch: String,
+    pub current_commit: Option<String>,
+    pub index_commit: Option<String>,
+    pub parent_head_commit: Option<String>,
+    pub target_commit: String,
+    pub already_checked_out: bool,
+    pub will_detach_head: bool,
+    pub configuration_token: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SubmoduleApplyRequest {
+    pub repo_path: String,
+    pub path: String,
+    #[serde(default)]
+    pub recursive: bool,
+    pub remote: String,
+    pub branch: String,
+    pub current_commit: Option<String>,
+    pub index_commit: Option<String>,
+    pub parent_head_commit: Option<String>,
+    pub target_commit: String,
+    pub configuration_token: String,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CommitHistoryRequest {
@@ -867,6 +903,15 @@ pub struct NumstatResult {
     pub deletions: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum FileEntryKind {
+    #[default]
+    File,
+    Directory,
+    Submodule,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FileStatusItem {
@@ -874,6 +919,8 @@ pub struct FileStatusItem {
     pub status: String,
     pub additions: Option<u32>,
     pub deletions: Option<u32>,
+    #[serde(default)]
+    pub kind: FileEntryKind,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -907,7 +954,11 @@ pub struct SubmoduleStatus {
     pub branch: Option<String>,
     pub current_branch: Option<String>,
     pub expected_commit: Option<String>,
+    pub parent_head_commit: Option<String>,
     pub checked_out_commit: Option<String>,
+    pub staged_gitlink: bool,
+    pub unstaged_gitlink: bool,
+    pub upstream_branch: Option<String>,
     pub initialised: bool,
     pub missing: bool,
     pub dirty: bool,

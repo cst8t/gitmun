@@ -4,7 +4,7 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCommitDetails } from "../../api/commands";
 import "../../i18n";
-import type { CommitDetails, CommitFileItem, RowStriping } from "../../types";
+import type { CommitDetails, CommitFileItem, RowStriping, SubmoduleStatus } from "../../types";
 import { DiffPanel } from "./DiffPanel";
 
 vi.mock("../../api/commands", () => ({
@@ -100,6 +100,34 @@ describe("DiffPanel commit details", () => {
       expect(screen.getByText("Signed-off-by")).toBeInTheDocument();
       expect(screen.getByText("Bob <bob@example.com>")).toBeInTheDocument();
     }
+  });
+});
+
+describe("DiffPanel submodule details", () => {
+  const selectedSubmodule: SubmoduleStatus = {
+    path: "deps/library", name: "library", configuredUrl: "../library.git", localUrl: "https://example.test/library.git",
+    branch: "main", currentBranch: null, parentHeadCommit: "1111111111111111111111111111111111111111",
+    stagedGitlink: true, unstagedGitlink: true, upstreamBranch: null,
+    expectedCommit: "2222222222222222222222222222222222222222", checkedOutCommit: "3333333333333333333333333333333333333333",
+    initialised: true, missing: false, dirty: true, outOfSync: true, syncRequired: false, state: "dirty",
+  };
+
+  it("shows the parent, index and checkout commits without attempting a file diff", () => {
+    render(
+      <DiffPanel
+        mode="changes" diff={null} loading={false} selectedFile="deps/library" selectedSubmodule={selectedSubmodule} selectedSubmoduleStaged={true}
+        selectedCommitHash={null} repoPath="/repo" commitFiles={[]} commitFilesLoading={false} compareCurrentFileLabel=""
+        onCompareCurrentFile={vi.fn()} onOpenCommitFileDiff={vi.fn()} hunkAction={null} hunkActionBusy={false} wrapLines={false} rowStriping="Off" onHunkAction={vi.fn()}
+      />,
+    );
+
+    expect(screen.getByRole("heading", {name: "deps/library"})).toBeInTheDocument();
+    expect(screen.getByText("1111111")).toBeInTheDocument();
+    expect(screen.getByText("2222222")).toBeInTheDocument();
+    expect(screen.getByText("3333333")).toBeInTheDocument();
+    expect(screen.getByText("Staged")).toBeInTheDocument();
+    expect(screen.getByText("Uncommitted changes are present and are not part of the parent change")).toBeInTheDocument();
+    expect(screen.queryByText("No changes to display")).not.toBeInTheDocument();
   });
 });
 

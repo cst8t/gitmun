@@ -672,7 +672,7 @@ export function App() {
         );
     }, []);
 
-    const openRepoPath = useCallback(async (path: string) => {
+    const openRepoPath = useCallback(async (path: string, reportFailure = false) => {
         try {
             await api.validateRepoPath(path);
             if (repoPath && await shouldOpenRepoInNewWindow(path)) {
@@ -682,6 +682,7 @@ export function App() {
             setRepoPath(path);
             pushRecentRepo(path);
         } catch (e) {
+            if (reportFailure) throw e;
             if (await maybeInitialiseRepo(path, e)) return;
             showToast(String(e), "error");
         }
@@ -723,8 +724,8 @@ export function App() {
         }
     }, [maybeInitialiseRepo, openRepoPath, showToast, t]);
 
-    const handleRepoSelect = useCallback(async (path: string) => {
-        await openRepoPath(path);
+    const handleRepoSelect = useCallback(async (path: string, reportFailure = false) => {
+        await openRepoPath(path, reportFailure);
     }, [openRepoPath]);
 
     const handleOpenRepoLocation = useCallback(async (kind: RepoOpenLocationKind) => {

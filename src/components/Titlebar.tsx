@@ -47,6 +47,7 @@ type TitlebarProps = {
   pushDisabled?: boolean;
   pushTitle?: string;
   onStash: () => void;
+  mutationBusy?: boolean;
   onReset: (mode: Extract<ResetMode, "mixed" | "hard">) => void;
   onImportPatch: () => void;
   onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
@@ -62,7 +63,7 @@ export function Titlebar({
   onSearchChange, onAboutClick, onSettingsClick, onIdentityClick, onCloneClick, onInitRepoClick, onOpenExistingClick,
   onRepoSelect, onRemoveRecentRepo, onOpenRepoLocation, onFetch, onPull, onPush, pushLabel, pushDisabled = false, pushTitle, onStash,
   onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled,
-  identityOpen, remoteOp, aiEnabled = false, aiConfigured = false, onAiWriting,
+  identityOpen, remoteOp, mutationBusy = false, aiEnabled = false, aiConfigured = false, onAiWriting,
 }: TitlebarProps) {
   const { t } = useTranslation("titlebar");
   const [searchFocused, setSearchFocused] = useState(false);
@@ -199,20 +200,21 @@ export function Titlebar({
 
       {/* Action buttons */}
       <div className="titlebar__actions">
-        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath || !!remoteOp} loading={remoteOp === "fetch"} />
-        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath || !!remoteOp} loading={remoteOp === "pull"} />
+        <ActionBtn icon={<FetchIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.fetch")} onClick={onFetch} disabled={!repoPath || !!remoteOp || mutationBusy} loading={remoteOp === "fetch"} />
+        <ActionBtn icon={<PullIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.pull")} badge={behind > 0 ? String(behind) : undefined} onClick={onPull} disabled={!repoPath || !!remoteOp || mutationBusy} loading={remoteOp === "pull"} />
         <ActionBtn
           icon={<PushIcon size={18} className="titlebar__toolbar-icon" />}
           label={pushActionLabel}
           badge={pushActionLabel === t("actions.push") && ahead > 0 ? String(ahead) : undefined}
           onClick={onPush}
-          disabled={!repoPath || pushDisabled || !!remoteOp}
+          disabled={!repoPath || pushDisabled || !!remoteOp || mutationBusy}
           loading={remoteOp === "push"}
           title={pushTitle}
         />
-        <ActionBtn icon={<StashIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath} />
+        <ActionBtn icon={<StashIcon size={18} className="titlebar__toolbar-icon" />} label={t("actions.stash")} onClick={onStash} disabled={!repoPath || mutationBusy} />
         <MoreDropdown
           repoPath={repoPath}
+          mutationBusy={mutationBusy}
           onReset={onReset}
           onImportPatch={onImportPatch}
           onExportPatch={onExportPatch}
@@ -318,8 +320,9 @@ function DisclosureRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled, aiEnabled, aiConfigured, onAiWriting, onConfigureAi }: {
+function MoreDropdown({ repoPath, mutationBusy = false, onReset, onImportPatch, onExportPatch, selectedPatchExportEnabled, aiEnabled, aiConfigured, onAiWriting, onConfigureAi }: {
   repoPath: string | null;
+  mutationBusy?: boolean;
   onReset: (mode: Extract<ResetMode, "mixed" | "hard">) => void;
   onImportPatch: () => void;
   onExportPatch: (scope: "staged" | "unstaged" | "all" | "selected") => void;
@@ -371,7 +374,7 @@ function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selecte
       {open && !disabled && (
         <div className="titlebar__open-menu">
           <div className="titlebar__open-menu-heading">{t("patchFiles.heading")}</div>
-          <div className="titlebar__open-menu-item" onClick={() => run(onImportPatch)}>
+          <div className="titlebar__open-menu-item" aria-disabled={mutationBusy} onClick={() => { if (!mutationBusy) run(onImportPatch); }}>
             <span>{t("patchFiles.import")}</span>
           </div>
           <div className="titlebar__open-menu-item titlebar__open-menu-item--submenu">
@@ -405,10 +408,10 @@ function MoreDropdown({ repoPath, onReset, onImportPatch, onExportPatch, selecte
             </>
           )}
           <div className="titlebar__open-menu-heading">{t("reset.heading")}</div>
-          <div className="titlebar__open-menu-item" onClick={() => run(() => onReset("mixed"))}>
+          <div className="titlebar__open-menu-item" aria-disabled={mutationBusy} onClick={() => { if (!mutationBusy) run(() => onReset("mixed")); }}>
             <span>{t("reset.mixed")}</span>
           </div>
-          <div className="titlebar__open-menu-item" onClick={() => run(() => onReset("hard"))}>
+          <div className="titlebar__open-menu-item" aria-disabled={mutationBusy} onClick={() => { if (!mutationBusy) run(() => onReset("hard")); }}>
             <span>{t("reset.hard")}</span>
           </div>
         </div>

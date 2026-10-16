@@ -1696,6 +1696,8 @@ pub fn run() {
             commands::repo::discard_file,
             commands::repo::submodule_init,
             commands::repo::submodule_update,
+            commands::repo::submodule_prepare_update,
+            commands::repo::submodule_apply_update,
             commands::repo::submodule_sync,
             commands::repo::submodule_fetch,
             commands::repo::submodule_pull,

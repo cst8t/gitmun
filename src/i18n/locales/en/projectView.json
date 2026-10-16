@@ -352,5 +352,62 @@
     "unresolvedConflictMarkers": "The AI provider returned a resolution that still contains conflict markers.",
     "unsupportedFile": "AI conflict resolution supports regular UTF-8 text files only.",
     "unknown": "The AI request failed."
+  },
+  "submoduleFeedback": {
+    "actions": {
+      "initialise": "Initialise",
+      "checkout": "Check out recorded commit",
+      "prepareRemote": "Update from remote",
+      "applyRemote": "Apply update",
+      "sync": "Sync URL",
+      "fetch": "Fetch",
+      "pull": "Pull",
+      "open": "Open",
+      "stage": "Stage",
+      "unstage": "Unstage"
+    },
+    "running": {
+      "initialise": "Initialising submodule...",
+      "checkout": "Checking out recorded commit...",
+      "prepareRemote": "Fetching remote update preview...",
+      "applyRemote": "Applying previewed update...",
+      "sync": "Synchronising submodule URL...",
+      "fetch": "Fetching submodule...",
+      "pull": "Pulling submodule...",
+      "open": "Opening submodule...",
+      "stage": "Staging submodule reference...",
+      "unstage": "Unstaging submodule reference..."
+    },
+    "success": {
+      "initialise": "Submodule initialised",
+      "checkout": "Recorded commit checked out",
+      "prepareRemote": "Remote update ready to review",
+      "applyRemote": "Submodule updated; parent reference remains unstaged",
+      "sync": "Submodule URL synchronised",
+      "fetch": "Submodule fetched",
+      "pull": "Submodule pulled",
+      "open": "Submodule opened",
+      "stage": "Submodule reference staged",
+      "unstage": "Submodule reference unstaged"
+    },
+    "refreshing": "Refreshing repository status...",
+    "failed": "Submodule action failed",
+    "refreshFailed": "Action completed, but repository status could not be refreshed. Refresh before continuing.",
+    "errors": {
+      "failed": "{{action}} failed",
+      "SUBMODULE_UPDATE_FAILED": "The submodule update failed. Some nested submodules may have changed; review the refreshed status and diagnostic details.",
+      "SUBMODULE_DIRTY": "Commit, stash or discard changes inside the affected submodule before continuing.",
+      "SUBMODULE_STALE_PREVIEW": "The submodule changed after this preview. Close it and prepare a new update.",
+      "SUBMODULE_DETACHED": "Check out a branch inside the submodule before pulling.",
+      "SUBMODULE_NO_UPSTREAM": "Configure an upstream branch inside the submodule before pulling.",
+      "SUBMODULE_UNINITIALISED": "Initialise the submodule before continuing.",
+      "SUBMODULE_REMOTE_UNAVAILABLE": "The remote branch could not be resolved. Check the submodule remote and branch configuration."
+    },
+    "outcomes": {
+      "alreadyAtRecordedCommit": "Already at recorded commit",
+      "alreadyAtRemoteCommit": "Already at the selected remote commit",
+      "noNewCommitsFetched": "No new commits fetched",
+      "urlAlreadySynchronised": "URL already synchronised"
+    }
   }
 }

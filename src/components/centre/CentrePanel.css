@@ -562,6 +562,109 @@
   border-color: var(--border);
 }
 
+.submodule-row__actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.submodule-row__actions button:focus-visible,
+.staging__submodule-recursive input:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.submodule-row__feedback {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.submodule-row__feedback--error { color: var(--red); }
+.submodule-row__feedback--success { color: var(--green); }
+.submodule-row__feedback {
+  flex-wrap: wrap;
+}
+.submodule-row__feedback button,
+.submodule-row__diagnostic {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-elevated);
+  color: inherit;
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+}
+.submodule-row__feedback button {
+  padding: 2px 6px;
+  cursor: pointer;
+}
+.submodule-row__feedback button:focus-visible,
+.submodule-update-dialog:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.submodule-row__diagnostic {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 6px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 160px;
+  overflow: auto;
+  color: var(--text-secondary);
+}
+.submodule-update-dialog__nested {
+  margin: 8px 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .submodule-row__button-spinner,
+  .submodule-row__feedback .staging__operation-spinner {
+    animation: none;
+  }
+}
+
+.staging__submodule-recursive {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.submodule-update-dialog {
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow: auto;
+}
+
+.submodule-update-dialog__description,
+.submodule-update-dialog__notice {
+  margin: 10px 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+  line-height: 1.45;
+}
+
+.submodule-update-dialog__notice {
+  padding: 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+}
+
+.submodule-update-dialog__details {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 6px 12px;
+  margin: 12px 0;
+  font-size: var(--font-size-sm);
+}
+
+.submodule-update-dialog__details dt { color: var(--text-muted); }
+.submodule-update-dialog__details dd { margin: 0; font-family: var(--font-mono); overflow-wrap: anywhere; }
+
 /* Commit box */
 .commit-box {
   border-top: 1px solid var(--border);

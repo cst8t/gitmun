@@ -77,6 +77,30 @@ function files(prefix: string, count: number): FileStatusItem[] {
 
 const untrackedDirectory = { path: "instrument-readings", kind: "directory" as const };
 
+function submodule(overrides: Partial<React.ComponentProps<typeof StagingView>["submodules"][number]> = {}) {
+  return {
+    path: "vendor/library",
+    name: "library",
+    configuredUrl: "https://example.test/library.git",
+    localUrl: "https://example.test/library.git",
+    branch: "main",
+    currentBranch: "main",
+    parentHeadCommit: "1111111111111111111111111111111111111111",
+    stagedGitlink: false,
+    unstagedGitlink: true,
+    upstreamBranch: "origin/main",
+    expectedCommit: "1111111111111111111111111111111111111111",
+    checkedOutCommit: "2222222222222222222222222222222222222222",
+    initialised: true,
+    missing: false,
+    dirty: false,
+    outOfSync: true,
+    syncRequired: false,
+    state: "outOfSync" as const,
+    ...overrides,
+  };
+}
+
 function baseProps(overrides: Partial<React.ComponentProps<typeof StagingView>> = {}): React.ComponentProps<typeof StagingView> {
   return {
     repoPath: "/repo",
@@ -165,6 +189,7 @@ function StatefulStagingView(props: Partial<React.ComponentProps<typeof StagingV
 describe("StagingView file tree", () => {
   afterEach(() => {
     vi.mocked(getNumstat).mockReset();
+    vi.useRealTimers();
   });
 
   it("fetches missing numstat entries in successive batches", async () => {
@@ -696,5 +721,264 @@ describe("StagingView file tree", () => {
     expect(screen.getByText("Choose how to continue.")).toBeInTheDocument();
     expect(screen.getByRole("alertdialog")).toBeInTheDocument();
     expect(screen.queryByRole("button", {name: "Commit without hooks"})).not.toBeInTheDocument();
+  });
+
+  it("keeps submodule actions visible and shows operation feedback", () => {
+    renderStagingView({
+      submodules: [submodule()],
+      submoduleOperations: {
+        "vendor/library": {
+          action: "fetch",
+          phase: "running",
+          startedAt: Date.now(),
+          message: "Contacting origin",
+        },
+      },
+    });
+
+    expect(screen.getByRole("button", {name: "Check out recorded commit"})).toBeInTheDocument();
+    expect(screen.getByRole("button", {name: "Update from remote"})).toBeInTheDocument();
+    expect(screen.getByText("Contacting origin")).toBeInTheDocument();
+    expect(screen.getByLabelText("Include nested submodules")).toBeChecked();
+  });
+
+  it.each([
+    ["initialise", "Initialising...", submodule({initialised: false, state: "uninitialised" as const})],
+    ["checkout", "Checking out recorded commit...", submodule()],
+    ["prepareRemote", "Preparing remote update...", submodule()],
+    ["sync", "Synchronising URL...", submodule({syncRequired: true})],
+    ["fetch", "Fetching...", submodule()],
+    ["pull", "Pulling...", submodule()],
+    ["open", "Opening...", submodule()],
+  ] as const)("shows a spinner and running label for the %s submodule action", (action, label, module) => {
+    renderStagingView({
+      submodules: [module],
+      submoduleBusy: true,
+      submoduleOperations: {
+        "vendor/library": {action, phase: "running", startedAt: Date.now() - 1_000, message: "Working"},
+      },
+    });
+
+    const actionButton = screen.getByRole("button", {name: label});
+    expect(actionButton).toBeDisabled();
+    expect(actionButton.querySelector(".staging__operation-spinner")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Working");
+  });
+
+  it("updates the elapsed time for a running submodule action", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-10-16T10:00:00Z"));
+    renderStagingView({
+      submodules: [submodule()],
+      submoduleBusy: true,
+      submoduleOperations: {
+        "vendor/library": {
+          action: "fetch",
+          phase: "running",
+          startedAt: Date.now() - 1_000,
+          message: "Fetching origin",
+        },
+      },
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("Running for 1s");
+    act(() => { vi.advanceTimersByTime(2_000); });
+    expect(screen.getByRole("status")).toHaveTextContent("Running for 3s");
+  });
+
+  it("routes each available submodule control and identifies unavailable actions", () => {
+    const handlers = {
+      onSubmoduleInit: vi.fn(), onSubmoduleUpdate: vi.fn(), onSubmodulePrepareRemote: vi.fn(),
+      onSubmoduleSync: vi.fn(), onSubmoduleFetch: vi.fn(), onSubmodulePull: vi.fn(), onSubmoduleOpen: vi.fn(),
+    };
+    renderStagingView({submodules: [submodule({syncRequired: true})], ...handlers});
+
+    fireEvent.click(screen.getByRole("button", {name: "Check out recorded commit"}));
+    fireEvent.click(screen.getByRole("button", {name: "Update from remote"}));
+    fireEvent.click(screen.getByRole("button", {name: "Sync URL"}));
+    fireEvent.click(screen.getByRole("button", {name: "Fetch"}));
+    fireEvent.click(screen.getByRole("button", {name: "Pull"}));
+    fireEvent.click(screen.getByRole("button", {name: "Open"}));
+    expect(handlers.onSubmoduleUpdate).toHaveBeenCalledOnce();
+    expect(handlers.onSubmodulePrepareRemote).toHaveBeenCalledOnce();
+    expect(handlers.onSubmoduleSync).toHaveBeenCalledOnce();
+    expect(handlers.onSubmoduleFetch).toHaveBeenCalledOnce();
+    expect(handlers.onSubmodulePull).toHaveBeenCalledOnce();
+    expect(handlers.onSubmoduleOpen).toHaveBeenCalledOnce();
+    expect(screen.getByRole("button", {name: "Initialise"})).toBeDisabled();
+    expect(screen.getByRole("button", {name: "Initialise"})).toHaveAttribute("title", "This submodule is already initialised.");
+  });
+
+  it("shows a running gitlink stage action after its virtual row is recycled", () => {
+    const gitlink = {path: "zz-submodule", status: "modified", additions: null, deletions: null, kind: "submodule" as const};
+    renderStagingView({
+      unstagedFiles: [...Array.from({length: 600}, (_, index) => file(`root-${String(index + 1).padStart(3, "0")}.ts`)), gitlink],
+      submoduleOperations: {"zz-submodule": {action: "stage", phase: "running", startedAt: Date.now() - 2_000, message: "Staging submodule reference..."}},
+      submoduleBusy: true,
+    });
+
+    act(() => { virtuosoSetVisibleRange.current?.({startIndex: 580, endIndex: 603}); });
+    expect(screen.getByText("zz-submodule")).toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent("Staging...");
+    act(() => { virtuosoSetVisibleRange.current?.({startIndex: 0, endIndex: 19}); });
+    act(() => { virtuosoSetVisibleRange.current?.({startIndex: 580, endIndex: 603}); });
+    expect(screen.getByRole("status")).toHaveTextContent("Staging...");
+  });
+
+  it.each([
+    ["stage", false, "Stage file", "Staging..."],
+    ["unstage", true, "Unstage file", "Unstaging..."],
+  ] as const)("shows feedback for a running gitlink %s action", (action, staged, title, label) => {
+    const gitlink = {path: "deps/library", status: "modified", additions: null, deletions: null, kind: "submodule" as const};
+    renderStagingView({
+      stagedFiles: staged ? [gitlink] : [],
+      unstagedFiles: staged ? [] : [gitlink],
+      submoduleBusy: true,
+      submoduleOperations: {
+        "deps/library": {action, phase: "running", startedAt: Date.now(), message: label},
+      },
+    });
+
+    const row = screen.getByTitle("deps/library");
+    expect(within(row).getByRole("status")).toHaveTextContent(label);
+    const actionButton = within(row).getByTitle(title);
+    expect(actionButton).toBeDisabled();
+    expect(actionButton.querySelector(".staging__operation-spinner")).toBeInTheDocument();
+  });
+
+  it.each([false, true])("applies an already checked-out remote commit with nested submodules set to %s", recursive => {
+    const onApply = vi.fn();
+    renderStagingView({
+      remoteUpdatePreview: {
+        path: "vendor/library", remote: "origin", branch: "main", currentCommit: "1111111111111111111111111111111111111111",
+        targetCommit: "1111111111111111111111111111111111111111", indexCommit: "1111111111111111111111111111111111111111",
+        parentHeadCommit: "1111111111111111111111111111111111111111", alreadyCheckedOut: true, willDetachHead: true, recursive, configurationToken: "token",
+      },
+      recursiveSubmodules: recursive,
+      onSubmoduleApplyRemote: onApply,
+    });
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("This submodule already has the selected remote commit checked out.");
+    expect(dialog).not.toHaveTextContent("Checking out this commit will leave the submodule detached.");
+    const applyButton = within(dialog).getByRole("button", {name: "Apply update"});
+    expect(applyButton).toBeEnabled();
+    fireEvent.click(applyButton);
+    expect(onApply).toHaveBeenCalledWith("vendor/library", recursive);
+  });
+
+  it("keeps remote-apply feedback in the preview dialog and prevents dismissal while applying", () => {
+    const onClose = vi.fn();
+    renderStagingView({
+      submodules: [submodule()],
+      remoteUpdatePreview: {
+        path: "vendor/library", remote: "origin", branch: "main", currentCommit: "1111111111111111111111111111111111111111",
+        targetCommit: "2222222222222222222222222222222222222222", indexCommit: "1111111111111111111111111111111111111111",
+        parentHeadCommit: "1111111111111111111111111111111111111111", alreadyCheckedOut: false, willDetachHead: true, recursive: true, configurationToken: "token",
+      },
+      submoduleBusy: true,
+      onRemoteUpdatePreviewClose: onClose,
+      onSubmoduleApplyRemote: vi.fn(),
+      submoduleOperations: {"vendor/library": {action: "applyRemote", phase: "running", startedAt: Date.now() - 1_000, message: "Applying previewed update..."}},
+    });
+
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Applying previewed update...");
+    expect(screen.getByRole("button", {name: "Applying remote update..."})).toBeDisabled();
+    expect(screen.getByRole("button", {name: /^Commit/})).toBeDisabled();
+    expect(screen.queryByRole("button", {name: "Committing..."})).not.toBeInTheDocument();
+    fireEvent.keyDown(dialog, {key: "Escape"});
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it("never offers bulk reversion for a gitlink, but retains normal files in a mixed selection", () => {
+    const onDiscardFiles = vi.fn();
+    const onDiscardAll = vi.fn();
+    render(<StatefulStagingView
+      unstagedFiles={[
+        {path: "deps/library", status: "modified", additions: null, deletions: null, kind: "submodule"},
+        file("src/changed.ts"),
+      ]}
+      onDiscardFiles={onDiscardFiles}
+      onDiscardAll={onDiscardAll}
+      selectedUnstaged={{"deps/library": true, "src/changed.ts": true}}
+    />);
+
+    fireEvent.click(screen.getByText("Revert Selected"));
+    fireEvent.click(screen.getByText("Revert All"));
+    expect(onDiscardFiles).toHaveBeenCalledWith(["src/changed.ts"]);
+    expect(onDiscardAll).toHaveBeenCalledWith(["src/changed.ts"]);
+  });
+
+  it("disables bulk reversion when gitlinks are the only unstaged entries", () => {
+    renderStagingView({
+      unstagedFiles: [{path: "deps/library", status: "modified", additions: null, deletions: null, kind: "submodule"}],
+    });
+
+    expect(screen.getByText("Revert All")).toBeDisabled();
+  });
+
+  it("shows gitlinks in the changes list without file discard", async () => {
+    const onDiscardFile = vi.fn();
+    renderStagingView({
+      unstagedFiles: [{
+        path: "deps/lib",
+        status: "modified",
+        additions: null,
+        deletions: null,
+        kind: "submodule",
+      }],
+      onDiscardFile,
+    });
+
+    const row = await screen.findByTitle("deps/lib");
+    expect(row).toHaveTextContent("S");
+    fireEvent.mouseEnter(row);
+    expect(screen.getByTitle("Stage file")).toBeInTheDocument();
+    expect(screen.queryByTitle("Revert changes?")).not.toBeInTheDocument();
+    expect(onDiscardFile).not.toHaveBeenCalled();
+  });
+
+  it("keeps submodule failure feedback available for dismissal", () => {
+    const onDismissSubmoduleFeedback = vi.fn();
+    renderStagingView({
+      submodules: [{
+        path: "vendor/library",
+        name: "library",
+        configuredUrl: "https://example.test/library.git",
+        localUrl: "https://example.test/library.git",
+        branch: null,
+        currentBranch: null,
+        parentHeadCommit: "1111111111111111111111111111111111111111",
+        stagedGitlink: false,
+        unstagedGitlink: false,
+        upstreamBranch: null,
+        expectedCommit: "1111111111111111111111111111111111111111",
+        checkedOutCommit: "1111111111111111111111111111111111111111",
+        initialised: true,
+        missing: false,
+        dirty: false,
+        outOfSync: false,
+        syncRequired: false,
+        state: "clean",
+      }],
+      submoduleOperations: {
+        "vendor/library": {
+          action: "pull",
+          phase: "error",
+          startedAt: Date.now() - 5_000,
+          message: "Check out a branch inside the submodule before pulling.",
+          error: "SUBMODULE_DETACHED: detached HEAD",
+        },
+      },
+      onDismissSubmoduleFeedback,
+    });
+
+    expect(screen.getByRole("button", {name: "Pull"})).toHaveAttribute("title", "Check out a branch inside the submodule before pulling.");
+    expect(screen.getByRole("status")).toHaveTextContent("Check out a branch inside the submodule before pulling.");
+    fireEvent.click(screen.getByRole("button", {name: "Show diagnostic"}));
+    expect(screen.getByText("SUBMODULE_DETACHED: detached HEAD")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", {name: "Dismiss"}));
+    expect(onDismissSubmoduleFeedback).toHaveBeenCalledWith("vendor/library");
   });
 });
