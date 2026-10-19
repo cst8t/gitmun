@@ -95,6 +95,53 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_terminal_selection_preserves_auto_named_and_custom_preferences() {
+        use linux_terminal_launch::TerminalPreference;
+
+        let custom_command = "my-terminal --working-directory {path}";
+        for (id, expected) in [
+            (LINUX_TERMINAL_AUTO_ID, TerminalPreference::Auto),
+            ("konsole", TerminalPreference::registered("konsole")),
+            (
+                LINUX_TERMINAL_CUSTOM_ID,
+                TerminalPreference::custom(custom_command),
+            ),
+        ] {
+            assert_eq!(linux_terminal_preference(id, custom_command), expected);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_terminal_launcher_uses_custom_command_only_when_selected() {
+        let directory = TempDir::new().expect("create working directory");
+        let mut settings = crate::git::types::Settings {
+            linux_terminal_emulator: "terminal-test".to_string(),
+            linux_terminal_custom_command: "custom-terminal --directory {path}".to_string(),
+            ..Default::default()
+        };
+        let registry = linux_terminal_launch::TerminalRegistry::with_known_terminals().register(
+            linux_terminal_launch::TerminalDefinition::new("terminal-test", "Test", "/bin/sh"),
+        );
+        let command = linux_terminal_launcher(&settings, directory.path())
+            .registry(registry)
+            .resolve()
+            .expect("registered terminal should resolve");
+        assert_eq!(command.program, "/bin/sh");
+
+        settings.linux_terminal_emulator = LINUX_TERMINAL_CUSTOM_ID.to_string();
+        let command = linux_terminal_launcher(&settings, directory.path())
+            .resolve()
+            .expect("custom terminal should resolve");
+        assert_eq!(command.program, "custom-terminal");
+        assert_eq!(
+            command.args,
+            ["--directory", directory.path().to_str().unwrap()]
+        );
+    }
+
     fn apply_staged_working_tree(
         source: &Path,
         destination: &Path,
@@ -721,6 +768,7 @@ fn linux_terminal_label(settings: &crate::git::types::Settings) -> String {
     let registry = linux_terminal_launch::TerminalRegistry::with_known_terminals();
     registry.label_for_preference(&linux_terminal_preference(
         settings.linux_terminal_emulator.as_str(),
+        &settings.linux_terminal_custom_command,
     ))
 }
 
@@ -734,16 +782,16 @@ fn linux_terminal_launcher(
         .registry(linux_terminal_launch::TerminalRegistry::with_known_terminals())
         .preference(linux_terminal_preference(
             settings.linux_terminal_emulator.as_str(),
+            &settings.linux_terminal_custom_command,
         ))
-        .custom_command(settings.linux_terminal_custom_command.clone())
         .detach_from_parent(true)
 }
 
 #[cfg(target_os = "linux")]
-fn linux_terminal_preference(id: &str) -> linux_terminal_launch::TerminalPreference {
+fn linux_terminal_preference(id: &str, custom_command: &str) -> linux_terminal_launch::TerminalPreference {
     match id {
         LINUX_TERMINAL_AUTO_ID => linux_terminal_launch::TerminalPreference::Auto,
-        LINUX_TERMINAL_CUSTOM_ID => linux_terminal_launch::TerminalPreference::Custom,
+        LINUX_TERMINAL_CUSTOM_ID => linux_terminal_launch::TerminalPreference::custom(custom_command),
         other => linux_terminal_launch::TerminalPreference::registered(other),
     }
 }
