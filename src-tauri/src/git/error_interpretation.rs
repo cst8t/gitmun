@@ -198,7 +198,6 @@ fn classify_message(operation: Option<&str>, message: &str) -> (GitErrorCategory
             "temporary failure in name resolution",
             "name or service not known",
             "could not resolve hostname",
-            "unable to access",
             "couldn't connect to server",
         ],
     ) {
@@ -217,6 +216,13 @@ fn classify_message(operation: Option<&str>, message: &str) -> (GitErrorCategory
             "could not read username",
             "could not read password",
             "invalid username or password",
+            "http basic: access denied",
+            "the requested url returned error: 401",
+            "the requested url returned error: 403",
+            "not authorised to push",
+            "not authorized to push",
+            "not allowed to push",
+            "write access to repository not granted",
         ],
     ) {
         return (GitErrorCategory::Auth, 0.9);
@@ -450,6 +456,41 @@ mod tests {
 
         assert_eq!(auth.category, GitErrorCategory::Auth);
         assert_eq!(network.category, GitErrorCategory::Network);
+    }
+
+    #[test]
+    fn cli_https_access_refusals_map_to_auth() {
+        for stderr in [
+            "remote: Permission to owner/repo.git denied to contributor.\nfatal: unable to access 'https://example.test/owner/repo.git/': The requested URL returned error: 403",
+            "remote: You are not allowed to push code to this project.\nfatal: unable to access 'https://example.test/owner/repo.git/': The requested URL returned error: 403",
+            "fatal: unable to access 'https://example.test/repo.git/': The requested URL returned error: 403",
+            "fatal: unable to access 'https://example.test/repo.git/': The requested URL returned error: 401",
+            "fatal: unable to access 'https://example.test/repo.git/': Authentication failed",
+            "remote: You are not authorised to push to this repository.",
+            "remote: You are not authorized to push to this repository.",
+            "remote: Write access to repository not granted.",
+            "remote: HTTP Basic: Access denied",
+        ] {
+            let interpreted = interpret_cli_error(Some("push"), stderr, Some(128));
+
+            assert_eq!(interpreted.category, GitErrorCategory::Auth, "{stderr}");
+            assert_eq!(
+                interpreted.suggested_actions,
+                vec!["fix-auth-ssh", "fix-auth-https", "retry"]
+            );
+            assert!(interpreted.raw_message.contains(stderr));
+        }
+    }
+
+    #[test]
+    fn cli_unrecognised_https_failure_stays_generic() {
+        let interpreted = interpret_cli_error(
+            Some("push"),
+            "fatal: unable to access 'https://example.test/repo.git/': The requested URL returned error: 500",
+            Some(128),
+        );
+
+        assert_eq!(interpreted.category, GitErrorCategory::Other);
     }
 
     #[test]
