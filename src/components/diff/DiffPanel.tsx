@@ -1,47 +1,14 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
-import { Decoration, Diff, Hunk, type ChangeData, type DiffType, type HunkData, type ViewType } from "react-diff-view";
+import type { ViewType } from "react-diff-view";
 import { ChevDownIcon, ChevRightIcon, CloseIcon, FileIcon, FolderIcon, SearchIcon } from "../icons";
 import { StageHunkIcon } from "../icons";
 import type { CommitDetails, CommitFileItem, FileDiff, RowStriping, SubmoduleStatus } from "../../types";
 import { buildFileTree, visibleFileTreeRows } from "../../utils/fileTree";
 import { getCommitDetails } from "../../api/commands";
 import type { CentreTab } from "../centre/CentrePanel";
-import "react-diff-view/style/index.css";
+import { FileDiffView } from "./FileDiffView";
 import "./DiffPanel.css";
-
-const HUNK_HEADER_RE = /^@@\s*-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s*@@/;
-
-function normalisedKind(kind: string): "add" | "remove" | "context" {
-  const lower = kind.toLowerCase();
-  if (lower === "add") return "add";
-  if (lower === "remove") return "remove";
-  return "context";
-}
-
-function parseHunkHeader(header: string): { oldStart: number; oldLines: number; newStart: number; newLines: number } | null {
-  const match = HUNK_HEADER_RE.exec(header);
-  if (!match) return null;
-
-  const oldStart = Number.parseInt(match[1], 10);
-  const oldLines = match[2] ? Number.parseInt(match[2], 10) : 1;
-  const newStart = Number.parseInt(match[3], 10);
-  const newLines = match[4] ? Number.parseInt(match[4], 10) : 1;
-
-  return { oldStart, oldLines, newStart, newLines };
-}
-
-function toInsertChange(content: string, lineNumber: number): ChangeData {
-  return { type: "insert", content, lineNumber, isInsert: true } as ChangeData;
-}
-
-function toDeleteChange(content: string, lineNumber: number): ChangeData {
-  return { type: "delete", content, lineNumber, isDelete: true } as ChangeData;
-}
-
-function toNormalChange(content: string, oldLineNumber: number, newLineNumber: number): ChangeData {
-  return { type: "normal", content, oldLineNumber, newLineNumber, isNormal: true } as ChangeData;
-}
 
 type CommitDetailsPopoverProps = {
   rect: DOMRect;
@@ -272,8 +239,8 @@ export function DiffPanel({
     mode === "changes" && selectedFile && !selectedSubmodule && diff?.filePath === selectedFile
       ? diff
       : null;
-  const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "add").length, 0) ?? 0;
-  const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter(l => normalisedKind(l.kind) === "remove").length, 0) ?? 0;
+  const totalAdds = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter((line) => line.kind.toLowerCase() === "add").length, 0) ?? 0;
+  const totalDels = currentDiff?.hunks.reduce((a, h) => a + h.lines.filter((line) => line.kind.toLowerCase() === "remove").length, 0) ?? 0;
   const fileName = selectedFile ? selectedFile.split("/").pop() ?? selectedFile : null;
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
@@ -301,68 +268,6 @@ export function DiffPanel({
     if (s.startsWith("cop")) return "C";
     return "M";
   };
-
-  const renderedHunks = React.useMemo<HunkData[]>(() => {
-    if (mode !== "changes" || !currentDiff || currentDiff.isBinary) return [];
-
-    return currentDiff.hunks.map((hunk): HunkData => {
-      const parsedHeader = parseHunkHeader(hunk.header);
-      let oldCursor = parsedHeader?.oldStart ?? (hunk.lines.find(line => line.oldLineNo != null)?.oldLineNo ?? 1);
-      let newCursor = parsedHeader?.newStart ?? (hunk.lines.find(line => line.newLineNo != null)?.newLineNo ?? 1);
-      let oldLinesCount = 0;
-      let newLinesCount = 0;
-
-      const changes: ChangeData[] = hunk.lines.map((line) => {
-        const kind = normalisedKind(line.kind);
-        if (kind === "add") {
-          const lineNumber = line.newLineNo ?? newCursor;
-          newCursor = lineNumber + 1;
-          newLinesCount += 1;
-          return toInsertChange(line.content, lineNumber);
-        }
-
-        if (kind === "remove") {
-          const lineNumber = line.oldLineNo ?? oldCursor;
-          oldCursor = lineNumber + 1;
-          oldLinesCount += 1;
-          return toDeleteChange(line.content, lineNumber);
-        }
-
-        const oldLineNumber = line.oldLineNo ?? oldCursor;
-        const newLineNumber = line.newLineNo ?? newCursor;
-        oldCursor = oldLineNumber + 1;
-        newCursor = newLineNumber + 1;
-        oldLinesCount += 1;
-        newLinesCount += 1;
-        return toNormalChange(line.content, oldLineNumber, newLineNumber);
-      });
-
-      return {
-        content: hunk.header,
-        oldStart: parsedHeader?.oldStart ?? (hunk.lines.find(line => line.oldLineNo != null)?.oldLineNo ?? 1),
-        newStart: parsedHeader?.newStart ?? (hunk.lines.find(line => line.newLineNo != null)?.newLineNo ?? 1),
-        oldLines: parsedHeader?.oldLines ?? oldLinesCount,
-        newLines: parsedHeader?.newLines ?? newLinesCount,
-        changes,
-      };
-    });
-  }, [mode, currentDiff]);
-
-  const diffType = React.useMemo<DiffType>(() => {
-    if (!currentDiff) return "modify";
-    let hasAdds = false;
-    let hasRemoves = false;
-    for (const hunk of currentDiff.hunks) {
-      for (const line of hunk.lines) {
-        const kind = normalisedKind(line.kind);
-        if (kind === "add") hasAdds = true;
-        if (kind === "remove") hasRemoves = true;
-      }
-    }
-    if (hasAdds && !hasRemoves) return "add";
-    if (!hasAdds && hasRemoves) return "delete";
-    return "modify";
-  }, [currentDiff]);
 
   return (
     <div className="diff-panel">
@@ -563,40 +468,21 @@ export function DiffPanel({
           ) : loading ? (
             <div className="diff-panel__placeholder">{t("placeholders.loadingDiff")}</div>
           ) : currentDiff ? (
-            currentDiff.isBinary ? (
-              <div className="diff-panel__placeholder">{t("placeholders.binaryChanged")}</div>
-            ) : renderedHunks.length > 0 ? (
-              <div className={`diff-panel__react-diff ${wrapLines ? "diff-panel__react-diff--wrap" : ""}`}>
-                <Diff
-                  viewType={viewType}
-                  diffType={diffType}
-                  hunks={renderedHunks}
+            <FileDiffView
+              diff={currentDiff}
+              viewType={viewType}
+              wrapLines={wrapLines}
+              renderHunkAction={hunkAction ? (hunkIndex) => (
+                <button
+                  className={`diff-hunk__stage-btn ${hunkAction === "unstage" ? "diff-hunk__stage-btn--unstage" : ""}`}
+                  onClick={() => onHunkAction(hunkIndex)}
+                  disabled={hunkActionBusy}
                 >
-                  {(hunks) => hunks.flatMap((hunk, hi) => [
-                    <Decoration key={`hunk-header-${hi}`}>
-                      <div className="diff-panel__hunk-header">
-                        <span className="diff-panel__hunk-title">{hunk.content}</span>
-                        {hunkAction && (
-                          <span className="diff-panel__hunk-action">
-                            <button
-                              className={`diff-hunk__stage-btn ${hunkAction === "unstage" ? "diff-hunk__stage-btn--unstage" : ""}`}
-                              onClick={() => onHunkAction(hi)}
-                              disabled={hunkActionBusy}
-                            >
-                              <StageHunkIcon />
-                              {hunkAction === "unstage" ? t("toolbar.unstageHunk") : t("toolbar.stageHunk")}
-                            </button>
-                          </span>
-                        )}
-                      </div>
-                    </Decoration>,
-                    <Hunk key={`hunk-${hi}-${hunk.content}`} hunk={hunk} />,
-                  ])}
-                </Diff>
-              </div>
-            ) : (
-              <div className="diff-panel__placeholder">{t("placeholders.emptyFile")}</div>
-            )
+                  <StageHunkIcon />
+                  {hunkAction === "unstage" ? t("toolbar.unstageHunk") : t("toolbar.stageHunk")}
+                </button>
+              ) : undefined}
+            />
           ) : (
             <div className="diff-panel__placeholder">{t("placeholders.clickFile")}</div>
           )

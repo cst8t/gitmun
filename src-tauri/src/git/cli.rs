@@ -1287,17 +1287,126 @@ impl CliGitHandler {
     }
 
     fn untracked_paths(repo_path: &Path) -> GitResult<Vec<String>> {
-        let output = Self::run_git_allow_exit_codes(
-            &["ls-files", "--others", "--exclude-standard"],
+        let output = Self::run_git_bytes(
+            &["ls-files", "--others", "--exclude-standard", "-z"],
             Some(repo_path),
-            &[1],
         )?;
         Ok(output
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .map(ToString::to_string)
+            .split(|byte| *byte == b'\0')
+            .filter(|path| !path.is_empty() && !path.ends_with(b"/"))
+            .map(|path| String::from_utf8_lossy(path).into_owned())
             .collect())
+    }
+
+    fn literal_pathspec(path: &str) -> String {
+        format!(":(literal){path}")
+    }
+
+    fn selected_literal_pathspecs(paths: &[String]) -> Vec<String> {
+        let mut seen = HashSet::new();
+        paths
+            .iter()
+            .filter(|path| seen.insert(path.as_str()))
+            .map(|path| Self::literal_pathspec(path))
+            .collect()
+    }
+
+    fn staged_paths_excluding(
+        repo_path: &Path,
+        selected_paths: &HashSet<&str>,
+    ) -> GitResult<Vec<String>> {
+        let output = Self::run_git_bytes(
+            &[
+                "diff",
+                "--cached",
+                "--name-only",
+                "--no-renames",
+                "-z",
+                "--",
+            ],
+            Some(repo_path),
+        )?;
+        Ok(output
+            .split(|byte| *byte == b'\0')
+            .filter(|path| !path.is_empty())
+            .map(|path| String::from_utf8_lossy(path).into_owned())
+            .filter(|path| !selected_paths.contains(path.as_str()))
+            .collect())
+    }
+
+    fn run_git_with_index(repo_path: &Path, index_path: &Path, args: &[&str]) -> GitResult<String> {
+        let mut command = crate::git_command();
+        Self::configure_command(&mut command);
+        let output = command
+            .current_dir(repo_path)
+            .env("GIT_INDEX_FILE", index_path)
+            .args(args)
+            .output()?;
+        if !output.status.success() {
+            return Err(GitError::CommandFailed {
+                command: format!("git {}", args.join(" ")),
+                stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+                exit_code: output.status.code(),
+            });
+        }
+        Ok(String::from_utf8_lossy(&output.stdout)
+            .trim_end()
+            .to_string())
+    }
+
+    fn run_git_index_paths(
+        repo_path: &Path,
+        index_path: &Path,
+        args: &[&str],
+        paths: &[String],
+    ) -> GitResult<String> {
+        let mut pathspec_file = tempfile::NamedTempFile::new()?;
+        for pathspec in Self::selected_literal_pathspecs(paths) {
+            pathspec_file.write_all(pathspec.as_bytes())?;
+            pathspec_file.write_all(&[0])?;
+        }
+        pathspec_file.flush()?;
+        let pathspec_arg = format!("--pathspec-from-file={}", pathspec_file.path().display());
+        let mut args = args.to_vec();
+        args.extend([pathspec_arg.as_str(), "--pathspec-file-nul"]);
+        Self::run_git_with_index(repo_path, index_path, &args)
+    }
+
+    fn stash_selected_paths(repo_path: &Path, paths: &[String]) -> GitResult<Vec<String>> {
+        let mut selected: HashSet<String> = paths.iter().cloned().collect();
+        let output = Self::run_git_bytes(
+            &[
+                "diff",
+                "--cached",
+                "--name-status",
+                "-z",
+                "--find-renames",
+                "--",
+            ],
+            Some(repo_path),
+        )?;
+        let mut fields = output
+            .split(|byte| *byte == b'\0')
+            .filter(|field| !field.is_empty());
+        while let Some(status) = fields.next() {
+            let Some(source) = fields.next() else { break };
+            if status.starts_with(b"R") || status.starts_with(b"C") {
+                let Some(destination) = fields.next() else {
+                    break;
+                };
+                if status.starts_with(b"R") {
+                    let source = String::from_utf8_lossy(source).into_owned();
+                    let destination = String::from_utf8_lossy(destination).into_owned();
+                    if selected.contains(&source) || selected.contains(&destination) {
+                        selected.insert(source);
+                        selected.insert(destination);
+                    }
+                }
+            }
+        }
+        let mut selected: Vec<String> = selected.into_iter().collect();
+        selected.sort();
+        Ok(selected)
     }
 
     fn changed_unstaged_paths(repo_path: &Path) -> GitResult<Vec<String>> {
@@ -5489,7 +5598,12 @@ impl GitOperationHandler for CliGitHandler {
 
     fn stash(&self, request: &StashPushRequest) -> GitResult<OperationResult> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-
+        let selected_paths = if request.paths.is_empty() {
+            Vec::new()
+        } else {
+            Self::stash_selected_paths(&repo_path, &request.paths)?
+        };
+        let selected_pathspecs = Self::selected_literal_pathspecs(&selected_paths);
         let mut cmd: Vec<String> = vec!["stash".into(), "push".into()];
         if request.include_untracked {
             cmd.push("--include-untracked".into());
@@ -5501,13 +5615,195 @@ impl GitOperationHandler for CliGitHandler {
                 cmd.push(trimmed.to_string());
             }
         }
-        if !request.paths.is_empty() {
+        if !selected_pathspecs.is_empty() {
             cmd.push("--".into());
-            cmd.extend(request.paths.iter().cloned());
+            cmd.extend(selected_pathspecs.iter().cloned());
         }
 
         let refs: Vec<&str> = cmd.iter().map(String::as_str).collect();
-        let output = Self::run_git(&refs, Some(&repo_path))?;
+        let output = if selected_paths.is_empty() {
+            Self::run_git(&refs, Some(&repo_path))?
+        } else {
+            let index_path = PathBuf::from(Self::run_git(
+                &["rev-parse", "--path-format=absolute", "--git-path", "index"],
+                Some(&repo_path),
+            )?);
+            let mut lock_name = index_path.as_os_str().to_os_string();
+            lock_name.push(".lock");
+            let lock_path = PathBuf::from(lock_name);
+            let mut index_lock = fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&lock_path)?;
+            // Stash includes the entire index, even with pathspecs. Isolate it while
+            // holding the real index lock so unrelated staged entries never change.
+            let mut stash_saved = false;
+            let result = (|| -> GitResult<String> {
+                let temporary = tempfile::tempdir()?;
+                let stash_index = temporary.path().join("stash-index");
+                let final_index = temporary.path().join("final-index");
+                fs::copy(&index_path, &stash_index)?;
+                fs::copy(&index_path, &final_index)?;
+                let head = Self::run_git(&["rev-parse", "HEAD"], Some(&repo_path))?;
+                let selected: HashSet<&str> = selected_paths.iter().map(String::as_str).collect();
+                let excluded = Self::staged_paths_excluding(&repo_path, &selected)?;
+                if !excluded.is_empty() {
+                    Self::run_git_index_paths(
+                        &repo_path,
+                        &stash_index,
+                        &["reset", "--quiet"],
+                        &excluded,
+                    )?;
+                }
+                let index_tree =
+                    Self::run_git_with_index(&repo_path, &stash_index, &["write-tree"])?;
+                let index_commit = Self::run_git(
+                    &["commit-tree", &index_tree, "-p", &head, "-m", "index"],
+                    Some(&repo_path),
+                )?;
+                let head_paths = Self::run_git_bytes(
+                    &["ls-tree", "-r", "--name-only", "-z", "HEAD"],
+                    Some(&repo_path),
+                )?;
+                let index_paths =
+                    Self::run_git_bytes(&["ls-files", "--cached", "-z"], Some(&repo_path))?;
+                let tracked: HashSet<String> = head_paths
+                    .split(|byte| *byte == b'\0')
+                    .chain(index_paths.split(|byte| *byte == b'\0'))
+                    .filter(|path| !path.is_empty())
+                    .map(|path| String::from_utf8_lossy(path).into_owned())
+                    .collect();
+                let untracked: HashSet<String> =
+                    Self::untracked_paths(&repo_path)?.into_iter().collect();
+                let indexed: HashSet<String> = index_paths
+                    .split(|byte| *byte == b'\0')
+                    .filter(|path| !path.is_empty())
+                    .map(|path| String::from_utf8_lossy(path).into_owned())
+                    .collect();
+                let mut tracked_selected = Vec::new();
+                let mut worktree_selected = Vec::new();
+                let mut untracked_selected = Vec::new();
+                for path in &selected_paths {
+                    if tracked.contains(path) {
+                        tracked_selected.push(path.clone());
+                        if indexed.contains(path) || repo_path.join(path).symlink_metadata().is_ok()
+                        {
+                            worktree_selected.push(path.clone());
+                        }
+                    } else if request.include_untracked && untracked.contains(path) {
+                        untracked_selected.push(path.clone());
+                    } else {
+                        return Err(GitError::InvalidInput(
+                            "stash_selection_changed".to_string(),
+                        ));
+                    }
+                }
+                if !worktree_selected.is_empty() {
+                    Self::run_git_index_paths(
+                        &repo_path,
+                        &stash_index,
+                        &["add", "--all"],
+                        &worktree_selected,
+                    )?;
+                }
+                let worktree_tree =
+                    Self::run_git_with_index(&repo_path, &stash_index, &["write-tree"])?;
+                let head_tree = Self::run_git(&["rev-parse", "HEAD^{tree}"], Some(&repo_path))?;
+                if index_tree == head_tree
+                    && worktree_tree == head_tree
+                    && untracked_selected.is_empty()
+                {
+                    index_lock.write_all(&fs::read(&index_path)?)?;
+                    return Ok("No local changes to save".to_string());
+                }
+                let mut commit_args = vec![
+                    "commit-tree",
+                    worktree_tree.as_str(),
+                    "-p",
+                    head.as_str(),
+                    "-p",
+                    index_commit.as_str(),
+                ];
+                let untracked_commit = if untracked_selected.is_empty() {
+                    None
+                } else {
+                    let untracked_index = temporary.path().join("untracked-index");
+                    Self::run_git_with_index(
+                        &repo_path,
+                        &untracked_index,
+                        &["read-tree", "--empty"],
+                    )?;
+                    Self::run_git_index_paths(
+                        &repo_path,
+                        &untracked_index,
+                        &["add"],
+                        &untracked_selected,
+                    )?;
+                    let tree =
+                        Self::run_git_with_index(&repo_path, &untracked_index, &["write-tree"])?;
+                    Some(Self::run_git(
+                        &["commit-tree", &tree, "-m", "untracked files"],
+                        Some(&repo_path),
+                    )?)
+                };
+                if let Some(ref commit) = untracked_commit {
+                    commit_args.extend(["-p", commit.as_str()]);
+                }
+                let message = request
+                    .message
+                    .as_deref()
+                    .map(str::trim)
+                    .filter(|message| !message.is_empty())
+                    .unwrap_or("WIP");
+                commit_args.extend(["-m", message]);
+                let stash_commit = Self::run_git(&commit_args, Some(&repo_path))?;
+                Self::run_git_index_paths(
+                    &repo_path,
+                    &final_index,
+                    &["reset", "--quiet"],
+                    &selected_paths,
+                )?;
+                index_lock.write_all(&fs::read(&final_index)?)?;
+                index_lock.sync_all()?;
+                Self::run_git(
+                    &["stash", "store", "-m", message, &stash_commit],
+                    Some(&repo_path),
+                )?;
+                stash_saved = true;
+                if !tracked_selected.is_empty() {
+                    Self::run_git_index_paths(
+                        &repo_path,
+                        &stash_index,
+                        &["restore", "--source=HEAD", "--staged", "--worktree"],
+                        &tracked_selected,
+                    )?;
+                }
+                for path in &untracked_selected {
+                    fs::remove_file(repo_path.join(path))?;
+                }
+                Ok(String::new())
+            })();
+            drop(index_lock);
+            match result {
+                Ok(output) => {
+                    if let Err(error) = fs::rename(&lock_path, &index_path) {
+                        drop(fs::remove_file(&lock_path));
+                        return Err(GitError::InvalidInput(format!(
+                            "stash_saved_cleanup_failed: {error}"
+                        )));
+                    }
+                    output
+                }
+                Err(error) => {
+                    drop(fs::remove_file(&lock_path));
+                    return Err(if stash_saved {
+                        GitError::InvalidInput(format!("stash_saved_cleanup_failed: {error}"))
+                    } else {
+                        error
+                    });
+                }
+            }
+        };
 
         Ok(OperationResult {
             message: "Stashed changes".to_string(),
@@ -5516,6 +5812,11 @@ impl GitOperationHandler for CliGitHandler {
             backend_used: "git-cli".to_string(),
             interpreted_error: None,
         })
+    }
+
+    fn list_stash_untracked_paths(&self, request: &RepoRequest) -> GitResult<Vec<String>> {
+        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        Self::untracked_paths(&repo_path)
     }
 
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>> {

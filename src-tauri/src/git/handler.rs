@@ -80,6 +80,7 @@ pub trait GitOperationHandler: Send + Sync {
     fn submodule_pull(&self, request: &SubmoduleActionRequest) -> GitResult<OperationResult>;
     fn fetch_remote(&self, request: &FetchRequest) -> GitResult<OperationResult>;
     fn stash(&self, request: &StashPushRequest) -> GitResult<OperationResult>;
+    fn list_stash_untracked_paths(&self, request: &RepoRequest) -> GitResult<Vec<String>>;
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>>;
     fn stash_apply(&self, request: &StashRequest) -> GitResult<OperationResult>;
     fn stash_pop(&self, request: &StashRequest) -> GitResult<OperationResult>;
@@ -843,6 +844,7 @@ impl GitService {
         fn get_commit_details(request: CommitDetailsRequest) -> GitResult<CommitDetails>;
         fn get_diff(request: DiffRequest) -> GitResult<FileDiff>;
         fn get_branches(request: RepoRequest) -> GitResult<Vec<BranchInfo>>;
+        fn list_stash_untracked_paths(request: RepoRequest) -> GitResult<Vec<String>>;
         fn stash_list(request: RepoRequest) -> GitResult<Vec<StashEntry>>;
         fn get_identity(request: IdentityRequest) -> GitResult<GitIdentity>;
         fn get_ssh_allowed_signer_status(request: IdentityRequest) -> GitResult<SshAllowedSignerStatus>;

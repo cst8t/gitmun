@@ -2832,14 +2832,29 @@ pub async fn fetch_remote(
 }
 
 #[tauri::command]
-pub fn stash(
+pub async fn stash(
     request: StashPushRequest,
-    state: tauri::State<'_, AppState>,
+    app: tauri::AppHandle,
 ) -> Result<OperationResult, String> {
-    state
-        .git_service
-        .stash(request)
+    tauri::async_runtime::spawn_blocking(move || app.state::<AppState>().git_service.stash(request))
+        .await
+        .map_err(|error| error.to_string())?
         .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn list_stash_untracked_paths(
+    request: RepoRequest,
+    app: tauri::AppHandle,
+) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        app.state::<AppState>()
+            .git_service
+            .list_stash_untracked_paths(request)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+    .map_err(|error| error.to_string())
 }
 
 #[tauri::command]

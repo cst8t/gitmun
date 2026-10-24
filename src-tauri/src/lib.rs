@@ -1703,6 +1703,7 @@ pub fn run() {
             commands::repo::submodule_pull,
             commands::repo::fetch_remote,
             commands::repo::stash,
+            commands::repo::list_stash_untracked_paths,
             commands::repo::stash_list,
             commands::repo::stash_apply,
             commands::repo::stash_pop,

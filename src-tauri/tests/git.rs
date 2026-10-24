@@ -15,7 +15,7 @@ use gitmun_lib::git::types::{
     FileRequest, FileEntryKind, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
     MergeRequest, PullStrategy, PullStrategyRequest, PushFailureKind, PushRequest, RebaseRequest,
     RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
-    SshAllowedSignerReason, StageFilesRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
+    SshAllowedSignerReason, StageFilesRequest, StashPushRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
     SubmoduleRemotePreview, SubmoduleState, UnversionedItemKind,
 };
 
@@ -153,6 +153,262 @@ fn set_local_identity(dir: &TempDir, email: Option<&str>, signing_key: Option<&s
 
 fn handler() -> CliGitHandler {
     CliGitHandler
+}
+
+fn stash_request(dir: &TempDir, include_untracked: bool, paths: &[&str]) -> StashPushRequest {
+    StashPushRequest {
+        repo_path: dir.path().to_str().expect("repository path").to_string(),
+        message: Some("selected files".to_string()),
+        include_untracked,
+        paths: paths.iter().map(|path| (*path).to_string()).collect(),
+    }
+}
+
+#[test]
+fn stash_uses_only_selected_literal_paths_and_preserves_other_changes() {
+    let dir = init_repo();
+    write_file(dir.path(), "selected.txt", "base\n");
+    write_file(dir.path(), "keep-staged.txt", "base\n");
+    write_file(dir.path(), "keep-worktree.txt", "base\n");
+    write_file(dir.path(), "rename-source.txt", "base\n");
+    git(
+        dir.path(),
+        &[
+            "add",
+            "selected.txt",
+            "keep-staged.txt",
+            "keep-worktree.txt",
+            "rename-source.txt",
+        ],
+    );
+    git(dir.path(), &["commit", "-m", "add stash fixtures"]);
+
+    write_file(dir.path(), "selected.txt", "staged\n");
+    git(dir.path(), &["add", "selected.txt"]);
+    write_file(dir.path(), "selected.txt", "staged and unstaged\n");
+    write_file(dir.path(), "keep-staged.txt", "keep staged\n");
+    git(dir.path(), &["add", "keep-staged.txt"]);
+    write_file(dir.path(), "keep-worktree.txt", "keep worktree\n");
+    git(dir.path(), &["mv", "rename-source.txt", "renamed.txt"]);
+    fs::create_dir_all(dir.path().join("nested")).expect("create nested directory");
+    write_file(dir.path(), "nested/include.txt", "include me\n");
+    write_file(dir.path(), "nested/keep.txt", "keep me\n");
+    write_file(dir.path(), "literal[set].txt", "literal pathspec\n");
+    write_file(dir.path(), ".gitignore", "ignored.txt\n");
+    write_file(dir.path(), "ignored.txt", "ignored\n");
+
+    let untracked = handler()
+        .list_stash_untracked_paths(&repo_request(&dir))
+        .expect("list untracked stash candidates");
+    assert!(untracked.contains(&"nested/include.txt".to_string()));
+    assert!(untracked.contains(&"nested/keep.txt".to_string()));
+    assert!(untracked.contains(&"literal[set].txt".to_string()));
+    assert!(!untracked.contains(&"ignored.txt".to_string()));
+
+    handler()
+        .stash(&stash_request(
+            &dir,
+            true,
+            &[
+                "selected.txt",
+                "renamed.txt",
+                "nested/include.txt",
+                "literal[set].txt",
+                "selected.txt",
+            ],
+        ))
+        .expect("stash selected files");
+
+    assert_eq!(read_file(dir.path(), "selected.txt"), "base\n");
+    assert!(!dir.path().join("renamed.txt").exists());
+    assert_eq!(read_file(dir.path(), "rename-source.txt"), "base\n");
+    assert!(!dir.path().join("nested/include.txt").exists());
+    assert!(!dir.path().join("literal[set].txt").exists());
+    assert_eq!(
+        read_file(dir.path(), "keep-worktree.txt"),
+        "keep worktree\n"
+    );
+    assert_eq!(read_file(dir.path(), "nested/keep.txt"), "keep me\n");
+    assert_eq!(read_file(dir.path(), "ignored.txt"), "ignored\n");
+    let staged_paths = git_stdout(dir.path(), &["diff", "--cached", "--name-only"]);
+    assert!(staged_paths.contains("keep-staged.txt"));
+    assert!(!staged_paths.contains("selected.txt"));
+
+    let stashed_tracked_paths = git_stdout(
+        dir.path(),
+        &["diff", "--name-only", "stash@{0}^1", "stash@{0}"],
+    );
+    assert!(stashed_tracked_paths.contains("selected.txt"));
+    assert!(stashed_tracked_paths.contains("renamed.txt"));
+    assert!(!stashed_tracked_paths.contains("keep-staged.txt"));
+    assert!(!stashed_tracked_paths.contains("keep-worktree.txt"));
+
+    let stashed_untracked_paths =
+        git_stdout(dir.path(), &["ls-tree", "-r", "--name-only", "stash@{0}^3"]);
+    assert!(stashed_untracked_paths.contains("nested/include.txt"));
+    assert!(stashed_untracked_paths.contains("literal[set].txt"));
+    assert!(!stashed_untracked_paths.contains("nested/keep.txt"));
+    assert!(!stashed_untracked_paths.contains("ignored.txt"));
+}
+
+#[test]
+fn stash_all_selected_staged_changes_clears_the_index() {
+    let dir = init_repo();
+    write_file(dir.path(), "tracked.txt", "base\n");
+    git(dir.path(), &["add", "tracked.txt"]);
+    git(dir.path(), &["commit", "-m", "stash fixture"]);
+    write_file(dir.path(), "tracked.txt", "staged\n");
+    git(dir.path(), &["add", "tracked.txt"]);
+
+    handler()
+        .stash(&stash_request(&dir, false, &["tracked.txt"]))
+        .expect("stash all selected changes");
+
+    assert_eq!(read_file(dir.path(), "tracked.txt"), "base\n");
+    assert!(git_stdout(dir.path(), &["diff", "--cached", "--name-only"]).is_empty());
+    git(dir.path(), &["stash", "apply", "--index"]);
+    assert_eq!(read_file(dir.path(), "tracked.txt"), "staged\n");
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        "tracked.txt"
+    );
+}
+
+#[test]
+fn stash_failure_preserves_index_bytes_and_worktree() {
+    let dir = init_repo();
+    write_file(dir.path(), "keep.txt", "staged\n");
+    git(dir.path(), &["add", "keep.txt"]);
+    let index_before = fs::read(dir.path().join(".git/index")).expect("read index");
+
+    assert!(
+        handler()
+            .stash(&stash_request(&dir, false, &["missing.txt"]))
+            .is_err()
+    );
+
+    assert_eq!(
+        fs::read(dir.path().join(".git/index")).expect("read index"),
+        index_before
+    );
+    assert_eq!(read_file(dir.path(), "keep.txt"), "staged\n");
+    assert!(!dir.path().join(".git/index.lock").exists());
+    assert!(git_stdout(dir.path(), &["stash", "list"]).is_empty());
+}
+
+#[test]
+fn stash_literal_paths_preserve_binary_staging_and_unselected_rename() {
+    let dir = init_repo();
+    for path in ["report [draft].txt", "report d.txt", "old.txt"] {
+        write_file(dir.path(), path, "base\n");
+    }
+    fs::write(dir.path().join("binary.dat"), [0, 1, 255]).expect("write binary");
+    git(dir.path(), &["add", "."]);
+    git(dir.path(), &["commit", "-m", "stash literal fixtures"]);
+    write_file(dir.path(), "report [draft].txt", "selected\n");
+    write_file(dir.path(), "report d.txt", "keep worktree\n");
+    fs::write(dir.path().join("binary.dat"), [0, 2, 254]).expect("write binary");
+    git(dir.path(), &["add", "binary.dat"]);
+    fs::write(dir.path().join("binary.dat"), [0, 3, 253]).expect("write binary worktree");
+    git(dir.path(), &["mv", "old.txt", "new.txt"]);
+    let index_before = git_stdout(dir.path(), &["ls-files", "--stage"]);
+
+    handler()
+        .stash(&stash_request(&dir, false, &["report [draft].txt"]))
+        .expect("stash literal filename");
+
+    assert_eq!(
+        git_stdout(dir.path(), &["ls-files", "--stage"]),
+        index_before
+    );
+    assert_eq!(
+        fs::read(dir.path().join("binary.dat")).expect("read binary"),
+        [0, 3, 253]
+    );
+    assert_eq!(read_file(dir.path(), "report d.txt"), "keep worktree\n");
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--name-only", "stash^1", "stash"]),
+        "report [draft].txt"
+    );
+}
+
+#[test]
+fn stash_selected_deletion_and_added_file_round_trip_with_index() {
+    let dir = init_repo();
+    write_file(dir.path(), "remove.txt", "base\n");
+    git(dir.path(), &["add", "remove.txt"]);
+    git(dir.path(), &["commit", "-m", "deletion fixture"]);
+    git(dir.path(), &["rm", "remove.txt"]);
+    write_file(dir.path(), "added.txt", "added\n");
+    git(dir.path(), &["add", "added.txt"]);
+    handler()
+        .stash(&stash_request(&dir, false, &["remove.txt", "added.txt"]))
+        .expect("stash deletion and addition");
+    assert_eq!(read_file(dir.path(), "remove.txt"), "base\n");
+    assert!(!dir.path().join("added.txt").exists());
+    assert!(git_stdout(dir.path(), &["status", "--porcelain"]).is_empty());
+    git(dir.path(), &["stash", "apply", "--index"]);
+    assert!(!dir.path().join("remove.txt").exists());
+    assert_eq!(read_file(dir.path(), "added.txt"), "added\n");
+    assert_eq!(
+        git_stdout(dir.path(), &["diff", "--cached", "--name-only"]),
+        "added.txt\nremove.txt"
+    );
+}
+
+#[test]
+fn stash_many_untracked_paths_uses_file_pathspecs_and_preserves_unselected_files() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("notes")).expect("create notes");
+    let paths: Vec<String> = (0..600)
+        .map(|index| format!("notes/{}-{index}.txt", "long-file-name".repeat(8)))
+        .collect();
+    for path in &paths {
+        write_file(dir.path(), path, "draft\n");
+    }
+    write_file(dir.path(), "notes/keep.txt", "keep\n");
+    let selected: Vec<&str> = paths.iter().map(String::as_str).collect();
+    handler()
+        .stash(&stash_request(&dir, true, &selected))
+        .expect("stash many paths");
+    assert_eq!(
+        git_stdout(dir.path(), &["ls-tree", "-r", "--name-only", "stash^3"])
+            .lines()
+            .count(),
+        paths.len()
+    );
+    assert_eq!(read_file(dir.path(), "notes/keep.txt"), "keep\n");
+    assert!(!dir.path().join(&paths[0]).exists());
+    git(dir.path(), &["stash", "apply"]);
+    assert_eq!(read_file(dir.path(), &paths[0]), "draft\n");
+}
+
+#[test]
+fn stash_unchanged_selection_does_not_create_an_empty_stash() {
+    let dir = init_repo();
+    write_file(dir.path(), "unchanged.txt", "base\n");
+    git(dir.path(), &["add", "unchanged.txt"]);
+    git(dir.path(), &["commit", "-m", "unchanged fixture"]);
+    let result = handler()
+        .stash(&stash_request(&dir, false, &["unchanged.txt"]))
+        .expect("handle unchanged selection");
+    assert_eq!(result.output.as_deref(), Some("No local changes to save"));
+    assert!(git_stdout(dir.path(), &["stash", "list"]).is_empty());
+}
+
+#[test]
+fn stash_candidates_exclude_nested_repositories() {
+    let dir = init_repo();
+    fs::create_dir_all(dir.path().join("nested-repository")).expect("create nested repository");
+    git(dir.path().join("nested-repository").as_path(), &["init"]);
+    write_file(dir.path(), "nested-repository/inside.txt", "nested\n");
+    write_file(dir.path(), "outside.txt", "outside\n");
+
+    let candidates = handler()
+        .list_stash_untracked_paths(&repo_request(&dir))
+        .expect("list stash candidates");
+
+    assert_eq!(candidates, vec!["outside.txt"]);
 }
 
 fn repo_with_merge_tool_conflict(tool_command: &str) -> TempDir {

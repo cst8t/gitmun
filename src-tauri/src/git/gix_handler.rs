@@ -1392,6 +1392,11 @@ impl GitOperationHandler for GixGitHandler {
             .map(Self::with_cli_fallback_backend)
     }
 
+    fn list_stash_untracked_paths(&self, request: &RepoRequest) -> GitResult<Vec<String>> {
+        self.validate_repo_with_gix(&request.repo_path)?;
+        self.cli_fallback.list_stash_untracked_paths(request)
+    }
+
     fn stash_list(&self, request: &RepoRequest) -> GitResult<Vec<StashEntry>> {
         self.validate_repo_with_gix(&request.repo_path)?;
         self.cli_fallback.stash_list(request)

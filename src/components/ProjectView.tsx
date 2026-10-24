@@ -1222,13 +1222,12 @@ export function ProjectView({
   const handleStashConfirm = useCallback(async (opts: {
     message: string | null;
     includeUntracked: boolean;
-    paths: string[] | null;
+    paths: string[];
   }) => {
     if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
-    setShowStashDialog(false);
     try {
-      const result = await api.stash(repoPath, opts.message, opts.includeUntracked, opts.paths ?? []);
+      const result = await api.stash(repoPath, opts.message, opts.includeUntracked, opts.paths);
       const output = result.output?.trim();
       const noChanges = output ? /no local changes to save/i.test(output) : false;
       if (noChanges) {
@@ -1238,8 +1237,18 @@ export function ProjectView({
         showToast(t("toast.changesStashed"), "success");
         appendResultLog("success", output || result.message, result.backendUsed);
       }
+      setShowStashDialog(false);
       await Promise.all([refreshStatus(), refreshStashes()]);
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashFailed", { message: String(e) }), "unknown"); }
+    } catch (e) {
+      appendResultLog("error", t("log.stashFailed", { message: String(e) }), "unknown");
+      if (String(e).includes("stash_saved_cleanup_failed")) {
+        setShowStashDialog(false);
+        showToast(t("stashPush.cleanupFailed", { ns: "sidebar" }), "error");
+        await Promise.all([refreshStatus(), refreshStashes()]);
+        return;
+      }
+      throw e;
+    }
   }, [repoPath, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashApply = useCallback(async (stashIndex: number) => {
@@ -2436,8 +2445,9 @@ export function ProjectView({
         />
       )}
 
-      {showStashDialog && (
+      {showStashDialog && repoPath && (
         <StashPushDialog
+          repoPath={repoPath}
           stagedFiles={stagedFiles}
           unstagedFiles={unstagedFiles}
           unversionedFiles={unversionedFiles}

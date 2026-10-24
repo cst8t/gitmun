@@ -358,6 +358,10 @@ export function stash(
     return invoke<OperationResult>("stash", {request: {repoPath, message, includeUntracked, paths}});
 }
 
+export function listStashUntrackedPaths(repoPath: string): Promise<string[]> {
+    return invoke<string[]>("list_stash_untracked_paths", {request: {repoPath}});
+}
+
 export function stashList(repoPath: string): Promise<StashEntry[]> {
     return invoke<StashEntry[]>("stash_list", {request: {repoPath}});
 }
