@@ -107,7 +107,7 @@ impl GixGitHandler {
     {
         let interpreted = interpret_gix_error(operation, &error);
         GitError::GixError {
-            message: error.to_string(),
+            message: interpreted.raw_message.clone(),
             interpreted: Some(interpreted),
         }
     }
@@ -184,10 +184,7 @@ impl GixGitHandler {
             .map_err(|e| Self::gix_error(None, e))?;
 
         for reference in local_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
             let is_current = current_branch_name.as_deref() == Some(short_name.as_str());
 
@@ -261,10 +258,7 @@ impl GixGitHandler {
             .map_err(|e| Self::gix_error(None, e))?;
 
         for reference in remote_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
             // Skip symbolic HEAD pointers like "origin/HEAD"
             if short_name.ends_with("/HEAD") {
@@ -337,10 +331,7 @@ impl GixGitHandler {
 
         let mut matching = Vec::new();
         for reference in tag_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let raw_oid = reference.id().detach();
 
             // Peel through annotated tag objects to reach the commit.
@@ -369,10 +360,7 @@ impl GixGitHandler {
             .local_branches()
             .map_err(|e| Self::gix_error(None, e))?;
         for reference in local_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let hash = reference.id().detach().to_hex().to_string();
             let name = Self::bstr_to_string(reference.name().shorten());
             Self::push_commit_ref_decoration(
@@ -390,10 +378,7 @@ impl GixGitHandler {
             .remote_branches()
             .map_err(|e| Self::gix_error(None, e))?;
         for reference in remote_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let name = Self::bstr_to_string(reference.name().shorten());
             if name.ends_with("/HEAD") {
                 continue;
@@ -412,10 +397,7 @@ impl GixGitHandler {
         let refs = repo.references().map_err(|e| Self::gix_error(None, e))?;
         let tag_iter = refs.tags().map_err(|e| Self::gix_error(None, e))?;
         for reference in tag_iter {
-            let reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let raw_oid = reference.id().detach();
             let hash = repo
                 .find_object(raw_oid)
@@ -476,10 +458,7 @@ impl GixGitHandler {
         let mut tags = Vec::new();
 
         for reference in tag_iter {
-            let mut reference = reference.map_err(|e| GitError::GixError {
-                message: e.to_string(),
-                interpreted: None,
-            })?;
+            let mut reference = reference.map_err(|e| Self::gix_error(None, e))?;
             let short_name = Self::bstr_to_string(reference.name().shorten());
 
             // The tag object OID (before peeling) - format as hex then truncate to 7 chars
@@ -516,7 +495,7 @@ impl GixGitHandler {
 
         for name in names.iter() {
             let remote = repo
-                .find_remote(name.as_ref())
+                .find_remote(name)
                 .map_err(|e| Self::gix_error(None, e))?;
 
             // Prefer the fetch URL; fall back to push URL
@@ -593,6 +572,7 @@ impl GixGitHandler {
 
         let get = |key: &str| -> Option<String> {
             config
+                .plumbing()
                 .string_filter(key, &filter)
                 .map(|v| v.to_string())
                 .filter(|s| !s.is_empty())
@@ -822,6 +802,8 @@ impl GixGitHandler {
             })
             .unwrap_or_default();
 
+        // The high-level status API selects Windows directory caching from
+        // core.fscache. Leave that choice to gix and the user's configuration.
         let mut status_iter = repo
             .status(gix::progress::Discard)
             .map_err(|error| Self::gix_error(None, error))?
@@ -1615,6 +1597,8 @@ mod tests {
 
     fn run_git(repo: &Path, args: &[&str]) {
         let status = Command::new("git")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env("GIT_CONFIG_GLOBAL", repo.join("isolated-global-config"))
             .args(args)
             .current_dir(repo)
             .status()
@@ -1774,5 +1758,186 @@ mod tests {
             index_before
         );
         assert!(!index_path.with_file_name("index.lock").exists());
+    }
+
+    fn isolated_repo(path: &Path) -> gix::Repository {
+        gix::open_opts(path, gix::open::Options::isolated()).expect("open isolated repository")
+    }
+
+    #[test]
+    fn owned_configuration_preserves_identity_tracking_and_remote_urls() {
+        use crate::git::types::IdentityScope;
+        let dir = init_repo();
+        let path = dir.path();
+        run_git(
+            path,
+            &["remote", "add", "origin", "https://example.test/fetch.git"],
+        );
+        run_git(
+            path,
+            &[
+                "config",
+                "remote.origin.pushurl",
+                "ssh://git@example.test/push.git",
+            ],
+        );
+        run_git(
+            path,
+            &[
+                "config",
+                "remote.push-only.pushurl",
+                "ssh://git@example.test/only.git",
+            ],
+        );
+        run_git(
+            path,
+            &[
+                "config",
+                "remote.no-url.fetch",
+                "+refs/heads/*:refs/remotes/no-url/*",
+            ],
+        );
+        run_git(path, &["update-ref", "refs/remotes/origin/main", "HEAD"]);
+        run_git(path, &["branch", "--set-upstream-to=origin/main"]);
+        run_git(path, &["config", "diff.tool", "gitmun-test-tool"]);
+        run_git(path, &["tag", "release"]);
+        let repo = isolated_repo(path);
+        let identity =
+            GixGitHandler::collect_identity_with_gix(&repo, &IdentityScope::Local).unwrap();
+        assert_eq!(identity.name.as_deref(), Some("Gitmun Test"));
+        assert_eq!(identity.email.as_deref(), Some("test@gitmun.test"));
+        let global =
+            GixGitHandler::collect_identity_with_gix(&repo, &IdentityScope::Global).unwrap();
+        assert!(global.name.is_none());
+        assert_eq!(
+            GixGitHandler::collect_diff_tool_with_gix(&repo).as_deref(),
+            Some("gitmun-test-tool")
+        );
+        let remotes = GixGitHandler::collect_remotes_with_gix(&repo).unwrap();
+        assert_eq!(remotes.len(), 2);
+        assert_eq!(
+            remotes.iter().find(|r| r.name == "origin").unwrap().url,
+            "https://example.test/fetch.git"
+        );
+        assert_eq!(
+            remotes.iter().find(|r| r.name == "push-only").unwrap().url,
+            "ssh://git@example.test/only.git"
+        );
+        let markers = GixGitHandler::collect_commit_markers_with_gix(&repo).unwrap();
+        assert_eq!(markers.upstream_ref.as_deref(), Some("origin/main"));
+        assert_eq!(markers.local_head, markers.upstream_head);
+        assert!(
+            !GixGitHandler::collect_branches_with_gix(&repo)
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            GixGitHandler::collect_tags_with_gix(&repo).unwrap().len(),
+            1
+        );
+    }
+
+    #[test]
+    fn linked_worktree_status_respects_fscache_configuration() {
+        let main = init_repo();
+        fs::write(main.path().join("tracked.txt"), "original\n").unwrap();
+        run_git(main.path(), &["add", "."]);
+        run_git(main.path(), &["commit", "-m", "tracked file"]);
+        let temp = TempDir::new().unwrap();
+        let linked = temp.path().join("linked");
+        run_git(
+            main.path(),
+            &["worktree", "add", "-b", "linked", linked.to_str().unwrap()],
+        );
+        fs::write(linked.join("tracked.txt"), "modified\n").unwrap();
+        fs::write(linked.join("new.txt"), "new\n").unwrap();
+        for enabled in ["false", "true"] {
+            run_git(main.path(), &["config", "core.fscache", enabled]);
+            let config_before = fs::read(main.path().join(".git/config")).unwrap();
+            let repo = isolated_repo(&linked);
+            assert_eq!(
+                repo.config_snapshot().boolean("core.fscache"),
+                Some(enabled == "true")
+            );
+            let actual = GixGitHandler::collect_repo_status_with_gix(&repo).unwrap();
+            let expected = Command::new("git")
+                .current_dir(&linked)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env("GIT_CONFIG_GLOBAL", temp.path().join("empty-config"))
+                .args(["status", "--porcelain=v1", "--untracked-files=all"])
+                .output()
+                .unwrap();
+            assert!(expected.status.success());
+            assert_eq!(
+                String::from_utf8(expected.stdout).unwrap(),
+                " M tracked.txt\n?? new.txt\n"
+            );
+            assert_eq!(actual.changed_files.len(), 1);
+            assert_eq!(actual.changed_files[0].path, "tracked.txt");
+            assert_eq!(actual.changed_files[0].status, "modified");
+            assert_eq!(actual.unversioned_files, ["new.txt"]);
+            assert!(actual.staged_files.is_empty());
+            assert_eq!(actual.current_branch.as_deref(), Some("linked"));
+            assert_eq!(
+                fs::read(main.path().join(".git/config")).unwrap(),
+                config_before
+            );
+        }
+    }
+
+    #[test]
+    fn history_detects_signatures_without_running_verifiers() {
+        use crate::git::types::{CommitDateMode, SignatureStatus};
+        use std::io::Write;
+        use std::process::Stdio;
+        let dir = init_repo();
+        // Invalid programs ensure history never needs GPG or SSH verification.
+        run_git(
+            dir.path(),
+            &["config", "gpg.program", "gitmun-nonexistent-verifier"],
+        );
+        run_git(
+            dir.path(),
+            &["config", "gpg.ssh.program", "gitmun-nonexistent-verifier"],
+        );
+        for (header, key_type) in [("PGP", "gpg"), ("SSH", "ssh")] {
+            let repo = isolated_repo(dir.path());
+            let parent = repo.head_id().unwrap().to_string();
+            let tree = repo.head_commit().unwrap().tree_id().unwrap().to_string();
+            let raw = format!(
+                "tree {tree}\nparent {parent}\nauthor Gitmun Test <test@gitmun.test> 1700000000 +0000\ncommitter Gitmun Test <test@gitmun.test> 1700000000 +0000\ngpgsig -----BEGIN {header} SIGNATURE-----\n invalid signature\n -----END {header} SIGNATURE-----\n\nsigned presence\n"
+            );
+            let mut child = Command::new("git")
+                .current_dir(dir.path())
+                .args(["hash-object", "-t", "commit", "-w", "--stdin"])
+                .stdin(Stdio::piped())
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(raw.as_bytes())
+                .unwrap();
+            let output = child.wait_with_output().unwrap();
+            assert!(output.status.success());
+            let hash = String::from_utf8(output.stdout).unwrap();
+            run_git(dir.path(), &["update-ref", "HEAD", hash.trim()]);
+            let repo = isolated_repo(dir.path());
+            let history = GixGitHandler::collect_commit_history_with_gix(
+                &repo,
+                100,
+                0,
+                &CommitDateMode::AuthorDate,
+            )
+            .unwrap();
+            assert_eq!(history[0].signature_status, SignatureStatus::Signed);
+            assert_eq!(history[0].key_type.as_deref(), Some(key_type));
+            assert_eq!(
+                history.last().unwrap().signature_status,
+                SignatureStatus::None
+            );
+        }
     }
 }

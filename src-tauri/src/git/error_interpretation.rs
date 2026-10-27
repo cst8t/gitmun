@@ -307,12 +307,38 @@ pub fn interpret_cli_error(
     )
 }
 
+/// Keep causes when gix's type-erased error only displays its outer context.
+/// The same diagnostic is used for classification and the Result Log.
+fn gix_error_message(err: &(dyn Error + 'static)) -> String {
+    let mut messages = Vec::new();
+    let mut append = |error: &(dyn Error + 'static)| {
+        let message = error.to_string();
+        if !message.is_empty() && !messages.contains(&message) {
+            messages.push(message);
+        }
+    };
+    if let Some(error) = err.downcast_ref::<gix::Error>() {
+        // Unlike source(), this also visits every branch of a gix error tree.
+        for cause in error.iter_errors() {
+            append(cause);
+        }
+    } else {
+        append(err);
+        let mut source = err.source();
+        while let Some(cause) = source {
+            append(cause);
+            source = cause.source();
+        }
+    }
+    messages.join(": ")
+}
+
 pub fn interpret_gix_error<E>(operation: Option<&str>, err: &E) -> InterpretedGitError
 where
-    E: Error + 'static + ?Sized,
+    E: Error + 'static,
 {
     let error_type = type_name::<E>();
-    let message = err.to_string();
+    let message = gix_error_message(err);
     let lower_type = error_type.to_ascii_lowercase();
 
     let typed = if contains_any(&lower_type, &["transport", "connect", "protocol"]) {
@@ -331,7 +357,45 @@ where
 
     let (category, confidence) = typed.unwrap_or_else(|| {
         let (category, confidence) = classify_message(operation, &message);
-        (category, (confidence - 0.15).max(0.1))
+        if category != GitErrorCategory::Other {
+            return (category, (confidence - 0.15).max(0.1));
+        }
+        if let Some(error) = (err as &dyn Error).downcast_ref::<gix::Error>() {
+            let network_cause = error.iter_errors().any(|cause| {
+                use std::io::ErrorKind;
+                cause.downcast_ref::<std::io::Error>().is_some_and(|io| {
+                    matches!(
+                        io.kind(),
+                        ErrorKind::ConnectionRefused
+                            | ErrorKind::ConnectionReset
+                            | ErrorKind::ConnectionAborted
+                            | ErrorKind::NotConnected
+                            | ErrorKind::TimedOut
+                            | ErrorKind::HostUnreachable
+                            | ErrorKind::NetworkUnreachable
+                    )
+                })
+            });
+            if network_cause {
+                return (GitErrorCategory::Network, 0.8);
+            }
+        }
+        // Unified gix errors no longer expose operation families in type_name.
+        // Prefer the existing specific message rules above to broad classes.
+        let classified = gix::error::classify(err).find_map(|cause| {
+            use gix::error::Class;
+            match cause.class() {
+                Class::Unauthenticated => Some(GitErrorCategory::Auth),
+                Class::PermissionDenied => Some(GitErrorCategory::Permission),
+                Class::Corruption | Class::Validation | Class::NotFound => {
+                    Some(GitErrorCategory::RepoState)
+                }
+                _ => None,
+            }
+        });
+        classified
+            .map(|category| (category, 0.7))
+            .unwrap_or((category, (confidence - 0.15).max(0.1)))
     });
 
     build_interpretation(
@@ -645,5 +709,52 @@ mod tests {
 
         assert_eq!(interpreted.category, GitErrorCategory::IndexLock);
         assert!(interpreted.confidence < 0.85);
+    }
+
+    #[test]
+    fn unified_gix_error_retains_native_causes_for_interpretation() {
+        #[derive(Debug)]
+        struct Context(std::io::Error);
+        impl std::fmt::Display for Context {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                f.write_str("repository operation failed")
+            }
+        }
+        impl std::error::Error for Context {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+        for (message, category) in [
+            (
+                "index.lock: lock file already exists",
+                GitErrorCategory::IndexLock,
+            ),
+            ("authentication failed", GitErrorCategory::Auth),
+            ("could not resolve host", GitErrorCategory::Network),
+        ] {
+            let error = gix::Error::from_error(Context(std::io::Error::other(message)));
+            let interpreted = interpret_gix_error(Some("status"), &error);
+            assert_eq!(interpreted.category, category);
+            assert!(
+                interpreted
+                    .raw_message
+                    .contains("repository operation failed")
+            );
+            assert!(interpreted.raw_message.contains(message));
+        }
+        let error = gix::Error::from_error(gix::error::validation("invalid configuration value"));
+        assert_eq!(
+            interpret_gix_error(None, &error).category,
+            GitErrorCategory::RepoState
+        );
+        let error = gix::Error::from_error(Context(std::io::Error::new(
+            std::io::ErrorKind::ConnectionRefused,
+            "socket unavailable",
+        )));
+        assert_eq!(
+            interpret_gix_error(Some("fetch"), &error).category,
+            GitErrorCategory::Network
+        );
     }
 }
