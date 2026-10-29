@@ -703,6 +703,45 @@ pub struct CommitHistoryRequest {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CommitSearchRequest {
+    pub repo_path: String,
+    pub query: String,
+    pub session_id: String,
+    #[serde(default)]
+    pub scope: CommitLogScope,
+    #[serde(default)]
+    pub topo_order: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitSearchEvent {
+    pub session_id: String,
+    pub commits: Vec<CommitHistoryItem>,
+    pub scanned_count: usize,
+    pub status: CommitSearchStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<CommitSearchFailure>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum CommitSearchStatus {
+    Scanning,
+    Paused,
+    Complete,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct CommitSearchFailure {
+    pub code: String,
+    pub details: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CommitFilesRequest {
     pub repo_path: String,
     pub commit_hash: String,

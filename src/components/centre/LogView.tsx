@@ -4,7 +4,7 @@ import { emit, listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { Virtuoso } from "react-virtuoso";
-import type { ListItem, ListRange, VirtuosoHandle } from "react-virtuoso";
+import type { ListItem, ListRange, StateSnapshot, VirtuosoHandle } from "react-virtuoso";
 import type {
   CommitHistoryItem,
   CommitLogScope,
@@ -556,6 +556,11 @@ type LogViewProps = {
   logLoading: boolean;
   logError: string | null;
   searching?: boolean;
+  searchState?: "scanning" | "paused" | "complete" | "error";
+  searchScanned?: number;
+  searchError?: { code: string; details?: string } | null;
+  searchSessionKey?: string;
+  onRestartSearch?: () => void;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
@@ -679,6 +684,11 @@ export function LogView({
   logLoading,
   logError,
   searching = false,
+  searchState,
+  searchScanned = 0,
+  searchError = null,
+  searchSessionKey,
+  onRestartSearch,
   commitMarkers,
   logScope,
   rowStriping,
@@ -709,6 +719,23 @@ export function LogView({
   const logViewRef = useRef<HTMLDivElement>(null);
   const graphScrollRef = useRef<HTMLDivElement>(null);
   const virtuosoRef = useRef<VirtuosoHandle>(null);
+  const normalHistoryStateRef = useRef<StateSnapshot | null>(null);
+  useEffect(() => {
+    normalHistoryStateRef.current = null;
+  }, [repoPath, logScope]);
+  const normalScrollerCleanup = useRef<(() => void) | null>(null);
+  const attachScroller = useCallback((scroller: HTMLElement | Window | null) => {
+    normalScrollerCleanup.current?.();
+    normalScrollerCleanup.current = null;
+    if (searching || !(scroller instanceof HTMLElement)) return;
+    const saveScroll = () => {
+      virtuosoRef.current?.getState(state => {
+        normalHistoryStateRef.current = { ...state, scrollTop: scroller.scrollTop };
+      });
+    };
+    scroller.addEventListener("scroll", saveScroll);
+    normalScrollerCleanup.current = () => scroller.removeEventListener("scroll", saveScroll);
+  }, [searching]);
   const prevRepoRef = useRef<string | null>(repoPath);
   const prevLogScopeRef = useRef<CommitLogScope>(logScope);
   const currentRepoRef = useRef(repoPath);
@@ -727,22 +754,23 @@ export function LogView({
   const pendingRevealIndexRef = useRef<number | null>(null);
   const commitHashes = useMemo(() => new Set(commits.map(c => c.hash)), [commits]);
   const commitByHash = useMemo(() => new Map(commits.map(commit => [commit.hash, commit])), [commits]);
-  const commitGraph = useMemo(() => showCommitGraph ? buildCommitGraph(commits) : null, [showCommitGraph, commits]);
+  const effectiveShowCommitGraph = showCommitGraph && !searching;
+  const commitGraph = useMemo(() => effectiveShowCommitGraph ? buildCommitGraph(commits) : null, [effectiveShowCommitGraph, commits]);
   const graphLaneCount = commitGraph?.laneCount ?? 0;
   const graphContentWidth = commitGraphWidth(graphLaneCount);
   const graphViewportWidth = commitGraphViewportWidth(graphLaneCount);
   const graphMaxScrollLeft = Math.max(0, graphContentWidth - graphViewportWidth);
   const graphOverflows = graphMaxScrollLeft > 0;
-  const graphFocusHash = showCommitGraph
+  const graphFocusHash = effectiveShowCommitGraph
     ? hoveredCommitHash ?? (selectedCommitHashes.size === 1 ? Array.from(selectedCommitHashes)[0] : null)
     : null;
   const highlightedGraphHashes = useMemo(
-    () => showCommitGraph ? getLoadedAncestorHashes(commits, graphFocusHash) : null,
-    [commits, graphFocusHash, showCommitGraph],
+    () => effectiveShowCommitGraph ? getLoadedAncestorHashes(commits, graphFocusHash) : null,
+    [commits, effectiveShowCommitGraph, graphFocusHash],
   );
   useEffect(() => {
     setGraphScrollLeft(0);
-  }, [logScope, repoPath, showCommitGraph]);
+  }, [effectiveShowCommitGraph, logScope, repoPath]);
   useEffect(() => {
     setGraphScrollLeft(current => Math.min(current, graphMaxScrollLeft));
   }, [graphMaxScrollLeft]);
@@ -1012,12 +1040,17 @@ export function LogView({
   const handleVisibleRange = useCallback((range: ListRange) => {
     if (!active) return;
     visibleRangeRef.current = range;
+    if (!searching) {
+      virtuosoRef.current?.getState(state => {
+        normalHistoryStateRef.current = state;
+      });
+    }
     verifyVisibleSignedCommits(range.startIndex, range.endIndex);
     for (let i = range.startIndex; i <= Math.min(range.endIndex + 5, commits.length - 1); i++) {
       const email = commits[i]?.authorEmail;
       if (email) scheduleRef.current(email);
     }
-  }, [active, commits, verifyVisibleSignedCommits]);
+  }, [active, commits, searching, verifyVisibleSignedCommits]);
 
   const handleItemsRendered = useCallback((items: ListItem<CommitHistoryItem>[]) => {
     if (items.length === 0) return;
@@ -1282,7 +1315,7 @@ export function LogView({
     ? commits.some(c => c.hash === commitMarkers.upstreamHead)
     : true;
   const showUpstreamNotice = Boolean(
-    commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
+    !searching && commitMarkers.upstreamRef && commitMarkers.upstreamHead && !upstreamInList,
   );
   const historyNotice = logScope === "allRefs"
     ? t("log.historyAllRefs")
@@ -1298,9 +1331,9 @@ export function LogView({
   const handleHoverCommit = useCallback((hash: string | null) => setHoveredCommitHash(hash), []);
   const handleLoadMore = useCallback(() => {
     if (loadingMore) return;
-    pendingRevealIndexRef.current = commits.length;
+    if (!searching) pendingRevealIndexRef.current = commits.length;
     loadMore();
-  }, [commits.length, loadMore, loadingMore]);
+  }, [loadMore, loadingMore, searching]);
   useEffect(() => {
     const revealIndex = pendingRevealIndexRef.current;
     if (revealIndex === null) return;
@@ -1314,10 +1347,11 @@ export function LogView({
     }
   }, [commits.length, hasMore, loadingMore, loadMoreError]);
   const Footer = useCallback(() => {
+    if (searching && searchState !== "paused") return null;
     if (!hasMore || commits.length === 0) return null;
     return (
       <div className="log-view__load-more">
-        {loadMoreError && (
+        {!searching && loadMoreError && (
           <div className="log-view__load-more-error">
             {t("log.loadMoreFailed", { message: loadMoreError })}
           </div>
@@ -1328,11 +1362,13 @@ export function LogView({
           onClick={handleLoadMore}
           disabled={loadingMore}
         >
-          {loadingMore ? t("log.loadingMore") : t("log.viewNextCommits", { count: pageSize })}
+          {loadingMore
+            ? (searching ? t("log.searchingMore") : t("log.loadingMore"))
+            : (searching ? t("log.loadMoreSearchResults") : t("log.viewNextCommits", { count: pageSize }))}
         </button>
       </div>
     );
-  }, [commits.length, handleLoadMore, hasMore, loadMoreError, loadingMore, pageSize, t]);
+  }, [commits.length, handleLoadMore, hasMore, loadMoreError, loadingMore, pageSize, searchState, searching, t]);
   const striped = (index: number): "Subtle" | "Strong" | undefined => {
     if (rowStriping === "Off" || index % 2 === 0) return undefined;
     return rowStriping;
@@ -1365,10 +1401,28 @@ export function LogView({
           {t("log.upstreamOutside", { ref: commitMarkers.upstreamRef })}
         </div>
       )}
+      {searching && (
+        <div className="log-view__search-status" role="status" aria-live="polite">
+          {searchState === "scanning" && t("log.searching", { count: searchScanned })}
+          {searchState === "paused" && t("log.searchPaused", { count: commits.length, scanned: searchScanned })}
+          {searchState === "complete" && t("log.searchComplete", { count: commits.length, scanned: searchScanned })}
+          {searchState === "error" && t("log.searchFailed", { message: searchError?.details || t("log.unknownSearchError") })}
+        </div>
+      )}
+      {searching && searchState === "error" && onRestartSearch && (
+        <div className="log-view__search-error">
+          <button type="button" className="log-view__load-more-btn" onClick={onRestartSearch}>
+            {t("log.restartSearch")}
+          </button>
+        </div>
+      )}
       <Virtuoso
+        key={searching ? `search-${searchSessionKey ?? "current"}` : "history"}
         ref={virtuosoRef}
+        scrollerRef={attachScroller}
         style={{ flex: 1 }}
         data={commits}
+        restoreStateFrom={searching ? undefined : normalHistoryStateRef.current ?? undefined}
         itemContent={(index, c) => {
           const resolved = repoPath ? verificationEntries[verificationKey(repoPath, c.hash)] : undefined;
           const stageStatus = resolved ? concreteSignatureStatus(resolved.stage as SignatureStatus) : null;
@@ -1389,7 +1443,7 @@ export function LogView({
               upstreamRef={commitMarkers.upstreamRef}
               avatarUrl={c.authorEmail ? avatars[c.authorEmail] : undefined}
               striped={striped(index)}
-              showCommitGraph={showCommitGraph}
+              showCommitGraph={effectiveShowCommitGraph}
               highlightedGraphHashes={highlightedGraphHashes}
               onSelectCommit={handleSelectCommit}
               onHoverCommit={handleHoverCommit}
@@ -1405,10 +1459,17 @@ export function LogView({
         itemsRendered={handleItemsRendered}
         components={{
           EmptyPlaceholder: () => {
+            if (searching && searchState === "error") {
+              return null;
+            }
             if (logError) {
               return <div className="log-view__empty">{t("log.loadFailed", { message: logError })}</div>;
             }
             if (searching) {
+              if (searchState === "scanning" || searchState === "paused") {
+                return null;
+              }
+              if (searchState !== "complete") return null;
               return <div className="log-view__empty">{t("log.noCommitsFound")}</div>;
             }
             if (logLoading) {

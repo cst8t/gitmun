@@ -63,7 +63,26 @@ impl GixGitHandler {
         String::from_utf8_lossy(value.as_ref()).to_string()
     }
 
-    fn collapse_unversioned_path(repo_path: &Path, path: &str, tracked_paths: &[String]) -> String {
+    fn tracked_paths_with_ancestors(paths: impl IntoIterator<Item = String>) -> HashSet<String> {
+        let mut tracked_paths = HashSet::new();
+
+        for path in paths {
+            let mut ancestor = path.as_str();
+            while let Some((parent, _)) = ancestor.rsplit_once('/') {
+                tracked_paths.insert(parent.to_string());
+                ancestor = parent;
+            }
+            tracked_paths.insert(path);
+        }
+
+        tracked_paths
+    }
+
+    fn collapse_unversioned_path(
+        repo_path: &Path,
+        path: &str,
+        tracked_paths: &HashSet<String>,
+    ) -> String {
         let parts: Vec<&str> = path.split('/').filter(|part| !part.is_empty()).collect();
         if parts.len() <= 1 {
             return if repo_path.join(path).is_dir() && !path.ends_with('/') {
@@ -75,13 +94,7 @@ impl GixGitHandler {
 
         for index in 0..parts.len() - 1 {
             let candidate = parts[..=index].join("/");
-            let has_tracked_descendant = tracked_paths.iter().any(|tracked_path| {
-                tracked_path == &candidate
-                    || tracked_path
-                        .strip_prefix(&candidate)
-                        .map(|rest| rest.starts_with('/'))
-                        .unwrap_or(false)
-            });
+            let has_tracked_descendant = tracked_paths.contains(&candidate);
             if repo_path.join(&candidate).is_dir() && !has_tracked_descendant {
                 return format!("{candidate}/");
             }
@@ -791,16 +804,17 @@ impl GixGitHandler {
         let mut dirty_submodule_paths: HashSet<String> = HashSet::new();
         let mut gix_conflicted_files = Vec::new();
         let repo_path = repo.workdir().unwrap_or(repo.path());
-        let tracked_paths: Vec<String> = repo
-            .index()
-            .map(|index| {
-                index
-                    .entries()
-                    .iter()
-                    .map(|entry| Self::bstr_to_string(entry.path(&index)))
-                    .collect()
-            })
-            .unwrap_or_default();
+        let tracked_paths = Self::tracked_paths_with_ancestors(
+            repo.index()
+                .map(|index| {
+                    index
+                        .entries()
+                        .iter()
+                        .map(|entry| Self::bstr_to_string(entry.path(&index)))
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default(),
+        );
 
         // The high-level status API selects Windows directory caching from
         // core.fscache. Leave that choice to gix and the user's configuration.
@@ -898,8 +912,12 @@ impl GixGitHandler {
             .collect();
         staged_files.sort_by(|left, right| left.path.cmp(&right.path));
 
-        let unstaged_stats = Self::collect_numstat(repo_path, false);
-        let staged_stats = Self::collect_numstat(repo_path, true);
+        let unstaged_stats = (!changed_files.is_empty())
+            .then(|| Self::collect_numstat(repo_path, false))
+            .unwrap_or_default();
+        let staged_stats = (!staged_files.is_empty())
+            .then(|| Self::collect_numstat(repo_path, true))
+            .unwrap_or_default();
 
         for file in &mut changed_files {
             if let Some((additions, deletions)) = unstaged_stats.get(&file.path) {
@@ -973,7 +991,9 @@ impl GixGitHandler {
             ),
             current_branch: Self::current_branch(repo),
             detached_head: matches!(repo.head_name(), Ok(None)),
-            shallow: CliGitHandler::repo_is_shallow(repo_path),
+            shallow: repo
+                .is_shallow()
+                .map_err(|error| Self::gix_error(None, error))?,
             merge_in_progress,
             merge_head_branch,
             conflicted_files,
@@ -1663,6 +1683,133 @@ mod tests {
         for (conflict, expected) in cases {
             assert_eq!(GixGitHandler::conflict_type(conflict), expected);
         }
+    }
+
+    #[test]
+    fn collapses_unversioned_paths_without_scanning_every_tracked_path() {
+        let repo = TempDir::new().expect("create temporary repository");
+        for directory in ["notes/drafts", "tracked/new", "tracker/new", "deps/lib/new"] {
+            fs::create_dir_all(repo.path().join(directory)).expect("create directory");
+        }
+
+        let tracked_paths = GixGitHandler::tracked_paths_with_ancestors([
+            "tracked/kept.txt".to_string(),
+            "deps/lib".to_string(),
+        ]);
+
+        assert_eq!(
+            GixGitHandler::collapse_unversioned_path(
+                repo.path(),
+                "notes/drafts/idea.txt",
+                &tracked_paths,
+            ),
+            "notes/"
+        );
+        assert_eq!(
+            GixGitHandler::collapse_unversioned_path(
+                repo.path(),
+                "tracked/new/idea.txt",
+                &tracked_paths,
+            ),
+            "tracked/new/"
+        );
+        assert_eq!(
+            GixGitHandler::collapse_unversioned_path(
+                repo.path(),
+                "tracker/new/idea.txt",
+                &tracked_paths,
+            ),
+            "tracker/"
+        );
+        assert_eq!(
+            GixGitHandler::collapse_unversioned_path(
+                repo.path(),
+                "deps/lib/new/idea.txt",
+                &tracked_paths,
+            ),
+            "deps/lib/new/"
+        );
+    }
+
+    #[test]
+    fn gix_collector_detects_shallow_and_full_repositories() {
+        let source = init_repo();
+        fs::write(source.path().join("history.txt"), "second commit\n")
+            .expect("write history file");
+        run_git(source.path(), &["add", "history.txt"]);
+        run_git(source.path(), &["commit", "-m", "add history"]);
+
+        let full_repo = gix::discover(source.path()).expect("discover full repository");
+        assert!(
+            !GixGitHandler::collect_repo_status_with_gix(&full_repo)
+                .expect("collect full status")
+                .shallow
+        );
+
+        let clone_root = TempDir::new().expect("create clone directory");
+        let shallow_path = clone_root.path().join("shallow");
+        let source_url = format!("file://{}", source.path().display());
+        let status = Command::new("git")
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .env(
+                "GIT_CONFIG_GLOBAL",
+                clone_root.path().join("isolated-global-config"),
+            )
+            .args(["clone", "--depth", "1", &source_url])
+            .arg(&shallow_path)
+            .status()
+            .expect("clone shallow repository");
+        assert!(status.success(), "shallow clone should succeed");
+
+        let shallow_repo = gix::discover(&shallow_path).expect("discover shallow repository");
+        assert!(
+            GixGitHandler::collect_repo_status_with_gix(&shallow_repo)
+                .expect("collect shallow status")
+                .shallow
+        );
+
+        let linked_path = clone_root.path().join("linked");
+        run_git(&shallow_path, &["worktree", "add", "-b", "linked", linked_path.to_str().expect("linked path")]);
+        let linked_repo = gix::discover(&linked_path).expect("discover linked shallow repository");
+        assert!(GixGitHandler::collect_repo_status_with_gix(&linked_repo).expect("collect linked shallow status").shallow);
+    }
+
+    #[test]
+    fn status_preserves_line_counts_for_staged_unstaged_binary_and_renamed_files() {
+        let directory = init_repo();
+        let path = directory.path();
+        for name in ["staged.txt", "unstaged.txt", "rename.txt"] {
+            fs::write(path.join(name), "first\nsecond\n").expect("write tracked text");
+        }
+        fs::write(path.join("measurements.bin"), [0, 1, 2]).expect("write tracked binary");
+        run_git(path, &["add", "."]);
+        run_git(path, &["commit", "-m", "add measurement records"]);
+        let repo = gix::discover(path).expect("discover repository");
+        let clean = GixGitHandler::collect_repo_status_with_gix(&repo).expect("clean status");
+        assert!(clean.staged_files.is_empty() && clean.changed_files.is_empty());
+        fs::write(path.join("staged.txt"), "first\nsecond\nthird\n").expect("edit staged text");
+        run_git(path, &["add", "staged.txt"]);
+        let staged_only = GixGitHandler::collect_repo_status_with_gix(&repo).expect("staged-only status");
+        assert!(staged_only.changed_files.is_empty());
+        assert_eq!((staged_only.staged_files[0].additions, staged_only.staged_files[0].deletions), (Some(1), Some(0)));
+        run_git(path, &["commit", "-m", "record staged measurement"]);
+        fs::write(path.join("unstaged.txt"), "first\n").expect("edit unstaged text");
+        let unstaged_only = GixGitHandler::collect_repo_status_with_gix(&repo).expect("unstaged-only status");
+        assert!(unstaged_only.staged_files.is_empty());
+        assert_eq!((unstaged_only.changed_files[0].additions, unstaged_only.changed_files[0].deletions), (Some(0), Some(1)));
+        fs::write(path.join("staged.txt"), "first\nsecond\nthird\nfourth\n").expect("edit mixed text");
+        run_git(path, &["add", "staged.txt"]);
+        run_git(path, &["mv", "rename.txt", "renamed.txt"]);
+        fs::write(path.join("measurements.bin"), [0, 1, 2, 3]).expect("edit binary");
+        let index_path = path.join(".git/index");
+        let index_before = fs::read(&index_path).expect("read index before status");
+        let mixed = GixGitHandler::collect_repo_status_with_gix(&repo).expect("mixed status");
+        let binary = mixed.changed_files.iter().find(|file| file.path == "measurements.bin").expect("binary status");
+        assert_eq!((binary.additions, binary.deletions), (Some(0), Some(0)));
+        assert!(mixed.staged_files.iter().any(|file| file.path == "renamed.txt"));
+        assert!(mixed.staged_files.iter().any(|file| file.path == "staged.txt" && file.additions == Some(1)));
+        assert_eq!(fs::read(&index_path).expect("read index after status"), index_before);
+        assert!(!path.join(".git/index.lock").exists());
     }
 
     #[test]

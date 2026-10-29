@@ -4,6 +4,8 @@ import type {
     CommitDetails,
     CommitFileItem,
     CommitHistoryItem,
+    CommitSearchEvent,
+    CommitSearchRequest,
     CommitLogScope,
     CommitMarkers,
     CommitPrimaryAction,
@@ -189,6 +191,18 @@ export function getCommitHistory(
 
 export function verifyCommits(repoPath: string, hashes: string[]): Promise<CommitVerification[]> {
     return invoke<CommitVerification[]>("verify_commits", {repoPath, hashes});
+}
+
+export function startCommitSearch(request: CommitSearchRequest, onEvent: Channel<CommitSearchEvent>): Promise<void> {
+    return invoke("start_commit_search", {request, onEvent});
+}
+
+export function continueCommitSearch(sessionId: string): Promise<void> {
+    return invoke("continue_commit_search", {sessionId});
+}
+
+export function cancelCommitSearch(sessionId: string): Promise<void> {
+    return invoke("cancel_commit_search", {sessionId});
 }
 
 export function getCommitMarkers(repoPath: string): Promise<CommitMarkers> {

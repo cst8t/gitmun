@@ -2745,7 +2745,7 @@ impl CliGitHandler {
         Ok(signatures)
     }
 
-    fn collect_commit_ref_decorations(
+    pub(crate) fn collect_commit_ref_decorations(
         repo_path: &Path,
     ) -> GitResult<HashMap<String, Vec<CommitRefDecoration>>> {
         let output = Self::run_git(

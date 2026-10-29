@@ -1,7 +1,9 @@
 use crate::AppState;
+use crate::git::commit_search::CommitSearchManager;
 use crate::git::types::{
     CherryPickRequest, CherryPickResult, CommitHistoryItem, CommitHistoryRequest,
-    CommitProgressEvent, CommitVerification, FileRequest, GitHookAttemptResult, MergeRequest,
+    CommitProgressEvent, CommitSearchEvent, CommitSearchFailure, CommitSearchRequest,
+    CommitVerification, FileRequest, GitHookAttemptResult, MergeRequest,
     MergeResult, OperationResult, RebaseRequest, RebaseResult, RepoRequest, ResetRequest,
     RevertCommitRequest, SignatureStatus,
 };
@@ -11,6 +13,40 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+
+#[tauri::command]
+pub fn start_commit_search(
+    request: CommitSearchRequest,
+    on_event: tauri::ipc::Channel<CommitSearchEvent>,
+    window: tauri::Window,
+    state: tauri::State<'_, AppState>,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) -> Result<(), CommitSearchFailure> {
+    searches.inner().start(
+        window.label().to_string(),
+        request,
+        state.git_service.get_settings().commit_date_mode,
+        move |event| on_event.send(event).is_ok(),
+    )
+}
+
+#[tauri::command]
+pub fn continue_commit_search(
+    session_id: String,
+    window: tauri::Window,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) -> Result<(), CommitSearchFailure> {
+    searches.continue_search(window.label(), &session_id)
+}
+
+#[tauri::command]
+pub fn cancel_commit_search(
+    session_id: String,
+    window: tauri::Window,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) {
+    searches.cancel(window.label(), &session_id);
+}
 
 #[tauri::command]
 pub async fn get_commit_history(

@@ -657,6 +657,29 @@ export type CommitHistoryItem = {
     keyType: string | null;
 };
 
+export type CommitSearchStatus = "scanning" | "paused" | "complete" | "error";
+
+export type CommitSearchError = {
+    code: string;
+    details?: string;
+};
+
+export type CommitSearchRequest = {
+    repoPath: string;
+    query: string;
+    scope: CommitLogScope;
+    topoOrder: boolean;
+    sessionId: string;
+};
+
+export type CommitSearchEvent = {
+    sessionId: string;
+    commits: CommitHistoryItem[];
+    scannedCount: number;
+    status: CommitSearchStatus;
+    error?: CommitSearchError | null;
+};
+
 export type CommitTrailer = {
     key: string;
     value: string;
