@@ -7,7 +7,7 @@
  * in-flight async result from a previous project can ever survive into the
  * new one.
  */
-import React, { useState, useCallback, useEffect, useRef, useDeferredValue, useMemo } from "react";
+import React, { useState, useCallback, useEffect, useRef, useMemo } from "react";
 import { ask, open, save } from "@tauri-apps/plugin-dialog";
 import { Channel } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
@@ -35,6 +35,7 @@ import { ChevLeftIcon, ChevRightIcon, CloseIcon, FolderIcon, GitIcon } from "./i
 import { useGitStatus } from "../hooks/useGitStatus";
 import { useGitBranches } from "../hooks/useGitBranches";
 import { useGitLog } from "../hooks/useGitLog";
+import { useCommitSearch } from "../hooks/useCommitSearch";
 import { useGitDiff } from "../hooks/useGitDiff";
 import { useCommitFiles } from "../hooks/useCommitFiles";
 import { useGitIdentity } from "../hooks/useGitIdentity";
@@ -58,7 +59,7 @@ import type {
   CreateBranchRequest,
   ExportPatchFileSelection,
   ExportPatchScope,
-  GitIdentity,
+  IdentityChanges,
   GitHookAttemptResult,
   GitHookFailure,
   GitHookOperation,
@@ -461,7 +462,7 @@ export function ProjectView({
   const [showCommitGraph, setShowCommitGraph] = useState(readShowCommitGraphPreference);
   const [showAiWriting, setShowAiWriting] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [searchSettingsKey, setSearchSettingsKey] = useState("AuthorDate:");
   const [windowFocused, setWindowFocused] = useState(() => (
     typeof document === "undefined" ? true : document.hasFocus()
   ));
@@ -520,16 +521,9 @@ export function ProjectView({
     pageSize: logPageSize,
     refresh: refreshLog,
   } = useGitLog(repoPath, logScope, windowFocused, showCommitGraph);
-  const searching = deferredSearchQuery.length > 0;
-  const visibleCommits = useMemo(() => {
-    if (!searching) return commits;
-    const q = deferredSearchQuery.toLowerCase();
-    return commits.filter(c =>
-      c.message.toLowerCase().includes(q)
-      || c.author.toLowerCase().includes(q)
-      || c.shortHash.toLowerCase().includes(q),
-    );
-  }, [commits, deferredSearchQuery, searching]);
+  const commitSearch = useCommitSearch(repoPath, searchQuery, logScope, showCommitGraph, searchSettingsKey);
+  const searching = commitSearch.active;
+  const visibleCommits = searching ? commitSearch.commits : commits;
   const stagedFiles = status?.stagedFiles ?? [];
   const unstagedFiles = status?.changedFiles ?? [];
   const unversionedFiles = status?.unversionedFiles ?? [];
@@ -669,14 +663,18 @@ export function ProjectView({
     }
   }, [selectedSubmodulePath, status]);
 
-  // Keep selectedCommitHash pointing to a real commit.
+  const selectionBeforeSearch = useRef<string | null>(null);
+  const wasSearching = useRef(false);
   useEffect(() => {
-    if (commits.length === 0) { setSelectedCommitHash(null); return; }
+    if (searching && !wasSearching.current) selectionBeforeSearch.current = selectedCommitHash;
+    const restoredSelection = !searching && wasSearching.current ? selectionBeforeSearch.current : null;
+    wasSearching.current = searching;
+    if (visibleCommits.length === 0) { setSelectedCommitHash(null); return; }
     setSelectedCommitHash(prev => {
-      if (!prev) return commits[0].hash;
-      return commits.some(c => c.hash === prev) ? prev : commits[0].hash;
+      const candidate = restoredSelection ?? prev;
+      return visibleCommits.some(commit => commit.hash === candidate) ? candidate : visibleCommits[0].hash;
     });
-  }, [commits]);
+  }, [visibleCommits, searching]);
 
   useEffect(() => {
     let cancelled = false;
@@ -704,6 +702,7 @@ export function ProjectView({
           setPushFollowTags(settings.pushFollowTags ?? false);
           setWrapDiffLines(settings.wrapDiffLines ?? false);
           setRowStriping(settings.rowStriping ?? "Off");
+          setSearchSettingsKey(`${settings.commitDateMode ?? "AuthorDate"}:${settings.gitExecutablePath ?? ""}`);
         }
       })
       .catch(() => {
@@ -736,8 +735,9 @@ export function ProjectView({
   }, [localIdentity?.email, globalIdentity?.email, identityScope, repoPath, settingsRevision]);
 
   const refreshAll = useCallback(async () => {
+    commitSearch.refresh();
     await Promise.all([refreshStatus(), refreshBranches(), refreshTags(), refreshRemotes(), refreshLog(), refreshStashes()]);
-  }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes]);
+  }, [refreshStatus, refreshBranches, refreshTags, refreshRemotes, refreshLog, refreshStashes, commitSearch.refresh]);
 
   const createHookProgressChannel = useCallback((operation: GitHookOperation) => {
     const progress = new Channel<GitHookProgressEvent>();
@@ -892,14 +892,20 @@ export function ProjectView({
     handleAutoFetch,
   );
 
-  const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
-    await saveLocalIdentity(payload);
-    await refreshAll();
+  const handleSaveLocalIdentity = useCallback(async (payload: IdentityChanges) => {
+    try {
+      await saveLocalIdentity(payload);
+    } finally {
+      await refreshAll();
+    }
   }, [saveLocalIdentity, refreshAll]);
 
-  const handleSaveGlobalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
-    await saveGlobalIdentity(payload);
-    await refreshAll();
+  const handleSaveGlobalIdentity = useCallback(async (payload: IdentityChanges) => {
+    try {
+      await saveGlobalIdentity(payload);
+    } finally {
+      await refreshAll();
+    }
   }, [saveGlobalIdentity, refreshAll]);
 
   const refreshAllRef = useRef(refreshAll);
@@ -1222,13 +1228,12 @@ export function ProjectView({
   const handleStashConfirm = useCallback(async (opts: {
     message: string | null;
     includeUntracked: boolean;
-    paths: string[] | null;
+    paths: string[];
   }) => {
     if (operationLockRef.current?.kind === "submodule") return;
     if (!repoPath) return;
-    setShowStashDialog(false);
     try {
-      const result = await api.stash(repoPath, opts.message, opts.includeUntracked, opts.paths ?? []);
+      const result = await api.stash(repoPath, opts.message, opts.includeUntracked, opts.paths);
       const output = result.output?.trim();
       const noChanges = output ? /no local changes to save/i.test(output) : false;
       if (noChanges) {
@@ -1238,8 +1243,18 @@ export function ProjectView({
         showToast(t("toast.changesStashed"), "success");
         appendResultLog("success", output || result.message, result.backendUsed);
       }
+      setShowStashDialog(false);
       await Promise.all([refreshStatus(), refreshStashes()]);
-    } catch (e) { showToast(String(e), "error"); appendResultLog("error", t("log.stashFailed", { message: String(e) }), "unknown"); }
+    } catch (e) {
+      appendResultLog("error", t("log.stashFailed", { message: String(e) }), "unknown");
+      if (String(e).includes("stash_saved_cleanup_failed")) {
+        setShowStashDialog(false);
+        showToast(t("stashPush.cleanupFailed", { ns: "sidebar" }), "error");
+        await Promise.all([refreshStatus(), refreshStashes()]);
+        return;
+      }
+      throw e;
+    }
   }, [repoPath, refreshStatus, refreshStashes, showToast, t]);
 
   const handleStashApply = useCallback(async (stashIndex: number) => {
@@ -2436,8 +2451,9 @@ export function ProjectView({
         />
       )}
 
-      {showStashDialog && (
+      {showStashDialog && repoPath && (
         <StashPushDialog
+          repoPath={repoPath}
           stagedFiles={stagedFiles}
           unstagedFiles={unstagedFiles}
           unversionedFiles={unversionedFiles}
@@ -2597,14 +2613,19 @@ export function ProjectView({
                   revertInProgress={revertInProgress}
                   revertHead={revertHead}
                   commits={visibleCommits}
-                  loadMore={searching ? () => {} : loadMore}
-                  hasMore={searching ? false : hasMore}
-                  loadingMore={searching ? false : logLoadingMore}
+                  loadMore={searching ? commitSearch.loadMore : loadMore}
+                  hasMore={searching ? commitSearch.status === "paused" : hasMore}
+                  loadingMore={searching ? commitSearch.status === "scanning" : logLoadingMore}
                   loadMoreError={searching ? null : logLoadMoreError}
-                  pageSize={logPageSize}
-                  logLoading={logLoading}
-                  logError={logError}
+                  pageSize={searching ? commitSearch.pageSize : logPageSize}
+                  logLoading={searching ? commitSearch.status === "scanning" : logLoading}
+                  logError={searching ? null : logError}
                   searching={searching}
+                  searchState={searching ? commitSearch.status : undefined}
+                  searchScanned={commitSearch.scannedCount}
+                  searchError={commitSearch.error}
+                  searchSessionKey={commitSearch.sessionKey}
+                  onRestartSearch={commitSearch.restart}
                   commitMarkers={commitMarkers}
                   logScope={logScope}
                   rowStriping={rowStriping}

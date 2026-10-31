@@ -946,6 +946,24 @@
   font-size: var(--font-size-xs);
 }
 
+.log-view__search-status,
+.log-view__search-error {
+  flex: 0 0 auto;
+  margin: 6px 10px 8px;
+  padding: 7px 10px;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.log-view__search-error {
+  display: flex;
+  justify-content: flex-start;
+  margin-top: -2px;
+}
+
 .log-view__scope {
   display: flex;
   gap: 8px;

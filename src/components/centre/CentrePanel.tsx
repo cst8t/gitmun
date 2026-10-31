@@ -69,6 +69,11 @@ type CentrePanelProps = {
   logLoading: boolean;
   logError: string | null;
   searching?: boolean;
+  searchState?: "scanning" | "paused" | "complete" | "error";
+  searchScanned?: number;
+  searchError?: { code: string; details?: string } | null;
+  searchSessionKey?: string;
+  onRestartSearch?: () => void;
   commitMarkers: CommitMarkers;
   logScope: CommitLogScope;
   rowStriping: RowStriping;
@@ -503,9 +508,14 @@ export function CentrePanel(props: CentrePanelProps) {
           loadingMore={props.loadingMore}
           loadMoreError={props.loadMoreError}
           pageSize={props.pageSize}
-          logLoading={props.logLoading}
-          logError={props.logError}
+          logLoading={props.searching ? props.searchState === "scanning" : props.logLoading}
+          logError={props.searching ? null : props.logError}
           searching={props.searching}
+          searchState={props.searchState}
+          searchScanned={props.searchScanned}
+          searchError={props.searchError}
+          searchSessionKey={props.searchSessionKey}
+          onRestartSearch={props.onRestartSearch}
           commitMarkers={props.commitMarkers}
           logScope={props.logScope}
           rowStriping={props.rowStriping}

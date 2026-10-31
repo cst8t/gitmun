@@ -1,7 +1,9 @@
 use crate::AppState;
+use crate::git::commit_search::CommitSearchManager;
 use crate::git::types::{
     CherryPickRequest, CherryPickResult, CommitHistoryItem, CommitHistoryRequest,
-    CommitProgressEvent, CommitVerification, FileRequest, GitHookAttemptResult, MergeRequest,
+    CommitProgressEvent, CommitSearchEvent, CommitSearchFailure, CommitSearchRequest,
+    CommitVerification, FileRequest, GitHookAttemptResult, MergeRequest,
     MergeResult, OperationResult, RebaseRequest, RebaseResult, RepoRequest, ResetRequest,
     RevertCommitRequest, SignatureStatus,
 };
@@ -11,6 +13,40 @@ use std::process::Command;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::Manager;
+
+#[tauri::command]
+pub fn start_commit_search(
+    request: CommitSearchRequest,
+    on_event: tauri::ipc::Channel<CommitSearchEvent>,
+    window: tauri::Window,
+    state: tauri::State<'_, AppState>,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) -> Result<(), CommitSearchFailure> {
+    searches.inner().start(
+        window.label().to_string(),
+        request,
+        state.git_service.get_settings().commit_date_mode,
+        move |event| on_event.send(event).is_ok(),
+    )
+}
+
+#[tauri::command]
+pub fn continue_commit_search(
+    session_id: String,
+    window: tauri::Window,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) -> Result<(), CommitSearchFailure> {
+    searches.continue_search(window.label(), &session_id)
+}
+
+#[tauri::command]
+pub fn cancel_commit_search(
+    session_id: String,
+    window: tauri::Window,
+    searches: tauri::State<'_, Arc<CommitSearchManager>>,
+) {
+    searches.cancel(window.label(), &session_id);
+}
 
 #[tauri::command]
 pub async fn get_commit_history(
@@ -384,42 +420,12 @@ fn effective_gpg_program(
     repo_path: &str,
     runner: &impl VerificationRunner,
 ) -> Result<String, String> {
-    if let Ok(Some(program)) = runner.git_config_get_global(repo_path, "gpg.program") {
-        if let Some(validated) = validate_gpg_program_path(&program) {
-            return Ok(validated);
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        if let Some(path) = crate::resolve_known_gpg_program_path() {
-            return Ok(path.to_string_lossy().into_owned());
-        }
-    }
-
-    Ok("gpg".to_string())
+    let configured = runner.git_config_get_global(repo_path, "gpg.program").ok().flatten();
+    Ok(super::gpg_program::select_gpg_program(configured.as_deref()))
 }
 
-/// Accepts command names and existing absolute files, but not relative paths.
-fn validate_gpg_program_path(program: &str) -> Option<String> {
-    let trimmed = program.trim().trim_matches('"');
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let path = Path::new(trimmed);
-
-    let is_path_like = path.is_absolute() || trimmed.contains('/') || trimmed.contains('\\');
-
-    if is_path_like {
-        if path.is_absolute() && path.is_file() {
-            return Some(trimmed.to_string());
-        }
-        return None;
-    }
-
-    Some(trimmed.to_string())
-}
+#[cfg(test)]
+use super::gpg_program::validate_gpg_program_path;
 
 fn signature_key_type(commit_text: &str) -> Option<String> {
     if commit_text.contains("-----BEGIN SSH SIGNATURE-----") {

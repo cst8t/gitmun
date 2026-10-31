@@ -1230,7 +1230,9 @@ fn linux_terminal_options() -> Vec<LinuxTerminalOption> {
 
     options.push(LinuxTerminalOption {
         id: LINUX_TERMINAL_CUSTOM_ID.to_string(),
-        label: registry.label_for_preference(&linux_terminal_launch::TerminalPreference::Custom),
+        label: registry.label_for_preference(&linux_terminal_launch::TerminalPreference::custom(
+            String::new(),
+        )),
     });
 
     options

@@ -2,6 +2,7 @@
 import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { StateSnapshot } from "react-virtuoso";
 import type { CommitHistoryItem, CommitMarkers, Settings } from "../../types";
 import "../../i18n";
 import { LogView } from "./LogView";
@@ -30,6 +31,7 @@ const virtuosoEndReached = vi.hoisted(() => ({
   current: null as (() => void) | null,
 }));
 const virtuosoScrollToIndex = vi.hoisted(() => vi.fn());
+const virtuosoRestoreState = vi.hoisted(() => ({ current: undefined as StateSnapshot | undefined }));
 const virtuosoCallbacksEnabled = vi.hoisted(() => ({
   current: true,
 }));
@@ -98,15 +100,17 @@ function deferred<T>() {
 }
 
 vi.mock("react-virtuoso", () => ({
-  Virtuoso: React.forwardRef(({ data, itemContent, components: Components, rangeChanged, itemsRendered, endReached }: {
+  Virtuoso: React.forwardRef(({ data, itemContent, components: Components, rangeChanged, itemsRendered, endReached, restoreStateFrom }: {
     data: CommitHistoryItem[];
     itemContent: (index: number, item: CommitHistoryItem) => React.ReactNode;
     components?: { EmptyPlaceholder?: React.ComponentType; Footer?: React.ComponentType };
     rangeChanged?: (range: { startIndex: number; endIndex: number }) => void;
     itemsRendered?: (items: Array<{ index: number }>) => void;
     endReached?: () => void;
+    restoreStateFrom?: StateSnapshot;
   }, ref: React.Ref<{ scrollToIndex: (location: { index: number; align?: string } | number) => void }>) => {
-    const [visibleRange, setVisibleRange] = React.useState({ startIndex: 0, endIndex: Math.min(data.length - 1, 19) });
+    virtuosoRestoreState.current = restoreStateFrom;
+    const [visibleRange, setVisibleRange] = React.useState({ startIndex: Math.floor((restoreStateFrom?.scrollTop ?? 0) / 40), endIndex: Math.min(data.length - 1, Math.floor((restoreStateFrom?.scrollTop ?? 0) / 40) + 19) });
     const visibleStart = Math.min(visibleRange.startIndex, Math.max(data.length - 1, 0));
     const visibleEnd = Math.min(visibleRange.endIndex, Math.max(data.length - 1, 0));
     const visibleItems = React.useMemo(
@@ -119,6 +123,7 @@ vi.mock("react-virtuoso", () => ({
     virtuosoEndReached.current = endReached ?? null;
     React.useImperativeHandle(ref, () => ({
       scrollToIndex: virtuosoScrollToIndex,
+      getState: (callback: (state: { ranges: []; scrollTop: number }) => void) => callback({ ranges: [], scrollTop: visibleStart * 40 }),
     }));
     React.useEffect(() => {
       setVisibleRange(current => ({
@@ -310,7 +315,7 @@ function renderLog(overrides: Partial<React.ComponentProps<typeof LogView>> = {}
     upstreamRef: null,
   };
 
-  return render(
+  const view = (props: Partial<React.ComponentProps<typeof LogView>>) => (
     <LogView
       active
       repoPath={null}
@@ -330,9 +335,11 @@ function renderLog(overrides: Partial<React.ComponentProps<typeof LogView>> = {}
       shallow={false}
       selectedCommitHash={commits[0]?.hash ?? null}
       onSelectCommit={vi.fn()}
-      {...overrides}
-    />,
+      {...props}
+    />
   );
+  const rendered = render(view(overrides));
+  return { ...rendered, rerenderLog: (props: Partial<React.ComponentProps<typeof LogView>>) => rendered.rerender(view(props)) };
 }
 
 describe("LogView commit selection", () => {
@@ -367,6 +374,20 @@ describe("LogView commit selection", () => {
       configurable: true,
       value: { writeText },
     });
+  });
+
+
+  it("restores normal history scroll after searching and resets each search list", () => {
+    const commits = Array.from({ length: 80 }, (_, index) => commit(index + 1));
+    const { rerenderLog } = renderLog({ commits });
+    act(() => { virtuosoSetVisibleRange.current?.({ startIndex: 40, endIndex: 59 }); });
+    rerenderLog({ commits: [commit(100)], searching: true, searchState: "complete", searchSessionKey: "first" });
+    expect(virtuosoRestoreState.current).toBeUndefined();
+    expect(screen.getByText("Subject 100")).toBeInTheDocument();
+    rerenderLog({ commits: [commit(101)], searching: true, searchState: "complete", searchSessionKey: "second" });
+    expect(virtuosoRestoreState.current).toBeUndefined();
+    rerenderLog({ commits });
+    expect(virtuosoRestoreState.current?.scrollTop).toBe(1600);
   });
 
   it("selects one commit on plain click", () => {
@@ -830,24 +851,62 @@ describe("LogView commit selection", () => {
   });
 
   it("shows no commits found when a search matches nothing", () => {
-    renderLog({ commits: [], searching: true });
+    renderLog({ commits: [], searching: true, searchState: "complete" });
 
-    expect(screen.getByText("No commits found")).toBeInTheDocument();
+    expect(screen.getByText("No matching commits")).toBeInTheDocument();
     expect(screen.queryByText("No commits yet")).not.toBeInTheDocument();
   });
 
   it("shows no commits found for an empty all-refs search", () => {
-    renderLog({ commits: [], searching: true, logScope: "allRefs" });
+    renderLog({ commits: [], searching: true, searchState: "complete", logScope: "allRefs" });
 
-    expect(screen.getByText("No commits found")).toBeInTheDocument();
+    expect(screen.getByText("No matching commits")).toBeInTheDocument();
     expect(screen.queryByText("No commits were returned for any refs.")).not.toBeInTheDocument();
   });
 
-  it("keeps no commits found when a search refresh sets loading", () => {
-    renderLog({ commits: [], searching: true, logLoading: true });
+  it("shows search progress until an empty search completes", () => {
+    renderLog({ commits: [], searching: true, searchState: "scanning", searchScanned: 50 });
 
-    expect(screen.getByText("No commits found")).toBeInTheDocument();
-    expect(screen.queryByText("Loading commit history...")).not.toBeInTheDocument();
+    expect(screen.getByText("Searching commits: 50 scanned.")).toBeInTheDocument();
+    expect(screen.queryByText("No matching commits")).not.toBeInTheDocument();
+  });
+
+  it("loads another search result page only after the search pauses", () => {
+    const loadMore = vi.fn();
+    renderLog({
+      commits: [commit(1)],
+      searching: true,
+      searchState: "paused",
+      searchScanned: 180,
+      hasMore: true,
+      loadMore,
+    });
+
+    expect(screen.getByText("1 matches found after scanning 180 commits.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load more results" }));
+    expect(loadMore).toHaveBeenCalledOnce();
+  });
+
+  it("keeps partial results visible when searching fails and can restart", () => {
+    const onRestartSearch = vi.fn();
+    renderLog({
+      commits: [commit(1)],
+      searching: true,
+      searchState: "error",
+      searchError: { code: "SEARCH_FAILED", details: "git log failed" },
+      onRestartSearch,
+    });
+
+    expect(screen.getByText("Subject 1")).toBeInTheDocument();
+    expect(screen.getByText("Could not search commits: git log failed")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Restart search" }));
+    expect(onRestartSearch).toHaveBeenCalledOnce();
+  });
+
+  it("hides graph rows while showing search results", () => {
+    const { container } = renderLog({ searching: true, searchState: "paused", showCommitGraph: true });
+
+    expect(container.querySelector(".log-view__graph")).toBeNull();
   });
 
   it("hides the load more footer while the first page is loading", () => {

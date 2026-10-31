@@ -657,6 +657,29 @@ export type CommitHistoryItem = {
     keyType: string | null;
 };
 
+export type CommitSearchStatus = "scanning" | "paused" | "complete" | "error";
+
+export type CommitSearchError = {
+    code: string;
+    details?: string;
+};
+
+export type CommitSearchRequest = {
+    repoPath: string;
+    query: string;
+    scope: CommitLogScope;
+    topoOrder: boolean;
+    sessionId: string;
+};
+
+export type CommitSearchEvent = {
+    sessionId: string;
+    commits: CommitHistoryItem[];
+    scannedCount: number;
+    status: CommitSearchStatus;
+    error?: CommitSearchError | null;
+};
+
 export type CommitTrailer = {
     key: string;
     value: string;
@@ -804,7 +827,29 @@ export type GitIdentity = {
     signingKey: string | null;
     signingFormat: string | null;
     sshKeyPath: string | null;
-    commitSigningEnabled: boolean;
+    commitSigningEnabled: boolean | null;
+};
+
+export type IdentityField = keyof GitIdentity;
+
+export type IdentityChanges = Omit<SetIdentityRequest, "repoPath" | "scope">;
+
+export type IdentitySigningContextRequest = {
+    repoPath: string;
+    scope: IdentityScope;
+    signingFormat?: string | null;
+    clearSigningFormat?: boolean;
+};
+
+export type IdentitySigningContext = {
+    format: string;
+};
+
+export type GpgSigningKey = {
+    fingerprint: string;
+    userIds: string[];
+    expiresAt: number | null;
+    hardwareBacked: boolean;
 };
 
 export type SshAllowedSignerStatus = {
@@ -828,6 +873,7 @@ export type SetIdentityRequest = {
     signingFormat?: string | null;
     sshKeyPath?: string | null;
     commitSigningEnabled?: boolean;
+    clearFields?: IdentityField[];
 };
 
 export type TagInfo = {

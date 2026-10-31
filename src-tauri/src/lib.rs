@@ -1460,6 +1460,8 @@ pub fn run() {
             ai_extension: ai::AiExtensionState::new(),
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
+        .manage(Arc::new(git::commit_search::CommitSearchManager::default()))
+        .manage(Arc::new(commands::signing_keys::GpgKeyListingManager::default()))
         .manage(LocalCopyOperation(Mutex::new(None)))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
@@ -1527,6 +1529,12 @@ pub fn run() {
                 }
             }
             if let tauri::WindowEvent::Destroyed = event {
+                window
+                    .state::<Arc<git::commit_search::CommitSearchManager>>()
+                    .cancel_window(window.label());
+                window
+                    .state::<Arc<commands::signing_keys::GpgKeyListingManager>>()
+                    .cancel_window(window.label());
                 instance_coordinator::unregister_sub_window(window.label().as_ref());
             }
         });
@@ -1641,6 +1649,9 @@ pub fn run() {
             commands::settings::set_linux_terminal_custom_command,
             commands::settings::set_repo_open_behaviour,
             commands::history::get_commit_history,
+            commands::history::start_commit_search,
+            commands::history::continue_commit_search,
+            commands::history::cancel_commit_search,
             commands::history::verify_commits,
             commands::history::merge_branch,
             commands::history::merge_abort,
@@ -1703,11 +1714,16 @@ pub fn run() {
             commands::repo::submodule_pull,
             commands::repo::fetch_remote,
             commands::repo::stash,
+            commands::repo::list_stash_untracked_paths,
             commands::repo::stash_list,
             commands::repo::stash_apply,
             commands::repo::stash_pop,
             commands::repo::stash_drop,
             commands::repo::get_identity,
+            commands::identity_keys::get_identity_signing_context,
+            commands::identity_keys::import_ssh_public_key,
+            commands::signing_keys::list_gpg_signing_keys,
+            commands::signing_keys::cancel_gpg_signing_keys,
             commands::repo::set_identity,
             commands::repo::get_ssh_allowed_signer_status,
             commands::repo::add_ssh_signing_key_to_allowed_signers,
