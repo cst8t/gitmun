@@ -2274,6 +2274,7 @@ export function SettingsWindow() {
                                         <div className="settings-window__model-search-row">
                                             <input
                                                 id="settings-ai-model-search"
+                                                type="search"
                                                 className="settings-window__input"
                                                 value={aiModelSearch}
                                                 onChange={event => setAiModelSearch(event.target.value)}

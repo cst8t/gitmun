@@ -41,12 +41,12 @@ describe("GpgKeyDialog", () => {
     renderDialog(keys[0].fingerprint.toLowerCase());
     await screen.findByText(keys[0].userIds[0]);
     expect(screen.getAllByRole("radio")[0]).toBeChecked();
-    fireEvent.change(screen.getByRole("textbox"), {target: {value: "secondary"}});
+    fireEvent.change(screen.getByRole("searchbox", {name: "Search keys"}), {target: {value: "secondary"}});
     expect(screen.getAllByRole("radio")).toHaveLength(1);
-    fireEvent.change(screen.getByRole("textbox"), {target: {value: "BBBB BBBB"}});
+    fireEvent.change(screen.getByRole("searchbox", {name: "Search keys"}), {target: {value: "BBBB BBBB"}});
     expect(screen.getByText(keys[1].userIds[0])).toBeInTheDocument();
     expect(screen.getByRole("button", {name: "Use key"})).toBeDisabled();
-    fireEvent.change(screen.getByRole("textbox"), {target: {value: "unknown key"}});
+    fireEvent.change(screen.getByRole("searchbox", {name: "Search keys"}), {target: {value: "unknown key"}});
     expect(screen.getByRole("status")).toHaveTextContent("No matching keys");
   });
 
@@ -79,7 +79,7 @@ describe("GpgKeyDialog", () => {
     vi.mocked(listGpgSigningKeys).mockResolvedValue([]);
     const {onCancel} = renderDialog();
     expect(await screen.findByRole("status")).toHaveTextContent("No usable signing keys found");
-    fireEvent.keyDown(screen.getByRole("textbox"), {key: "Escape"});
+    fireEvent.keyDown(screen.getByRole("searchbox", {name: "Search keys"}), {key: "Escape"});
     expect(onCancel).toHaveBeenCalled();
   });
 
@@ -89,11 +89,11 @@ describe("GpgKeyDialog", () => {
     trigger.focus();
     const {unmount} = renderDialog(keys[0].fingerprint);
     await screen.findByText(keys[0].userIds[0]);
-    expect(screen.getByRole("textbox")).toHaveFocus();
-    fireEvent.keyDown(screen.getByRole("textbox"), {key: "Tab", shiftKey: true});
+    expect(screen.getByRole("searchbox", {name: "Search keys"})).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("searchbox", {name: "Search keys"}), {key: "Tab", shiftKey: true});
     expect(screen.getByRole("button", {name: "Use key"})).toHaveFocus();
     fireEvent.keyDown(screen.getByRole("button", {name: "Use key"}), {key: "Tab"});
-    expect(screen.getByRole("textbox")).toHaveFocus();
+    expect(screen.getByRole("searchbox", {name: "Search keys"})).toHaveFocus();
     unmount();
     expect(trigger).toHaveFocus();
     trigger.remove();

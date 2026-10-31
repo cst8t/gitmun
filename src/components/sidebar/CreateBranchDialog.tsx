@@ -233,7 +233,7 @@ export function CreateBranchDialog({
             {/* Filter */}
             <div className="create-branch-dialog__filter-container">
               <input
-                type="text"
+                type="search"
                 className="create-branch-dialog__filter"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}

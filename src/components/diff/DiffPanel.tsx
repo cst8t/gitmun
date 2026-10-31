@@ -345,7 +345,7 @@ export function DiffPanel({
                   <SearchIcon size={14} />
                   <input
                     className="diff-panel__commit-file-search-input"
-                    type="text"
+                    type="search"
                     value={commitFileQuery}
                     placeholder={t("searchCommitFiles")}
                     aria-label={t("searchCommitFiles")}

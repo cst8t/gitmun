@@ -81,7 +81,7 @@ export function GpgKeyDialog({repoPath, currentKey, returnFocus, onCancel, onUse
         <h2 className="dialog__title" id="gpg-key-dialog-title">{t("keyChooser.title")}</h2>
         <label className="dialog__field">
           <span className="dialog__label">{t("keyChooser.search")}</span>
-          <input ref={searchRef} className="dialog__input" value={query} onChange={event => setQuery(event.target.value)} placeholder={t("keyChooser.searchPlaceholder")} />
+          <input ref={searchRef} type="search" className="dialog__input" value={query} onChange={event => setQuery(event.target.value)} placeholder={t("keyChooser.searchPlaceholder")} />
         </label>
         <div className="gpg-key-dialog__keys" aria-busy={loading}>
           {loading ? <p role="status">{t("keyChooser.loading")}</p>

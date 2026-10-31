@@ -258,6 +258,7 @@ export function Titlebar({
         <SearchIcon size={18} className="titlebar__toolbar-icon" />
         <input
           ref={searchInputRef}
+          type="search"
           className="titlebar__search-input"
           placeholder={t("labels.searchCommits")}
           value={searchQuery}

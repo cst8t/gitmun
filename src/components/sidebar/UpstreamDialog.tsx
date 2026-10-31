@@ -139,7 +139,7 @@ export function UpstreamDialog({
             <div className="upstream-dialog__branches">
               <div className="dialog__label">{t("upstream.knownBranches", { remote })}</div>
               <input
-                type="text"
+                type="search"
                 className="upstream-dialog__branch-filter"
                 value={knownBranchFilter}
                 onChange={event => setKnownBranchFilter(event.target.value)}
