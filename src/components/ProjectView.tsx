@@ -59,7 +59,7 @@ import type {
   CreateBranchRequest,
   ExportPatchFileSelection,
   ExportPatchScope,
-  GitIdentity,
+  IdentityChanges,
   GitHookAttemptResult,
   GitHookFailure,
   GitHookOperation,
@@ -892,14 +892,20 @@ export function ProjectView({
     handleAutoFetch,
   );
 
-  const handleSaveLocalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
-    await saveLocalIdentity(payload);
-    await refreshAll();
+  const handleSaveLocalIdentity = useCallback(async (payload: IdentityChanges) => {
+    try {
+      await saveLocalIdentity(payload);
+    } finally {
+      await refreshAll();
+    }
   }, [saveLocalIdentity, refreshAll]);
 
-  const handleSaveGlobalIdentity = useCallback(async (payload: Partial<GitIdentity>) => {
-    await saveGlobalIdentity(payload);
-    await refreshAll();
+  const handleSaveGlobalIdentity = useCallback(async (payload: IdentityChanges) => {
+    try {
+      await saveGlobalIdentity(payload);
+    } finally {
+      await refreshAll();
+    }
   }, [saveGlobalIdentity, refreshAll]);
 
   const refreshAllRef = useRef(refreshAll);

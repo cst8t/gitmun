@@ -10,7 +10,7 @@
   position: fixed;
   top: 68px;
   right: 24px;
-  width: 380px;
+  width: min(380px, calc(100vw - 48px));
   background: var(--bg-surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-2xl);
@@ -216,6 +216,11 @@
   color: var(--green);
 }
 
+.identity-detail__signing-badge--inherited {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+}
+
 .identity-detail__signing-info {
   background: var(--bg-elevated);
   border-radius: 6px;
@@ -330,10 +335,48 @@
   cursor: not-allowed;
 }
 
-.identity-detail__signing-form {
+select.identity-detail__input {
+  color-scheme: dark;
+}
+
+select.identity-detail__input option {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+:root[data-theme="light"] select.identity-detail__input {
+  color-scheme: light;
+}
+
+.identity-detail__input-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.identity-detail__input-row .identity-detail__input {
+  flex: 1;
+  min-width: 0;
+  flex-basis: 160px;
+}
+
+.identity-detail__browse-btn {
+  font-family: var(--font-ui);
+  font-size: var(--font-size-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-elevated);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.identity-detail__browse-btn:hover:not(:disabled) {
+  background: var(--bg-hover);
 }
 
 .identity-detail__form-group {
@@ -342,24 +385,49 @@
   gap: 4px;
 }
 
-.identity-detail__toggle-row {
+.identity-detail__field-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: wrap;
 }
 
-.identity-detail__toggle-input {
-  width: 14px;
-  height: 14px;
+.identity-detail__field-heading .identity-detail__label {
+  margin-bottom: 0;
 }
 
-.identity-detail__form-label {
-  font-size: var(--font-size-xxs);
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  color: var(--text-muted);
-  font-weight: var(--font-weight-semibold);
+.identity-detail__inherit-btn {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--font-size-xs);
+  cursor: pointer;
+}
+
+.identity-detail__reset-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.identity-detail__save-error {
+  color: var(--red);
+  font-size: var(--font-size-xs);
+  line-height: 1.4;
+}
+
+.identity-panel button:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.identity-panel button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .identity-detail__form-actions {

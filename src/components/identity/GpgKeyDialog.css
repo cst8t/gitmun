@@ -1,0 +1,53 @@
+.gpg-key-dialog {
+  width: 520px;
+  max-height: calc(100vh - 48px);
+  gap: 12px;
+}
+
+.gpg-key-dialog__keys {
+  min-height: 120px;
+  max-height: min(320px, 45vh);
+  overflow-y: auto;
+  color: var(--text-secondary);
+  font-size: var(--font-size-sm);
+}
+
+.gpg-key-dialog__key {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.gpg-key-dialog__key--selected {
+  border-color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.gpg-key-dialog__details {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text-primary);
+}
+
+.gpg-key-dialog__fingerprint {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-xs);
+}
+
+.gpg-key-dialog__metadata {
+  color: var(--text-secondary);
+  font-size: var(--font-size-xs);
+}
+
+.gpg-key-dialog :focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}

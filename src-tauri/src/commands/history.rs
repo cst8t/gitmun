@@ -420,42 +420,12 @@ fn effective_gpg_program(
     repo_path: &str,
     runner: &impl VerificationRunner,
 ) -> Result<String, String> {
-    if let Ok(Some(program)) = runner.git_config_get_global(repo_path, "gpg.program") {
-        if let Some(validated) = validate_gpg_program_path(&program) {
-            return Ok(validated);
-        }
-    }
-
-    #[cfg(windows)]
-    {
-        if let Some(path) = crate::resolve_known_gpg_program_path() {
-            return Ok(path.to_string_lossy().into_owned());
-        }
-    }
-
-    Ok("gpg".to_string())
+    let configured = runner.git_config_get_global(repo_path, "gpg.program").ok().flatten();
+    Ok(super::gpg_program::select_gpg_program(configured.as_deref()))
 }
 
-/// Accepts command names and existing absolute files, but not relative paths.
-fn validate_gpg_program_path(program: &str) -> Option<String> {
-    let trimmed = program.trim().trim_matches('"');
-    if trimmed.is_empty() {
-        return None;
-    }
-
-    let path = Path::new(trimmed);
-
-    let is_path_like = path.is_absolute() || trimmed.contains('/') || trimmed.contains('\\');
-
-    if is_path_like {
-        if path.is_absolute() && path.is_file() {
-            return Some(trimmed.to_string());
-        }
-        return None;
-    }
-
-    Some(trimmed.to_string())
-}
+#[cfg(test)]
+use super::gpg_program::validate_gpg_program_path;
 
 fn signature_key_type(commit_text: &str) -> Option<String> {
     if commit_text.contains("-----BEGIN SSH SIGNATURE-----") {

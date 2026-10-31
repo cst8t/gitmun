@@ -1282,7 +1282,7 @@ pub struct GitIdentity {
     pub signing_key: Option<String>,
     pub signing_format: Option<String>,
     pub ssh_key_path: Option<String>,
-    pub commit_signing_enabled: bool,
+    pub commit_signing_enabled: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -1319,6 +1319,17 @@ pub enum IdentityScope {
     Global,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum IdentityField {
+    Name,
+    Email,
+    SigningKey,
+    SigningFormat,
+    SshKeyPath,
+    CommitSigningEnabled,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SetIdentityRequest {
@@ -1330,6 +1341,8 @@ pub struct SetIdentityRequest {
     pub signing_format: Option<String>,
     pub ssh_key_path: Option<String>,
     pub commit_signing_enabled: Option<bool>,
+    #[serde(default)]
+    pub clear_fields: Vec<IdentityField>,
 }
 
 // Tags

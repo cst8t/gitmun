@@ -2,10 +2,10 @@
   "labels": {
     "allowedSignersFile": "gpg.ssh.allowedSignersFile",
     "commitSigning": "Commit Signing",
-    "disabled": "disabled",
+    "disabled": "Disabled",
     "edit": "Edit",
     "editing": "Editing",
-    "enabled": "enabled",
+    "enabled": "Enabled",
     "file": "File",
     "format": "Format",
     "gitIdentity": "Git Identity",
@@ -14,22 +14,24 @@
     "override": "override",
     "profiles": "Profiles",
     "repository": "Repository",
-    "signingConfiguration": "Signing Configuration",
     "signingKey": "user.signingkey",
     "key": "Key",
     "keyId": "Key ID",
     "userEmail": "user.email",
-    "userName": "user.name"
-  },
-  "placeholders": {
-    "allowedSignersFile": "Path to allowed signers file",
-    "format": "gpg or ssh",
-    "signingKey": "GPG key ID or SSH key"
+    "userName": "user.name",
+    "noRepositoryOverride": "No repository override",
+    "notConfigured": "Not configured"
   },
   "actions": {
     "cancel": "Cancel",
     "save": "Save",
-    "saving": "Saving..."
+    "saving": "Saving...",
+    "clearRepositoryOverrides": "Clear Repository Overrides",
+    "useInheritedSetting": "Use inherited setting",
+    "inheritField": "Use inherited setting for {{field}}",
+    "browseAllowedSigners": "Browse for allowed signers file",
+    "importPublicKey": "Import public key…",
+    "chooseKey": "Choose key…"
   },
   "allowedSigners": {
     "add": "Add to allowed signers",
@@ -56,5 +58,55 @@
   "profiles": {
     "description": "Switch between saved identity profiles for different contexts.",
     "comingSoon": "Identity profiles coming soon"
+  },
+  "notes": {
+    "repositoryReset": "Clears identity settings in the shared repository config on Save. Global, included and worktree configuration files are unchanged.",
+    "detectingFormat": "Detecting signing format…",
+    "formatUnavailable": "Could not detect the signing format. You can still enter the key manually.",
+    "inheritedFormat": "Inherited format: {{format}}",
+    "sshAgent": "Matching private key must be available in your SSH agent."
+  },
+  "errors": {
+    "saveFailed": "Could not save all identity changes. The current configuration has been reloaded where available. Review your changes and try again.",
+    "filePickerFailed": "Could not open the allowed signers file picker. Try again or enter the path manually."
+  },
+  "picker": {
+    "allowedSignersFile": "Select allowed signers file",
+    "sshPublicKey": "Select SSH public key",
+    "publicKeyFiles": "Public key files",
+    "allFiles": "All files"
+  },
+  "formats": {
+    "openpgp": "OpenPGP (GPG)",
+    "ssh": "SSH",
+    "x509": "X.509",
+    "current": "Current value: {{format}}"
+  },
+  "keyImport": {
+    "failed": "Could not import the public key. Try again or enter it manually.",
+    "errors": {
+      "PRIVATE": "This file contains a private key. Select a public key file instead.",
+      "INVALID": "This file does not contain a valid OpenSSH public key.",
+      "MULTIPLE": "Select a file containing exactly one public key.",
+      "TOO_LARGE": "Public key files must be no larger than 64 KiB.",
+      "READ_FAILED": "Could not read the public key file."
+    }
+  },
+  "keyChooser": {
+    "title": "Choose GPG signing key",
+    "search": "Search keys",
+    "searchPlaceholder": "Name, email or fingerprint",
+    "loading": "Loading signing keys…",
+    "empty": "No usable signing keys found. You can still enter a key manually.",
+    "noMatches": "No matching keys.",
+    "unavailable": "GPG is unavailable. Check the configured GPG executable or enter a key manually.",
+    "timeout": "GPG took too long to list signing keys. Try again or enter a key manually.",
+    "failed": "Could not list GPG signing keys. Try again or enter a key manually.",
+    "retry": "Retry",
+    "useKey": "Use key",
+    "unnamed": "Unnamed key",
+    "expiry": "Primary key expiry: {{date}}",
+    "never": "Never",
+    "hardwareKey": "Hardware key available"
   }
 }

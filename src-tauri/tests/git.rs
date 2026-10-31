@@ -12,7 +12,7 @@ use gitmun_lib::git::types::{
     BranchRequest, CommitAttemptResult, CommitDetailsRequest, CommitHistoryRequest, CommitLogScope,
     CommitProgressEvent, CommitRefKind, CommitRequest, CreateBranchRequest, DeleteBranchRequest,
     ExportCommitPatchRequest, ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope,
-    FileRequest, FileEntryKind, GitHookAttemptResult, IdentityRequest, IdentityScope, ImportPatchRequest,
+    FileRequest, FileEntryKind, GitHookAttemptResult, IdentityField, IdentityRequest, IdentityScope, ImportPatchRequest,
     MergeRequest, PullStrategy, PullStrategyRequest, PushFailureKind, PushRequest, RebaseRequest,
     RepoRequest, RepoStatus, ResetMode, ResetRequest, SetBranchUpstreamRequest, SetIdentityRequest,
     SshAllowedSignerReason, StageFilesRequest, StashPushRequest, SubmoduleActionRequest, SubmoduleApplyRequest,
@@ -57,6 +57,17 @@ fn git_stdout(repo: &Path, args: &[&str]) -> String {
         .current_dir(repo)
         .output()
         .expect("git command output");
+    assert!(output.status.success(), "git {:?} failed", args);
+    String::from_utf8(output.stdout).unwrap().trim().to_string()
+}
+
+fn git_stdout_with_env(repo: &Path, args: &[&str], envs: &[(&str, &str)]) -> String {
+    let mut command = Command::new("git");
+    command.args(args).current_dir(repo);
+    for (key, value) in envs {
+        command.env(key, value);
+    }
+    let output = command.output().expect("git command output with env");
     assert!(output.status.success(), "git {:?} failed", args);
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
@@ -147,8 +158,181 @@ fn set_local_identity(dir: &TempDir, email: Option<&str>, signing_key: Option<&s
             signing_format: Some(format.to_string()),
             ssh_key_path: None,
             commit_signing_enabled: Some(true),
+            clear_fields: Vec::new(),
         })
         .expect("set identity");
+}
+
+fn update_identity(request: SetIdentityRequest) {
+    handler().set_identity(&request).expect("update identity");
+}
+
+fn empty_identity_update(dir: &TempDir, clear_fields: Vec<IdentityField>) -> SetIdentityRequest {
+    SetIdentityRequest {
+        repo_path: dir.path().to_str().unwrap().to_string(),
+        scope: IdentityScope::Local,
+        name: None,
+        email: None,
+        signing_key: None,
+        signing_format: None,
+        ssh_key_path: None,
+        commit_signing_enabled: None,
+        clear_fields,
+    }
+}
+
+#[test]
+fn clearing_identity_overrides_removes_duplicates_and_is_idempotent() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "user.signingkey", "FIRST"]);
+    git(dir.path(), &["config", "--add", "user.signingkey", "SECOND"]);
+    git(dir.path(), &["config", "gpg.format", "ssh"]);
+    git(dir.path(), &["config", "--add", "commit.gpgsign", "true"]);
+    let allowed_signers = dir.path().join(".git/allowed-signers");
+    fs::write(&allowed_signers, "test@gitmun.test ssh-ed25519 AAAA\n").expect("write allowed signers");
+    let allowed_signers_before = fs::read(&allowed_signers).expect("read allowed signers");
+    git(dir.path(), &["config", "gpg.ssh.allowedSignersFile", allowed_signers.to_str().unwrap()]);
+    let all_fields = vec![
+        IdentityField::Name,
+        IdentityField::Email,
+        IdentityField::SigningKey,
+        IdentityField::SigningFormat,
+        IdentityField::SshKeyPath,
+        IdentityField::CommitSigningEnabled,
+    ];
+    update_identity(empty_identity_update(&dir, all_fields.clone()));
+    update_identity(empty_identity_update(&dir, all_fields));
+
+    let identity = handler().get_identity(&identity_request(&dir)).expect("read identity");
+    assert!(identity.name.is_none());
+    assert!(identity.email.is_none());
+    assert!(identity.signing_key.is_none());
+    assert!(identity.signing_format.is_none());
+    assert!(identity.ssh_key_path.is_none());
+    assert_eq!(identity.commit_signing_enabled, None);
+    assert_eq!(fs::read(&allowed_signers).expect("read retained allowed signers"), allowed_signers_before);
+    assert_eq!(git_stdout(dir.path(), &["config", "--local", "--get", "core.autocrlf"]), "false");
+}
+
+#[test]
+fn clearing_identity_field_takes_precedence_over_supplied_values() {
+    let dir = init_repo();
+    let mut request = empty_identity_update(&dir, vec![IdentityField::Name, IdentityField::CommitSigningEnabled]);
+    request.name = Some("Replacement".to_string());
+    request.commit_signing_enabled = Some(true);
+    update_identity(request);
+
+    let identity = handler().get_identity(&identity_request(&dir)).expect("read identity");
+    assert!(identity.name.is_none());
+    assert_eq!(identity.commit_signing_enabled, None);
+}
+
+#[test]
+fn signing_key_changes_do_not_change_commit_signing_override() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--unset-all", "commit.gpgsign"]);
+    let mut request = empty_identity_update(&dir, Vec::new());
+    request.signing_key = Some("ABC123".to_string());
+    update_identity(request);
+
+    assert_eq!(
+        handler().get_identity(&identity_request(&dir)).expect("read identity").commit_signing_enabled,
+        None
+    );
+}
+
+#[test]
+fn cli_and_gix_identity_reads_preserve_signing_override_state() {
+    let dir = init_repo();
+    for (value, expected) in [("true", Some(true)), ("false", Some(false)), ("", Some(false)), ("yes", Some(true)), ("0", Some(false))] {
+        git(dir.path(), &["config", "commit.gpgsign", value]);
+        assert_eq!(handler().get_identity(&identity_request(&dir)).expect("read CLI identity").commit_signing_enabled, expected);
+        assert_eq!(gix_handler().get_identity(&identity_request(&dir)).expect("read gix identity").commit_signing_enabled, expected);
+    }
+    git(dir.path(), &["config", "--unset-all", "commit.gpgsign"]);
+    assert_eq!(handler().get_identity(&identity_request(&dir)).expect("read identity").commit_signing_enabled, None);
+    assert_eq!(gix_handler().get_identity(&identity_request(&dir)).expect("read gix identity").commit_signing_enabled, None);
+}
+
+#[test]
+fn blank_identity_value_removes_all_entries_without_changing_signing() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--add", "user.email", "second@gitmun.test"]);
+    let mut request = empty_identity_update(&dir, Vec::new());
+    request.email = Some("  ".to_string());
+    update_identity(request);
+    let identity = handler().get_identity(&identity_request(&dir)).expect("read identity");
+    assert!(identity.email.is_none());
+    assert_eq!(identity.commit_signing_enabled, Some(false));
+}
+
+#[test]
+fn identity_read_preserves_an_empty_local_override() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "user.name", ""]);
+
+    assert_eq!(
+        handler().get_identity(&identity_request(&dir)).expect("read identity").name.as_deref(),
+        Some("")
+    );
+}
+
+#[test]
+fn clearing_local_signing_override_restores_global_signing_without_mutating_global_files() {
+    let dir = init_repo();
+    let global_dir = TempDir::new().expect("create global config directory");
+    let global_config = global_dir.path().join("gitconfig");
+    fs::write(&global_config, "[commit]\n\tgpgsign = true\n").expect("write global config");
+    let global_before = fs::read(&global_config).expect("read global config");
+    let allowed_signers = global_dir.path().join("allowed-signers");
+    fs::write(&allowed_signers, "test@example.test ssh-ed25519 AAAA\n").expect("write allowed signers");
+    let allowed_signers_before = fs::read(&allowed_signers).expect("read allowed signers");
+    let global_path = global_config.to_str().expect("global config path");
+    let environment = [("GIT_CONFIG_GLOBAL", global_path), ("GIT_CONFIG_NOSYSTEM", "1")];
+
+    git(dir.path(), &["config", "gpg.ssh.allowedSignersFile", allowed_signers.to_str().unwrap()]);
+    assert_eq!(
+        git_stdout_with_env(dir.path(), &["config", "--bool", "--get", "commit.gpgsign"], &environment),
+        "false"
+    );
+
+    update_identity(empty_identity_update(&dir, vec![IdentityField::CommitSigningEnabled]));
+
+    assert_eq!(
+        git_stdout_with_env(dir.path(), &["config", "--bool", "--get", "commit.gpgsign"], &environment),
+        "true"
+    );
+    assert_eq!(fs::read(&global_config).expect("read global config after clear"), global_before);
+    assert_eq!(fs::read(&allowed_signers).expect("read allowed signers after clear"), allowed_signers_before);
+}
+
+#[test]
+fn identity_update_reports_failure_and_exposes_any_completed_earlier_write() {
+    let dir = init_repo();
+    git(dir.path(), &["config", "--add", "user.email", "second@gitmun.test"]);
+    let mut request = empty_identity_update(&dir, Vec::new());
+    request.name = Some("Updated Name".to_string());
+    request.email = Some("updated@gitmun.test".to_string());
+
+    let error = handler().set_identity(&request).expect_err("duplicate email should fail");
+    assert!(error.to_string().contains("GITMUN_ERROR_IDENTITY_SAVE_FAILED"));
+    let identity = handler().get_identity(&identity_request(&dir)).expect("read partial identity");
+    assert_eq!(identity.name.as_deref(), Some("Updated Name"));
+    assert_eq!(identity.email.as_deref(), Some("second@gitmun.test"));
+}
+
+#[test]
+fn local_identity_read_excludes_included_and_worktree_configuration() {
+    let dir = init_repo();
+    let included_config = dir.path().join("included.config");
+    fs::write(&included_config, "[user]\n\tname = Included Name\n").expect("write included config");
+    git(dir.path(), &["config", "--unset-all", "user.name"]);
+    git(dir.path(), &["config", "include.path", included_config.to_str().unwrap()]);
+    assert!(handler().get_identity(&identity_request(&dir)).expect("read direct local config").name.is_none());
+
+    git(dir.path(), &["config", "extensions.worktreeConfig", "true"]);
+    git(dir.path(), &["config", "--worktree", "user.name", "Worktree Name"]);
+    assert!(handler().get_identity(&identity_request(&dir)).expect("read shared local config").name.is_none());
 }
 
 fn handler() -> CliGitHandler {
@@ -3552,6 +3736,20 @@ fn ssh_allowed_signer_accepts_raw_public_key() {
         fs::read_to_string(allowed).expect("read allowed signers"),
         "test@gitmun.test ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIRawKey\n"
     );
+}
+
+#[test]
+fn ssh_allowed_signer_accepts_ecdsa_and_security_key_algorithms() {
+    for algorithm in ["ecdsa-sha2-nistp256", "sk-ecdsa-sha2-nistp256@openssh.com", "sk-ssh-ed25519@openssh.com"] {
+        let dir = init_repo();
+        let key = format!("key::{algorithm} AAAATestPublicKey test@gitmun.test");
+        set_local_identity(&dir, Some("test@gitmun.test"), Some(&key), "ssh");
+        handler().add_ssh_signing_key_to_allowed_signers(&identity_request(&dir)).expect("add allowed signer");
+        let path = git_stdout(dir.path(), &["config", "--local", "--get", "gpg.ssh.allowedSignersFile"]);
+        let contents = fs::read_to_string(path).expect("read allowed signers");
+        assert_eq!(contents, format!("test@gitmun.test {algorithm} AAAATestPublicKey test@gitmun.test\n"));
+        assert!(handler().get_ssh_allowed_signer_status(&identity_request(&dir)).expect("read signer status").signing_key_trusted);
+    }
 }
 
 #[test]

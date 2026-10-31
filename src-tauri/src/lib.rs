@@ -1461,6 +1461,7 @@ pub fn run() {
         })
         .manage(CloneCancelFlag(Arc::new(AtomicBool::new(false))))
         .manage(Arc::new(git::commit_search::CommitSearchManager::default()))
+        .manage(Arc::new(commands::signing_keys::GpgKeyListingManager::default()))
         .manage(LocalCopyOperation(Mutex::new(None)))
         .manage(FsWatcherState(Mutex::new(None)))
         .manage(StartupState(Mutex::new(startup_action)))
@@ -1530,6 +1531,9 @@ pub fn run() {
             if let tauri::WindowEvent::Destroyed = event {
                 window
                     .state::<Arc<git::commit_search::CommitSearchManager>>()
+                    .cancel_window(window.label());
+                window
+                    .state::<Arc<commands::signing_keys::GpgKeyListingManager>>()
                     .cancel_window(window.label());
                 instance_coordinator::unregister_sub_window(window.label().as_ref());
             }
@@ -1716,6 +1720,10 @@ pub fn run() {
             commands::repo::stash_pop,
             commands::repo::stash_drop,
             commands::repo::get_identity,
+            commands::identity_keys::get_identity_signing_context,
+            commands::identity_keys::import_ssh_public_key,
+            commands::signing_keys::list_gpg_signing_keys,
+            commands::signing_keys::cancel_gpg_signing_keys,
             commands::repo::set_identity,
             commands::repo::get_ssh_allowed_signer_status,
             commands::repo::add_ssh_signing_key_to_allowed_signers,

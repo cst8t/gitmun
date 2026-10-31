@@ -21,7 +21,7 @@ use super::types::{
     DiffHunk, DiffLine, DiffLineKind, DiffRequest, ExportCommitPatchRequest,
     ExportPatchFileSelection, ExportPatchRequest, ExportPatchScope, ExternalDiffRequest,
     FetchRequest, FileDiff, FileEntryKind, FileRequest, FileStatusItem, GitHookAttemptResult, GitHookFailure,
-    GitIdentity, HunkStageRequest, IdentityRequest, IdentityScope, ImportPatchRequest,
+    GitIdentity, HunkStageRequest, IdentityField, IdentityRequest, IdentityScope, ImportPatchRequest,
     LineEndingStyle, MergeRequest, MergeResult, NumstatRequest, NumstatResult, OperationResult,
     PruneRemoteRequest, PullAnalysis, PullRecommendedAction, PullState, PullStrategy,
     PullStrategyRequest, PushFailureKind, PushRejectionAnalysis, PushRequest, PushResult,
@@ -176,6 +176,26 @@ impl CliGitHandler {
         Ok((!trimmed.is_empty()).then(|| trimmed.to_string()))
     }
 
+    fn scoped_identity_config_get(
+        repo_path: &Path,
+        scope: &IdentityScope,
+        key: &str,
+    ) -> GitResult<Option<String>> {
+        let result = Self::run_git(
+            &["config", Self::identity_scope_flag(scope), "--no-includes", "--get", key],
+            Some(repo_path),
+        );
+
+        match result {
+            Ok(value) => Ok(Some(value)),
+            Err(GitError::CommandFailed {
+                exit_code: Some(1),
+                ..
+            }) => Ok(None),
+            Err(error) => Err(error),
+        }
+    }
+
     fn expand_user_path(path: &str) -> PathBuf {
         if path == "~" || path.starts_with("~/") || path.starts_with("~\\") {
             if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))
@@ -242,7 +262,8 @@ impl CliGitHandler {
         let mut parts = key.split_whitespace();
         let key_type = parts.next()?;
         let key_body = parts.next()?;
-        if !(key_type.starts_with("ssh-") || key_type.starts_with("sk-ssh-")) {
+        if !(key_type.starts_with("ssh-") || key_type.starts_with("sk-ssh-")
+            || key_type.starts_with("ecdsa-") || key_type.starts_with("sk-ecdsa-")) {
             return None;
         }
         Some((key_type, key_body))
@@ -5902,30 +5923,22 @@ impl GitOperationHandler for CliGitHandler {
 
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity> {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
-        let scope_flag = match request.scope {
-            IdentityScope::Local => "--local",
-            IdentityScope::Global => "--global",
-        };
-
-        let name = Self::run_git(&["config", scope_flag, "user.name"], Some(&repo_path)).ok();
-        let email = Self::run_git(&["config", scope_flag, "user.email"], Some(&repo_path)).ok();
-        let signing_key =
-            Self::run_git(&["config", scope_flag, "user.signingkey"], Some(&repo_path)).ok();
-        let signing_format =
-            Self::run_git(&["config", scope_flag, "gpg.format"], Some(&repo_path)).ok();
-        let ssh_key_path = Self::run_git(
-            &["config", scope_flag, "gpg.ssh.allowedSignersFile"],
+        let name = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.name")?;
+        let email = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.email")?;
+        let signing_key = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.signingkey")?;
+        let signing_format = Self::scoped_identity_config_get(&repo_path, &request.scope, "gpg.format")?;
+        let ssh_key_path = Self::scoped_identity_config_get(
+            &repo_path,
+            &request.scope,
+            "gpg.ssh.allowedSignersFile",
+        )?;
+        let signing_value = Self::run_git_allow_exit_codes(
+            &["config", Self::identity_scope_flag(&request.scope), "--no-includes", "--bool", "--get", "commit.gpgsign"],
             Some(&repo_path),
-        )
-        .ok();
-        let commit_signing_enabled =
-            Self::run_git(&["config", scope_flag, "commit.gpgsign"], Some(&repo_path))
-                .ok()
-                .map(|value| {
-                    let normalised = value.trim().to_ascii_lowercase();
-                    matches!(normalised.as_str(), "true" | "yes" | "on" | "1")
-                })
-                .unwrap_or(false);
+            &[1],
+        )?;
+        let commit_signing_enabled = (!signing_value.trim().is_empty())
+            .then(|| signing_value.trim() == "true");
 
         Ok(GitIdentity {
             name,
@@ -5941,15 +5954,23 @@ impl GitOperationHandler for CliGitHandler {
         let repo_path = Self::normalise_repo_path(&request.repo_path)?;
         let scope_flag = Self::identity_scope_flag(&request.scope);
 
-        let set_or_unset = |key: &str, value: &Option<String>| -> GitResult<()> {
+        let should_clear = |field: IdentityField| request.clear_fields.contains(&field);
+        let set_or_unset = |field: IdentityField, key: &str, value: &Option<String>| -> GitResult<()> {
+            if should_clear(field) {
+                Self::run_git_allow_exit_codes(
+                    &["config", scope_flag, "--unset-all", key],
+                    Some(&repo_path),
+                    &[5],
+                )?;
+                return Ok(());
+            }
             let Some(raw) = value.as_ref() else {
                 return Ok(());
             };
 
             if raw.trim().is_empty() {
-                // git config --unset exits with code 5 when key is not set
-                let _ = Self::run_git_allow_exit_codes(
-                    &["config", scope_flag, "--unset", key],
+                Self::run_git_allow_exit_codes(
+                    &["config", scope_flag, "--unset-all", key],
                     Some(&repo_path),
                     &[5],
                 )?;
@@ -5960,44 +5981,46 @@ impl GitOperationHandler for CliGitHandler {
             Ok(())
         };
 
-        set_or_unset("user.name", &request.name)?;
-        set_or_unset("user.email", &request.email)?;
-        set_or_unset("user.signingkey", &request.signing_key)?;
-        set_or_unset("gpg.format", &request.signing_format)?;
-        set_or_unset("gpg.ssh.allowedSignersFile", &request.ssh_key_path)?;
-        if let Some(commit_signing_enabled) = request.commit_signing_enabled {
-            let commit_gpgsign = if commit_signing_enabled {
-                "true"
-            } else {
-                "false"
-            };
-            Self::run_git(
-                &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
-                Some(&repo_path),
-            )?;
-            #[cfg(windows)]
-            if commit_signing_enabled && !matches!(request.signing_format.as_deref(), Some("ssh")) {
-                crate::ensure_windows_gpg_program_configured(Some(&repo_path))
-                    .map_err(GitError::InvalidInput)?;
+        let update_result = (|| -> GitResult<()> {
+            set_or_unset(IdentityField::Name, "user.name", &request.name)?;
+            set_or_unset(IdentityField::Email, "user.email", &request.email)?;
+            set_or_unset(IdentityField::SigningKey, "user.signingkey", &request.signing_key)?;
+            set_or_unset(IdentityField::SigningFormat, "gpg.format", &request.signing_format)?;
+            set_or_unset(IdentityField::SshKeyPath, "gpg.ssh.allowedSignersFile", &request.ssh_key_path)?;
+            if should_clear(IdentityField::CommitSigningEnabled) {
+                Self::run_git_allow_exit_codes(
+                    &["config", scope_flag, "--unset-all", "commit.gpgsign"],
+                    Some(&repo_path),
+                    &[5],
+                )?;
+            } else if let Some(commit_signing_enabled) = request.commit_signing_enabled {
+                let commit_gpgsign = if commit_signing_enabled {
+                    "true"
+                } else {
+                    "false"
+                };
+                Self::run_git(
+                    &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
+                    Some(&repo_path),
+                )?;
+                #[cfg(windows)]
+                if commit_signing_enabled {
+                    let signing_format = Self::run_git_allow_exit_codes(
+                        &["config", "--get", "gpg.format"],
+                        Some(&repo_path),
+                        &[1],
+                    )?;
+                    if !signing_format.trim().eq_ignore_ascii_case("ssh") {
+                        crate::ensure_windows_gpg_program_configured(Some(&repo_path))
+                            .map_err(GitError::InvalidInput)?;
+                    }
+                }
             }
-        } else if let Some(signing_key) = request.signing_key.as_ref() {
-            let commit_gpgsign = if signing_key.trim().is_empty() {
-                "false"
-            } else {
-                "true"
-            };
-            Self::run_git(
-                &["config", scope_flag, "commit.gpgsign", commit_gpgsign],
-                Some(&repo_path),
-            )?;
-            #[cfg(windows)]
-            if !signing_key.trim().is_empty()
-                && !matches!(request.signing_format.as_deref(), Some("ssh"))
-            {
-                crate::ensure_windows_gpg_program_configured(Some(&repo_path))
-                    .map_err(GitError::InvalidInput)?;
-            }
-        }
+            Ok(())
+        })();
+        update_result.map_err(|error| {
+            GitError::InvalidInput(format!("GITMUN_ERROR_IDENTITY_SAVE_FAILED: {error}"))
+        })?;
 
         Ok(OperationResult {
             message: "Git identity updated".to_string(),

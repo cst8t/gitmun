@@ -34,6 +34,9 @@ import type {
     FileDiff,
     FileRequest,
     GitIdentity,
+    IdentitySigningContext,
+    IdentitySigningContextRequest,
+    GpgSigningKey,
     SshAllowedSignerStatus,
     HunkStageRequest,
     IdentityRequest,
@@ -476,6 +479,22 @@ export function getIdentity(repoPath: string, scope: "Local" | "Global"): Promis
 
 export function setIdentity(request: SetIdentityRequest): Promise<OperationResult> {
     return invoke<OperationResult>("set_identity", {request});
+}
+
+export function getIdentitySigningContext(request: IdentitySigningContextRequest): Promise<IdentitySigningContext> {
+    return invoke<IdentitySigningContext>("get_identity_signing_context", {request});
+}
+
+export function importSshPublicKey(path: string): Promise<string> {
+    return invoke<string>("import_ssh_public_key", {path});
+}
+
+export function listGpgSigningKeys(repoPath: string, requestId: string): Promise<GpgSigningKey[]> {
+    return invoke<GpgSigningKey[]>("list_gpg_signing_keys", {request: {repoPath, requestId}});
+}
+
+export function cancelGpgSigningKeys(requestId: string): Promise<void> {
+    return invoke<void>("cancel_gpg_signing_keys", {requestId});
 }
 
 export function getSshAllowedSignerStatus(repoPath: string, scope: "Local" | "Global"): Promise<SshAllowedSignerStatus> {

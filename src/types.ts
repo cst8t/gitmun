@@ -827,7 +827,29 @@ export type GitIdentity = {
     signingKey: string | null;
     signingFormat: string | null;
     sshKeyPath: string | null;
-    commitSigningEnabled: boolean;
+    commitSigningEnabled: boolean | null;
+};
+
+export type IdentityField = keyof GitIdentity;
+
+export type IdentityChanges = Omit<SetIdentityRequest, "repoPath" | "scope">;
+
+export type IdentitySigningContextRequest = {
+    repoPath: string;
+    scope: IdentityScope;
+    signingFormat?: string | null;
+    clearSigningFormat?: boolean;
+};
+
+export type IdentitySigningContext = {
+    format: string;
+};
+
+export type GpgSigningKey = {
+    fingerprint: string;
+    userIds: string[];
+    expiresAt: number | null;
+    hardwareBacked: boolean;
 };
 
 export type SshAllowedSignerStatus = {
@@ -851,6 +873,7 @@ export type SetIdentityRequest = {
     signingFormat?: string | null;
     sshKeyPath?: string | null;
     commitSigningEnabled?: boolean;
+    clearFields?: IdentityField[];
 };
 
 export type TagInfo = {

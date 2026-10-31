@@ -1,6 +1,9 @@
 pub mod branches;
 pub mod history;
+pub(crate) mod gpg_program;
+pub mod identity_keys;
 pub mod recent_repositories;
 pub mod repo;
 pub mod settings;
+pub mod signing_keys;
 pub mod store_update;

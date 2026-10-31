@@ -560,52 +560,6 @@ impl GixGitHandler {
         })
     }
 
-    fn collect_identity_with_gix(
-        repo: &gix::Repository,
-        scope: &super::types::IdentityScope,
-    ) -> GitResult<GitIdentity> {
-        let config = repo.config_snapshot();
-
-        let filter: Box<dyn Fn(&gix::config::file::Metadata) -> bool> = match scope {
-            super::types::IdentityScope::Local => Box::new(|meta: &gix::config::file::Metadata| {
-                matches!(
-                    meta.source,
-                    gix::config::Source::Local | gix::config::Source::Worktree
-                )
-            }),
-            super::types::IdentityScope::Global => {
-                Box::new(|meta: &gix::config::file::Metadata| {
-                    matches!(
-                        meta.source,
-                        gix::config::Source::Git | gix::config::Source::User
-                    )
-                })
-            }
-        };
-
-        let get = |key: &str| -> Option<String> {
-            config
-                .plumbing()
-                .string_filter(key, &filter)
-                .map(|v| v.to_string())
-                .filter(|s| !s.is_empty())
-        };
-
-        Ok(GitIdentity {
-            name: get("user.name"),
-            email: get("user.email"),
-            signing_key: get("user.signingkey"),
-            signing_format: get("gpg.format"),
-            ssh_key_path: get("gpg.ssh.allowedSignersFile"),
-            commit_signing_enabled: get("commit.gpgsign")
-                .map(|value| {
-                    let normalised = value.trim().to_ascii_lowercase();
-                    matches!(normalised.as_str(), "true" | "yes" | "on" | "1")
-                })
-                .unwrap_or(false),
-        })
-    }
-
     fn collect_commit_history_with_gix(
         repo: &gix::Repository,
         limit: usize,
@@ -1426,12 +1380,7 @@ impl GitOperationHandler for GixGitHandler {
     }
 
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity> {
-        let repo_path = Path::new(request.repo_path.trim());
-        let repo = gix::discover(repo_path).map_err(|e| Self::gix_error(None, e));
-        match repo.and_then(|r| Self::collect_identity_with_gix(&r, &request.scope)) {
-            Ok(identity) => Ok(identity),
-            Err(_) => self.cli_fallback.get_identity(request),
-        }
+        self.cli_fallback.get_identity(request)
     }
 
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult> {
@@ -1608,6 +1557,7 @@ impl GitOperationHandler for GixGitHandler {
 #[cfg(test)]
 mod tests {
     use super::GixGitHandler;
+    use crate::git::handler::GitOperationHandler;
     use crate::git::types::SubmoduleState;
     use gix::status::plumbing::index_as_worktree::Conflict;
     use std::fs;
@@ -1913,7 +1863,7 @@ mod tests {
 
     #[test]
     fn owned_configuration_preserves_identity_tracking_and_remote_urls() {
-        use crate::git::types::IdentityScope;
+        use crate::git::types::{IdentityRequest, IdentityScope};
         let dir = init_repo();
         let path = dir.path();
         run_git(
@@ -1949,12 +1899,20 @@ mod tests {
         run_git(path, &["config", "diff.tool", "gitmun-test-tool"]);
         run_git(path, &["tag", "release"]);
         let repo = isolated_repo(path);
-        let identity =
-            GixGitHandler::collect_identity_with_gix(&repo, &IdentityScope::Local).unwrap();
+        let identity = GixGitHandler::new()
+            .get_identity(&IdentityRequest {
+                repo_path: path.to_string_lossy().to_string(),
+                scope: IdentityScope::Local,
+            })
+            .unwrap();
         assert_eq!(identity.name.as_deref(), Some("Gitmun Test"));
         assert_eq!(identity.email.as_deref(), Some("test@gitmun.test"));
-        let global =
-            GixGitHandler::collect_identity_with_gix(&repo, &IdentityScope::Global).unwrap();
+        let global = GixGitHandler::new()
+            .get_identity(&IdentityRequest {
+                repo_path: path.to_string_lossy().to_string(),
+                scope: IdentityScope::Global,
+            })
+            .unwrap();
         assert!(global.name.is_none());
         assert_eq!(
             GixGitHandler::collect_diff_tool_with_gix(&repo).as_deref(),

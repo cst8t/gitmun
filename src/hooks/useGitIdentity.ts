@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { getIdentity, setIdentity as setIdentityApi } from "../api/commands";
-import type { GitIdentity, IdentityScope, SetIdentityRequest } from "../types";
+import type { GitIdentity, IdentityChanges, IdentityScope } from "../types";
 
 export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
   const [identity, setIdentity] = useState<GitIdentity | null>(null);
@@ -54,7 +54,7 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
     return () => { cancelled = true; };
   }, [repoPath, scope]);
 
-  const saveIdentity = async (payload: Omit<SetIdentityRequest, "scope" | "repoPath">) => {
+  const saveIdentity = async (payload: IdentityChanges) => {
     if (!repoPath) return;
     setSaving(true);
     setError(null);
@@ -63,6 +63,7 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
       const updated = await getIdentity(repoPath, scope);
       setIdentity(updated);
     } catch (e) {
+      await refreshIdentity();
       setError(String(e));
       throw e;
     } finally {
