@@ -346,10 +346,7 @@ mod tests {
         fs::write(&included, "[gpg]\n\tformat = ssh\n").unwrap();
         fs::write(
             &global,
-            format!(
-                "[gpg]\n\tformat = openpgp\n[include]\n\tpath = {}\n",
-                included.display()
-            ),
+            "[gpg]\n\tformat = openpgp\n[include]\n\tpath = included\n",
         )
         .unwrap();
         let local = repo.join(".git/config");
