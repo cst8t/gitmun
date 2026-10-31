@@ -133,9 +133,81 @@ describe("useCommitSearch", () => {
     emit("paused", [], 1000);
     await debounce();
     expect(startCommitSearch).toHaveBeenCalledTimes(2);
-    expect(result.current.commits).toEqual([]);
+    expect(result.current.commits.map(item => item.hash)).toEqual(["partial"]);
     emit("complete", [commit("fresh")]);
     expect(result.current.commits.map(item => item.hash)).toEqual(["fresh"]);
+  });
+
+  test("keeps completed results and the list identity throughout background refreshes", async () => {
+    const { result } = renderHook(() => useCommitSearch("/survey", "notes", "currentCheckout", false, "AuthorDate"));
+    await debounce();
+    emit("complete", [commit("first"), commit("selected")], 397);
+    const sessionKey = result.current.sessionKey;
+    const originalCommits = result.current.commits;
+
+    act(() => { result.current.refresh(); });
+    expect(result.current.sessionKey).toBe(sessionKey);
+    expect(result.current.commits).toBe(originalCommits);
+    expect(result.current.status).toBe("complete");
+    await debounce();
+    emit("scanning", [commit("new")], 200);
+    expect(result.current.commits).toBe(originalCommits);
+    expect(result.current.scannedCount).toBe(397);
+    expect(result.current.status).toBe("complete");
+    emit("complete", [commit("selected")], 398);
+    expect(result.current.commits.map(item => item.hash)).toEqual(["new", "selected"]);
+    expect(result.current.scannedCount).toBe(398);
+    expect(result.current.sessionKey).toBe(sessionKey);
+
+    act(() => { result.current.refresh(); });
+    await debounce();
+    emit("complete", [], 398);
+    expect(result.current.commits).toEqual([]);
+    expect(result.current.status).toBe("complete");
+  });
+
+  test("continues the refreshed session without appending the old page", async () => {
+    const { result } = renderHook(() => useCommitSearch("/survey", "notes", "allRefs", false, "AuthorDate"));
+    await debounce();
+    emit("paused", [commit("old-page")]);
+    act(() => { result.current.refresh(); });
+    await debounce();
+    act(() => { result.current.loadMore(); });
+    expect(continueCommitSearch).not.toHaveBeenCalled();
+    emit("paused", [commit("fresh-page")]);
+    act(() => { result.current.loadMore(); });
+    expect(continueCommitSearch).toHaveBeenCalledExactlyOnceWith(sessions[1].request.sessionId);
+    emit("complete", [commit("next-page")]);
+    expect(result.current.commits.map(item => item.hash)).toEqual(["fresh-page", "next-page"]);
+  });
+
+  test("clears retained results when the query changes during a refresh", async () => {
+    const { result, rerender } = renderHook(({ query }) => useCommitSearch("/survey", query, "currentCheckout", false, "AuthorDate"), { initialProps: { query: "old" } });
+    await debounce();
+    emit("complete", [commit("old-match")]);
+    const oldKey = result.current.sessionKey;
+    act(() => { result.current.refresh(); });
+    await debounce();
+    rerender({ query: "new" });
+    expect(result.current.sessionKey).not.toBe(oldKey);
+    expect(result.current.commits).toEqual([]);
+    emit("complete", [commit("late-refresh")], 200, 1);
+    expect(result.current.commits).toEqual([]);
+    await debounce();
+    emit("complete", [commit("new-match")]);
+    expect(result.current.commits.map(item => item.hash)).toEqual(["new-match"]);
+  });
+
+  test("keeps the last page when a background refresh fails", async () => {
+    const { result } = renderHook(() => useCommitSearch("/survey", "notes", "currentCheckout", false, "AuthorDate"));
+    await debounce();
+    emit("paused", [commit("kept")]);
+    act(() => { result.current.refresh(); });
+    await debounce();
+    emit("scanning", [commit("partial")]);
+    act(() => { sessions[1].emit({ sessionId: sessions[1].request.sessionId, commits: [], scannedCount: 120, status: "error", error: { code: "read_failed" } }); });
+    expect(result.current.commits.map(item => item.hash)).toEqual(["kept"]);
+    expect(result.current.error?.code).toBe("read_failed");
   });
 
   test("retains partial matches on failure and restarts explicitly", async () => {

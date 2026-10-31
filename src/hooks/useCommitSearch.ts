@@ -7,6 +7,7 @@ const EMPTY_COMMITS: CommitHistoryItem[] = [];
 
 type SearchResults = {
   key: string;
+  sessionId: string;
   commits: CommitHistoryItem[];
   scannedCount: number;
   status: CommitSearchStatus;
@@ -37,18 +38,19 @@ export function useCommitSearch(
   const query = input.trim();
   const active = Boolean(repoPath && query);
   const [revision, setRevision] = useState(0);
-  const key = JSON.stringify([repoPath, query, scope, topoOrder, settingsKey, revision]);
+  const resultsKey = JSON.stringify([repoPath, query, scope, topoOrder, settingsKey]);
+  const key = JSON.stringify([resultsKey, revision]);
   const currentKey = useRef(key);
   currentKey.current = key;
   const sessionRef = useRef<SearchSession | null>(null);
   const [results, setResults] = useState<SearchResults>({
-    key: "", commits: EMPTY_COMMITS, scannedCount: 0, status: "scanning", error: null,
+    key: "", sessionId: "", commits: EMPTY_COMMITS, scannedCount: 0, status: "scanning", error: null,
   });
 
   useEffect(() => {
     if (!active || !repoPath) {
       setResults(previous => previous.key ? {
-        key: "", commits: EMPTY_COMMITS, scannedCount: 0, status: "scanning", error: null,
+        key: "", sessionId: "", commits: EMPTY_COMMITS, scannedCount: 0, status: "scanning", error: null,
       } : previous);
       return;
     }
@@ -59,23 +61,32 @@ export function useCommitSearch(
       session = { id: crypto.randomUUID(), key, status: "scanning", refreshQueued: false };
       sessionRef.current = session;
       const startedSession = session;
-      setResults({ key, commits: [], scannedCount: 0, status: "scanning", error: null });
+      let sessionCommits: CommitHistoryItem[] = [];
+      setResults(previous => previous.key === resultsKey ? previous : {
+        key: resultsKey, sessionId: startedSession.id, commits: [], scannedCount: 0, status: "scanning", error: null,
+      });
       const onEvent = new Channel<CommitSearchEvent>();
       onEvent.onmessage = event => {
         if (disposed || currentKey.current !== key || sessionRef.current !== startedSession || event.sessionId !== startedSession.id) return;
         startedSession.status = event.status;
+        if (event.commits.length > 0) sessionCommits = [...sessionCommits, ...event.commits];
+        const commits = sessionCommits;
+        setResults(previous => {
+          const replacingResults = previous.key === resultsKey && previous.sessionId !== startedSession.id;
+          if (replacingResults && event.status === "scanning") return previous;
+          return {
+            key: resultsKey,
+            sessionId: startedSession.id,
+            commits: replacingResults && event.status === "error" ? previous.commits : commits,
+            scannedCount: event.scannedCount,
+            status: event.status,
+            error: event.error ?? null,
+          };
+        });
         if (event.status !== "scanning" && startedSession.refreshQueued) {
           startedSession.refreshQueued = false;
           setRevision(previous => previous + 1);
-          return;
         }
-        setResults(previous => ({
-          key,
-          commits: previous.key !== key ? event.commits : event.commits.length > 0 ? [...previous.commits, ...event.commits] : previous.commits,
-          scannedCount: event.scannedCount,
-          status: event.status,
-          error: event.error ?? null,
-        }));
       };
       void startCommitSearch({ repoPath, query, scope, topoOrder, sessionId: startedSession.id }, onEvent)
         .then(() => {
@@ -87,7 +98,7 @@ export function useCommitSearch(
           if (startedSession.refreshQueued) {
             setRevision(previous => previous + 1);
           } else {
-            setResults(previous => ({ ...previous, key, status: "error", error: searchFailure(error) }));
+            setResults(previous => ({ ...previous, key: resultsKey, status: "error", error: searchFailure(error) }));
           }
         });
     }, 300);
@@ -99,9 +110,10 @@ export function useCommitSearch(
         void cancelCommitSearch(session.id).catch(() => {});
       }
     };
-  }, [active, repoPath, query, scope, topoOrder, key]);
+  }, [active, repoPath, query, scope, topoOrder, key, resultsKey]);
 
   const restart = useCallback(() => {
+    setResults({ key: "", sessionId: "", commits: EMPTY_COMMITS, scannedCount: 0, status: "scanning", error: null });
     setRevision(previous => previous + 1);
   }, []);
 
@@ -131,10 +143,10 @@ export function useCommitSearch(
     });
   }, []);
 
-  const currentResults = results.key === key ? results : null;
+  const currentResults = results.key === resultsKey ? results : null;
   return {
     active,
-    sessionKey: key,
+    sessionKey: resultsKey,
     commits: active ? currentResults?.commits ?? EMPTY_COMMITS : EMPTY_COMMITS,
     scannedCount: active ? currentResults?.scannedCount ?? 0 : 0,
     status: currentResults?.status ?? "scanning",
