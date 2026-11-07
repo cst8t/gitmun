@@ -92,7 +92,7 @@ describe("StashPushDialog", () => {
     await waitFor(() => expect(screen.getByRole("checkbox", { name: "Include untracked files" })).toBeEnabled());
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Include untracked files" }));
-    expect(screen.getByRole("checkbox", { name: "Include notes/todo.md" })).toBeChecked();
+    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Include notes/todo.md" })).toBeChecked());
     expect(screen.getByText("4 of 4 files selected")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stash 4 files" }));
 
