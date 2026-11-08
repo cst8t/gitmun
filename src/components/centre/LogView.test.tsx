@@ -232,7 +232,7 @@ const settingsPayload: Settings = {
 
 function commit(index: number, overrides: Partial<CommitHistoryItem> = {}): CommitHistoryItem {
   return {
-    hash: `hash-${index}`.padEnd(40, "0"),
+    hash: `hash-${index}`.padStart(40, "0"),
     shortHash: `hash-${index}`,
     author: `Author ${index}`,
     authorEmail: `author${index}@example.com`,
@@ -379,6 +379,7 @@ describe("LogView commit selection", () => {
 
   it("restores normal history scroll after searching and resets each search list", () => {
     const commits = Array.from({ length: 80 }, (_, index) => commit(index + 1));
+    expect(new Set(commits.map(item => item.hash)).size).toBe(commits.length);
     const { rerenderLog } = renderLog({ commits });
     act(() => { virtuosoSetVisibleRange.current?.({ startIndex: 40, endIndex: 59 }); });
     rerenderLog({ commits: [commit(100)], searching: true, searchState: "complete", searchSessionKey: "first" });

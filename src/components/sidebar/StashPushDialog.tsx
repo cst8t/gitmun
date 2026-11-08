@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { Virtuoso, type VirtuosoHandle } from "react-virtuoso";
 import { useTranslation } from "react-i18next";
 import type { FileDiff, FileStatusItem } from "../../types";
@@ -121,7 +121,8 @@ export function StashPushDialog({
     [checkedPaths, availablePaths],
   );
 
-  useEffect(() => {
+  // Prune before interaction so an earlier candidate list cannot clear a new selection.
+  useLayoutEffect(() => {
     setCheckedPaths((previous) => {
       const next = new Set([...previous].filter((path) => availablePaths.has(path)));
       return next.size === previous.size ? previous : next;

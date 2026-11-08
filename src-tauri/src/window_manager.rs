@@ -249,7 +249,21 @@ pub async fn open_sub_window(
     let _window = builder.build().map_err(|e| e.to_string())?;
 
     #[cfg(target_os = "linux")]
-    crate::configure_linux_webkit_text_input(&_window);
+    {
+        let window_for_resize = _window.clone();
+        _window
+            .run_on_main_thread(move || {
+                use gtk::prelude::GtkWindowExt;
+
+                if let Ok(gtk_window) = window_for_resize.gtk_window() {
+                    // Apply this before mapping so KWin lays out the title-bar
+                    // buttons before Tao's first configure event.
+                    gtk_window.set_resizable(resizable);
+                }
+            })
+            .map_err(|e| e.to_string())?;
+        crate::configure_linux_webkit_text_input(&_window);
+    }
 
     crate::instance_coordinator::register_sub_window(&label);
     // WebView2 on Windows can fail to navigate when the window is created

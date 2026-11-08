@@ -87,12 +87,20 @@ describe("StashPushDialog", () => {
   });
 
   it("selects listed untracked files only after include-untracked is enabled", async () => {
-    mockListStashUntrackedPaths.mockResolvedValue(["notes/todo.md", "notes/ideas.md"]);
+    const pending = deferred<string[]>();
+    mockListStashUntrackedPaths.mockReturnValue(pending.promise);
     const { onConfirm } = renderDialog({ unversionedFiles: ["notes"] });
-    await waitFor(() => expect(screen.getByRole("checkbox", { name: "Include untracked files" })).toBeEnabled());
+    const includeUntracked = screen.getByRole("checkbox", { name: "Include untracked files" });
+    expect(includeUntracked).toBeDisabled();
+    expect(screen.queryByRole("checkbox", { name: "Include notes/todo.md" })).not.toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Include untracked files" }));
+    await act(async () => pending.resolve(["notes/todo.md", "notes/ideas.md"]));
+    expect(includeUntracked).toBeEnabled();
+    expect(screen.queryByRole("checkbox", { name: "Include notes/todo.md" })).not.toBeInTheDocument();
+
+    fireEvent.click(includeUntracked);
     expect(screen.getByRole("checkbox", { name: "Include notes/todo.md" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Include notes/ideas.md" })).toBeChecked();
     expect(screen.getByText("4 of 4 files selected")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Stash 4 files" }));
 
@@ -101,6 +109,31 @@ describe("StashPushDialog", () => {
       includeUntracked: true,
       paths: expect.arrayContaining(["notes/ideas.md", "notes/todo.md", "src/alpha.ts", "src/beta.ts"]),
     }));
+  });
+
+  it("keeps untracked files selected when enabled as soon as they load", async () => {
+    const pending = deferred<string[]>();
+    mockListStashUntrackedPaths.mockReturnValue(pending.promise);
+    renderDialog({ unversionedFiles: ["notes"] });
+    const checkbox = screen.getByRole("checkbox", { name: "Include untracked files" });
+    // Click on the enabling commit, before its passive effects can run.
+    const observer = new MutationObserver(() => {
+      if (!checkbox.hasAttribute("disabled")) {
+        observer.disconnect();
+        fireEvent.click(checkbox);
+      }
+    });
+    observer.observe(checkbox, { attributes: true, attributeFilter: ["disabled"] });
+    // Resolving inside act would flush those effects and hide the race.
+    pending.resolve(["notes/todo.md", "notes/ideas.md"]);
+
+    try {
+      await waitFor(() => expect(screen.getByRole("checkbox", { name: "Include notes/todo.md" })).toBeChecked());
+      expect(screen.getByRole("checkbox", { name: "Include notes/ideas.md" })).toBeChecked();
+      expect(screen.getByText("4 of 4 files selected")).toBeInTheDocument();
+    } finally {
+      observer.disconnect();
+    }
   });
 
   it("supports tree folder mixed selections", async () => {

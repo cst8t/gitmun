@@ -2,6 +2,7 @@
 
 import {act, renderHook, waitFor} from "@testing-library/react";
 import {beforeEach, describe, expect, it, vi} from "vitest";
+import "../../i18n";
 import {useAiConflictResolution} from "./useAiConflictResolution";
 
 const mocks = vi.hoisted(() => ({

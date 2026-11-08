@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
       - name: Setup Rust
@@ -377,7 +377,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
       - name: Setup Rust
@@ -740,7 +740,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
       - name: Setup Rust
@@ -965,7 +965,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 26
           cache: npm
 
       - name: Setup Rust

@@ -103,7 +103,7 @@ fi
 if ! command -v node >/dev/null 2>&1; then
   cat <<'EOF'
 Node.js is not installed.
-Install Node.js 20+ then run:
+Install Node.js 26 LTS then run:
   npm ci
   npm run tauri:build:linux
 EOF

@@ -20,11 +20,11 @@ export default defineConfig(() => ({
     sourcemap: !!process.env.TAURI_DEBUG,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, "index.html"),
-        about: resolve(__dirname, "about.html"),
-        settings: resolve(__dirname, "settings.html"),
-        clone: resolve(__dirname, "clone.html"),
-        resultLog: resolve(__dirname, "result-log.html")
+        main: resolve(import.meta.dirname, "index.html"),
+        about: resolve(import.meta.dirname, "about.html"),
+        settings: resolve(import.meta.dirname, "settings.html"),
+        clone: resolve(import.meta.dirname, "clone.html"),
+        resultLog: resolve(import.meta.dirname, "result-log.html")
       }
     }
   }
