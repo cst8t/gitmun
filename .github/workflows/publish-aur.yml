@@ -154,6 +154,9 @@ jobs:
   winget:
     name: Update WinGet manifest
     runs-on: ubuntu-22.04
+    concurrency:
+      group: winget-manifest
+      cancel-in-progress: false
 
     steps:
       - name: Resolve release tag
@@ -195,16 +198,59 @@ jobs:
             exit 1
           fi
 
+      - name: Check for existing WinGet pull requests
+        id: winget-pr
+        env:
+          GH_TOKEN: ${{ secrets.WINGET_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          gh api --method GET search/issues --paginate --slurp \
+            -f q="repo:microsoft/winget-pkgs is:pr in:title cst8t.gitmun ${PACKAGE_VERSION}" \
+            -f per_page=100 > "${RUNNER_TEMP}/winget-pull-requests.json"
+
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          pages = json.loads((Path(os.environ["RUNNER_TEMP"]) / "winget-pull-requests.json").read_text())
+          if any(page["incomplete_results"] for page in pages):
+              raise SystemExit("GitHub returned incomplete WinGet pull request search results")
+
+          version = os.environ["PACKAGE_VERSION"]
+          existing = [
+              pull_request
+              for page in pages
+              for pull_request in page["items"]
+              if "cst8t.gitmun" in pull_request["title"].lower().split()
+              and version in pull_request["title"].split()
+              and (pull_request["state"] == "open" or pull_request["pull_request"]["merged_at"])
+          ]
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"should-submit={'false' if existing else 'true'}\n")
+          if existing:
+              with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+                  for pull_request in existing:
+                      message = f"Skipping WinGet {version}: an open or merged pull request already exists: {pull_request['html_url']}"
+                      print(message)
+                      summary.write(f"{message}\n")
+          else:
+              print(f"No open or merged WinGet pull request found for cst8t.gitmun {version}")
+          PY
+
       - name: Sync WinGet fork
+        if: steps.winget-pr.outputs.should-submit == 'true'
         uses: michidk/run-komac@v2
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         with:
-          komac-version: 2.17.1
+          komac-version: 2.17.2
           custom-fork-owner: ${{ github.repository_owner }}
           args: sync
 
       - name: Generate WinGet manifests
+        if: steps.winget-pr.outputs.should-submit == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
           KOMAC_CREATED_WITH: Gitmun package manager workflow
@@ -213,69 +259,28 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Komac 2.17.1 returns before writing --output in dry-run mode.
-          # Capture its manifests without prompting or submitting before cleanup.
+          # The workflow PR check allows retries after closed, unmerged PRs.
           komac update cst8t.gitmun \
             --version "${PACKAGE_VERSION}" \
             --urls "${NSIS_URL}" "${MSI_URL}" \
             --release-notes-url "${{ github.server_url }}/${{ github.repository }}/releases/tag/${RELEASE_TAG}" \
-            --dry-run > "${RUNNER_TEMP}/winget-manifests.txt"
-
-          python3 - <<'PY'
-          import os
-          import re
-          from pathlib import Path
-
-          raw = (Path(os.environ["RUNNER_TEMP"]) / "winget-manifests.txt").read_text()
-          # Each manifest starts with Komac's generated comment; ignore its status line.
-          documents = re.split(r"(?m)(?=^# Created with )", raw)[1:]
-          manifests = {}
-          types = set()
-          for document in documents:
-              def field(name):
-                  match = re.search(rf"(?m)^{name}: ([^\r\n]+)$", document)
-                  if not match:
-                      raise SystemExit(f"Missing {name} in Komac output")
-                  return match[1]
-
-              if field("PackageIdentifier") != "cst8t.gitmun" or field("PackageVersion") != os.environ["PACKAGE_VERSION"]:
-                  raise SystemExit("Unexpected package or version in Komac output")
-              kind = field("ManifestType")
-              if kind in ("defaultLocale", "locale"):
-                  locale = field("PackageLocale")
-                  if not re.fullmatch(r"[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*", locale):
-                      raise SystemExit(f"Invalid package locale: {locale}")
-                  suffix = f".locale.{locale}"
-              elif kind in ("installer", "version"):
-                  suffix = ".installer" if kind == "installer" else ""
-              else:
-                  raise SystemExit(f"Unexpected manifest type: {kind}")
-              filename = f"cst8t.gitmun{suffix}.yaml"
-              if filename in manifests:
-                  raise SystemExit(f"Duplicate manifest: {filename}")
-              manifests[filename] = document
-              types.add(kind)
-
-          if not {"installer", "defaultLocale", "version"} <= types:
-              raise SystemExit("Komac did not produce the required WinGet manifests")
-          output = Path("winget-manifests")
-          output.mkdir()
-          for filename, document in manifests.items():
-              (output / filename).write_text(document)
-          print(f"Saved {len(manifests)} WinGet manifests to {output}")
-          PY
+            --skip-pr-check \
+            --exit \
+            --output ./winget-manifests
 
       - name: Remove InstallerLocale from manifests
+        if: steps.winget-pr.outputs.should-submit == 'true'
         run: |
           set -euo pipefail
           find ./winget-manifests -name '*.yaml' -exec sed -i '/^[[:space:]]*InstallerLocale:/d' {} +
 
       - name: Submit WinGet update
+        if: steps.winget-pr.outputs.should-submit == 'true'
         uses: michidk/run-komac@v2
         env:
           GITHUB_TOKEN: ${{ secrets.WINGET_TOKEN }}
         with:
-          komac-version: 2.17.1
+          komac-version: 2.17.2
           custom-fork-owner: ${{ github.repository_owner }}
           args: >-
             submit ./winget-manifests
