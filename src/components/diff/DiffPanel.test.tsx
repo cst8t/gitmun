@@ -60,9 +60,10 @@ describe("DiffPanel commit details", () => {
   });
 
   it("shows seven-character commit hashes in the header", () => {
-    renderCommitDetails(baseDetails);
+    renderLog();
 
     expect(screen.getByText("Commit 0123456")).toBeInTheDocument();
+    expect(mockGetCommitDetails).not.toHaveBeenCalled();
   });
 
   it("shows prose with preserved newlines separately from trailers", async () => {
