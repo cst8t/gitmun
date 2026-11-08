@@ -6,6 +6,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: "node",
+    execArgv: ["--no-experimental-webstorage"],
     setupFiles: ["./src/test/setup.ts"],
   },
 });
