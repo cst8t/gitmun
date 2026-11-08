@@ -753,7 +753,7 @@ jobs:
             src-tauri -> src-tauri/target
 
       - name: Setup WinApp CLI
-        uses: microsoft/setup-WinAppCli@v0.1
+        uses: microsoft/setup-WinAppCli@v0.3.0
 
       - name: Install frontend dependencies
         run: npm ci
