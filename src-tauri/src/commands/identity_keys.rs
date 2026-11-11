@@ -31,7 +31,7 @@ pub struct IdentitySigningContext {
 }
 
 fn git_output(repo_path: &Path, arguments: &[&str]) -> Result<Output, String> {
-    crate::git_command()
+    crate::configured_git_command()
         .args(arguments)
         .current_dir(repo_path)
         .output()
