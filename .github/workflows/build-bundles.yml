@@ -807,7 +807,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $mingitTag = "v2.55.0.windows.5"
+          $mingitTag = "v2.56.1.windows.1"
           $release = gh release view $mingitTag --repo git-for-windows/git --json assets,body,tagName |
             ConvertFrom-Json
 
