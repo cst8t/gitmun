@@ -74,7 +74,9 @@ export function IdentityPanel({
   onScopeChange,
 }: IdentityPanelProps) {
   const { t } = useTranslation("identity");
-  const [tab, setTab] = useState<IdentityTab>("local");
+  const [selectedTab, setTab] = useState<IdentityTab>("local");
+  const tab = !repoPath && selectedTab === "local" ? "global" : selectedTab;
+  const identityRepoPath = repoPath ?? "";
   const [editMode, setEditMode] = useState(false);
   const [editFormData, setEditFormData] = useState<Partial<GitIdentity>>({});
   const [savePending, setSavePending] = useState(false);
@@ -112,30 +114,34 @@ export function IdentityPanel({
   }, [t]);
 
   const refreshAllowedSignerStatus = React.useCallback(async () => {
-    if (!open || !repoPath || !activeScope || displayIdentity.signingFormat !== "ssh") {
+    if (!open || !activeScope || displayIdentity.signingFormat !== "ssh") {
       setAllowedSignerStatus(null);
       return null;
     }
 
     setAllowedSignerLoading(true);
     try {
-      const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+      const status = await getSshAllowedSignerStatus(identityRepoPath, activeScope);
       setAllowedSignerStatus(status);
       return status;
     } finally {
       setAllowedSignerLoading(false);
     }
-  }, [activeScope, displayIdentity.signingFormat, open, repoPath]);
+  }, [activeScope, displayIdentity.signingFormat, open, identityRepoPath]);
 
   const addAllowedSigner = React.useCallback(async () => {
-    if (!repoPath || !activeScope) return;
-    await addSshSigningKeyToAllowedSigners(repoPath, activeScope);
+    if (!activeScope) return;
+    await addSshSigningKeyToAllowedSigners(identityRepoPath, activeScope);
     await (activeScope === "Local" ? onRefreshLocalIdentity?.() : onRefreshGlobalIdentity?.());
     await refreshAllowedSignerStatus();
     await emit("signature-settings-updated");
-  }, [activeScope, onRefreshGlobalIdentity, onRefreshLocalIdentity, refreshAllowedSignerStatus, repoPath]);
+  }, [activeScope, onRefreshGlobalIdentity, onRefreshLocalIdentity, refreshAllowedSignerStatus, identityRepoPath]);
 
   React.useEffect(() => {
+    if (!repoPath) {
+      setTab("global");
+      return;
+    }
     if (!open) return;
     if (didAutoSelectTabRef.current) return;
 
@@ -149,7 +155,7 @@ export function IdentityPanel({
     }
 
     didAutoSelectTabRef.current = true;
-  }, [open, localIdentity, globalIdentity]);
+  }, [open, repoPath, localIdentity, globalIdentity]);
 
   React.useEffect(() => {
     if (tab === "local" || tab === "global") {
@@ -167,14 +173,14 @@ export function IdentityPanel({
     let cancelled = false;
 
     async function load() {
-      if (!open || !repoPath || !activeScope || displayIdentity.signingFormat !== "ssh") {
+      if (!open || !activeScope || displayIdentity.signingFormat !== "ssh") {
         if (!cancelled) setAllowedSignerStatus(null);
         return;
       }
 
       setAllowedSignerLoading(true);
       try {
-        const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+        const status = await getSshAllowedSignerStatus(identityRepoPath, activeScope);
         if (!cancelled) setAllowedSignerStatus(status);
       } finally {
         if (!cancelled) setAllowedSignerLoading(false);
@@ -185,7 +191,7 @@ export function IdentityPanel({
     return () => {
       cancelled = true;
     };
-  }, [activeScope, displayIdentity.signingFormat, displayIdentity.signingKey, displayIdentity.sshKeyPath, open, repoPath]);
+  }, [activeScope, displayIdentity.signingFormat, displayIdentity.signingKey, displayIdentity.sshKeyPath, open, identityRepoPath]);
 
   React.useEffect(() => {
     setEditMode(false);
@@ -198,7 +204,7 @@ export function IdentityPanel({
     setKeyChooserOpen(false);
     setSigningFormat(null);
     setContextError(false);
-    if (!open || !editMode || !repoPath || !activeScope) {
+    if (!open || !editMode || !activeScope) {
       setContextLoading(false);
       return;
     }
@@ -206,7 +212,7 @@ export function IdentityPanel({
     const draft = editFormData.signingFormat;
     setContextLoading(true);
     void getIdentitySigningContext({
-      repoPath,
+      repoPath: identityRepoPath,
       scope: activeScope,
       signingFormat: draft,
       clearSigningFormat: draft === null || (draft !== undefined && !draft.trim()),
@@ -218,7 +224,7 @@ export function IdentityPanel({
       if (!cancelled) setContextLoading(false);
     });
     return () => { cancelled = true; };
-  }, [open, editMode, repoPath, activeScope, displayIdentity.signingFormat, editFormData.signingFormat]);
+  }, [open, editMode, activeScope, displayIdentity.signingFormat, editFormData.signingFormat, identityRepoPath]);
 
   const closePanel = () => {
     if (isBusy) return;
@@ -318,9 +324,9 @@ export function IdentityPanel({
     try {
       const configuredSigning = payload.commitSigningEnabled === true
         || !!(payload.signingKey || payload.signingFormat || payload.sshKeyPath);
-      if (!configuredSigning || !repoPath || !activeScope || (signingFormat ?? formIdentity.signingFormat) !== "ssh") return;
+      if (!configuredSigning || !activeScope || (signingFormat ?? formIdentity.signingFormat) !== "ssh") return;
 
-      const status = await getSshAllowedSignerStatus(repoPath, activeScope);
+      const status = await getSshAllowedSignerStatus(identityRepoPath, activeScope);
       setAllowedSignerStatus(status);
       if (status.blockingReason) {
         await message(allowedSignersErrorMessage(status.blockingReason), {
@@ -389,7 +395,7 @@ export function IdentityPanel({
           ]).map(t => (
             <button key={t.key}
               className={`identity-panel__tab ${tab === t.key ? "identity-panel__tab--active" : ""}`}
-              disabled={isBusy}
+              disabled={isBusy || (t.key === "local" && !repoPath)}
               onClick={() => setTab(t.key)}>
               {t.icon}{t.label}
             </button>
@@ -633,9 +639,9 @@ export function IdentityPanel({
           )}
         </div>
       </div>
-      {keyChooserOpen && editMode && repoPath && signingFormat === "openpgp" && (
+      {keyChooserOpen && editMode && signingFormat === "openpgp" && (
         <GpgKeyDialog
-          repoPath={repoPath}
+          repoPath={identityRepoPath}
           currentKey={formIdentity.signingKey ?? null}
           returnFocus={keyHelperRef.current}
           onCancel={() => setKeyChooserOpen(false)}

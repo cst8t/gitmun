@@ -9,8 +9,10 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
   const [error, setError] = useState<string | null>(null);
 
   const refreshIdentity = useCallback(async () => {
-    if (!repoPath) {
+    if (!repoPath && scope === "Local") {
       setIdentity(null);
+      setLoading(false);
+      setError(null);
       return;
     }
 
@@ -18,7 +20,7 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
     setError(null);
 
     try {
-      const id = await getIdentity(repoPath, scope);
+      const id = await getIdentity(repoPath ?? "", scope);
       setIdentity(id);
     } catch (e) {
       setError(String(e));
@@ -31,8 +33,10 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
     let cancelled = false;
 
     const load = async () => {
-      if (!repoPath) {
+      if (!repoPath && scope === "Local") {
         setIdentity(null);
+        setLoading(false);
+        setError(null);
         return;
       }
 
@@ -40,7 +44,7 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
       setError(null);
 
       try {
-        const id = await getIdentity(repoPath, scope);
+        const id = await getIdentity(repoPath ?? "", scope);
         if (!cancelled) setIdentity(id);
       } catch (e) {
         if (!cancelled) setError(String(e));
@@ -55,12 +59,12 @@ export function useGitIdentity(repoPath: string | null, scope: IdentityScope) {
   }, [repoPath, scope]);
 
   const saveIdentity = async (payload: IdentityChanges) => {
-    if (!repoPath) return;
+    if (!repoPath && scope === "Local") return;
     setSaving(true);
     setError(null);
     try {
-      await setIdentityApi({ repoPath, scope, ...payload });
-      const updated = await getIdentity(repoPath, scope);
+      await setIdentityApi({ repoPath: repoPath ?? "", scope, ...payload });
+      const updated = await getIdentity(repoPath ?? "", scope);
       setIdentity(updated);
     } catch (e) {
       await refreshIdentity();

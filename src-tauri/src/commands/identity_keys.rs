@@ -45,7 +45,12 @@ fn signing_context<F>(
 where
     F: Fn(&Path, &[&str]) -> Result<Output, String>,
 {
-    let repo_path = Path::new(&request.repo_path);
+    let working_directory = crate::git::cli::CliGitHandler::identity_working_directory(
+        &request.repo_path,
+        &request.scope,
+    )
+    .map_err(|_| CONTEXT_ERROR.to_string())?;
+    let repo_path = working_directory.as_path();
     let draft = if request.clear_signing_format {
         None
     } else {
@@ -401,6 +406,37 @@ mod tests {
                 .contains("format = openpgp")
         );
     }
+    #[test]
+    fn global_signing_context_without_repository() {
+        let directory = tempfile::tempdir().unwrap();
+        let global = directory.path().join("gitconfig");
+        fs::write(&global, "[gpg]\nformat = ssh\n").unwrap();
+        let run = |path: &Path, arguments: &[&str]| {
+            Command::new("git")
+                .current_dir(path)
+                .args(arguments)
+                .env("GIT_CONFIG_GLOBAL", &global)
+                .env("GIT_CONFIG_NOSYSTEM", "1")
+                .env_remove("GIT_CONFIG_COUNT")
+                .output()
+                .map_err(|_| CONTEXT_ERROR.to_string())
+        };
+        let mut request = IdentitySigningContextRequest {
+            repo_path: String::new(),
+            scope: IdentityScope::Global,
+            signing_format: None,
+            clear_signing_format: false,
+        };
+        assert_eq!(signing_context(&request, &run).unwrap().format, "ssh");
+        request.signing_format = Some("openpgp".into());
+        assert_eq!(signing_context(&request, &run).unwrap().format, "openpgp");
+        request.clear_signing_format = true;
+        assert_eq!(signing_context(&request, &run).unwrap().format, "openpgp");
+        assert_eq!(fs::read_to_string(&global).unwrap(), "[gpg]\nformat = ssh\n");
+        request.scope = IdentityScope::Local;
+        assert!(signing_context(&request, &run).is_err());
+    }
+
     #[test]
     fn global_clear_preserves_xdg_configuration_when_the_home_file_is_empty() {
         let directory = tempfile::tempdir().unwrap();

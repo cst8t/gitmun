@@ -14,8 +14,11 @@ pub(crate) fn select_gpg_program(configured: Option<&str>) -> String {
 }
 
 pub(crate) fn configured_gpg_program(repo_path: &str) -> String {
-    let configured = crate::configured_git_command()
-        .current_dir(repo_path)
+    let mut command = crate::configured_git_command();
+    if !repo_path.is_empty() {
+        command.current_dir(repo_path);
+    }
+    let configured = command
         .args(["config", "--global", "--get", "gpg.program"])
         .output()
         .ok()

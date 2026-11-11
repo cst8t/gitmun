@@ -155,6 +155,16 @@ impl CliGitHandler {
         Ok(path)
     }
 
+    pub(crate) fn identity_working_directory(
+        repo_path: &str,
+        scope: &IdentityScope,
+    ) -> GitResult<PathBuf> {
+        if repo_path.trim().is_empty() && matches!(scope, IdentityScope::Global) {
+            return Ok(std::env::current_dir()?);
+        }
+        Self::normalise_repo_path(repo_path)
+    }
+
     fn identity_scope_flag(scope: &IdentityScope) -> &'static str {
         match scope {
             IdentityScope::Local => "--local",
@@ -5922,7 +5932,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn get_identity(&self, request: &IdentityRequest) -> GitResult<GitIdentity> {
-        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let repo_path = Self::identity_working_directory(&request.repo_path, &request.scope)?;
         let name = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.name")?;
         let email = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.email")?;
         let signing_key = Self::scoped_identity_config_get(&repo_path, &request.scope, "user.signingkey")?;
@@ -5951,7 +5961,7 @@ impl GitOperationHandler for CliGitHandler {
     }
 
     fn set_identity(&self, request: &SetIdentityRequest) -> GitResult<OperationResult> {
-        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let repo_path = Self::identity_working_directory(&request.repo_path, &request.scope)?;
         let scope_flag = Self::identity_scope_flag(&request.scope);
 
         let should_clear = |field: IdentityField| request.clear_fields.contains(&field);
@@ -6035,7 +6045,7 @@ impl GitOperationHandler for CliGitHandler {
         &self,
         request: &IdentityRequest,
     ) -> GitResult<SshAllowedSignerStatus> {
-        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let repo_path = Self::identity_working_directory(&request.repo_path, &request.scope)?;
         let signing_format = Self::scoped_config_get(&repo_path, &request.scope, "gpg.format")?;
         if !signing_format
             .as_deref()
@@ -6143,7 +6153,7 @@ impl GitOperationHandler for CliGitHandler {
         &self,
         request: &IdentityRequest,
     ) -> GitResult<OperationResult> {
-        let repo_path = Self::normalise_repo_path(&request.repo_path)?;
+        let repo_path = Self::identity_working_directory(&request.repo_path, &request.scope)?;
         let status = self.get_ssh_allowed_signer_status(request)?;
         if let Some(reason) = status.blocking_reason {
             return Err(GitError::InvalidInput(reason));

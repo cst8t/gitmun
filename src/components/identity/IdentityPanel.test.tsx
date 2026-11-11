@@ -105,6 +105,68 @@ describe("IdentityPanel", () => {
     mocks.emit.mockResolvedValue(undefined);
   });
 
+  it("opens on global identity and disables Repository without a selected repository", () => {
+    const onScopeChange = vi.fn();
+    render(<IdentityPanel open repoPath={null} onClose={vi.fn()} localIdentity={null}
+      globalIdentity={{...identity, signingFormat: "openpgp"}} onScopeChange={onScopeChange} />);
+
+    const repositoryTab = screen.getByRole("button", {name: "Repository"});
+    expect(repositoryTab).toBeDisabled();
+    expect(screen.getByText("~/.gitconfig")).toBeInTheDocument();
+    expect(screen.getByText(identity.name!)).toBeInTheDocument();
+    expect(screen.getByText(identity.email!)).toBeInTheDocument();
+    expect(screen.queryByText("Loading identity...")).not.toBeInTheDocument();
+    expect(onScopeChange).toHaveBeenLastCalledWith("global");
+    fireEvent.click(repositoryTab);
+    expect(screen.getByText("~/.gitconfig")).toBeInTheDocument();
+  });
+
+  it("switches to Global when the selected repository is removed", () => {
+    const props = {open: true, repoPath: "/repo" as string | null, onClose: vi.fn(),
+      localIdentity: identity, globalIdentity: {...identity, signingFormat: "openpgp"}};
+    const view = render(<IdentityPanel {...props} />);
+    expect(screen.getByText(".git/config")).toBeInTheDocument();
+
+    view.rerender(<IdentityPanel {...props} repoPath={null} localIdentity={null} />);
+    expect(screen.getByRole("button", {name: "Repository"})).toBeDisabled();
+    expect(screen.getByText("~/.gitconfig")).toBeInTheDocument();
+
+    view.rerender(<IdentityPanel {...props} />);
+    const repositoryTab = screen.getByRole("button", {name: "Repository"});
+    expect(repositoryTab).toBeEnabled();
+    fireEvent.click(repositoryTab);
+    expect(screen.getByText(".git/config")).toBeInTheDocument();
+  });
+
+  it("edits global identity and resolves signing context without a repository", async () => {
+    const onSaveGlobalIdentity = vi.fn(async () => {});
+    mocks.getIdentitySigningContext.mockResolvedValue({format: "openpgp"});
+    render(<IdentityPanel open repoPath={null} onClose={vi.fn()} localIdentity={null}
+      globalIdentity={{...identity, signingFormat: "openpgp"}} onSaveGlobalIdentity={onSaveGlobalIdentity} />);
+    fireEvent.click(screen.getByRole("button", {name: "Edit"}));
+    expect(await screen.findByRole("button", {name: "Choose key…"})).toBeEnabled();
+    expect(mocks.getIdentitySigningContext).toHaveBeenCalledWith(expect.objectContaining({repoPath: "", scope: "Global"}));
+    fireEvent.click(screen.getByRole("button", {name: "Choose key…"}));
+    expect(await screen.findByText(/No usable signing keys found/)).toBeInTheDocument();
+    expect(mocks.listGpgSigningKeys).toHaveBeenCalledWith("", expect.any(String));
+    fireEvent.keyDown(screen.getByRole("dialog"), {key: "Escape"});
+    fireEvent.change(screen.getByLabelText("user.name"), {target: {value: "Global Identity"}});
+    fireEvent.click(screen.getByRole("button", {name: "Save"}));
+    await waitFor(() => expect(screen.queryByRole("button", {name: "Save"})).not.toBeInTheDocument());
+    expect(onSaveGlobalIdentity).toHaveBeenCalledWith({name: "Global Identity"});
+  });
+
+  it("checks and adds global allowed signers without a repository", async () => {
+    mocks.getSshAllowedSignerStatus.mockResolvedValue({setupNeeded: true, targetPath: "/global/allowed-signers"});
+    const onRefreshGlobalIdentity = vi.fn(async () => {});
+    render(<IdentityPanel open repoPath={null} onClose={vi.fn()} localIdentity={null}
+      globalIdentity={identity} onRefreshGlobalIdentity={onRefreshGlobalIdentity} />);
+    fireEvent.click(await screen.findByRole("button", {name: "Add to allowed signers"}));
+    await waitFor(() => expect(onRefreshGlobalIdentity).toHaveBeenCalled());
+    expect(mocks.getSshAllowedSignerStatus).toHaveBeenCalledWith("", "Global");
+    expect(mocks.addSshSigningKeyToAllowedSigners).toHaveBeenCalledWith("", "Global");
+  });
+
   it("prompts to add SSH signing keys to allowed signers after save", async () => {
     const onRefreshLocalIdentity = vi.fn(async () => {});
     mocks.getSshAllowedSignerStatus.mockResolvedValue({
