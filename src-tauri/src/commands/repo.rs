@@ -26,6 +26,9 @@ use tauri_plugin_opener::OpenerExt;
 const DEFAULT_GIT_DESCRIPTION: &str =
     "Unnamed repository; edit this file 'description' to name the repository.";
 
+#[cfg(target_os = "windows")]
+const CREATE_NEW_CONSOLE: u32 = 0x00000010;
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum RepoOpenLocationKind {
@@ -94,6 +97,107 @@ fn resolve_git_dir(repo_path: &Path) -> Option<PathBuf> {
 mod tests {
     use super::*;
     use tempfile::TempDir;
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_command_prompt_keeps_the_directory_out_of_shell_arguments() {
+        let directory = TempDir::new().expect("create working directory");
+        let command = windows_command_prompt(directory.path());
+
+        assert_eq!(command.get_program(), "cmd.exe");
+        assert_eq!(command.get_current_dir(), Some(directory.path()));
+        assert_eq!(command.get_args().len(), 0);
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_command_prompt_preserves_literal_working_directories() {
+        use std::time::{Duration, Instant};
+
+        let directory = TempDir::new().expect("create terminal test directory");
+        let commands = b"echo GITMUN_CWD_BEGIN\r\ncd\r\necho GITMUN_CWD_END\r\nexit\r\n";
+        for name in [
+            "repo&echo.GITMUN_INJECTED&rem",
+            "repo%GITMUN_TERMINAL_TEST%",
+            "repo^caret",
+            "repo!GITMUN_TERMINAL_TEST!",
+            "repo with spaces",
+            "repo-Ünicode-目录",
+        ] {
+            let working_directory = directory.path().join(name);
+            std::fs::create_dir(&working_directory).expect("create working directory");
+            let output_path = directory.path().join("terminal-output.txt");
+            let output = std::fs::File::create(&output_path).expect("create terminal output file");
+            let mut child = windows_command_prompt(&working_directory)
+                .args(["/D", "/Q", "/U", "/V:ON"])
+                .env("GITMUN_TERMINAL_TEST", "expanded")
+                .stdin(Stdio::piped())
+                .stdout(output)
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("start Command Prompt");
+
+            let result: std::io::Result<_> = (|| {
+                child
+                    .stdin
+                    .take()
+                    .expect("stdin was piped")
+                    .write_all(commands)?;
+                let started = Instant::now();
+                loop {
+                    if let Some(status) = child.try_wait()? {
+                        return Ok(status);
+                    }
+                    if started.elapsed() >= Duration::from_secs(10) {
+                        return Err(std::io::Error::new(
+                            std::io::ErrorKind::TimedOut,
+                            "Command Prompt did not exit",
+                        ));
+                    }
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+            })();
+            let status = result.unwrap_or_else(|error| {
+                drop(child.kill());
+                drop(child.wait());
+                panic!("Command Prompt failed for {name}: {error}");
+            });
+            assert!(
+                status.success(),
+                "Command Prompt failed for {name}: {status}"
+            );
+
+            let output = std::fs::read(&output_path).expect("read terminal output");
+            assert_eq!(output.len() % 2, 0, "expected UTF-16 output for {name}");
+            let output: Vec<u16> = output
+                .chunks_exact(2)
+                .map(|bytes| u16::from_le_bytes([bytes[0], bytes[1]]))
+                .collect();
+            let output = String::from_utf16(&output).expect("decode terminal output");
+            assert!(
+                !output.lines().any(|line| line.trim() == "GITMUN_INJECTED"),
+                "directory name executed as a command: {output}"
+            );
+            assert!(
+                output.lines().any(|line| line.trim() == "GITMUN_CWD_END"),
+                "missing working directory terminator: {output}"
+            );
+            let reported_directory = output
+                .lines()
+                .skip_while(|line| line.trim() != "GITMUN_CWD_BEGIN")
+                .skip(1)
+                .take_while(|line| line.trim() != "GITMUN_CWD_END")
+                .map(str::trim)
+                .filter(|line| !line.is_empty())
+                .collect::<Vec<_>>();
+            assert_eq!(reported_directory.len(), 1, "unexpected output: {output}");
+            assert_eq!(
+                std::fs::canonicalize(reported_directory[0]).expect("resolve reported directory"),
+                std::fs::canonicalize(&working_directory).expect("resolve working directory"),
+                "working directory changed for {name}"
+            );
+        }
+    }
 
     #[cfg(target_os = "linux")]
     #[test]
@@ -730,16 +834,19 @@ fn open_terminal_at_windows(path: &Path) -> Result<(), String> {
         return Ok(());
     }
 
-    std::process::Command::new("cmd.exe")
-        .arg("/C")
-        .arg("start")
-        .arg("")
-        .arg("/D")
-        .arg(path)
-        .arg("cmd.exe")
+    windows_command_prompt(path)
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("Failed to open terminal: {e}"))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_command_prompt(path: &Path) -> std::process::Command {
+    use std::os::windows::process::CommandExt;
+
+    let mut command = std::process::Command::new("cmd.exe");
+    command.current_dir(path).creation_flags(CREATE_NEW_CONSOLE);
+    command
 }
 
 #[cfg(target_os = "macos")]
