@@ -130,6 +130,7 @@ mod tests {
             let output = std::fs::File::create(&output_path).expect("create terminal output file");
             let mut child = windows_command_prompt(&working_directory)
                 .args(["/D", "/Q", "/U", "/V:ON"])
+                .env("PROMPT", "$S")
                 .env("GITMUN_TERMINAL_TEST", "expanded")
                 .stdin(Stdio::piped())
                 .stdout(output)
